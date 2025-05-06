@@ -1,11 +1,10 @@
-use std::sync::atomic::Ordering;
-
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdge, QueryOrigin};
 use crate::{AsDynDatabase as _, Id, Revision};

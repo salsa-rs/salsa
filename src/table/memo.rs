@@ -3,15 +3,12 @@ use std::{
     fmt::Debug,
     mem,
     ptr::{self, NonNull},
-    sync::{
-        atomic::{AtomicPtr, Ordering},
-        OnceLock,
-    },
 };
 
-use parking_lot::RwLock;
 use thin_vec::ThinVec;
 
+use crate::loom::sync::atomic::{AtomicPtr, Ordering};
+use crate::loom::sync::{AtomicMut, OnceLock, RwLock};
 use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 
 /// The "memo table" stores the memoized results of tracked function calls.
@@ -220,13 +217,13 @@ impl MemoTableWithTypes<'_> {
         while memos.len() < memo_ingredient_index + 1 {
             memos.push(MemoEntry::default());
         }
-        let old_entry = mem::replace(
-            memos[memo_ingredient_index].atomic_memo.get_mut(),
-            MemoEntryType::to_dummy(memo).as_ptr(),
-        );
-        let old_entry = NonNull::new(old_entry);
+
+        let memo_entry = &mut memos[memo_ingredient_index].atomic_memo;
+        let old_entry = memo_entry.read_mut();
+        memo_entry.write_mut(MemoEntryType::to_dummy(memo).as_ptr());
+
         // SAFETY: The `TypeId` is asserted in `insert()`.
-        old_entry.map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
+        NonNull::new(old_entry).map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
     }
 
     #[inline]
@@ -287,7 +284,7 @@ impl MemoTableWithTypesMut<'_> {
         else {
             return;
         };
-        let Some(memo) = NonNull::new(*atomic_memo.get_mut()) else {
+        let Some(memo) = NonNull::new(atomic_memo.read_mut()) else {
             return;
         };
 
@@ -340,10 +337,11 @@ impl MemoEntry {
     /// The type must match.
     #[inline]
     unsafe fn take(&mut self, type_: &MemoEntryType) -> Option<Box<dyn Memo>> {
-        let memo = NonNull::new(mem::replace(self.atomic_memo.get_mut(), ptr::null_mut()))?;
+        let memo = NonNull::new(self.atomic_memo.read_mut());
+        self.atomic_memo.write_mut(ptr::null_mut());
         let type_ = type_.load()?;
         // SAFETY: Our preconditions.
-        Some(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) })
+        Some(unsafe { Box::from_raw((type_.to_dyn_fn)(memo?).as_ptr()) })
     }
 }
 

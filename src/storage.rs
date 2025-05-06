@@ -1,10 +1,8 @@
 //! Public API facades for the implementation details of [`Zalsa`] and [`ZalsaLocal`].
 use std::marker::PhantomData;
 use std::panic::RefUnwindSafe;
-use std::sync::Arc;
 
-use parking_lot::{Condvar, Mutex};
-
+use crate::loom::sync::{Arc, Condvar, Mutex};
 use crate::zalsa::{Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{self, ZalsaLocal};
 use crate::{Database, Event, EventKind};
@@ -140,7 +138,7 @@ impl<Db: Database> Storage<Db> {
 
         let mut clones = self.handle.coordinate.clones.lock();
         while *clones != 1 {
-            self.handle.coordinate.cvar.wait(&mut clones);
+            clones = self.handle.coordinate.cvar.wait(clones);
         }
     }
     // ANCHOR_END: cancel_other_workers

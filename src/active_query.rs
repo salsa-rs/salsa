@@ -1,5 +1,4 @@
 use std::ops::Not;
-use std::sync::atomic::AtomicBool;
 use std::{fmt, mem, ops};
 
 use crate::accumulator::accumulated_map::{
@@ -9,6 +8,7 @@ use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::atomic::AtomicBool;
 use crate::runtime::Stamp;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::{QueryEdge, QueryEdges, QueryOrigin, QueryRevisions};

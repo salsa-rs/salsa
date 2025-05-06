@@ -4,13 +4,12 @@ use std::marker::PhantomData;
 use std::mem;
 use std::num::NonZeroU32;
 use std::panic::RefUnwindSafe;
-use std::sync::atomic::Ordering;
 
-use parking_lot::{Mutex, RwLock};
-use portable_atomic::AtomicU64;
 use rustc_hash::FxHashMap;
 
 use crate::ingredient::{Ingredient, Jar};
+use crate::loom::sync::atomic::{AtomicU64, Ordering};
+use crate::loom::sync::{Mutex, RwLock};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
 use crate::table::memo::MemoTableWithTypes;
@@ -67,8 +66,10 @@ pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StorageNonce;
 
-/// Generator for storage nonces.
-static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
+// Generator for storage nonces.
+crate::loom::maybe_lazy_static! {
+    static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
+}
 
 /// An ingredient index identifies a particular [`Ingredient`] in the database.
 ///
@@ -413,12 +414,22 @@ where
     const UNINITIALIZED: u64 = 0;
 
     /// Create a new cache
+    #[cfg(not(loom))]
     pub const fn new() -> Self {
         Self {
             cached_data: AtomicU64::new(Self::UNINITIALIZED),
             phantom: PhantomData,
         }
     }
+
+    #[cfg(loom)]
+    pub fn new() -> Self {
+        Self {
+            cached_data: AtomicU64::new(Self::UNINITIALIZED),
+            phantom: PhantomData,
+        }
+    }
+
     /// Get a reference to the ingredient in the database.
     /// If the ingredient is not already in the cache, it will be created.
     #[inline(always)]

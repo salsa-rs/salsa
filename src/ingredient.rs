@@ -1,10 +1,10 @@
 use std::any::{Any, TypeId};
 use std::fmt;
-use std::sync::Arc;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{CycleHeadKind, CycleRecoveryStrategy};
 use crate::function::VerifyResult;
+use crate::loom::sync::Arc;
 use crate::plumbing::IngredientIndices;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;

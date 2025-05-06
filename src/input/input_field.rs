@@ -1,10 +1,10 @@
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use crate::function::VerifyResult;
 use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
+use crate::loom::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::IngredientIndex;
 use crate::{Database, Id, Revision};

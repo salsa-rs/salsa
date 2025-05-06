@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
+use std::mem::MaybeUninit;
 use std::ops::IndexMut;
-use std::sync::Arc;
 
 pub mod input_field;
 pub mod setter;
@@ -14,6 +14,8 @@ use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
+use crate::loom::cell::UnsafeCell;
+use crate::loom::sync::Arc;
 use crate::plumbing::{Jar, Stamp};
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::{Slot, Table};
@@ -91,7 +93,7 @@ impl<C: Configuration> IngredientImpl<C> {
         zalsa.table().get(id)
     }
 
-    fn data_raw(table: &Table, id: Id) -> *mut Value<C> {
+    fn data_raw(table: &Table, id: Id) -> &UnsafeCell<MaybeUninit<Value<C>>> {
         table.get_raw(id)
     }
 
@@ -131,21 +133,22 @@ impl<C: Configuration> IngredientImpl<C> {
         setter: impl FnOnce(&mut C::Fields) -> R,
     ) -> R {
         let id: Id = id.as_id();
-        let r = Self::data_raw(runtime.table(), id);
 
-        // SAFETY: We hold `&mut` on the runtime so no `&`-references can be active.
-        // Also, we don't access any other data from the table while `r` is active.
-        let r = unsafe { &mut *r };
+        Self::data_raw(runtime.table(), id).get_mut().with(|r| {
+            // SAFETY: We hold `&mut` on the runtime so no `&`-references can be active.
+            // Also, we don't access any other data from the table while `r` is active.
+            let r = unsafe { (*r).assume_init_mut() };
 
-        let stamp = &mut r.stamps[field_index];
+            let stamp = &mut r.stamps[field_index];
 
-        if stamp.durability != Durability::MIN {
-            runtime.report_tracked_write(stamp.durability);
-        }
+            if stamp.durability != Durability::MIN {
+                runtime.report_tracked_write(stamp.durability);
+            }
 
-        stamp.durability = durability.unwrap_or(stamp.durability);
-        stamp.changed_at = runtime.current_revision();
-        setter(&mut r.fields)
+            stamp.durability = durability.unwrap_or(stamp.durability);
+            stamp.changed_at = runtime.current_revision();
+            setter(&mut r.fields)
+        })
     }
 
     /// Get the singleton input previously created (if any).

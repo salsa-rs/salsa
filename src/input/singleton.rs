@@ -1,5 +1,4 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-
+use crate::loom::sync::atomic::{AtomicU32, Ordering};
 use crate::Id;
 
 mod sealed {

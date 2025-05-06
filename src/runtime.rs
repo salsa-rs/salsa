@@ -1,11 +1,9 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::ThreadId;
-
-use parking_lot::Mutex;
-
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::atomic::{AtomicBool, Ordering};
+use crate::loom::sync::{AtomicMut, Mutex};
+use crate::loom::thread::{self, ThreadId};
 use crate::table::Table;
 use crate::{Cancelled, Database, Event, EventKind, Revision};
 
@@ -131,7 +129,7 @@ impl Runtime {
     }
 
     pub(crate) fn reset_cancellation_flag(&mut self) {
-        *self.revision_canceled.get_mut() = false;
+        self.revision_canceled.write_mut(false);
     }
 
     /// Returns the [`Table`] used to store the value of salsa structs
@@ -175,7 +173,7 @@ impl Runtime {
         query_mutex_guard: QueryMutexGuard,
     ) -> BlockResult {
         let dg = self.dependency_graph.lock();
-        let thread_id = std::thread::current().id();
+        let thread_id = thread::current().id();
 
         if dg.depends_on(other_id, thread_id) {
             return BlockResult::Cycle;

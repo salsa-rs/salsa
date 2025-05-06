@@ -1,17 +1,16 @@
 use std::alloc::Layout;
 use std::any::{Any, TypeId};
-use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit};
 use std::ptr::{self, NonNull};
 use std::slice;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 use memo::MemoTable;
-use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
+use crate::loom::cell::UnsafeCell;
+use crate::loom::sync::atomic::{AtomicUsize, Ordering};
+use crate::loom::sync::{Arc, AtomicMut, Mutex};
 use crate::table::memo::{MemoTableTypes, MemoTableWithTypes, MemoTableWithTypesMut};
 use crate::{Id, IngredientIndex, Revision};
 
@@ -72,9 +71,11 @@ impl SlotVTable {
                 unsafe {
                     let data = Box::from_raw(data.cast::<PageData<T>>());
                     for i in 0..initialized {
-                        let item = data[i].get().cast::<T>();
-                        memo_types.attach_memos_mut((*item).memos_mut()).drop();
-                        ptr::drop_in_place(item);
+                        data[i].with_mut(|item| {
+                            let item = item.cast::<T>();
+                            memo_types.attach_memos_mut((*item).memos_mut()).drop();
+                            ptr::drop_in_place(item);
+                        });
                     }
                 },
                 layout: Layout::new::<T>(),
@@ -191,10 +192,11 @@ impl Table {
     /// # Safety
     ///
     /// See [`Page::get_raw`][].
-    pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
+    // TODO: This could return an `&UnsafeCell<T>` directly, but loom's `UnsafeCell` is not `repr(C)`
+    pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> &UnsafeCell<MaybeUninit<T>> {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
-        page_ref.page_data()[slot.0].get().cast::<T>()
+        &page_ref.page_data()[slot.0]
     }
 
     /// Gets a reference to the page which has slots of type `T`
@@ -203,7 +205,7 @@ impl Table {
     ///
     /// If `page` is out of bounds or the type `T` is incorrect.
     #[inline]
-    pub(crate) fn page<T: Slot>(&self, page: PageIndex) -> PageView<T> {
+    pub(crate) fn page<T: Slot>(&self, page: PageIndex) -> PageView<'_, T> {
         self.pages[page.0].assert_type::<T>()
     }
 
@@ -284,7 +286,7 @@ impl Table {
 
 impl<'p, T: Slot> PageView<'p, T> {
     #[inline]
-    fn page_data(&self) -> &[PageDataEntry<T>] {
+    fn page_data(&self) -> &'p [PageDataEntry<T>] {
         let len = self.0.allocated.load(Ordering::Acquire);
         // SAFETY: `len` is the initialized length of the page
         unsafe { slice::from_raw_parts(self.0.data.cast::<PageDataEntry<T>>().as_ptr(), len) }
@@ -313,7 +315,7 @@ impl<'p, T: Slot> PageView<'p, T> {
         // SAFETY: We acquired the allocation lock, so we have unique access to the UnsafeCell
         // interior.
         // `index` is also guaranteed to be in bounds as per the check above.
-        unsafe { (*(*data.as_ptr().add(index)).get()).write(value(id)) };
+        unsafe { (*data.as_ptr().add(index)).with_mut(|ptr| (*ptr).write(value(id))) };
 
         // Update the length (this must be done after initialization as otherwise an uninitialized
         // read could occur!)
@@ -326,8 +328,14 @@ impl<'p, T: Slot> PageView<'p, T> {
 impl Page {
     #[inline]
     fn new<T: Slot>(ingredient: IngredientIndex, memo_types: Arc<MemoTableTypes>) -> Self {
+        #[cfg(not(loom))]
         let data: Box<PageData<T>> =
             Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]);
+
+        #[cfg(loom)]
+        let data: Box<PageData<T>> =
+            Box::new([const { MaybeUninit::uninit() }; PAGE_LEN].map(UnsafeCell::new));
+
         Self {
             slot_vtable: SlotVTable::of::<T>(),
             slot_type_id: TypeId::of::<T>(),
@@ -382,7 +390,7 @@ impl Page {
 
 impl Drop for Page {
     fn drop(&mut self) {
-        let &mut len = self.allocated.get_mut();
+        let len = self.allocated.read_mut();
         // SAFETY: We supply the data pointer and the initialized length
         unsafe { (self.slot_vtable.drop_impl)(self.data.as_ptr(), len, &self.memo_types) };
     }
