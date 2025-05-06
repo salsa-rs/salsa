@@ -58,6 +58,7 @@ where
         db: &'db dyn Database,
         input: Id,
         revision: crate::Revision,
+        _in_cycle: bool,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);

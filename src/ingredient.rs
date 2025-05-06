@@ -63,6 +63,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         input: Id,
         revision: Revision,
+        in_cycle: bool,
     ) -> VerifyResult;
 
     /// Is the value for `input` in this ingredient a cycle head that is still provisional?
@@ -106,9 +107,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Id,
-        provisional: bool,
     ) {
-        let _ = (db, executor, stale_output_key, provisional);
+        let _ = (db, executor, stale_output_key);
         unreachable!("only tracked struct ingredients can have stale outputs")
     }
 

@@ -405,7 +405,7 @@ where
                 // This is a new tracked struct, so create an entry in the struct map.
                 let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
                 let key = self.database_key_index(id);
-                tracing::trace!("Allocated new tracked struct {id:?}", id = key);
+                tracing::trace!("Allocated new tracked struct {key:?}");
                 zalsa_local.add_output(key);
                 zalsa_local.store_tracked_struct_id(identity, id);
                 FromId::from_id(id)
@@ -581,7 +581,7 @@ where
     /// Using this method on an entity id that MAY be used in the current revision will lead to
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
-    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id, provisional: bool) {
+    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
         db.salsa_event(&|| {
             Event::new(crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
@@ -599,7 +599,7 @@ where
             None => {
                 panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
             }
-            Some(r) if !provisional && r == current_revision => panic!(
+            Some(r) if r == current_revision => panic!(
                 "cannot delete read-locked id `{id:?}`; value leaked across threads or user functions not deterministic"
             ),
             Some(r) => {
@@ -637,7 +637,7 @@ where
                 db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
                 for stale_output in memo.origin().outputs() {
-                    stale_output.remove_stale_output(zalsa, db, executor, provisional);
+                    stale_output.remove_stale_output(zalsa, db, executor);
                 }
             })
         };
@@ -739,6 +739,7 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
+        _in_cycle: bool,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = Self::data(zalsa.table(), input);
@@ -766,13 +767,12 @@ where
         db: &dyn Database,
         _executor: DatabaseKeyIndex,
         stale_output_key: crate::Id,
-        provisional: bool,
     ) {
         // This method is called when, in prior revisions,
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db, stale_output_key, provisional);
+        self.delete_entity(db, stale_output_key);
     }
 
     fn debug_name(&self) -> &'static str {

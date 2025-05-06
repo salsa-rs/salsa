@@ -110,6 +110,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: &dyn Database,
         _input: Id,
         _revision: Revision,
+        _in_cycle: bool,
     ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
     }

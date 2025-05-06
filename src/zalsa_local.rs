@@ -370,9 +370,9 @@ pub(crate) struct QueryRevisions {
 }
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
+    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
         Self {
-            changed_at: revision,
+            changed_at: Revision::start(),
             durability: Durability::MAX,
             origin: QueryOrigin::FixpointInitial,
             tracked_struct_ids: Default::default(),
@@ -423,6 +423,16 @@ impl QueryOrigin {
             QueryOrigin::Assigned(_) | QueryOrigin::FixpointInitial => None,
         };
         opt_edges.into_iter().flat_map(|edges| edges.outputs())
+    }
+
+    pub(crate) fn edges(&self) -> &[QueryEdge] {
+        let opt_edges = match self {
+            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
+            QueryOrigin::Assigned(_) | QueryOrigin::FixpointInitial => None,
+        };
+        opt_edges
+            .map(|edges| &*edges.input_outputs)
+            .unwrap_or_default()
     }
 }
 
@@ -508,18 +518,17 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Append the given `outputs` to the query's output list.
-    pub(crate) fn append_outputs<I>(&self, outputs: I)
-    where
-        I: IntoIterator<Item = DatabaseKeyIndex> + UnwindSafe,
-    {
+    pub(crate) fn seed_iteration(&self, previous: &QueryRevisions) {
+        let durability = previous.durability;
+        let changed_at = previous.changed_at;
+        let edges = previous.origin.edges();
+        let untracked_read = matches!(previous.origin, QueryOrigin::DerivedUntracked(_));
+
         self.local_state.with_query_stack_mut(|stack| {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
-
-            for output in outputs {
-                frame.add_output(output);
-            }
+            frame.seed_iteration(durability, changed_at, edges, untracked_read);
         })
     }
 

@@ -13,7 +13,9 @@ use crate::{AsDynDatabase as _, Id, Revision};
 /// Result of memo validation.
 pub enum VerifyResult {
     /// Memo has changed and needs to be recomputed.
-    Changed,
+    ///
+    /// The cycle heads encountered when validating the memo.
+    Changed(CycleHeads),
 
     /// Memo remains valid.
     ///
@@ -28,14 +30,36 @@ pub enum VerifyResult {
 impl VerifyResult {
     pub(crate) fn changed_if(changed: bool) -> Self {
         if changed {
-            Self::Changed
+            Self::changed()
         } else {
             Self::unchanged()
         }
     }
 
+    pub(crate) fn changed() -> Self {
+        Self::Changed(CycleHeads::default())
+    }
+
     pub(crate) fn unchanged() -> Self {
         Self::Unchanged(InputAccumulatedValues::Empty, CycleHeads::default())
+    }
+
+    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
+        match self {
+            Self::Changed(cycle_heads) => cycle_heads,
+            Self::Unchanged(_, cycle_heads) => cycle_heads,
+        }
+    }
+
+    pub(crate) fn into_cycle_heads(self) -> CycleHeads {
+        match self {
+            Self::Changed(cycle_heads) => cycle_heads,
+            Self::Unchanged(_, cycle_heads) => cycle_heads,
+        }
+    }
+
+    pub(crate) const fn is_unchanged(&self) -> bool {
+        matches!(self, Self::Unchanged(_, _))
     }
 }
 
@@ -48,6 +72,7 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
+        in_cycle: bool,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
@@ -62,7 +87,7 @@ where
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
             let Some(memo) = memo_guard else {
                 // No memo? Assume has changed.
-                return VerifyResult::Changed;
+                return VerifyResult::changed();
             };
 
             if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
@@ -71,7 +96,7 @@ where
                     self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
 
                     return if memo.revisions.changed_at > revision {
-                        VerifyResult::Changed
+                        VerifyResult::changed()
                     } else {
                         VerifyResult::Unchanged(
                             memo.revisions.accumulated_inputs.load(),
@@ -81,9 +106,14 @@ where
                 }
             }
 
-            if let Some(mcs) =
-                self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
-            {
+            if let Some(mcs) = self.maybe_changed_after_cold(
+                zalsa,
+                db,
+                id,
+                revision,
+                memo_ingredient_index,
+                in_cycle,
+            ) {
                 return mcs;
             } else {
                 // We failed to claim, have to retry.
@@ -99,6 +129,7 @@ where
         key_index: Id,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
+        in_cycle: bool,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
@@ -116,6 +147,9 @@ where
                     return Some(VerifyResult::unchanged());
                 }
                 CycleRecoveryStrategy::Fixpoint => {
+                    tracing::debug!(
+                        "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
+                    );
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
                         CycleHeads::initial(database_key_index),
@@ -127,7 +161,7 @@ where
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
         else {
-            return Some(VerifyResult::Changed);
+            return Some(VerifyResult::changed());
         };
 
         tracing::debug!(
@@ -137,13 +171,15 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        if let VerifyResult::Unchanged(_, cycle_heads) =
-            self.deep_verify_memo(db, zalsa, old_memo, database_key_index)
-        {
+        let deep_verify = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
+        if deep_verify.is_unchanged() {
             return Some(if old_memo.revisions.changed_at > revision {
-                VerifyResult::Changed
+                VerifyResult::Changed(deep_verify.into_cycle_heads())
             } else {
-                VerifyResult::Unchanged(old_memo.revisions.accumulated_inputs.load(), cycle_heads)
+                VerifyResult::Unchanged(
+                    old_memo.revisions.accumulated_inputs.load(),
+                    deep_verify.into_cycle_heads(),
+                )
             });
         }
 
@@ -151,13 +187,19 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        if old_memo.value.is_some() {
+        // However, executing the query here is only safe if we are not in a cycle.
+        // In a cycle, it's important that the cycle head gets executed or we
+        // risk that some dependencies of this query haven't been verified yet because
+        // the cycle head returned *fixpoint initial* without validating its dependencies.
+        // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
+        // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
+        if old_memo.value.is_some() && !in_cycle && deep_verify.cycle_heads().is_empty() {
             let active_query = db.zalsa_local().push_query(database_key_index, 0);
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
             return Some(if changed_at > revision {
-                VerifyResult::Changed
+                VerifyResult::changed()
             } else {
                 VerifyResult::Unchanged(
                     match &memo.revisions.accumulated {
@@ -170,7 +212,7 @@ where
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
-        Some(VerifyResult::Changed)
+        Some(VerifyResult::Changed(deep_verify.into_cycle_heads()))
     }
 
     /// `Some` if the memo's value and `changed_at` time is still valid in this revision.
@@ -369,20 +411,33 @@ where
                 // Conditionally specified queries
                 // where the value is specified
                 // in rev 1 but not in rev 2.
-                VerifyResult::Changed
+                VerifyResult::changed()
             }
-            QueryOrigin::FixpointInitial if old_memo.may_be_provisional() => VerifyResult::Changed,
-            QueryOrigin::FixpointInitial => VerifyResult::unchanged(),
+            QueryOrigin::FixpointInitial => {
+                let is_provisional = old_memo.may_be_provisional();
+
+                // If the value is from the same revision but is still provisional, consider it changed
+                // because we're now in a new iteration.
+                if shallow_update_possible && is_provisional {
+                    return VerifyResult::Changed(CycleHeads::initial(database_key_index));
+                }
+
+                VerifyResult::Unchanged(
+                    InputAccumulatedValues::Empty,
+                    CycleHeads::initial(database_key_index),
+                )
+            }
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
-                VerifyResult::Changed
+                VerifyResult::changed()
             }
             QueryOrigin::Derived(edges) => {
                 let is_provisional = old_memo.may_be_provisional();
 
                 // If the value is from the same revision but is still provisional, consider it changed
+                // because we're now in a new iteration.
                 if shallow_update_possible && is_provisional {
-                    return VerifyResult::Changed;
+                    return VerifyResult::changed();
                 }
 
                 let mut cycle_heads = CycleHeads::default();
@@ -399,9 +454,14 @@ where
                     for &edge in edges.input_outputs.iter() {
                         match edge {
                             QueryEdge::Input(dependency_index) => {
-                                match dependency_index.maybe_changed_after(dyn_db, last_verified_at)
-                                {
-                                    VerifyResult::Changed => break 'cycle VerifyResult::Changed,
+                                match dependency_index.maybe_changed_after(
+                                    dyn_db,
+                                    last_verified_at,
+                                    !cycle_heads.is_empty(),
+                                ) {
+                                    VerifyResult::Changed(_) => {
+                                        break 'cycle VerifyResult::Changed(cycle_heads)
+                                    }
                                     VerifyResult::Unchanged(input_accumulated, cycles) => {
                                         cycle_heads.extend(&cycles);
                                         inputs |= input_accumulated;

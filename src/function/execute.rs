@@ -101,19 +101,11 @@ where
             // really change, even if some of its inputs have. So we can
             // "backdate" its `changed_at` revision to be the same as the
             // old value.
-            self.backdate_if_appropriate(old_memo, &mut revisions, &new_value);
+            self.backdate_if_appropriate(old_memo, database_key_index, &mut revisions, &new_value);
 
             // Diff the new outputs with the old, to discard any no-longer-emitted
             // outputs and update the tracked struct IDs for seeding the next revision.
-            let provisional = !revisions.cycle_heads.is_empty();
-            self.diff_outputs(
-                zalsa,
-                db,
-                database_key_index,
-                old_memo,
-                &mut revisions,
-                provisional,
-            );
+            self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
         }
         self.insert_memo(
             zalsa,
@@ -142,8 +134,14 @@ where
         // only when a cycle is actually encountered.
         let mut opt_last_provisional: Option<&Memo<<C as Configuration>::Output<'db>>> = None;
         loop {
-            let (mut new_value, mut revisions) =
-                Self::execute_query(db, active_query, opt_old_memo, zalsa.current_revision(), id);
+            let previous_memo = opt_last_provisional.or(opt_old_memo);
+            let (mut new_value, mut revisions) = Self::execute_query(
+                db,
+                active_query,
+                previous_memo,
+                zalsa.current_revision(),
+                id,
+            );
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if revisions.cycle_heads.contains(&database_key_index) {
@@ -255,26 +253,24 @@ where
         current_revision: Revision,
         id: Id,
     ) -> (C::Output<'db>, QueryRevisions) {
-        // If we already executed this query once, then use the tracked-struct ids from the
-        // previous execution as the starting point for the new one.
         if let Some(old_memo) = opt_old_memo {
+            // If we already executed this query once, then use the tracked-struct ids from the
+            // previous execution as the starting point for the new one.
             active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
+
+            // Copy over all inputs and outputs from a previous iteration.
+            // This is necessary to:
+            // * ensure that tracked struct created during the previous iteration
+            //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
+            // * ensure the final returned memo depends on all inputs from all iterations.
+            if old_memo.may_be_provisional() && old_memo.verified_at.load() == current_revision {
+                active_query.seed_iteration(&old_memo.revisions);
+            }
         }
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
         let new_value = C::execute(db, C::id_to_input(db, id));
-
-        if let Some(old_memo) = opt_old_memo {
-            // Copy over all outputs from a previous iteration.
-            // This is necessary to ensure that tracked struct created during the previous iteration
-            // (and are owned by the query) are alive even if the query in this iteration no longer creates them.
-            // The query not re-creating the tracked struct doesn't guarantee that there
-            // aren't any other queries depending on it.
-            if old_memo.may_be_provisional() && old_memo.verified_at.load() == current_revision {
-                active_query.append_outputs(old_memo.revisions.origin.outputs());
-            }
-        }
 
         (new_value, active_query.pop())
     }

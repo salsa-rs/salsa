@@ -350,7 +350,8 @@ where
 
         assert!(
             internal_data.last_interned_at.load() >= last_changed_revision,
-            "Data was not interned in the latest revision for its durability."
+            "Data {:?} was not interned in the latest revision for its durability.",
+            self.database_key_index(id)
         );
 
         unsafe { Self::from_internal_data(&internal_data.fields) }
@@ -394,12 +395,13 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
+        _in_cycle: bool,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let value = zalsa.table().get::<Value<C>>(input);
         if value.first_interned_at > revision {
             // The slot was reused.
-            return VerifyResult::Changed;
+            return VerifyResult::changed();
         }
 
         // The slot is valid in this revision but we have to sync the value's revision.
