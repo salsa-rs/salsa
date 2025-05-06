@@ -418,10 +418,13 @@ where
 
                 // If the value is from the same revision but is still provisional, consider it changed
                 if shallow_update_possible && is_provisional {
-                    return VerifyResult::changed();
+                    return VerifyResult::Changed(CycleHeads::initial(database_key_index));
                 }
 
-                VerifyResult::unchanged()
+                VerifyResult::Unchanged(
+                    InputAccumulatedValues::Empty,
+                    CycleHeads::initial(database_key_index),
+                )
             }
 
             QueryOrigin::DerivedUntracked(_) => {
