@@ -412,20 +412,14 @@ where
                 // in rev 1 but not in rev 2.
                 VerifyResult::changed()
             }
-            QueryOrigin::FixpointInitial => {
-                let is_provisional = old_memo.may_be_provisional();
-
-                // If the value is from the same revision but is still provisional, consider it changed
-                // because we're now in a new iteration.
-                if shallow_update_possible && is_provisional {
-                    return VerifyResult::Changed(CycleHeads::initial(database_key_index));
-                }
-
-                VerifyResult::Unchanged(
-                    InputAccumulatedValues::Empty,
-                    CycleHeads::initial(database_key_index),
-                )
-            }
+            // Return `Unchanged` similar to the initial value that we insert
+            // when we hit the cycle. Any dependencies accessed when creating the fixpoint initial
+            // are tracked by the outer query. Nothing should have changed assuming that the
+            // fixpoint initial function is deterministic.
+            QueryOrigin::FixpointInitial => VerifyResult::Unchanged(
+                InputAccumulatedValues::Empty,
+                CycleHeads::initial(database_key_index),
+            ),
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
                 VerifyResult::changed()
@@ -458,8 +452,11 @@ where
                                     last_verified_at,
                                     !cycle_heads.is_empty(),
                                 ) {
-                                    VerifyResult::Changed(_) => {
-                                        break 'cycle VerifyResult::Changed(cycle_heads)
+                                    VerifyResult::Changed(heads) => {
+                                        // Carry over the heads from the inner query to avoid
+                                        // backdating the outer query.
+                                        cycle_heads.extend(&heads);
+                                        break 'cycle VerifyResult::Changed(cycle_heads);
                                     }
                                     VerifyResult::Unchanged(input_accumulated, cycles) => {
                                         cycle_heads.extend(&cycles);
