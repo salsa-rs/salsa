@@ -1,13 +1,10 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
 use std::any::TypeId;
-use std::cell::Cell;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
 
 use dashmap::SharedValue;
 
@@ -16,6 +13,9 @@ use crate::function::VerifyResult;
 use crate::hash::FxDashMap;
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
+use crate::loom::cell::Cell;
+use crate::loom::sync::atomic::{AtomicU8, Ordering};
+use crate::loom::sync::Arc;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
 use crate::table::memo::{MemoTable, MemoTableTypes};
@@ -566,7 +566,7 @@ where
     Arc<T>: From<&'a T>,
 {
     fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
+        Hash::hash(&**self, &mut *h)
     }
     fn eq(&self, data: &&T) -> bool {
         **self == **data

@@ -59,6 +59,8 @@ jobs:
         run: cargo test --workspace --all-features --doc
       - name: Check (without default features)
         run: cargo check --workspace --no-default-features
+      - name: Check (loom)
+        run: RUSTFLAGs="--cfg loom" cargo check --workspace
 
   miri:
     name: Miri

@@ -1,8 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use crate::cycle::{CycleRecoveryStrategy, MAX_ITERATIONS};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
+use crate::loom::sync::atomic::{AtomicBool, Ordering};
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
 use crate::{Database, Event, EventKind, Id, Revision};

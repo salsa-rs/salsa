@@ -4,12 +4,12 @@ use std::any::{Any, TypeId};
 use std::fmt;
 use std::marker::PhantomData;
 use std::panic::UnwindSafe;
-use std::sync::Arc;
 
 use accumulated::{Accumulated, AnyAccumulated};
 
 use crate::function::VerifyResult;
 use crate::ingredient::{Ingredient, Jar};
+use crate::loom::sync::Arc;
 use crate::plumbing::IngredientIndices;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, Zalsa};

@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use crate::loom::sync::Arc;
 use crate::table::memo::{MemoEntryType, MemoTableTypes};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::{Id, IngredientIndex};

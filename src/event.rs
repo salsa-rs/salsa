@@ -1,6 +1,5 @@
-use std::thread::ThreadId;
-
 use crate::key::DatabaseKeyIndex;
+use crate::loom::thread::{self, ThreadId};
 use crate::Revision;
 
 /// The `Event` struct identifies various notable things that can
@@ -18,7 +17,7 @@ pub struct Event {
 impl Event {
     pub fn new(kind: EventKind) -> Self {
         Self {
-            thread_id: std::thread::current().id(),
+            thread_id: thread::current().id(),
             kind,
         }
     }

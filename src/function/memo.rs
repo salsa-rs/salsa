@@ -2,11 +2,11 @@ use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
-use std::sync::atomic::Ordering;
 
 use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS};
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::atomic::Ordering;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -111,7 +111,7 @@ pub struct Memo<V> {
 }
 
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
-// #[cfg(test)]
+#[cfg(not(loom))]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
     [(); std::mem::size_of::<[usize; 13]>()];
 

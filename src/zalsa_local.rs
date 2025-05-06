@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::panic::UnwindSafe;
-use std::sync::atomic::AtomicBool;
 
 use rustc_hash::FxHashMap;
 use tracing::debug;
@@ -10,6 +9,7 @@ use crate::active_query::QueryStack;
 use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::atomic::AtomicBool;
 use crate::runtime::Stamp;
 use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};

@@ -1,11 +1,11 @@
 use std::pin::Pin;
-use std::thread::ThreadId;
 
-use parking_lot::MutexGuard;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::MutexGuard;
+use crate::loom::thread::ThreadId;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
 
@@ -79,7 +79,7 @@ impl DependencyGraph {
                 debug_assert!(!me.edges.contains_key(&from_id));
                 return result;
             }
-            cvar.wait(&mut me);
+            me = cvar.wait(me);
         }
     }
 
@@ -141,9 +141,10 @@ impl DependencyGraph {
 }
 
 mod edge {
-    use std::{pin::Pin, thread::ThreadId};
+    use crate::loom::sync::{Condvar, MutexGuard};
+    use crate::loom::thread::ThreadId;
 
-    use parking_lot::Condvar;
+    use std::pin::Pin;
 
     #[derive(Default, Debug)]
     pub(super) struct EdgeCondvar {
@@ -153,7 +154,7 @@ mod edge {
 
     impl EdgeCondvar {
         #[inline]
-        pub(super) fn wait<T: ?Sized>(&self, mutex_guard: &mut parking_lot::MutexGuard<'_, T>) {
+        pub(super) fn wait<'a, T>(&self, mutex_guard: MutexGuard<'a, T>) -> MutexGuard<'a, T> {
             self.condvar.wait(mutex_guard)
         }
     }
@@ -164,7 +165,7 @@ mod edge {
 
         /// Signalled whenever a query with dependents completes.
         /// Allows those dependents to check if they are ready to unblock.
-        // condvar: unsafe<'stack_frame> Pin<&'stack_frame parking_lot::Condvar>,
+        // condvar: unsafe<'stack_frame> Pin<&'stack_frame Condvar>,
         condvar: Pin<&'static EdgeCondvar>,
     }
 

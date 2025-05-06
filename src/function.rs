@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
-use std::sync::Arc;
 
 pub(crate) use maybe_changed_after::VerifyResult;
 
@@ -11,6 +10,7 @@ use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::Ingredient;
 use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::Arc;
 use crate::plumbing::MemoIngredientMap;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::table::memo::MemoTableTypes;

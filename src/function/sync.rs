@@ -1,14 +1,11 @@
-use std::thread::ThreadId;
-
-use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
-use crate::{
-    key::DatabaseKeyIndex,
-    runtime::{BlockResult, WaitResult},
-    zalsa::Zalsa,
-    Database, Id, IngredientIndex,
-};
+use crate::key::DatabaseKeyIndex;
+use crate::loom::sync::Mutex;
+use crate::loom::thread::{self, ThreadId};
+use crate::runtime::{BlockResult, WaitResult};
+use crate::zalsa::Zalsa;
+use crate::{Database, Id, IngredientIndex};
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
@@ -71,7 +68,7 @@ impl SyncTable {
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(SyncState {
-                    id: std::thread::current().id(),
+                    id: thread::current().id(),
                     anyone_waiting: false,
                 });
                 ClaimResult::Claimed(ClaimGuard {

@@ -91,9 +91,14 @@ macro_rules! setup_input_struct {
             }
 
             impl $Configuration {
+                // Suppress the lint against `cfg(loom)`.
+                #[allow(unexpected_cfgs)]
                 pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<Self> {
-                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
-                        $zalsa::IngredientCache::new();
+                    zalsa_::__maybe_lazy_static! {
+                        static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
+                            $zalsa::IngredientCache::new();
+                    }
+
                     let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
                         zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()

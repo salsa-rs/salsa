@@ -1,8 +1,7 @@
 use std::num::NonZeroUsize;
 
-use parking_lot::Mutex;
-
 use crate::hash::FxLinkedHashSet;
+use crate::loom::sync::Mutex;
 use crate::Id;
 
 pub(super) struct Lru {
@@ -14,7 +13,7 @@ impl Lru {
     pub fn new(cap: usize) -> Self {
         Self {
             capacity: NonZeroUsize::new(cap),
-            set: Mutex::new(FxLinkedHashSet::default()),
+            set: Mutex::default(),
         }
     }
 

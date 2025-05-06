@@ -4,11 +4,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 #[cfg(feature = "rayon")]
 use rayon::iter::Either;
 
+use crate::loom::sync::Arc;
 use crate::Revision;
 
 /// This is used by the macro generated code.

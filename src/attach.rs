@@ -1,9 +1,17 @@
-use std::cell::Cell;
 use std::ptr::NonNull;
 
+use crate::loom::cell::Cell;
 use crate::Database;
 
-thread_local! {
+#[cfg(loom)]
+crate::loom::thread_local! {
+    /// The thread-local state salsa requires for a given thread
+    static ATTACHED: Attached = Attached::new();
+}
+
+// loom's `thread_local` macro does not support const-initialization.
+#[cfg(not(loom))]
+crate::loom::thread_local! {
     /// The thread-local state salsa requires for a given thread
     static ATTACHED: Attached = const { Attached::new() }
 }
@@ -20,6 +28,14 @@ struct Attached {
 }
 
 impl Attached {
+    #[cfg(loom)]
+    fn new() -> Self {
+        Self {
+            database: Cell::new(None),
+        }
+    }
+
+    #[cfg(not(loom))]
     const fn new() -> Self {
         Self {
             database: Cell::new(None),

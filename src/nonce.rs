@@ -1,6 +1,6 @@
+use crate::loom::sync::atomic::{AtomicU32, Ordering};
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
-use std::sync::atomic::AtomicU32;
 
 /// A type to generate nonces. Store it in a static and each nonce it produces will be unique from other nonces.
 /// The type parameter `T` just serves to distinguish different kinds of nonces.
@@ -15,6 +15,7 @@ pub(crate) struct NonceGenerator<T> {
 pub struct Nonce<T>(NonZeroU32, PhantomData<T>);
 
 impl<T> NonceGenerator<T> {
+    #[cfg(not(loom))]
     pub(crate) const fn new() -> Self {
         Self {
             // start at 1 so we can detect rollover more easily
@@ -23,10 +24,17 @@ impl<T> NonceGenerator<T> {
         }
     }
 
+    #[cfg(loom)]
+    pub(crate) fn new() -> Self {
+        Self {
+            // start at 1 so we can detect rollover more easily
+            value: AtomicU32::new(1),
+            phantom: PhantomData,
+        }
+    }
+
     pub(crate) fn nonce(&self) -> Nonce<T> {
-        let value = self
-            .value
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let value = self.value.fetch_add(1, Ordering::Relaxed);
 
         assert!(value != 0, "nonce rolled over");
 

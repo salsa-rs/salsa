@@ -17,6 +17,7 @@ mod ingredient;
 mod input;
 mod interned;
 mod key;
+mod loom;
 mod memo_ingredient_indices;
 mod nonce;
 #[cfg(feature = "rayon")]
@@ -76,6 +77,7 @@ pub mod plumbing {
         unexpected_cycle_recovery,
     };
 
+    pub use crate::__maybe_lazy_static;
     pub use crate::accumulator::Accumulator;
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
