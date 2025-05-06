@@ -192,8 +192,7 @@ impl Table {
     /// # Safety
     ///
     /// See [`Page::get_raw`][].
-    // TODO: This should not return a `MutPtr<T>` directly, but loom's `MutPtr` does not expose
-    // pointer casts.
+    // TODO: This could return an `&UnsafeCell<T>` directly, but loom's `UnsafeCell` is not `repr(C)`
     pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> &UnsafeCell<MaybeUninit<T>> {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
