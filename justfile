@@ -5,6 +5,6 @@ miri:
     cargo +nightly miri test --no-fail-fast --all-features
 
 loom:
-    RUSTFLAGS="--cfg loom" cargo check --workspace
+    RUSTFLAGS="--cfg loom" cargo check --workspace --features loom
 
 all: test miri
