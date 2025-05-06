@@ -413,10 +413,17 @@ where
                 // in rev 1 but not in rev 2.
                 VerifyResult::changed()
             }
-            QueryOrigin::FixpointInitial if old_memo.may_be_provisional() => {
-                VerifyResult::changed()
+            QueryOrigin::FixpointInitial => {
+                let is_provisional = old_memo.may_be_provisional();
+
+                // If the value is from the same revision but is still provisional, consider it changed
+                if shallow_update_possible && is_provisional {
+                    return VerifyResult::changed();
+                }
+
+                VerifyResult::unchanged()
             }
-            QueryOrigin::FixpointInitial => VerifyResult::unchanged(),
+
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
                 VerifyResult::changed()
