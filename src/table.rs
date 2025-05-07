@@ -221,6 +221,7 @@ impl Table {
     ///
     /// See [`Page::get_raw`][].
     // TODO: This could return an `&UnsafeCell<T>` directly, but loom's `UnsafeCell` is not `repr(C)`
+    #[inline]
     pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> &UnsafeCell<MaybeUninit<T>> {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
