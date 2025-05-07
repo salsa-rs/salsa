@@ -10,7 +10,7 @@ use accumulated::{Accumulated, AnyAccumulated};
 use crate::function::VerifyResult;
 use crate::ingredient::{Ingredient, Jar};
 use crate::loom::sync::Arc;
-use crate::plumbing::IngredientIndices;
+use crate::plumbing::{IngredientIndices, ZalsaLocal};
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, Id, Revision};
@@ -62,11 +62,7 @@ pub struct IngredientImpl<A: Accumulator> {
 
 impl<A: Accumulator> IngredientImpl<A> {
     /// Find the accumulator ingredient for `A` in the database, if any.
-    pub fn from_db<Db>(db: &Db) -> Option<&Self>
-    where
-        Db: ?Sized + Database,
-    {
-        let zalsa = db.zalsa();
+    pub fn from_zalsa(zalsa: &Zalsa) -> Option<&Self> {
         let index = zalsa.add_or_lookup_jar_by_type::<JarImpl<A>>();
         let ingredient = zalsa.lookup_ingredient(index).assert_type::<Self>();
         Some(ingredient)
@@ -79,8 +75,7 @@ impl<A: Accumulator> IngredientImpl<A> {
         }
     }
 
-    pub fn push(&self, db: &dyn Database, value: A) {
-        let zalsa_local = db.zalsa_local();
+    pub fn push(&self, zalsa_local: &ZalsaLocal, value: A) {
         if let Err(()) = zalsa_local.accumulate(self.index, value) {
             panic!("cannot accumulate values outside of an active tracked function");
         }

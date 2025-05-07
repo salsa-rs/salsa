@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
-use crate::Database;
+use crate::zalsa::Zalsa;
 
 /// The `Id` of a salsa struct in the database [`Table`](`crate::table::Table`).
 ///
@@ -85,12 +85,12 @@ impl FromId for Id {
 /// Enums cannot use [`FromId`] because they need access to the DB to tell the `TypeId` of the variant,
 /// so they use this trait instead, that has a blanket implementation for `FromId`.
 pub trait FromIdWithDb {
-    fn from_id(id: Id, db: &(impl ?Sized + Database)) -> Self;
+    fn from_id(id: Id, zalsa: &Zalsa) -> Self;
 }
 
 impl<T: FromId> FromIdWithDb for T {
     #[inline]
-    fn from_id(id: Id, _db: &(impl ?Sized + Database)) -> Self {
+    fn from_id(id: Id, _zalsa: &Zalsa) -> Self {
         FromId::from_id(id)
     }
 }

@@ -1,11 +1,28 @@
+use tracing::Level;
+
 use crate::storage::HasStorage;
-use crate::{Database, Event, Storage};
+use crate::{Database, Storage};
 
 /// Default database implementation that you can use if you don't
 /// require any custom user data.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct DatabaseImpl {
     storage: Storage<Self>,
+}
+
+impl Default for DatabaseImpl {
+    fn default() -> Self {
+        Self {
+            // Default behavior: tracing debug log the event.
+            storage: Storage::new(if tracing::enabled!(Level::DEBUG) {
+                Some(Box::new(|event| {
+                    tracing::debug!("salsa_event({:?})", event)
+                }))
+            } else {
+                None
+            }),
+        }
+    }
 }
 
 impl DatabaseImpl {
@@ -19,13 +36,7 @@ impl DatabaseImpl {
     }
 }
 
-impl Database for DatabaseImpl {
-    /// Default behavior: tracing debug log the event.
-    #[inline(always)]
-    fn salsa_event(&self, event: &dyn Fn() -> Event) {
-        tracing::debug!("salsa_event({:?})", event());
-    }
-}
+impl Database for DatabaseImpl {}
 
 // SAFETY: The `storage` and `storage_mut` fields return a reference to the same storage field owned by `self`.
 unsafe impl HasStorage for DatabaseImpl {

@@ -4,9 +4,9 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::loom::sync::atomic::AtomicBool;
 use crate::revision::AtomicRevision;
 use crate::tracked_struct::TrackedStructInDb;
-use crate::zalsa::ZalsaDatabase;
+use crate::zalsa::{Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryOrigin, QueryRevisions};
-use crate::{AsDynDatabase as _, Database, DatabaseKeyIndex, Id};
+use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -37,7 +37,7 @@ where
         // * Q4 invokes Q2 and then Q1
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
-        let database_key_index = <C::Input<'db>>::database_key_index(db.as_dyn_database(), key);
+        let database_key_index = <C::Input<'db>>::database_key_index(zalsa, key);
         if !zalsa_local.is_output_of_active_query(database_key_index) {
             panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
@@ -61,7 +61,7 @@ where
         // - a result that is verified in the current revision, because it was set, which will use the set value
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
 
-        let revision = db.zalsa().current_revision();
+        let revision = zalsa.current_revision();
         let mut revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
@@ -76,7 +76,7 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
             self.backdate_if_appropriate(old_memo, database_key_index, &mut revisions, &value);
-            self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
+            self.diff_outputs(zalsa, database_key_index, old_memo, &mut revisions);
         }
 
         let memo = Memo {
@@ -103,11 +103,10 @@ where
     /// it would have specified `key` again.
     pub(super) fn validate_specified_value(
         &self,
-        db: &dyn Database,
+        zalsa: &Zalsa,
         executor: DatabaseKeyIndex,
         key: Id,
     ) {
-        let zalsa = db.zalsa();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
         let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
@@ -126,7 +125,7 @@ where
         }
 
         let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(db, zalsa.current_revision(), database_key_index);
+        memo.mark_as_verified(zalsa, zalsa.current_revision(), database_key_index);
         memo.revisions
             .accumulated_inputs
             .store(InputAccumulatedValues::Empty);

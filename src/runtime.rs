@@ -5,7 +5,7 @@ use crate::loom::sync::atomic::{AtomicBool, Ordering};
 use crate::loom::sync::{AtomicMut, Mutex};
 use crate::loom::thread::{self, ThreadId};
 use crate::table::Table;
-use crate::{Cancelled, Database, Event, EventKind, Revision};
+use crate::{Cancelled, Event, EventKind, Revision};
 
 mod dependency_graph;
 
@@ -167,7 +167,7 @@ impl Runtime {
     /// cancelled, so this function will panic with a `Cancelled` value.
     pub(crate) fn block_on<QueryMutexGuard>(
         &self,
-        db: &(impl Database + ?Sized),
+        zalsa: &crate::zalsa::Zalsa,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
@@ -179,7 +179,7 @@ impl Runtime {
             return BlockResult::Cycle;
         }
 
-        db.salsa_event(&|| {
+        zalsa.event(&|| {
             Event::new(EventKind::WillBlockOn {
                 other_thread_id: other_id,
                 database_key,

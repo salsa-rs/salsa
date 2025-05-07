@@ -91,15 +91,18 @@ macro_rules! setup_input_struct {
             }
 
             impl $Configuration {
+                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<Self> {
+                    Self::ingredient_(db.zalsa())
+                }
+
                 // Suppress the lint against `cfg(loom)`.
                 #[allow(unexpected_cfgs)]
-                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<Self> {
+                fn ingredient_(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
                     zalsa_::__maybe_lazy_static! {
                         static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                             $zalsa::IngredientCache::new();
                     }
 
-                    let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
                         zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
@@ -184,7 +187,7 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = $Configuration::ingredient(db.as_dyn_database()).field(
+                        let fields = $Configuration::ingredient_(db.zalsa()).field(
                             db.as_dyn_database(),
                             self,
                             $field_index,
@@ -221,7 +224,8 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + salsa::Database,
                     {
-                        $Configuration::ingredient(db.as_dyn_database()).get_singleton_input(db)
+                        let zalsa = db.zalsa();
+                        $Configuration::ingredient_(zalsa).get_singleton_input(zalsa)
                     }
 
                     #[track_caller]
@@ -271,8 +275,9 @@ macro_rules! setup_input_struct {
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + salsa::Database
                 {
-                    let current_revision = $zalsa::current_revision(db);
-                    let ingredient = $Configuration::ingredient(db.as_dyn_database());
+                    let zalsa = db.zalsa();
+                    let current_revision = zalsa.current_revision();
+                    let ingredient = $Configuration::ingredient_(zalsa);
                     let (fields, stamps) = builder::builder_into_inner(self, current_revision);
                     ingredient.new_input(db.as_dyn_database(), fields, stamps)
                 }

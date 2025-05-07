@@ -36,37 +36,32 @@ impl DatabaseKeyIndex {
     pub(crate) fn maybe_changed_after(
         &self,
         db: &dyn Database,
+        zalsa: &Zalsa,
         last_verified_at: crate::Revision,
         in_cycle: bool,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {
-            db.zalsa()
+            zalsa
                 .lookup_ingredient(self.ingredient_index)
                 .maybe_changed_after(db, self.key_index, last_verified_at, in_cycle)
         }
     }
 
-    pub(crate) fn remove_stale_output(
-        &self,
-        zalsa: &Zalsa,
-        db: &dyn Database,
-        executor: DatabaseKeyIndex,
-    ) {
+    pub(crate) fn remove_stale_output(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
         zalsa
             .lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, self.key_index)
+            .remove_stale_output(zalsa, executor, self.key_index)
     }
 
     pub(crate) fn mark_validated_output(
         &self,
         zalsa: &Zalsa,
-        db: &dyn Database,
         database_key_index: DatabaseKeyIndex,
     ) {
         zalsa
             .lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(db, database_key_index, self.key_index)
+            .mark_validated_output(zalsa, database_key_index, self.key_index)
     }
 }
 

@@ -143,7 +143,6 @@ impl<V> Memo<V> {
     #[inline(always)]
     pub(super) fn provisional_retry(
         &self,
-        db: &(impl crate::Database + ?Sized),
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
@@ -153,30 +152,23 @@ impl<V> Memo<V> {
         if self.revisions.cycle_heads.is_empty() {
             return false;
         }
-        return provisional_retry_cold(
-            db.as_dyn_database(),
-            zalsa,
-            database_key_index,
-            &self.revisions.cycle_heads,
-        );
+        return provisional_retry_cold(zalsa, database_key_index, &self.revisions.cycle_heads);
 
         #[inline(never)]
         fn provisional_retry_cold(
-            db: &dyn crate::Database,
             zalsa: &Zalsa,
             database_key_index: DatabaseKeyIndex,
             cycle_heads: &CycleHeads,
         ) -> bool {
             let mut retry = false;
 
-            let db = db.as_dyn_database();
             let hit_cycle = cycle_heads
                 .into_iter()
                 .filter(|&head| head.database_key_index != database_key_index)
                 .any(|head| {
                     let head_index = head.database_key_index;
                     let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
-                    let cycle_head_kind = ingredient.cycle_head_kind(db, head_index.key_index());
+                    let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
                     if matches!(
                         cycle_head_kind,
                         CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
@@ -185,7 +177,7 @@ impl<V> Memo<V> {
                         // keep looping through cycle heads.
                         retry = true;
                         false
-                    } else if ingredient.wait_for(db, head_index.key_index()) {
+                    } else if ingredient.wait_for(zalsa, head_index.key_index()) {
                         // There's a new memo available for the cycle head; fetch our own
                         // updated memo and see if it's still provisional or if the cycle
                         // has resolved.
@@ -224,16 +216,16 @@ impl<V> Memo<V> {
 
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
-    /// The caller is responsible to update the memo's `accumulated` state if heir accumulated
+    /// The caller is responsible to update the memo's `accumulated` state if their accumulated
     /// values have changed since.
     #[inline]
-    pub(super) fn mark_as_verified<Db: ?Sized + crate::Database>(
+    pub(super) fn mark_as_verified(
         &self,
-        db: &Db,
+        zalsa: &Zalsa,
         revision_now: Revision,
         database_key_index: DatabaseKeyIndex,
     ) {
-        db.salsa_event(&|| {
+        zalsa.event(&|| {
             Event::new(EventKind::DidValidateMemoizedValue {
                 database_key: database_key_index,
             })
@@ -245,11 +237,10 @@ impl<V> Memo<V> {
     pub(super) fn mark_outputs_as_verified(
         &self,
         zalsa: &Zalsa,
-        db: &dyn crate::Database,
         database_key_index: DatabaseKeyIndex,
     ) {
         for output in self.revisions.origin.outputs() {
-            output.mark_validated_output(zalsa, db, database_key_index);
+            output.mark_validated_output(zalsa, database_key_index);
         }
     }
 

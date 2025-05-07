@@ -2,7 +2,7 @@
 mod common;
 use common::{HasLogger, LogDatabase, Logger};
 use expect_test::expect;
-use salsa::Setter;
+use salsa::{Setter, Storage};
 
 #[salsa::tracked]
 struct Output<'db> {
@@ -70,7 +70,7 @@ trait HasOptionInput {
 trait Db: HasOptionInput + salsa::Database {}
 
 #[salsa::db]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
@@ -80,6 +80,29 @@ struct Database {
 impl HasLogger for Database {
     fn logger(&self) -> &Logger {
         &self.logger
+    }
+}
+
+impl Default for Database {
+    fn default() -> Self {
+        let logger = Logger::default();
+        Self {
+            storage: Storage::new(Some(Box::new({
+                let logger = logger.clone();
+                move |event| match event.kind {
+                    salsa::EventKind::WillExecute { .. }
+                    | salsa::EventKind::DidValidateMemoizedValue { .. } => {
+                        logger.push_log(format!("salsa_event({:?})", event.kind));
+                    }
+                    salsa::EventKind::WillCheckCancellation => {}
+                    _ => {
+                        logger.push_log(format!("salsa_event({:?})", event.kind));
+                    }
+                }
+            }))),
+            logger,
+            input: Default::default(),
+        }
     }
 }
 
@@ -94,21 +117,7 @@ impl HasOptionInput for Database {
 }
 
 #[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        let event = event();
-        match event.kind {
-            salsa::EventKind::WillExecute { .. }
-            | salsa::EventKind::DidValidateMemoizedValue { .. } => {
-                self.push_log(format!("salsa_event({:?})", event.kind));
-            }
-            salsa::EventKind::WillCheckCancellation => {}
-            _ => {
-                self.push_log(format!("salsa_event({:?})", event.kind));
-            }
-        }
-    }
-}
+impl salsa::Database for Database {}
 
 #[salsa::db]
 impl Db for Database {}
