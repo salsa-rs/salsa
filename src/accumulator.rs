@@ -7,6 +7,7 @@ use std::panic::UnwindSafe;
 
 use accumulated::{Accumulated, AnyAccumulated};
 
+use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::ingredient::{Ingredient, Jar};
 use crate::loom::sync::Arc;
@@ -105,7 +106,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: &dyn Database,
         _input: Id,
         _revision: Revision,
-        _in_cycle: bool,
+        _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
     }

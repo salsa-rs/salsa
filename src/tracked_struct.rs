@@ -10,6 +10,7 @@ use std::{fmt, mem};
 use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
 
+use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
@@ -761,7 +762,7 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
-        _in_cycle: bool,
+        _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = Self::data(zalsa.table(), input);

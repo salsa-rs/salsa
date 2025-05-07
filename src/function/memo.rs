@@ -219,19 +219,14 @@ impl<V> Memo<V> {
     /// The caller is responsible to update the memo's `accumulated` state if their accumulated
     /// values have changed since.
     #[inline]
-    pub(super) fn mark_as_verified(
-        &self,
-        zalsa: &Zalsa,
-        revision_now: Revision,
-        database_key_index: DatabaseKeyIndex,
-    ) {
+    pub(super) fn mark_as_verified(&self, zalsa: &Zalsa, database_key_index: DatabaseKeyIndex) {
         zalsa.event(&|| {
             Event::new(EventKind::DidValidateMemoizedValue {
                 database_key: database_key_index,
             })
         });
 
-        self.verified_at.store(revision_now);
+        self.verified_at.store(zalsa.current_revision());
     }
 
     pub(super) fn mark_outputs_as_verified(

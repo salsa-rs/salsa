@@ -125,7 +125,7 @@ where
         }
 
         let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(zalsa, zalsa.current_revision(), database_key_index);
+        memo.mark_as_verified(zalsa, database_key_index);
         memo.revisions
             .accumulated_inputs
             .store(InputAccumulatedValues::Empty);

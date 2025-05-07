@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 use std::fmt;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleHeadKind, CycleRecoveryStrategy};
+use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
 use crate::function::VerifyResult;
 use crate::loom::sync::Arc;
 use crate::plumbing::IngredientIndices;
@@ -63,7 +63,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         input: Id,
         revision: Revision,
-        in_cycle: bool,
+        cycle_heads: &mut CycleHeads,
     ) -> VerifyResult;
 
     /// Is the value for `input` in this ingredient a cycle head that is still provisional?

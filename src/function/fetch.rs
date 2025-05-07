@@ -176,9 +176,14 @@ where
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
-                if let VerifyResult::Unchanged(_, cycle_heads) =
-                    self.deep_verify_memo(db, zalsa, old_memo, self.database_key_index(id))
-                {
+                let mut cycle_heads = CycleHeads::default();
+                if let VerifyResult::Unchanged(_) = self.deep_verify_memo(
+                    db,
+                    zalsa,
+                    old_memo,
+                    self.database_key_index(id),
+                    &mut cycle_heads,
+                ) {
                     if cycle_heads.is_empty() {
                         // SAFETY: memo is present in memo_map and we have verified that it is
                         // still valid for the current revision.

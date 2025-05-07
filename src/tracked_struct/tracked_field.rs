@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::ingredient::Ingredient;
 use crate::loom::sync::Arc;
@@ -59,7 +60,7 @@ where
         db: &'db dyn Database,
         input: Id,
         revision: crate::Revision,
-        _in_cycle: bool,
+        _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
