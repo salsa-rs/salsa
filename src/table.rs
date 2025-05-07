@@ -46,10 +46,16 @@ pub(crate) trait Slot: Any + Send + Sync {
 ///
 /// This is only really necessary when running under `loom`, as loom's cell primitives
 /// are not `repr(transparent)` over their inner type.
+///
+/// # Safety
+///
+/// - The slot must be initialized and valid for reads.
+/// - The safety pre-condition of `T::memos` must be satisfied.
 unsafe fn memos_raw<T>(data: &UnsafeCell<MaybeUninit<T>>, current_revision: Revision) -> &MemoTable
 where
     T: Slot,
 {
+    // SAFETY: Guaranteed by caller.
     unsafe {
         data.with(|ptr| (*ptr).assume_init_ref())
             .memos(current_revision)
@@ -60,10 +66,15 @@ where
 ///
 /// This is only really necessary when running under `loom`, as loom's cell primitives
 /// are not `repr(transparent)` over their inner type.
-fn memos_mut_raw<T>(data: &mut UnsafeCell<MaybeUninit<T>>) -> &mut MemoTable
+///
+/// # Safety
+///
+/// The slot must be initialized and valid for writes.
+unsafe fn memos_mut_raw<T>(data: &mut UnsafeCell<MaybeUninit<T>>) -> &mut MemoTable
 where
     T: Slot,
 {
+    // SAFETY: Guaranteed by caller.
     data.with_mut(|ptr| unsafe { (*ptr).assume_init_mut() })
         .memos_mut()
 }
@@ -77,7 +88,7 @@ type SlotMemosFn<T> =
 /// [Slot::memos_mut]
 type SlotMemosMutFnRaw = unsafe fn(*mut ()) -> *mut MemoTable;
 /// [Slot::memos_mut]
-type SlotMemosMutFn<T> = fn(&mut UnsafeCell<MaybeUninit<T>>) -> &mut MemoTable;
+type SlotMemosMutFn<T> = unsafe fn(&mut UnsafeCell<MaybeUninit<T>>) -> &mut MemoTable;
 
 struct SlotVTable {
     layout: Layout,
@@ -208,6 +219,7 @@ impl Table {
     /// If `id` is out of bounds or the does not have the type `T`.
     pub(crate) fn get<T: Slot>(&self, id: Id) -> &T {
         self.get_raw(id)
+            // SAFETY: Guaranteed by caller.
             .with(|ptr| unsafe { (*ptr).assume_init_ref() })
     }
 
