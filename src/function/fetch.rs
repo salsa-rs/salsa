@@ -75,10 +75,10 @@ where
 
         let database_key_index = self.database_key_index(id);
 
-        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo)?;
+        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
 
-        if !memo.may_be_provisional() {
-            self.update_shallow(zalsa, database_key_index, memo, shallow_update);
+        if can_shallow_update.yes() && !memo.may_be_provisional() {
+            self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.
@@ -109,10 +109,15 @@ where
                     if memo.value.is_some()
                         && memo.revisions.cycle_heads.contains(&database_key_index)
                     {
-                        if let Some(shallow_update) =
-                            self.shallow_verify_memo(zalsa, database_key_index, memo)
-                        {
-                            self.update_shallow(zalsa, database_key_index, memo, shallow_update);
+                        let can_shallow_update =
+                            self.shallow_verify_memo(zalsa, database_key_index, memo);
+                        if can_shallow_update.yes() {
+                            self.update_shallow(
+                                zalsa,
+                                database_key_index,
+                                memo,
+                                can_shallow_update,
+                            );
                             // SAFETY: memo is present in memo_map.
                             return unsafe { Some(self.extend_memo_lifetime(memo)) };
                         }

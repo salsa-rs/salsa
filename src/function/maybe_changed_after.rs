@@ -90,20 +90,18 @@ where
                 return VerifyResult::changed();
             };
 
-            if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
-            {
-                if !memo.may_be_provisional() {
-                    self.update_shallow(zalsa, database_key_index, memo, shallow_update);
+            let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
+            if can_shallow_update.yes() && !memo.may_be_provisional() {
+                self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
 
-                    return if memo.revisions.changed_at > revision {
-                        VerifyResult::changed()
-                    } else {
-                        VerifyResult::Unchanged(
-                            memo.revisions.accumulated_inputs.load(),
-                            CycleHeads::default(),
-                        )
-                    };
-                }
+                return if memo.revisions.changed_at > revision {
+                    VerifyResult::changed()
+                } else {
+                    VerifyResult::Unchanged(
+                        memo.revisions.accumulated_inputs.load(),
+                        CycleHeads::default(),
+                    )
+                };
             }
 
             if let Some(mcs) = self.maybe_changed_after_cold(
@@ -228,7 +226,7 @@ where
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
-    ) -> Option<ShallowUpdate> {
+    ) -> ShallowUpdate {
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
@@ -238,7 +236,7 @@ where
 
         if verified_at == revision_now {
             // Already verified.
-            return Some(ShallowUpdate::Verified);
+            return ShallowUpdate::Verified;
         }
 
         let last_changed = zalsa.last_changed_revision(memo.revisions.durability);
@@ -251,9 +249,9 @@ where
         );
         if last_changed <= verified_at {
             // No input of the suitable durability has changed since last verified.
-            Some(ShallowUpdate::HigherDurability(revision_now))
+            ShallowUpdate::HigherDurability(revision_now)
         } else {
-            None
+            ShallowUpdate::No
         }
     }
 
@@ -383,19 +381,18 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
-        let shallow_update_possible = shallow_update.is_some();
-        if let Some(shallow_update) = shallow_update {
-            if self.validate_may_be_provisional(
+        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+        if can_shallow_update.yes()
+            && self.validate_may_be_provisional(
                 zalsa,
                 db.zalsa_local(),
                 database_key_index,
                 old_memo,
-            ) {
-                self.update_shallow(zalsa, database_key_index, old_memo, shallow_update);
+            )
+        {
+            self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
 
-                return VerifyResult::unchanged();
-            }
+            return VerifyResult::unchanged();
         }
 
         match &old_memo.revisions.origin {
@@ -430,7 +427,7 @@ where
 
                 // If the value is from the same revision but is still provisional, consider it changed
                 // because we're now in a new iteration.
-                if shallow_update_possible && is_provisional {
+                if can_shallow_update.yes() && is_provisional {
                     return VerifyResult::changed();
                 }
 
@@ -550,4 +547,16 @@ pub(super) enum ShallowUpdate {
     /// The revision for the memo's durability hasn't changed. It can be marked as verified
     /// in this revision.
     HigherDurability(Revision),
+
+    /// The memo requires a deep verification.
+    No,
+}
+
+impl ShallowUpdate {
+    pub(super) fn yes(&self) -> bool {
+        matches!(
+            self,
+            ShallowUpdate::Verified | ShallowUpdate::HigherDurability(_)
+        )
+    }
 }
