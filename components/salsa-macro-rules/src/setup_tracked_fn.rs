@@ -213,7 +213,7 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
-                fn cycle_initial<$db_lt>(db: &$db_lt dyn $Db, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
+                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
                     $($cycle_recovery_initial)*(db, $($input_id),*)
                 }
 
@@ -231,7 +231,7 @@ macro_rules! setup_tracked_fn {
                         if $needs_interner {
                             $Configuration::intern_ingredient(db).data(db.as_dyn_database(), key).clone()
                         } else {
-                            $zalsa::FromIdWithDb::from_id(key, db)
+                            $zalsa::FromIdWithDb::from_id(key, db.zalsa())
                         }
                     }
                 }

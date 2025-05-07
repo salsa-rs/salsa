@@ -13,7 +13,7 @@ where
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &'db C::Output<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
-        zalsa.unwind_if_revision_cancelled(db);
+        zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let memo = self.refresh_memo(db, zalsa, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
@@ -43,7 +43,7 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         loop {
             if let Some(memo) = self
-                .fetch_hot(zalsa, db, id, memo_ingredient_index)
+                .fetch_hot(zalsa, id, memo_ingredient_index)
                 .or_else(|| self.fetch_cold(zalsa, db, id, memo_ingredient_index))
             {
                 // If we get back a provisional cycle memo, and it's provisional on any cycle heads
@@ -54,7 +54,7 @@ where
                 // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
                 // never have provisional entries.
                 if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-                    || !memo.provisional_retry(db, zalsa, self.database_key_index(id))
+                    || !memo.provisional_retry(zalsa, self.database_key_index(id))
                 {
                     return memo;
                 }
@@ -66,7 +66,6 @@ where
     fn fetch_hot<'db>(
         &'db self,
         zalsa: &'db Zalsa,
-        db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
@@ -76,10 +75,10 @@ where
 
         let database_key_index = self.database_key_index(id);
 
-        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo)?;
+        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
 
-        if !memo.may_be_provisional() {
-            self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
+        if can_shallow_update.yes() && !memo.may_be_provisional() {
+            self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.
@@ -98,7 +97,7 @@ where
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = match self.sync_table.try_claim(db, zalsa, id) {
+        let _claim_guard = match self.sync_table.try_claim(zalsa, id) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => {
                 let database_key_index = self.database_key_index(id);
@@ -110,15 +109,14 @@ where
                     if memo.value.is_some()
                         && memo.revisions.cycle_heads.contains(&database_key_index)
                     {
-                        if let Some(shallow_update) =
-                            self.shallow_verify_memo(zalsa, database_key_index, memo)
-                        {
+                        let can_shallow_update =
+                            self.shallow_verify_memo(zalsa, database_key_index, memo);
+                        if can_shallow_update.yes() {
                             self.update_shallow(
-                                db,
                                 zalsa,
                                 database_key_index,
                                 memo,
-                                shallow_update,
+                                can_shallow_update,
                             );
                             // SAFETY: memo is present in memo_map.
                             return unsafe { Some(self.extend_memo_lifetime(memo)) };

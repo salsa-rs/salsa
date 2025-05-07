@@ -138,7 +138,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
 
 pub trait TrackedStructInDb: SalsaStructInDb {
     /// Converts the identifier for this tracked struct into a `DatabaseKeyIndex`.
-    fn database_key_index(db: &dyn Database, id: Id) -> DatabaseKeyIndex;
+    fn database_key_index(zalsa: &Zalsa, id: Id) -> DatabaseKeyIndex;
 }
 
 /// Created for each tracked struct.
@@ -598,14 +598,13 @@ where
     /// Using this method on an entity id that MAY be used in the current revision will lead to
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
-    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
-        db.salsa_event(&|| {
+    pub(crate) fn delete_entity(&self, zalsa: &Zalsa, id: Id) {
+        zalsa.event(&|| {
             Event::new(crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
             })
         });
 
-        let zalsa = db.zalsa();
         let current_revision = zalsa.current_revision();
         let data_raw = Self::data_raw(zalsa.table(), id);
 
@@ -657,10 +656,10 @@ where
 
                 let executor = DatabaseKeyIndex::new(ingredient_index, id);
 
-                db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
+                zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
                 for stale_output in memo.origin().outputs() {
-                    stale_output.remove_stale_output(zalsa, db, executor);
+                    stale_output.remove_stale_output(zalsa, executor);
                 }
             })
         };
@@ -770,13 +769,9 @@ where
         VerifyResult::changed_if(data.created_at > revision)
     }
 
-    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        true
-    }
-
-    fn mark_validated_output<'db>(
-        &'db self,
-        _db: &'db dyn Database,
+    fn mark_validated_output(
+        &self,
+        _zalsa: &Zalsa,
         _executor: DatabaseKeyIndex,
         _output_key: crate::Id,
     ) {
@@ -787,7 +782,7 @@ where
 
     fn remove_stale_output(
         &self,
-        db: &dyn Database,
+        zalsa: &Zalsa,
         _executor: DatabaseKeyIndex,
         stale_output_key: crate::Id,
     ) {
@@ -795,7 +790,7 @@ where
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db, stale_output_key);
+        self.delete_entity(zalsa, stale_output_key);
     }
 
     fn debug_name(&self) -> &'static str {

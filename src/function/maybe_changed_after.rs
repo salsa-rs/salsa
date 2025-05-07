@@ -5,6 +5,7 @@ use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::loom::sync::atomic::Ordering;
+use crate::plumbing::ZalsaLocal;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdge, QueryOrigin};
 use crate::{AsDynDatabase as _, Id, Revision};
@@ -73,9 +74,9 @@ where
         revision: Revision,
         in_cycle: bool,
     ) -> VerifyResult {
-        let zalsa = db.zalsa();
+        let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
-        zalsa.unwind_if_revision_cancelled(db);
+        zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         loop {
             let database_key_index = self.database_key_index(id);
@@ -89,20 +90,18 @@ where
                 return VerifyResult::changed();
             };
 
-            if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
-            {
-                if !memo.may_be_provisional() {
-                    self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
+            let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
+            if can_shallow_update.yes() && !memo.may_be_provisional() {
+                self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
 
-                    return if memo.revisions.changed_at > revision {
-                        VerifyResult::changed()
-                    } else {
-                        VerifyResult::Unchanged(
-                            memo.revisions.accumulated_inputs.load(),
-                            CycleHeads::default(),
-                        )
-                    };
-                }
+                return if memo.revisions.changed_at > revision {
+                    VerifyResult::changed()
+                } else {
+                    VerifyResult::Unchanged(
+                        memo.revisions.accumulated_inputs.load(),
+                        CycleHeads::default(),
+                    )
+                };
             }
 
             if let Some(mcs) = self.maybe_changed_after_cold(
@@ -132,7 +131,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = match self.sync_table.try_claim(db, zalsa, key_index) {
+        let _claim_guard = match self.sync_table.try_claim(zalsa, key_index) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
                 CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
@@ -227,7 +226,7 @@ where
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
-    ) -> Option<ShallowUpdate> {
+    ) -> ShallowUpdate {
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
@@ -237,7 +236,7 @@ where
 
         if verified_at == revision_now {
             // Already verified.
-            return Some(ShallowUpdate::Verified);
+            return ShallowUpdate::Verified;
         }
 
         let last_changed = zalsa.last_changed_revision(memo.revisions.durability);
@@ -250,24 +249,23 @@ where
         );
         if last_changed <= verified_at {
             // No input of the suitable durability has changed since last verified.
-            Some(ShallowUpdate::HigherDurability(revision_now))
+            ShallowUpdate::HigherDurability(revision_now)
         } else {
-            None
+            ShallowUpdate::No
         }
     }
 
     #[inline]
     pub(super) fn update_shallow(
         &self,
-        db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
         update: ShallowUpdate,
     ) {
         if let ShallowUpdate::HigherDurability(revision_now) = update {
-            memo.mark_as_verified(db, revision_now, database_key_index);
-            memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
+            memo.mark_as_verified(zalsa, revision_now, database_key_index);
+            memo.mark_outputs_as_verified(zalsa, database_key_index);
         }
     }
 
@@ -279,14 +277,14 @@ where
     #[inline]
     pub(super) fn validate_may_be_provisional(
         &self,
-        db: &C::DbView,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
         !memo.may_be_provisional()
-            || self.validate_provisional(db, zalsa, database_key_index, memo)
-            || self.validate_same_iteration(db, database_key_index, memo)
+            || self.validate_provisional(zalsa, database_key_index, memo)
+            || self.validate_same_iteration(zalsa_local, database_key_index, memo)
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
@@ -294,7 +292,6 @@ where
     #[inline]
     fn validate_provisional(
         &self,
-        db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
@@ -306,10 +303,7 @@ where
         for cycle_head in &memo.revisions.cycle_heads {
             let kind = zalsa
                 .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-                .cycle_head_kind(
-                    db.as_dyn_database(),
-                    cycle_head.database_key_index.key_index(),
-                );
+                .cycle_head_kind(zalsa, cycle_head.database_key_index.key_index());
             match kind {
                 CycleHeadKind::Provisional => return false,
                 CycleHeadKind::NotProvisional => {
@@ -343,7 +337,7 @@ where
     /// runaway re-execution of the same queries within a fixpoint iteration.
     pub(super) fn validate_same_iteration(
         &self,
-        db: &C::DbView,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
@@ -358,7 +352,7 @@ where
 
         let cycle_heads = &memo.revisions.cycle_heads;
 
-        db.zalsa_local().with_query_stack(|stack| {
+        zalsa_local.with_query_stack(|stack| {
             cycle_heads.iter().all(|cycle_head| {
                 stack.iter().rev().any(|query| {
                     query.database_key_index == cycle_head.database_key_index
@@ -387,14 +381,18 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
-        let shallow_update_possible = shallow_update.is_some();
-        if let Some(shallow_update) = shallow_update {
-            if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo) {
-                self.update_shallow(db, zalsa, database_key_index, old_memo, shallow_update);
+        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+        if can_shallow_update.yes()
+            && self.validate_may_be_provisional(
+                zalsa,
+                db.zalsa_local(),
+                database_key_index,
+                old_memo,
+            )
+        {
+            self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
 
-                return VerifyResult::unchanged();
-            }
+            return VerifyResult::unchanged();
         }
 
         match &old_memo.revisions.origin {
@@ -429,7 +427,7 @@ where
 
                 // If the value is from the same revision but is still provisional, consider it changed
                 // because we're now in a new iteration.
-                if shallow_update_possible && is_provisional {
+                if can_shallow_update.yes() && is_provisional {
                     return VerifyResult::changed();
                 }
 
@@ -449,6 +447,7 @@ where
                             QueryEdge::Input(dependency_index) => {
                                 match dependency_index.maybe_changed_after(
                                     dyn_db,
+                                    zalsa,
                                     last_verified_at,
                                     !cycle_heads.is_empty(),
                                 ) {
@@ -481,11 +480,7 @@ where
                                 // by this function cannot be read until this function is marked green,
                                 // so even if we mark them as valid here, the function will re-execute
                                 // and overwrite the contents.
-                                dependency_index.mark_validated_output(
-                                    zalsa,
-                                    dyn_db,
-                                    database_key_index,
-                                );
+                                dependency_index.mark_validated_output(zalsa, database_key_index);
                             }
                         }
                     }
@@ -519,7 +514,11 @@ where
                     let in_heads = cycle_heads.remove(&database_key_index);
 
                     if cycle_heads.is_empty() {
-                        old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index);
+                        old_memo.mark_as_verified(
+                            zalsa,
+                            zalsa.current_revision(),
+                            database_key_index,
+                        );
                         old_memo.revisions.accumulated_inputs.store(inputs);
 
                         if is_provisional {
@@ -548,4 +547,16 @@ pub(super) enum ShallowUpdate {
     /// The revision for the memo's durability hasn't changed. It can be marked as verified
     /// in this revision.
     HigherDurability(Revision),
+
+    /// The memo requires a deep verification.
+    No,
+}
+
+impl ShallowUpdate {
+    pub(super) fn yes(&self) -> bool {
+        matches!(
+            self,
+            ShallowUpdate::Verified | ShallowUpdate::HigherDurability(_)
+        )
+    }
 }

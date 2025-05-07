@@ -4,7 +4,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::loom::sync::atomic::{AtomicBool, Ordering};
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
-use crate::{Database, Event, EventKind, Id, Revision};
+use crate::{Event, EventKind, Id, Revision};
 
 impl<C> IngredientImpl<C>
 where
@@ -30,14 +30,13 @@ where
         let id = database_key_index.key_index();
 
         tracing::info!("{:?}: executing query", database_key_index);
+        let zalsa = db.zalsa();
 
-        db.salsa_event(&|| {
+        zalsa.event(&|| {
             Event::new(EventKind::WillExecute {
                 database_key: database_key_index,
             })
         });
-
-        let zalsa = db.zalsa();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         let (new_value, mut revisions) = match C::CYCLE_STRATEGY {
@@ -104,7 +103,7 @@ where
 
             // Diff the new outputs with the old, to discard any no-longer-emitted
             // outputs and update the tracked struct IDs for seeding the next revision.
-            self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
+            self.diff_outputs(zalsa, database_key_index, old_memo, &mut revisions);
         }
         self.insert_memo(
             zalsa,
@@ -209,7 +208,7 @@ where
                     if iteration_count > MAX_ITERATIONS {
                         panic!("{database_key_index:?}: execute: too many cycle iterations");
                     }
-                    db.salsa_event(&|| {
+                    zalsa.event(&|| {
                         Event::new(EventKind::WillIterateCycle {
                             database_key: database_key_index,
                             iteration_count,

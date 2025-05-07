@@ -149,6 +149,8 @@ pub struct Zalsa {
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
+
+    event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
@@ -159,7 +161,9 @@ pub struct Zalsa {
 impl RefUnwindSafe for Zalsa {}
 
 impl Zalsa {
-    pub(crate) fn new<Db: Database>() -> Self {
+    pub(crate) fn new<Db: Database>(
+        event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+    ) -> Self {
         Self {
             views_of: Views::new::<Db>(),
             nonce: NONCE.nonce(),
@@ -169,6 +173,7 @@ impl Zalsa {
             ingredients_requiring_reset: boxcar::Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
+            event_callback,
         }
     }
 
@@ -224,10 +229,10 @@ impl Zalsa {
     /// Cancellation will automatically be triggered by salsa on any query
     /// invocation.
     #[inline]
-    pub(crate) fn unwind_if_revision_cancelled(&self, db: &(impl Database + ?Sized)) {
-        db.salsa_event(&|| crate::Event::new(crate::EventKind::WillCheckCancellation));
+    pub(crate) fn unwind_if_revision_cancelled(&self, zalsa_local: &ZalsaLocal) {
+        self.event(&|| crate::Event::new(crate::EventKind::WillCheckCancellation));
         if self.runtime().load_cancellation_flag() {
-            db.zalsa_local().unwind_cancelled(self.current_revision());
+            zalsa_local.unwind_cancelled(self.current_revision());
         }
     }
 
@@ -381,6 +386,13 @@ impl Zalsa {
     #[inline]
     pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
         self.table().ingredient_index(id)
+    }
+
+    #[inline(always)]
+    pub fn event(&self, event: &dyn Fn() -> crate::Event) {
+        if let Some(event_callback) = &self.event_callback {
+            event_callback(event());
+        }
     }
 }
 

@@ -23,13 +23,12 @@ macro_rules! setup_accumulator_impl {
 
             // Suppress the lint against `cfg(loom)`.
             #[allow(unexpected_cfgs)]
-            fn $ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<$Struct> {
+            fn $ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<$Struct> {
                 $zalsa::__maybe_lazy_static! {
                     static $CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Struct>> =
                         $zalsa::IngredientCache::new();
                 }
 
-                let zalsa = db.zalsa();
                 $CACHE.get_or_create(zalsa, || {
                     zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
                 })
@@ -42,8 +41,8 @@ macro_rules! setup_accumulator_impl {
                 where
                     Db: ?Sized + $zalsa::Database,
                 {
-                    let db = db.as_dyn_database();
-                    $ingredient(db).push(db, self);
+                    let (zalsa, zalsa_local) = db.zalsas();
+                    $ingredient(zalsa).push(zalsa_local, self);
                 }
             }
         };

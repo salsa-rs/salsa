@@ -221,7 +221,7 @@ where
                 // Sync the value's revision.
                 if value.last_interned_at.load() < current_revision {
                     value.last_interned_at.store(current_revision);
-                    db.salsa_event(&|| {
+                    zalsa.event(&|| {
                         Event::new(EventKind::DidReinternValue {
                             key: index,
                             revision: current_revision,
@@ -264,7 +264,7 @@ where
                 // Sync the value's revision.
                 if value.last_interned_at.load() < current_revision {
                     value.last_interned_at.store(current_revision);
-                    db.salsa_event(&|| {
+                    zalsa.event(&|| {
                         Event::new(EventKind::DidReinternValue {
                             key: index,
                             revision: current_revision,
@@ -323,7 +323,7 @@ where
                 let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read_simple(index, durability, value.first_interned_at);
 
-                db.salsa_event(&|| {
+                zalsa.event(&|| {
                     Event::new(EventKind::DidInternValue {
                         key: index,
                         revision: current_revision,
@@ -364,7 +364,8 @@ where
     }
 
     pub fn reset(&mut self, db: &mut dyn Database) {
-        db.zalsa_mut().new_revision();
+        _ = db.zalsa_mut();
+        // We can clear the key_map now that we have cancelled all other handles.
         self.key_map.clear();
     }
 
@@ -412,7 +413,7 @@ where
             value.last_interned_at.load(),
         ));
 
-        db.salsa_event(&|| {
+        zalsa.event(&|| {
             let index = self.database_key_index(input);
 
             Event::new(EventKind::DidReinternValue {

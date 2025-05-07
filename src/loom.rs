@@ -4,12 +4,18 @@ pub use loom::{cell, thread, thread_local};
 /// A helper macro to work around the fact that most loom types are not `const` constructable.
 #[doc(hidden)]
 #[macro_export]
+#[cfg(loom)]
 macro_rules! __maybe_lazy_static {
     (static $name:ident: $t:ty = $init:expr $(;)?) => {
-        #[cfg(loom)]
         loom::lazy_static! { static ref $name: $t = $init; }
-
-        #[cfg(not(loom))]
+    };
+}
+/// A helper macro to work around the fact that most loom types are not `const` constructable.
+#[doc(hidden)]
+#[macro_export]
+#[cfg(not(loom))]
+macro_rules! __maybe_lazy_static {
+    (static $name:ident: $t:ty = $init:expr $(;)?) => {
         static $name: $t = $init;
     };
 }

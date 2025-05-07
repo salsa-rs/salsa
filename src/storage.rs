@@ -36,8 +36,14 @@ impl<Db> Clone for StorageHandle<Db> {
 
 impl<Db: Database> Default for StorageHandle<Db> {
     fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl<Db: Database> StorageHandle<Db> {
+    pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
         Self {
-            zalsa_impl: Arc::new(Zalsa::new::<Db>()),
+            zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback)),
             coordinate: CoordinateDrop(Arc::new(Coordinate {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
@@ -45,9 +51,7 @@ impl<Db: Database> Default for StorageHandle<Db> {
             phantom: PhantomData,
         }
     }
-}
 
-impl<Db> StorageHandle<Db> {
     pub fn into_storage(self) -> Storage<Db> {
         Storage {
             handle: self,
@@ -96,14 +100,21 @@ impl RefUnwindSafe for Coordinate {}
 
 impl<Db: Database> Default for Storage<Db> {
     fn default() -> Self {
-        Self {
-            handle: StorageHandle::default(),
-            zalsa_local: ZalsaLocal::new(),
-        }
+        Self::new(None)
     }
 }
 
 impl<Db: Database> Storage<Db> {
+    /// Create a new database storage.
+    ///
+    /// The `event_callback` function is invoked by the salsa runtime at various points during execution.
+    pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
+        Self {
+            handle: StorageHandle::new(event_callback),
+            zalsa_local: ZalsaLocal::new(),
+        }
+    }
+
     /// Convert this instance of [`Storage`] into a [`StorageHandle`].
     ///
     /// This will discard the local state of this [`Storage`], thereby returning a value that
@@ -131,15 +142,28 @@ impl<Db: Database> Storage<Db> {
     /// same database!
     ///
     /// Needs to be paired with a call to `reset_cancellation_flag`.
-    fn cancel_others(&self, db: &Db) {
+    fn cancel_others(&mut self) -> &mut Zalsa {
+        debug_assert!(
+            self.zalsa_local
+                .try_with_query_stack(|stack| stack.is_empty())
+                == Some(true),
+            "attempted to cancel within query computation, this is a deadlock"
+        );
         self.handle.zalsa_impl.runtime().set_cancellation_flag();
 
-        db.salsa_event(&|| Event::new(EventKind::DidSetCancellationFlag));
+        self.handle
+            .zalsa_impl
+            .event(&|| Event::new(EventKind::DidSetCancellationFlag));
 
         let mut clones = self.handle.coordinate.clones.lock();
         while *clones != 1 {
             clones = self.handle.coordinate.cvar.wait(clones);
         }
+        // The ref count on the `Arc` should now be 1
+        let zalsa = Arc::get_mut(&mut self.handle.zalsa_impl).unwrap();
+        // cancellation is done, so reset the flag
+        zalsa.runtime_mut().reset_cancellation_flag();
+        zalsa
     }
     // ANCHOR_END: cancel_other_workers
 }
@@ -152,14 +176,7 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
     }
 
     fn zalsa_mut(&mut self) -> &mut Zalsa {
-        self.storage().cancel_others(self);
-
-        let storage = self.storage_mut();
-        // The ref count on the `Arc` should now be 1
-        let zalsa = Arc::get_mut(&mut storage.handle.zalsa_impl).unwrap();
-        // cancellation is done, so reset the flag
-        zalsa.runtime_mut().reset_cancellation_flag();
-        zalsa
+        self.storage_mut().cancel_others()
     }
 
     #[inline(always)]

@@ -5,7 +5,7 @@ use crate::loom::sync::Mutex;
 use crate::loom::thread::{self, ThreadId};
 use crate::runtime::{BlockResult, WaitResult};
 use crate::zalsa::Zalsa;
-use crate::{Database, Id, IngredientIndex};
+use crate::{Id, IngredientIndex};
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
@@ -36,12 +36,7 @@ impl SyncTable {
         }
     }
 
-    pub(crate) fn try_claim<'me>(
-        &'me self,
-        db: &'me (impl ?Sized + Database),
-        zalsa: &'me Zalsa,
-        key_index: Id,
-    ) -> ClaimResult<'me> {
+    pub(crate) fn try_claim<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
         match write.entry(key_index) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
@@ -57,7 +52,7 @@ impl SyncTable {
                 // not to gate future atomic reads.
                 *anyone_waiting = true;
                 match zalsa.runtime().block_on(
-                    db,
+                    zalsa,
                     DatabaseKeyIndex::new(self.ingredient, key_index),
                     id,
                     write,

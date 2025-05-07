@@ -31,7 +31,7 @@ where
         // are read from outside of salsa anyway so this is not a big deal.
         zalsa_local.report_untracked_read(zalsa.current_revision());
 
-        let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_db(db) else {
+        let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_zalsa(zalsa) else {
             return vec![];
         };
         let mut output = vec![];
@@ -69,7 +69,7 @@ where
             // output vector, we want to push in execution order, so reverse order to
             // ensure the first child that was executed will be the first child popped
             // from the stack.
-            let Some(origin) = ingredient.origin(db, k.key_index()) else {
+            let Some(origin) = ingredient.origin(zalsa, k.key_index()) else {
                 continue;
             };
 

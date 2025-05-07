@@ -3,7 +3,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
 use crate::zalsa_local::QueryRevisions;
-use crate::{AsDynDatabase as _, Database, DatabaseKeyIndex, Event, EventKind};
+use crate::{DatabaseKeyIndex, Event, EventKind};
 
 impl<C> IngredientImpl<C>
 where
@@ -20,7 +20,6 @@ where
     pub(super) fn diff_outputs(
         &self,
         zalsa: &Zalsa,
-        db: &C::DbView,
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
         revisions: &mut QueryRevisions,
@@ -49,22 +48,17 @@ where
         });
 
         for old_output in old_outputs {
-            Self::report_stale_output(zalsa, db, key, old_output);
+            Self::report_stale_output(zalsa, key, old_output);
         }
     }
 
-    fn report_stale_output(
-        zalsa: &Zalsa,
-        db: &C::DbView,
-        key: DatabaseKeyIndex,
-        output: DatabaseKeyIndex,
-    ) {
-        db.salsa_event(&|| {
+    fn report_stale_output(zalsa: &Zalsa, key: DatabaseKeyIndex, output: DatabaseKeyIndex) {
+        zalsa.event(&|| {
             Event::new(EventKind::WillDiscardStaleOutput {
                 execute_key: key,
                 output_key: output,
             })
         });
-        output.remove_stale_output(zalsa, db.as_dyn_database(), key);
+        output.remove_stale_output(zalsa, key);
     }
 }

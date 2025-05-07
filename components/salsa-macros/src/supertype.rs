@@ -59,9 +59,8 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
         impl #impl_generics zalsa::FromIdWithDb for #enum_name #type_generics
         #where_clause {
             #[inline]
-            fn from_id(__id: zalsa::Id, __db: &(impl ?Sized + zalsa::Database)) -> Self {
-                let __zalsa = __db.zalsa();
-                let __type_id = __zalsa.lookup_page_type_id(__id);
+            fn from_id(__id: zalsa::Id, zalsa: &zalsa::Zalsa) -> Self {
+                let __type_id = zalsa.lookup_page_type_id(__id);
                 <Self as zalsa::SalsaStructInDb>::cast(__id, __type_id).expect("invalid enum variant")
             }
         }

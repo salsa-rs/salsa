@@ -70,8 +70,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ///
     /// In the case of nested cycles, we are not asking here whether the value is provisional due
     /// to the outer cycle being unresolved, only whether its own cycle remains provisional.
-    fn cycle_head_kind<'db>(&'db self, db: &'db dyn Database, input: Id) -> CycleHeadKind {
-        _ = (db, input);
+    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
+        _ = (zalsa, input);
         CycleHeadKind::NotProvisional
     }
 
@@ -80,21 +80,21 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// A return value of `true` indicates that a result is now available. A return value of
     /// `false` means that a cycle was encountered; the waited-on query is either already claimed
     /// by the current thread, or by a thread waiting on the current thread.
-    fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool {
-        _ = (db, key_index);
+    fn wait_for(&self, zalsa: &Zalsa, key_index: Id) -> bool {
+        _ = (zalsa, key_index);
         true
     }
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
     /// in the current revision.
-    fn mark_validated_output<'db>(
-        &'db self,
-        db: &'db dyn Database,
+    fn mark_validated_output(
+        &self,
+        zalsa: &Zalsa,
         executor: DatabaseKeyIndex,
         output_key: crate::Id,
     ) {
-        let _ = (db, executor, output_key);
+        let _ = (zalsa, executor, output_key);
         unreachable!("only tracked struct and function ingredients can have validatable outputs")
     }
 
@@ -102,13 +102,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// revision, but was NOT output in the current revision.
     ///
     /// This hook is used to clear out the stale value so others cannot read it.
-    fn remove_stale_output(
-        &self,
-        db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        stale_output_key: Id,
-    ) {
-        let _ = (db, executor, stale_output_key);
+    fn remove_stale_output(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex, stale_output_key: Id) {
+        let _ = (zalsa, executor, stale_output_key);
         unreachable!("only tracked struct ingredients can have stale outputs")
     }
 
@@ -155,8 +150,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     }
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin> {
-        let _ = (db, key_index);
+    fn origin(&self, zalsa: &Zalsa, key_index: Id) -> Option<QueryOrigin> {
+        let _ = (zalsa, key_index);
         unreachable!("only function ingredients have origins")
     }
 

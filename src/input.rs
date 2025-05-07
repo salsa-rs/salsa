@@ -112,7 +112,7 @@ impl<C: Configuration> IngredientImpl<C> {
             })
         });
 
-        FromIdWithDb::from_id(id, db)
+        FromIdWithDb::from_id(id, zalsa)
     }
 
     /// Change the value of the field `field_index` to a new value.
@@ -152,13 +152,14 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     /// Get the singleton input previously created (if any).
-    pub fn get_singleton_input(&self, db: &(impl ?Sized + Database)) -> Option<C::Struct>
+    #[doc(hidden)]
+    pub fn get_singleton_input(&self, zalsa: &Zalsa) -> Option<C::Struct>
     where
         C: Configuration<Singleton = Singleton>,
     {
         self.singleton
             .index()
-            .map(|id| FromIdWithDb::from_id(id, db))
+            .map(|id| FromIdWithDb::from_id(id, zalsa))
     }
 
     /// Access field of an input.

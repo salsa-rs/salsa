@@ -87,9 +87,18 @@ struct LazyInputDatabase {
 
 impl LazyInputDatabase {
     fn new(tx: Sender<DebounceEventResult>) -> Self {
+        let logs: Arc<Mutex<Vec<String>>> = Default::default();
         Self {
-            storage: Default::default(),
-            logs: Default::default(),
+            storage: Storage::new(Some(Box::new({
+                let logs = logs.clone();
+                move |event| {
+                    // don't log boring events
+                    if let salsa::EventKind::WillExecute { .. } = event.kind {
+                        logs.lock().unwrap().push(format!("{event:?}"));
+                    }
+                }
+            }))),
+            logs,
             files: DashMap::new(),
             file_watcher: Arc::new(Mutex::new(
                 new_debouncer(Duration::from_secs(1), tx).unwrap(),
@@ -99,15 +108,7 @@ impl LazyInputDatabase {
 }
 
 #[salsa::db]
-impl salsa::Database for LazyInputDatabase {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        // don't log boring events
-        let event = event();
-        if let salsa::EventKind::WillExecute { .. } = event.kind {
-            self.logs.lock().unwrap().push(format!("{event:?}"));
-        }
-    }
-}
+impl salsa::Database for LazyInputDatabase {}
 
 #[salsa::db]
 impl Db for LazyInputDatabase {

@@ -2,20 +2,11 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use crate::zalsa::{IngredientIndex, ZalsaDatabase};
-use crate::{Durability, Event, Revision};
+use crate::{Durability, Revision};
 
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]`(`crate::db`) procedural macro.
 pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
-    /// This function is invoked by the salsa runtime at various points during execution.
-    /// You can customize what happens by implementing the [`UserData`][] trait.
-    /// By default, the event is logged at level debug using tracing facade.
-    ///
-    /// # Parameters
-    ///
-    /// * `event`, a fn that, if called, will create the event that occurred
-    fn salsa_event(&self, event: &dyn Fn() -> Event);
-
     /// Enforces current LRU limits, evicting entries if necessary.
     ///
     /// **WARNING:** Just like an ordinary write, this method triggers
@@ -24,7 +15,6 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// is owned by the current thread, this could trigger deadlock.
     fn trigger_lru_eviction(&mut self) {
         let zalsa_mut = self.zalsa_mut();
-        zalsa_mut.runtime_mut().reset_cancellation_flag();
         zalsa_mut.evict_lru();
     }
 
@@ -77,7 +67,8 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
     fn unwind_if_revision_cancelled(&self) {
-        self.zalsa().unwind_if_revision_cancelled(self);
+        let (zalsa, zalsa_local) = self.zalsas();
+        zalsa.unwind_if_revision_cancelled(zalsa_local);
     }
 
     /// Execute `op` with the database in thread-local storage for debug print-outs.

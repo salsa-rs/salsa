@@ -94,9 +94,7 @@ fn execute() {
     }
 
     #[salsa::db]
-    impl salsa::Database for Database {
-        fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
-    }
+    impl salsa::Database for Database {}
 
     #[salsa::db]
     impl Db for Database {

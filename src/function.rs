@@ -64,6 +64,7 @@ pub trait Configuration: Any {
     /// This invokes user code in form of the `Eq` impl.
     fn values_equal<'db>(old_value: &Self::Output<'db>, new_value: &Self::Output<'db>) -> bool;
 
+    // FIXME: This should take a `&Zalsa`
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
     fn id_to_input(db: &Self::DbView, key: Id) -> Self::Input<'_>;
@@ -241,8 +242,7 @@ where
 
     /// True if the input `input` contains a memo that cites itself as a cycle head.
     /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
-    fn cycle_head_kind<'db>(&'db self, db: &'db dyn Database, input: Id) -> CycleHeadKind {
-        let zalsa = db.zalsa();
+    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
         let is_provisional = self
             .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .is_some_and(|memo| {
@@ -260,30 +260,29 @@ where
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
-    fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool {
-        let zalsa = db.zalsa();
-        match self.sync_table.try_claim(db, zalsa, key_index) {
+    fn wait_for(&self, zalsa: &Zalsa, key_index: Id) -> bool {
+        match self.sync_table.try_claim(zalsa, key_index) {
             ClaimResult::Retry | ClaimResult::Claimed(_) => true,
             ClaimResult::Cycle => false,
         }
     }
 
-    fn origin(&self, db: &dyn Database, key: Id) -> Option<QueryOrigin> {
-        self.origin(db.zalsa(), key)
+    fn origin(&self, zalsa: &Zalsa, key: Id) -> Option<QueryOrigin> {
+        self.origin(zalsa, key)
     }
 
     fn mark_validated_output(
         &self,
-        db: &dyn Database,
+        zalsa: &Zalsa,
         executor: DatabaseKeyIndex,
         output_key: crate::Id,
     ) {
-        self.validate_specified_value(db, executor, output_key);
+        self.validate_specified_value(zalsa, executor, output_key);
     }
 
     fn remove_stale_output(
         &self,
-        _db: &dyn Database,
+        _zalsa: &Zalsa,
         _executor: DatabaseKeyIndex,
         _stale_output_key: crate::Id,
     ) {

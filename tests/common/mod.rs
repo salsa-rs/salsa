@@ -15,6 +15,12 @@ pub struct Logger {
     logs: Arc<Mutex<Vec<String>>>,
 }
 
+impl Logger {
+    pub fn push_log(&self, string: String) {
+        self.logs.lock().unwrap().push(string);
+    }
+}
+
 /// Trait implemented by databases that lets them log events.
 pub trait HasLogger {
     /// Return a reference to the logger from the database.
@@ -63,24 +69,31 @@ impl HasLogger for LoggerDatabase {
 }
 
 #[salsa::db]
-impl Database for LoggerDatabase {
-    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
-}
+impl Database for LoggerDatabase {}
 
 /// Database that provides logging and logs salsa events.
 #[salsa::db]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct EventLoggerDatabase {
     storage: Storage<Self>,
     logger: Logger,
 }
 
-#[salsa::db]
-impl Database for EventLoggerDatabase {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        self.push_log(format!("{:?}", event().kind));
+impl Default for EventLoggerDatabase {
+    fn default() -> Self {
+        let logger = Logger::default();
+        Self {
+            storage: Storage::new(Some(Box::new({
+                let logger = logger.clone();
+                move |event| logger.push_log(format!("{:?}", event.kind))
+            }))),
+            logger,
+        }
     }
 }
+
+#[salsa::db]
+impl Database for EventLoggerDatabase {}
 
 impl HasLogger for EventLoggerDatabase {
     fn logger(&self) -> &Logger {
@@ -89,25 +102,33 @@ impl HasLogger for EventLoggerDatabase {
 }
 
 #[salsa::db]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct DiscardLoggerDatabase {
     storage: Storage<Self>,
     logger: Logger,
 }
 
-#[salsa::db]
-impl Database for DiscardLoggerDatabase {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        let event = event();
-        match event.kind {
-            salsa::EventKind::WillDiscardStaleOutput { .. }
-            | salsa::EventKind::DidDiscard { .. } => {
-                self.push_log(format!("salsa_event({:?})", event.kind));
-            }
-            _ => {}
+impl Default for DiscardLoggerDatabase {
+    fn default() -> Self {
+        let logger = Logger::default();
+        Self {
+            storage: Storage::new(Some(Box::new({
+                let logger = logger.clone();
+                move |event| match event.kind {
+                    salsa::EventKind::WillDiscardStaleOutput { .. }
+                    | salsa::EventKind::DidDiscard { .. } => {
+                        logger.push_log(format!("salsa_event({:?})", event.kind));
+                    }
+                    _ => {}
+                }
+            }))),
+            logger,
         }
     }
 }
+
+#[salsa::db]
+impl Database for DiscardLoggerDatabase {}
 
 impl HasLogger for DiscardLoggerDatabase {
     fn logger(&self) -> &Logger {
@@ -116,26 +137,32 @@ impl HasLogger for DiscardLoggerDatabase {
 }
 
 #[salsa::db]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ExecuteValidateLoggerDatabase {
     storage: Storage<Self>,
     logger: Logger,
 }
 
-#[salsa::db]
-impl Database for ExecuteValidateLoggerDatabase {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        let event = event();
-        match event.kind {
-            salsa::EventKind::WillExecute { .. }
-            | salsa::EventKind::WillIterateCycle { .. }
-            | salsa::EventKind::DidValidateMemoizedValue { .. } => {
-                self.push_log(format!("salsa_event({:?})", event.kind));
-            }
-            _ => {}
+impl Default for ExecuteValidateLoggerDatabase {
+    fn default() -> Self {
+        let logger = Logger::default();
+        Self {
+            storage: Storage::new(Some(Box::new({
+                let logger = logger.clone();
+                move |event| match event.kind {
+                    salsa::EventKind::WillExecute { .. }
+                    | salsa::EventKind::WillIterateCycle { .. }
+                    | salsa::EventKind::DidValidateMemoizedValue { .. } => {
+                        logger.push_log(format!("salsa_event({:?})", event.kind));
+                    }
+                    _ => {}
+                }
+            }))),
+            logger,
         }
     }
 }
+impl Database for ExecuteValidateLoggerDatabase {}
 
 impl HasLogger for ExecuteValidateLoggerDatabase {
     fn logger(&self) -> &Logger {
@@ -168,9 +195,7 @@ impl HasValue for DatabaseWithValue {
 }
 
 #[salsa::db]
-impl Database for DatabaseWithValue {
-    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
-}
+impl Database for DatabaseWithValue {}
 
 impl DatabaseWithValue {
     pub fn new(value: u32) -> Self {

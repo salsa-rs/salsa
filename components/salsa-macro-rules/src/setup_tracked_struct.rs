@@ -169,15 +169,18 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $Configuration {
+                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<Self> {
+                    Self::ingredient_(db.zalsa())
+                }
+
                 // Suppress the lint against `cfg(loom)`.
                 #[allow(unexpected_cfgs)]
-                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<$Configuration> {
+                fn ingredient_(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
                     $zalsa::__maybe_lazy_static! {
                         static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                             $zalsa::IngredientCache::new();
                     }
 
-                    let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
                         zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
@@ -216,8 +219,8 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $zalsa::TrackedStructInDb for $Struct<'_> {
-                fn database_key_index(db: &dyn $zalsa::Database, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
-                    $Configuration::ingredient(db).database_key_index(id)
+                fn database_key_index(zalsa: &$zalsa::Zalsa, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
+                    $Configuration::ingredient_(zalsa).database_key_index(id)
                 }
             }
 

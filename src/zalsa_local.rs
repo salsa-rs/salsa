@@ -305,6 +305,7 @@ impl ZalsaLocal {
 
     #[cold]
     pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
+        // Why is this reporting an untracked read? We do not store the query revisions on unwind do we?
         self.report_untracked_read(current_revision);
         Cancelled::PendingWrite.throw();
     }

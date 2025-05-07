@@ -61,10 +61,6 @@ where
         VerifyResult::changed_if(value.stamps[self.field_index].changed_at > revision)
     }
 
-    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        true
-    }
-
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             fmt,
