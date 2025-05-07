@@ -17,6 +17,15 @@ where
         revisions: &mut QueryRevisions,
         value: &C::Output<'db>,
     ) {
+        // We've seen issues where queries weren't re-validated when backdating provisional values
+        // in ty. This is more of a bandaid because we're close to a release and don't have the time to prove
+        // right now whether backdating could be made safe for queries participating in queries.
+        // TODO: Write a test that demonstrates that backdating queries participating in a cycle isn't safe
+        // OR write many tests showing that it is (and fixing the case where it didn't correctly account for today).
+        if !revisions.cycle_heads.is_empty() {
+            return;
+        }
+
         if let Some(old_value) = &old_memo.value {
             // Careful: if the value became less durable than it
             // used to be, that is a "breaking change" that our
