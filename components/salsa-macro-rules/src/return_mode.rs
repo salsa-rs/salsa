@@ -1,8 +1,8 @@
-/// Generate either `field_ref_expr` or a clone of that expr.
+/// Generate the expression for the return type, depending on the return mode defined in [`salsa-macros::options::Options::returns`]
 ///
 /// Used when generating field getters.
 #[macro_export]
-macro_rules! return_mode {
+macro_rules! return_mode_expression {
     (
         (copy, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,

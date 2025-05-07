@@ -54,7 +54,7 @@ macro_rules! setup_tracked_struct {
         //
         // Each field option is a tuple `(return_mode, maybe_backdate)` where:
         //
-        // * `return_mode` is an indentiefier as specified in `salsa_macros::options::Option::returns`
+        // * `return_mode` is an identifier as specified in `salsa_macros::options::Option::returns`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
@@ -65,7 +65,7 @@ macro_rules! setup_tracked_struct {
         //
         // Each field option is a tuple `(return_mode, maybe_backdate)` where:
         //
-        // * `return_mode` is an indentiefier as specified in `salsa_macros::options::Option::returns`
+        // * `return_mode` is an identifier as specified in `salsa_macros::options::Option::returns`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
@@ -267,7 +267,7 @@ macro_rules! setup_tracked_struct {
                     {
                         let db = db.as_dyn_database();
                         let fields = $Configuration::ingredient(db).tracked_field(db, self, $relative_tracked_index);
-                        $crate::return_mode!(
+                        $crate::return_mode_expression!(
                             $tracked_option,
                             $tracked_ty,
                             &fields.$absolute_tracked_index,
@@ -283,7 +283,7 @@ macro_rules! setup_tracked_struct {
                     {
                         let db = db.as_dyn_database();
                         let fields = $Configuration::ingredient(db).untracked_field(db, self);
-                        $crate::return_mode!(
+                        $crate::return_mode_expression!(
                             $untracked_option,
                             $untracked_ty,
                             &fields.$absolute_untracked_index,

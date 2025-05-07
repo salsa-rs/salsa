@@ -66,6 +66,7 @@ pub(crate) struct SalsaField<'s> {
 }
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
+const ALLOWED_RETURN_MODES: &[&str] = &["copy", "clone", "ref", "deref", "as_ref", "as_deref"];
 
 #[allow(clippy::type_complexity)]
 pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut SalsaField))] = &[
@@ -385,6 +386,11 @@ impl<'s> SalsaField<'s> {
                     func(attr, &mut result);
                 }
             }
+        }
+
+        // Validate return mode
+        if !ALLOWED_RETURN_MODES.iter().any(|mode| mode == &result.returns.to_string()) {
+            return Err(syn::Error::new(result.returns.span(), format!("Invalid return mode. Allowed modes are: {ALLOWED_RETURN_MODES:?}")));
         }
 
         Ok(result)

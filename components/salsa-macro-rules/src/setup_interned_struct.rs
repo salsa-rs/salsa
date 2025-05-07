@@ -221,7 +221,7 @@ macro_rules! setup_interned_struct {
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), self);
-                        $zalsa::return_mode!(
+                        $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,

@@ -22,13 +22,13 @@ mod memo_ingredient_indices;
 mod nonce;
 #[cfg(feature = "rayon")]
 mod parallel;
+mod return_mode;
 mod revision;
 mod runtime;
 mod salsa_struct;
 mod storage;
 mod table;
 mod tracked_struct;
-mod return_mode;
 mod update;
 mod views;
 mod zalsa;
@@ -50,11 +50,11 @@ pub use self::event::{Event, EventKind};
 pub use self::id::Id;
 pub use self::input::setter::Setter;
 pub use self::key::DatabaseKeyIndex;
+pub use self::return_mode::SalsaAsDeref;
+pub use self::return_mode::SalsaAsRef;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::storage::{Storage, StorageHandle};
-pub use self::return_mode::SalsaAsRef;
-pub use self::return_mode::SalsaAsDeref;
 pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
 pub use crate::attach::{attach, with_attached_database};
@@ -74,9 +74,9 @@ pub mod plumbing {
     pub use std::option::Option::{self, None, Some};
 
     pub use salsa_macro_rules::{
-        macro_if, maybe_backdate, return_mode, return_mode_ty, maybe_default, maybe_default_tt,
-        setup_accumulator_impl, setup_input_struct, setup_interned_struct, setup_method_body,
-        setup_tracked_fn, setup_tracked_struct, unexpected_cycle_initial,
+        macro_if, maybe_backdate, maybe_default, maybe_default_tt, return_mode_expression,
+        return_mode_ty, setup_accumulator_impl, setup_input_struct, setup_interned_struct,
+        setup_method_body, setup_tracked_fn, setup_tracked_struct, unexpected_cycle_initial,
         unexpected_cycle_recovery,
     };
 

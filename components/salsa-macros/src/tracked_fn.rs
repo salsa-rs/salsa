@@ -67,6 +67,8 @@ struct ValidFn<'item> {
     db_path: &'item syn::Path,
 }
 
+const ALLOWED_RETURN_MODES: &[&str] = &["copy", "clone", "ref", "deref", "as_ref", "as_deref"];
+
 #[allow(non_snake_case)]
 impl Macro {
     fn try_fn(&self, item: syn::ItemFn) -> syn::Result<TokenStream> {
@@ -151,6 +153,11 @@ impl Macro {
             .returns
             .clone()
             .unwrap_or(Ident::new("clone", Span::call_site()));
+
+        // Validate return mode
+        if !ALLOWED_RETURN_MODES.iter().any(|mode| mode == &return_mode.to_string()) {
+            return Err(syn::Error::new(return_mode.span(), format!("Invalid return mode. Allowed modes are: {ALLOWED_RETURN_MODES:?}")));
+        }
 
         // The path expression is responsible for emitting the primary span in the diagnostic we
         // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted

@@ -366,7 +366,7 @@ macro_rules! setup_tracked_fn {
                     }
                 };
 
-                $zalsa::return_mode!(($return_mode, __, __), $output_ty, result,)
+                $zalsa::return_mode_expression!(($return_mode, __, __), $output_ty, result,)
             })
         }
         // The struct needs be last in the macro expansion in order to make the tracked

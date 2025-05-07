@@ -192,7 +192,7 @@ macro_rules! setup_input_struct {
                             self,
                             $field_index,
                         );
-                        $zalsa::return_mode!(
+                        $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,
