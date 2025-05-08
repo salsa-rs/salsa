@@ -152,11 +152,11 @@ fn revalidate_no_changes() {
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(400)) })",
             "salsa_event(DidReinternValue { key: query_d::interned_arguments(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_d(Id(800)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
+            "salsa_event(DidReinternValue { key: query_d::interned_arguments(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(401)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(402)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
-            "salsa_event(DidReinternValue { key: query_d::interned_arguments(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(0)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
         ]"#]]);

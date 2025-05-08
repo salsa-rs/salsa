@@ -9,6 +9,7 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
+use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
@@ -217,7 +218,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         _input: Id,
         _revision: Revision,
-        _in_cycle: bool,
+        _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.

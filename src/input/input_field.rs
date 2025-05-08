@@ -1,6 +1,7 @@
 use std::fmt;
 use std::marker::PhantomData;
 
+use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
@@ -54,7 +55,7 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
-        _in_cycle: bool,
+        _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let value = <IngredientImpl<C>>::data(zalsa, input);

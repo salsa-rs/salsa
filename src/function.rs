@@ -5,7 +5,7 @@ use std::ptr::NonNull;
 pub(crate) use maybe_changed_after::VerifyResult;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleHeadKind, CycleRecoveryAction, CycleRecoveryStrategy};
+use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy};
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::Ingredient;
@@ -233,11 +233,11 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
-        in_cycle: bool,
+        cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster.downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision, in_cycle)
+        self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
     /// True if the input `input` contains a memo that cites itself as a cycle head.

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use dashmap::SharedValue;
 
+use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::hash::FxDashMap;
@@ -396,13 +397,13 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
-        _in_cycle: bool,
+        _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let value = zalsa.table().get::<Value<C>>(input);
         if value.first_interned_at > revision {
             // The slot was reused.
-            return VerifyResult::changed();
+            return VerifyResult::Changed;
         }
 
         // The slot is valid in this revision but we have to sync the value's revision.

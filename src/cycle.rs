@@ -152,6 +152,22 @@ impl CycleHeads {
     }
 
     #[inline]
+    pub(crate) fn push_initial(&mut self, database_key_index: DatabaseKeyIndex) {
+        if let Some(existing) = self
+            .0
+            .iter()
+            .find(|candidate| candidate.database_key_index == database_key_index)
+        {
+            assert_eq!(existing.iteration_count, 0);
+        } else {
+            self.0.push(CycleHead {
+                database_key_index,
+                iteration_count: 0,
+            });
+        }
+    }
+
+    #[inline]
     pub(crate) fn extend(&mut self, other: &Self) {
         self.0.reserve(other.0.len());
 
