@@ -158,7 +158,6 @@ fn revalidate_no_changes() {
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(402)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(0)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
         ]"#]]);
 }
 

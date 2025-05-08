@@ -882,7 +882,6 @@ fn cycle_unchanged() {
         [
             "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
         ]"#]]);
 
     a.assert_value(&db, 45);
@@ -929,9 +928,7 @@ fn cycle_unchanged_nested() {
             "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(4)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
         ]"#]]);
 
     a.assert_value(&db, 45);
@@ -992,14 +989,12 @@ fn cycle_unchanged_nested_intertwined() {
         b.assert_value(&db, 60);
 
         db.assert_logs(expect![[r#"
-        [
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(4)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
-        ]"#]]);
+            [
+                "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
+                "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
+                "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(4)) })",
+                "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
+            ]"#]]);
 
         a.assert_value(&db, 45);
     }
