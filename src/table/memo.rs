@@ -212,10 +212,14 @@ impl MemoTableWithTypes<'_> {
     ) -> Option<NonNull<M>> {
         let memo_ingredient_index = memo_ingredient_index.as_usize();
         let mut memos = self.memos.memos.write();
-        let additional_len = memo_ingredient_index - memos.len() + 1;
-        memos.reserve(additional_len);
-        while memos.len() < memo_ingredient_index + 1 {
-            memos.push(MemoEntry::default());
+
+        // Grow the table if needed.
+        if memos.len() <= memo_ingredient_index {
+            let additional_len = memo_ingredient_index - memos.len() + 1;
+            memos.reserve(additional_len);
+            while memos.len() <= memo_ingredient_index {
+                memos.push(MemoEntry::default());
+            }
         }
 
         let memo_entry = &mut memos[memo_ingredient_index].atomic_memo;
