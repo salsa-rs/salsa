@@ -89,6 +89,8 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub id: Option<syn::Path>,
 
+    pub force_invalidation_on_cache_eviction: Option<syn::Ident>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -112,6 +114,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             lru: Default::default(),
             singleton: Default::default(),
             id: Default::default(),
+            force_invalidation_on_cache_eviction: Default::default(),
         }
     }
 }
@@ -133,6 +136,7 @@ pub(crate) trait AllowedOptions {
     const LRU: bool;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
+    const FORCE_INVALIDATION_ON_CACHE_EVICTION: bool;
 }
 
 type Equals = syn::Token![=];
@@ -349,6 +353,20 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`id` option not allowed here",
+                    ));
+                }
+            } else if ident == "force_invalidation_on_cache_eviction" {
+                if A::FORCE_INVALIDATION_ON_CACHE_EVICTION {
+                    if let Some(old) = options.force_invalidation_on_cache_eviction.replace(ident) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `force_invalidation_on_cache_eviction` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`force_invalidation_on_cache_eviction` option not allowed here",
                     ));
                 }
             } else {

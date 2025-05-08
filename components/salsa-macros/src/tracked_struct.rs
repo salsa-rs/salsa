@@ -57,6 +57,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
     const CONSTRUCTOR_NAME: bool = true;
 
     const ID: bool = false;
+
+    const FORCE_INVALIDATION_ON_CACHE_EVICTION: bool = false;
 }
 
 impl SalsaStructAllowedOptions for TrackedStruct {

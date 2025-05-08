@@ -60,6 +60,8 @@ macro_rules! setup_tracked_fn {
 
         assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
 
+        force_invalidation_on_cache_eviction: $force_invalidation_on_cache_eviction:literal,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -192,6 +194,7 @@ macro_rules! setup_tracked_fn {
                     line: line!(),
                 };
                 const DEBUG_NAME: &'static str = stringify!($fn_name);
+                const FORCE_INVALIDATION_ON_CACHE_EVICTION: bool = $force_invalidation_on_cache_eviction;
 
                 type DbView = dyn $Db;
 

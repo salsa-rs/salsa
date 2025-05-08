@@ -62,6 +62,8 @@ impl crate::options::AllowedOptions for InternedStruct {
     const CONSTRUCTOR_NAME: bool = true;
 
     const ID: bool = true;
+
+    const FORCE_INVALIDATION_ON_CACHE_EVICTION: bool = false;
 }
 
 impl SalsaStructAllowedOptions for InternedStruct {

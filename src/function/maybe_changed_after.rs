@@ -70,6 +70,10 @@ where
                 return VerifyResult::Changed;
             };
 
+            if C::FORCE_INVALIDATION_ON_CACHE_EVICTION && memo.value.is_none() {
+                return VerifyResult::Changed;
+            }
+
             let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
             if can_shallow_update.yes() && !memo.may_be_provisional() {
                 self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
