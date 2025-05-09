@@ -256,7 +256,7 @@ impl<V> Memo<V> {
                         },
                     )
                     .field("verified_at", &self.memo.verified_at)
-                    .field("revisions", &self.memo.revisions)
+                    // .field("revisions", &self.memo.revisions)
                     .finish()
             }
         }

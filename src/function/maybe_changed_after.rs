@@ -397,8 +397,6 @@ where
 
                 let dyn_db = db.as_dyn_database();
 
-                let last_verified_at = old_memo.verified_at.load();
-
                 let mut inputs = InputAccumulatedValues::Empty;
                 // Fully tracked inputs? Iterate over the inputs and check them, one by one.
                 //
@@ -412,7 +410,7 @@ where
                             match dependency_index.maybe_changed_after(
                                 dyn_db,
                                 zalsa,
-                                last_verified_at,
+                                old_memo.verified_at.load(),
                                 cycle_heads,
                             ) {
                                 VerifyResult::Changed => return VerifyResult::Changed,
@@ -457,10 +455,9 @@ where
                 //
                 // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
                 //    a cycle, and we've now traversed the entire cycle and found no changes, but no
-                //    other cycle participants were verified (they would have all hit case 2 above). We
-                //    can now safely mark our own memo as verified. Then we have to traverse the entire
-                //    cycle again. This time, since our own memo is verified, there will be no cycle
-                //    encountered, and the rest of the cycle will be able to verify itself.
+                //    other cycle participants were verified (they would have all hit case 2 above).
+                //    Similar to `execute`, return unchanged and lazily verify the other cycle-participants
+                //    when they're used next.
                 //
                 // 4. Cycle heads is non-empty, and contains our own key index as well as other key
                 //    indices. We are the head of a cycle nested within another cycle. We can't mark
