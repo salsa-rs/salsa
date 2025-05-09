@@ -50,12 +50,8 @@ Setting up a scheme like this is relatively easy in Salsa and uses the same prin
 ### Parameters to a tracked function
 
 The **first** parameter to a tracked function is **always** the database, `db: &dyn crate::Db`.
-It must be a `dyn` value of whatever database is associated with the jar.
 
 The **second** parameter to a tracked function is **always** some kind of Salsa struct.
-The first parameter to a memoized function is always the database,
-which should be a `dyn Trait` value for the database trait associated with the jar
-(the default jar is `crate::Jar`).
 
 Tracked functions may take other arguments as well, though our examples here do not.
 Functions that take additional arguments are less efficient and flexible.
