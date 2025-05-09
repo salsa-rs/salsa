@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.21.1...salsa-v0.22.0) - 2025-05-09
+
+### Fixed
+
+- fix memo table growth condition ([#850](https://github.com/salsa-rs/salsa/pull/850))
+- incorrect caching for queries participating in fixpoint ([#843](https://github.com/salsa-rs/salsa/pull/843))
+- change detection for fixpoint queries ([#836](https://github.com/salsa-rs/salsa/pull/836))
+
+### Other
+
+- Fix returns(deref | as_ref | as_deref) in tracked methods ([#857](https://github.com/salsa-rs/salsa/pull/857))
+- Changed `return_ref` syntax to `returns(as_ref)` and `returns(cloned)` ([#772](https://github.com/salsa-rs/salsa/pull/772))
+- Work around a rust-analyzer bug ([#855](https://github.com/salsa-rs/salsa/pull/855))
+- Lazy finalization of cycle participants in `maybe_changed_after` ([#854](https://github.com/salsa-rs/salsa/pull/854))
+- Do not re-verify already verified memoized value in cycle verification ([#851](https://github.com/salsa-rs/salsa/pull/851))
+- Pass cycle heads as out parameter for `maybe_changed_after` ([#852](https://github.com/salsa-rs/salsa/pull/852))
+- Move salsa event system into `Zalsa` ([#849](https://github.com/salsa-rs/salsa/pull/849))
+- gate loom dependency under feature flag ([#844](https://github.com/salsa-rs/salsa/pull/844))
+- Add loom support ([#842](https://github.com/salsa-rs/salsa/pull/842))
+- Clean up some unsafety ([#830](https://github.com/salsa-rs/salsa/pull/830))
+
 ## [0.21.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.21.0...salsa-v0.21.1) - 2025-04-30
 
 ### Added

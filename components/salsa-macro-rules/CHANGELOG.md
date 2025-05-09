@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.21.1...salsa-macro-rules-v0.22.0) - 2025-05-09
+
+### Other
+
+- Fix returns(deref | as_ref | as_deref) in tracked methods ([#857](https://github.com/salsa-rs/salsa/pull/857))
+- Changed `return_ref` syntax to `returns(as_ref)` and `returns(cloned)` ([#772](https://github.com/salsa-rs/salsa/pull/772))
+- Move salsa event system into `Zalsa` ([#849](https://github.com/salsa-rs/salsa/pull/849))
+- Add loom support ([#842](https://github.com/salsa-rs/salsa/pull/842))
+- Clean up some unsafety ([#830](https://github.com/salsa-rs/salsa/pull/830))
+
 ## [0.21.1](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.21.0...salsa-macro-rules-v0.21.1) - 2025-04-30
 
 ### Other
