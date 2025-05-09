@@ -155,8 +155,14 @@ impl Macro {
             .unwrap_or(Ident::new("clone", Span::call_site()));
 
         // Validate return mode
-        if !ALLOWED_RETURN_MODES.iter().any(|mode| mode == &return_mode.to_string()) {
-            return Err(syn::Error::new(return_mode.span(), format!("Invalid return mode. Allowed modes are: {ALLOWED_RETURN_MODES:?}")));
+        if !ALLOWED_RETURN_MODES
+            .iter()
+            .any(|mode| mode == &return_mode.to_string())
+        {
+            return Err(syn::Error::new(
+                return_mode.span(),
+                format!("Invalid return mode. Allowed modes are: {ALLOWED_RETURN_MODES:?}"),
+            ));
         }
 
         // The path expression is responsible for emitting the primary span in the diagnostic we

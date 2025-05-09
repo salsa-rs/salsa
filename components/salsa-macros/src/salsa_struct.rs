@@ -389,8 +389,14 @@ impl<'s> SalsaField<'s> {
         }
 
         // Validate return mode
-        if !ALLOWED_RETURN_MODES.iter().any(|mode| mode == &result.returns.to_string()) {
-            return Err(syn::Error::new(result.returns.span(), format!("Invalid return mode. Allowed modes are: {ALLOWED_RETURN_MODES:?}")));
+        if !ALLOWED_RETURN_MODES
+            .iter()
+            .any(|mode| mode == &result.returns.to_string())
+        {
+            return Err(syn::Error::new(
+                result.returns.span(),
+                format!("Invalid return mode. Allowed modes are: {ALLOWED_RETURN_MODES:?}"),
+            ));
         }
 
         Ok(result)

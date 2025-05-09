@@ -18,7 +18,7 @@ macro_rules! return_mode_expression {
     ) => {
         ::core::clone::Clone::clone($field_ref_expr)
     };
-    
+
     (
         (ref, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,
@@ -34,7 +34,7 @@ macro_rules! return_mode_expression {
     ) => {
         ::core::ops::Deref::deref($field_ref_expr)
     };
-    
+
     (
         (as_ref, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,
@@ -42,7 +42,7 @@ macro_rules! return_mode_expression {
     ) => {
         ::salsa::SalsaAsRef::as_ref($field_ref_expr)
     };
-    
+
     (
         (as_deref, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,
