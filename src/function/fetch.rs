@@ -1,4 +1,4 @@
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, UnexpectedCycle};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
@@ -139,22 +139,14 @@ where
                 }
                 // no provisional value; create/insert/return initial provisional value
                 return match C::CYCLE_STRATEGY {
-                    CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
-                        panic!(
-                            "dependency graph cycle when querying {database_key_index:#?}, \
-                            set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                            Query stack:\n{stack:#?}",
-                        );
-                    }),
+                    CycleRecoveryStrategy::Panic => UnexpectedCycle::throw(),
                     CycleRecoveryStrategy::Fixpoint => {
                         tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
                             inserting and returning fixpoint initial value"
                         );
                         let revisions = QueryRevisions::fixpoint_initial(database_key_index);
-                        let initial_value = self
-                            .initial_value(db, id)
-                            .expect("`CycleRecoveryStrategy::Fixpoint` should have initial_value");
+                        let initial_value = C::cycle_initial(db, C::id_to_input(db, id));
                         Some(self.insert_memo(
                             zalsa,
                             id,
@@ -167,9 +159,7 @@ where
                             "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
                         );
                         let active_query = db.zalsa_local().push_query(database_key_index, 0);
-                        let fallback_value = self.initial_value(db, id).expect(
-                            "`CycleRecoveryStrategy::FallbackImmediate` should have initial_value",
-                        );
+                        let fallback_value = C::cycle_initial(db, C::id_to_input(db, id));
                         let mut revisions = active_query.pop();
                         revisions.cycle_heads = CycleHeads::initial(database_key_index);
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.

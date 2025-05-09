@@ -1,5 +1,7 @@
 //! Calling back into the same cycle from your cycle initial function will trigger another cycle.
 
+use salsa::UnexpectedCycle;
+
 #[salsa::tracked]
 fn initial_value(db: &dyn salsa::Database) -> u32 {
     query(db)
@@ -28,9 +30,8 @@ fn cycle_fn(
 }
 
 #[test_log::test]
-#[should_panic(expected = "dependency graph cycle")]
 fn the_test() {
     let db = salsa::DatabaseImpl::default();
 
-    query(&db);
+    UnexpectedCycle::catch(|| query(&db)).unwrap_err();
 }

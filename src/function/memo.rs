@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS};
+use crate::cycle::{CycleHeadKind, CycleHeads, EMPTY_CYCLE_HEADS};
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::loom::sync::atomic::Ordering;
@@ -81,19 +81,6 @@ impl<C: Configuration> IngredientImpl<C> {
         };
 
         table.map_memo(memo_ingredient_index, map)
-    }
-
-    pub(super) fn initial_value<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        key: Id,
-    ) -> Option<C::Output<'db>> {
-        match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
-                Some(C::cycle_initial(db, C::id_to_input(db, key)))
-            }
-            CycleRecoveryStrategy::Panic => None,
-        }
     }
 }
 

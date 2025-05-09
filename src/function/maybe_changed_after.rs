@@ -1,5 +1,5 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
+use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, UnexpectedCycle};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -104,13 +104,7 @@ where
         let _claim_guard = match self.sync_table.try_claim(zalsa, key_index) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
-                CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
-                    panic!(
-                        "dependency graph cycle when validating {database_key_index:#?}, \
-                            set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                            Query stack:\n{stack:#?}",
-                    );
-                }),
+                CycleRecoveryStrategy::Panic => UnexpectedCycle::throw(),
                 CycleRecoveryStrategy::FallbackImmediate => {
                     return Some(VerifyResult::unchanged());
                 }
