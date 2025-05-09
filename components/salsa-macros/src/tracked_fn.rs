@@ -1,7 +1,7 @@
 use proc_macro2::{Literal, Span, TokenStream};
 use quote::ToTokens;
 use syn::spanned::Spanned;
-use syn::ItemFn;
+use syn::{Ident, ItemFn};
 
 use crate::hygiene::Hygiene;
 use crate::options::Options;
@@ -26,7 +26,7 @@ pub type FnArgs = Options<TrackedFn>;
 pub struct TrackedFn;
 
 impl crate::options::AllowedOptions for TrackedFn {
-    const RETURN_REF: bool = true;
+    const RETURNS: bool = true;
 
     const SPECIFY: bool = true;
 
@@ -66,6 +66,8 @@ struct ValidFn<'item> {
     db_ident: &'item syn::Ident,
     db_path: &'item syn::Path,
 }
+
+const ALLOWED_RETURN_MODES: &[&str] = &["copy", "clone", "ref", "deref", "as_ref", "as_deref"];
 
 #[allow(non_snake_case)]
 impl Macro {
@@ -146,7 +148,22 @@ impl Macro {
 
         let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
 
-        let return_ref: bool = self.args.return_ref.is_some();
+        let return_mode = self
+            .args
+            .returns
+            .clone()
+            .unwrap_or(Ident::new("clone", Span::call_site()));
+
+        // Validate return mode
+        if !ALLOWED_RETURN_MODES
+            .iter()
+            .any(|mode| mode == &return_mode.to_string())
+        {
+            return Err(syn::Error::new(
+                return_mode.span(),
+                format!("Invalid return mode. Allowed modes are: {ALLOWED_RETURN_MODES:?}"),
+            ));
+        }
 
         // The path expression is responsible for emitting the primary span in the diagnostic we
         // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted
@@ -183,7 +200,7 @@ impl Macro {
                 values_equal: {#eq},
                 needs_interner: #needs_interner,
                 lru: #lru,
-                return_ref: #return_ref,
+                return_mode: #return_mode,
                 assert_return_type_is_update: { #assert_return_type_is_update },
                 unused_names: [
                     #zalsa,

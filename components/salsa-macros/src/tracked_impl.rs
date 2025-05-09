@@ -296,13 +296,13 @@ impl Macro {
         args: &FnArgs,
         db_lt: &Option<syn::Lifetime>,
     ) -> syn::Result<()> {
-        if let Some(return_ref) = &args.return_ref {
+        if let Some(returns) = &args.returns {
             if let syn::ReturnType::Type(_, t) = &mut sig.output {
                 **t = parse_quote!(& #db_lt #t)
             } else {
                 return Err(syn::Error::new_spanned(
-                    return_ref,
-                    "return_ref attribute requires explicit return type",
+                    returns,
+                    "returns attribute requires explicit return type",
                 ));
             };
         }

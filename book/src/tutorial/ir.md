@@ -92,7 +92,7 @@ Apart from the fields being immutable, the API for working with a tracked struct
 
 - You can create a new value by using `new`: e.g., `Program::new(&db, some_statements)`
 - You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
-  - In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
+  - In this case, the field is tagged as `#[returns(ref)]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
 
 ### The `'db` lifetime
 

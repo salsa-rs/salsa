@@ -10,7 +10,7 @@ include!("shims/global_alloc_overwrite.rs");
 
 #[salsa::input]
 pub struct Input {
-    #[return_ref]
+    #[returns(ref)]
     pub text: String,
 }
 
@@ -22,7 +22,7 @@ pub fn length(db: &dyn salsa::Database, input: Input) -> usize {
 
 #[salsa::interned]
 pub struct InternedInput<'db> {
-    #[return_ref]
+    #[returns(ref)]
     pub text: String,
 }
 

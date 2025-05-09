@@ -23,7 +23,7 @@ pub struct SourceTree<'db> {
 
 #[salsa::tracked]
 impl<'db1> SourceTree<'db1> {
-    #[salsa::tracked(return_ref)]
+    #[salsa::tracked(returns(ref))]
     pub fn inherent_item_name(self, db: &'db1 dyn Database) -> String {
         self.name(db)
     }
@@ -35,7 +35,7 @@ trait ItemName<'db1> {
 
 #[salsa::tracked]
 impl<'db1> ItemName<'db1> for SourceTree<'db1> {
-    #[salsa::tracked(return_ref)]
+    #[salsa::tracked(returns(ref))]
     fn trait_item_name(self, db: &'db1 dyn Database) -> String {
         self.name(db)
     }

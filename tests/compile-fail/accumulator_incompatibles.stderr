@@ -1,8 +1,8 @@
-error: `return_ref` option not allowed here
+error: `returns` option not allowed here
  --> tests/compile-fail/accumulator_incompatibles.rs:1:22
   |
-1 | #[salsa::accumulator(return_ref)]
-  |                      ^^^^^^^^^^
+1 | #[salsa::accumulator(returns(ref))]
+  |                      ^^^^^^^
 
 error: `specify` option not allowed here
  --> tests/compile-fail/accumulator_incompatibles.rs:4:22

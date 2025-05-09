@@ -4,7 +4,7 @@
 #[macro_export]
 macro_rules! maybe_default {
     (
-        ($maybe_clone:ident, $maybe_backdate:ident, default),
+        ($return_mode:ident, $maybe_backdate:ident, default),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -12,7 +12,7 @@ macro_rules! maybe_default {
     };
 
     (
-        ($maybe_clone:ident, $maybe_backdate:ident, required),
+        ($return_mode:ident, $maybe_backdate:ident, required),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -22,11 +22,11 @@ macro_rules! maybe_default {
 
 #[macro_export]
 macro_rules! maybe_default_tt {
-    (($maybe_clone:ident, $maybe_backdate:ident, default) => $($t:tt)*) => {
+    (($return_mode:ident, $maybe_backdate:ident, default) => $($t:tt)*) => {
         $($t)*
     };
 
-    (($maybe_clone:ident, $maybe_backdate:ident, required) => $($t:tt)*) => {
+    (($return_mode:ident, $maybe_backdate:ident, required) => $($t:tt)*) => {
 
     };
 }

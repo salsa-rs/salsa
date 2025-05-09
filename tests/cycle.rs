@@ -32,7 +32,7 @@ impl Value {
 /// `max_iterate`, `min_panic`, `max_panic`) for testing cycle behaviors.
 #[salsa::input]
 struct Inputs {
-    #[return_ref]
+    #[returns(ref)]
     inputs: Vec<Input>,
 }
 

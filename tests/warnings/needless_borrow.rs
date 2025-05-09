@@ -3,6 +3,6 @@ enum Token {}
 
 #[salsa::tracked]
 struct TokenTree<'db> {
-    #[return_ref]
+    #[returns(ref)]
     tokens: Vec<Token>,
 }
