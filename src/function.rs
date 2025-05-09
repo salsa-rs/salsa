@@ -38,6 +38,7 @@ pub type Memo<C> = memo::Memo<<C as Configuration>::Output<'static>>;
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
+    const FORCE_INVALIDATION_ON_CACHE_EVICTION: bool;
 
     /// The database that this function is associated with.
     type DbView: ?Sized + crate::Database;

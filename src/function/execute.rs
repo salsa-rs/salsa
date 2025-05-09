@@ -4,7 +4,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::loom::sync::atomic::{AtomicBool, Ordering};
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
-use crate::{Event, EventKind, Id, Revision};
+use crate::{Durability, Event, EventKind, Id, Revision};
 
 impl<C> IngredientImpl<C>
 where
@@ -269,7 +269,12 @@ where
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
         let new_value = C::execute(db, C::id_to_input(db, id));
+        let mut revisions = active_query.pop();
 
-        (new_value, active_query.pop())
+        if C::FORCE_INVALIDATION_ON_CACHE_EVICTION {
+            revisions.durability = Durability::MIN;
+        }
+
+        (new_value, revisions)
     }
 }

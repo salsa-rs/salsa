@@ -55,6 +55,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const CONSTRUCTOR_NAME: bool = false;
 
     const ID: bool = false;
+
+    const FORCE_INVALIDATION_ON_CACHE_EVICTION: bool = true;
 }
 
 struct Macro {
@@ -147,6 +149,8 @@ impl Macro {
         let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
 
         let return_ref: bool = self.args.return_ref.is_some();
+        let force_invalidation_on_cache_eviction: bool =
+            self.args.force_invalidation_on_cache_eviction.is_some();
 
         // The path expression is responsible for emitting the primary span in the diagnostic we
         // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted
@@ -185,6 +189,7 @@ impl Macro {
                 lru: #lru,
                 return_ref: #return_ref,
                 assert_return_type_is_update: { #assert_return_type_is_update },
+                force_invalidation_on_cache_eviction: #force_invalidation_on_cache_eviction,
                 unused_names: [
                     #zalsa,
                     #Configuration,
