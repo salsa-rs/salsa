@@ -298,7 +298,22 @@ impl Macro {
     ) -> syn::Result<()> {
         if let Some(returns) = &args.returns {
             if let syn::ReturnType::Type(_, t) = &mut sig.output {
-                **t = parse_quote!(& #db_lt #t)
+                if returns == "copy" || returns == "clone" {
+                    // leave as is
+                } else if returns == "ref" {
+                    **t = parse_quote!(& #db_lt #t)
+                } else if returns == "deref" {
+                    **t = parse_quote!(& #db_lt <#t as ::core::ops::Deref>::Target)
+                } else if returns == "as_ref" {
+                    **t = parse_quote!(<#t as ::salsa::SalsaAsRef>::AsRef<#db_lt>)
+                } else if returns == "as_deref" {
+                    **t = parse_quote!(<#t as ::salsa::SalsaAsDeref>::AsDeref<#db_lt>)
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        returns,
+                        format!("Unknown returns mode `{returns}`"),
+                    ));
+                }
             } else {
                 return Err(syn::Error::new_spanned(
                     returns,
