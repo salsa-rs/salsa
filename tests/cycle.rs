@@ -881,7 +881,6 @@ fn cycle_unchanged() {
     db.assert_logs(expect![[r#"
         [
             "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
         ]"#]]);
 
     a.assert_value(&db, 45);
@@ -926,9 +925,6 @@ fn cycle_unchanged_nested() {
     db.assert_logs(expect![[r#"
         [
             "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(4)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
         ]"#]]);
 
     a.assert_value(&db, 45);
@@ -991,9 +987,6 @@ fn cycle_unchanged_nested_intertwined() {
         db.assert_logs(expect![[r#"
             [
                 "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
-                "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
-                "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(4)) })",
-                "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
             ]"#]]);
 
         a.assert_value(&db, 45);

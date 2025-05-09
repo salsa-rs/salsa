@@ -397,110 +397,91 @@ where
 
                 let dyn_db = db.as_dyn_database();
 
-                let mut last_verified_at = old_memo.verified_at.load();
-                let mut first_iteration = true;
-                'cycle: loop {
-                    let mut inputs = InputAccumulatedValues::Empty;
-                    // Fully tracked inputs? Iterate over the inputs and check them, one by one.
-                    //
-                    // NB: It's important here that we are iterating the inputs in the order that
-                    // they executed. It's possible that if the value of some input I0 is no longer
-                    // valid, then some later input I1 might never have executed at all, so verifying
-                    // it is still up to date is meaningless.
-                    for &edge in edges.input_outputs.iter() {
-                        match edge {
-                            QueryEdge::Input(dependency_index) => {
-                                match dependency_index.maybe_changed_after(
-                                    dyn_db,
-                                    zalsa,
-                                    last_verified_at,
-                                    cycle_heads,
-                                ) {
-                                    VerifyResult::Changed => break 'cycle VerifyResult::Changed,
-                                    VerifyResult::Unchanged(input_accumulated) => {
-                                        inputs |= input_accumulated;
-                                    }
+                let mut inputs = InputAccumulatedValues::Empty;
+                // Fully tracked inputs? Iterate over the inputs and check them, one by one.
+                //
+                // NB: It's important here that we are iterating the inputs in the order that
+                // they executed. It's possible that if the value of some input I0 is no longer
+                // valid, then some later input I1 might never have executed at all, so verifying
+                // it is still up to date is meaningless.
+                for &edge in edges.input_outputs.iter() {
+                    match edge {
+                        QueryEdge::Input(dependency_index) => {
+                            match dependency_index.maybe_changed_after(
+                                dyn_db,
+                                zalsa,
+                                old_memo.verified_at.load(),
+                                cycle_heads,
+                            ) {
+                                VerifyResult::Changed => return VerifyResult::Changed,
+                                VerifyResult::Unchanged(input_accumulated) => {
+                                    inputs |= input_accumulated;
                                 }
                             }
-                            QueryEdge::Output(dependency_index) => {
-                                // Subtle: Mark outputs as validated now, even though we may
-                                // later find an input that requires us to re-execute the function.
-                                // Even if it re-execute, the function will wind up writing the same value,
-                                // since all prior inputs were green. It's important to do this during
-                                // this loop, because it's possible that one of our input queries will
-                                // re-execute and may read one of our earlier outputs
-                                // (e.g., in a scenario where we do something like
-                                // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
-                                //
-                                // NB. Accumulators are also outputs, but the above logic doesn't
-                                // quite apply to them. Since multiple values are pushed, the first value
-                                // may be unchanged, but later values could be different.
-                                // In that case, however, the data accumulated
-                                // by this function cannot be read until this function is marked green,
-                                // so even if we mark them as valid here, the function will re-execute
-                                // and overwrite the contents.
-                                dependency_index.mark_validated_output(zalsa, database_key_index);
-                            }
                         }
-                    }
-
-                    // Possible scenarios here:
-                    //
-                    // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
-                    //    cycles, nor found any changed dependencies. We can mark our memo verified and
-                    //    return Unchanged with empty cycle heads.
-                    //
-                    // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
-                    //    a cycle, and since we don't know if some other cycle participant that hasn't been
-                    //    traversed yet (that is, some other dependency of the cycle head, which is only a
-                    //    dependency of ours via the cycle) might still have changed, we can't yet mark our
-                    //    memo verified. We can return a provisional Unchanged, with cycle heads.
-                    //
-                    // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
-                    //    a cycle, and we've now traversed the entire cycle and found no changes, but no
-                    //    other cycle participants were verified (they would have all hit case 2 above). We
-                    //    can now safely mark our own memo as verified. Then we have to traverse the entire
-                    //    cycle again. This time, since our own memo is verified, there will be no cycle
-                    //    encountered, and the rest of the cycle will be able to verify itself.
-                    //
-                    // 4. Cycle heads is non-empty, and contains our own key index as well as other key
-                    //    indices. We are the head of a cycle nested within another cycle. We can't mark
-                    //    our own memo verified (for the same reason as in case 2: the full outer cycle
-                    //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
-                    //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
-                    //    future iteration; first the outer cycle head needs to verify itself.
-
-                    let was_in_heads = cycle_heads.remove(&database_key_index);
-                    let heads_non_empty = !cycle_heads.is_empty();
-                    if heads_non_empty {
-                        // case 2 / 4
-                        break 'cycle VerifyResult::Unchanged(inputs);
-                    } else if !first_iteration {
-                        // 3 (second loop turn)
-                        break 'cycle VerifyResult::Unchanged(inputs);
-                    } else {
-                        last_verified_at = zalsa.current_revision();
-
-                        old_memo.mark_as_verified(zalsa, database_key_index);
-                        old_memo.revisions.accumulated_inputs.store(inputs);
-
-                        if is_provisional {
-                            old_memo
-                                .revisions
-                                .verified_final
-                                .store(true, Ordering::Relaxed);
-                        }
-
-                        if was_in_heads {
-                            first_iteration = false;
-                            // case 3
-                            continue 'cycle;
-                        } else {
-                            // case 1
-                            break 'cycle VerifyResult::Unchanged(inputs);
+                        QueryEdge::Output(dependency_index) => {
+                            // Subtle: Mark outputs as validated now, even though we may
+                            // later find an input that requires us to re-execute the function.
+                            // Even if it re-execute, the function will wind up writing the same value,
+                            // since all prior inputs were green. It's important to do this during
+                            // this loop, because it's possible that one of our input queries will
+                            // re-execute and may read one of our earlier outputs
+                            // (e.g., in a scenario where we do something like
+                            // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
+                            //
+                            // NB. Accumulators are also outputs, but the above logic doesn't
+                            // quite apply to them. Since multiple values are pushed, the first value
+                            // may be unchanged, but later values could be different.
+                            // In that case, however, the data accumulated
+                            // by this function cannot be read until this function is marked green,
+                            // so even if we mark them as valid here, the function will re-execute
+                            // and overwrite the contents.
+                            dependency_index.mark_validated_output(zalsa, database_key_index);
                         }
                     }
                 }
+
+                // Possible scenarios here:
+                //
+                // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
+                //    cycles, nor found any changed dependencies. We can mark our memo verified and
+                //    return Unchanged with empty cycle heads.
+                //
+                // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
+                //    a cycle, and since we don't know if some other cycle participant that hasn't been
+                //    traversed yet (that is, some other dependency of the cycle head, which is only a
+                //    dependency of ours via the cycle) might still have changed, we can't yet mark our
+                //    memo verified. We can return a provisional Unchanged, with cycle heads.
+                //
+                // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
+                //    a cycle, and we've now traversed the entire cycle and found no changes, but no
+                //    other cycle participants were verified (they would have all hit case 2 above).
+                //    Similar to `execute`, return unchanged and lazily verify the other cycle-participants
+                //    when they're used next.
+                //
+                // 4. Cycle heads is non-empty, and contains our own key index as well as other key
+                //    indices. We are the head of a cycle nested within another cycle. We can't mark
+                //    our own memo verified (for the same reason as in case 2: the full outer cycle
+                //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
+                //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
+                //    future iteration; first the outer cycle head needs to verify itself.
+
+                cycle_heads.remove(&database_key_index);
+
+                // 1 and 3
+                if cycle_heads.is_empty() {
+                    old_memo.mark_as_verified(zalsa, database_key_index);
+                    old_memo.revisions.accumulated_inputs.store(inputs);
+
+                    if is_provisional {
+                        old_memo
+                            .revisions
+                            .verified_final
+                            .store(true, Ordering::Relaxed);
+                    }
+                }
+
+                VerifyResult::Unchanged(inputs)
             }
         }
     }
