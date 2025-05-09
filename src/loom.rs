@@ -160,8 +160,14 @@ pub use std::{thread, thread_local};
 pub mod cell {
     pub use std::cell::*;
 
-    #[derive(Debug)]
     pub(crate) struct UnsafeCell<T>(core::cell::UnsafeCell<T>);
+
+    // this is not derived because it confuses rust-analyzer ... https://github.com/rust-lang/rust-analyzer/issues/19755
+    impl<T: std::fmt::Debug> std::fmt::Debug for UnsafeCell<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_tuple("UnsafeCell").field(&self.0).finish()
+        }
+    }
 
     impl<T> UnsafeCell<T> {
         pub const fn new(data: T) -> UnsafeCell<T> {
@@ -216,8 +222,22 @@ pub mod sync {
     }
 
     /// A wrapper around parking-lot's `Condvar` to mirror loom's API.
-    #[derive(Default, Debug)]
     pub struct Condvar(parking_lot::Condvar);
+
+    // this is not derived because it confuses rust-analyzer ... https://github.com/rust-lang/rust-analyzer/issues/19755
+    #[allow(clippy::derivable_impls)]
+    impl Default for Condvar {
+        fn default() -> Self {
+            Self(Default::default())
+        }
+    }
+
+    // this is not derived because it confuses rust-analyzer ... https://github.com/rust-lang/rust-analyzer/issues/19755
+    impl std::fmt::Debug for Condvar {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_tuple("Condvar").field(&self.0).finish()
+        }
+    }
 
     impl Condvar {
         pub fn wait<'a, T>(&self, mut guard: MutexGuard<'a, T>) -> MutexGuard<'a, T> {
