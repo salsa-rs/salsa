@@ -5,7 +5,10 @@
 mod common;
 use common::{ExecuteValidateLoggerDatabase, LogDatabase};
 use expect_test::expect;
-use salsa::{CycleRecoveryAction, Database as Db, DatabaseImpl as DbImpl, Durability, Setter};
+use salsa::{
+    CycleRecoveryAction, Database as Db, DatabaseImpl as DbImpl, Durability, Setter,
+    UnexpectedCycle,
+};
 #[cfg(not(miri))]
 use test_log::test;
 
@@ -222,14 +225,12 @@ fn value(num: u8) -> Input {
 ///
 /// Simple self-cycle, no iteration, should panic.
 #[test]
-#[should_panic(expected = "dependency graph cycle")]
 fn self_panic() {
     let mut db = DbImpl::new();
     let a_in = Inputs::new(&db, vec![]);
     let a = Input::MinPanic(a_in);
     a_in.set_inputs(&mut db).to(vec![a.clone()]);
-
-    a.eval(&db);
+    UnexpectedCycle::catch(|| a.eval(&db)).unwrap_err();
 }
 
 /// a:Np(u10, a) -+
@@ -238,14 +239,13 @@ fn self_panic() {
 ///
 /// Simple self-cycle with untracked read, no iteration, should panic.
 #[test]
-#[should_panic(expected = "dependency graph cycle")]
 fn self_untracked_panic() {
     let mut db = DbImpl::new();
     let a_in = Inputs::new(&db, vec![]);
     let a = Input::MinPanic(a_in);
     a_in.set_inputs(&mut db).to(vec![untracked(10), a.clone()]);
 
-    a.eval(&db);
+    UnexpectedCycle::catch(|| a.eval(&db)).unwrap_err();
 }
 
 /// a:Ni(a) -+
@@ -289,7 +289,6 @@ fn two_mixed_converge_initial_value() {
 /// Two-query cycle, one with iteration and one without.
 /// If we enter from the one with no iteration, we panic.
 #[test]
-#[should_panic(expected = "dependency graph cycle")]
 fn two_mixed_panic() {
     let mut db = DbImpl::new();
     let a_in = Inputs::new(&db, vec![]);
@@ -299,7 +298,7 @@ fn two_mixed_panic() {
     a_in.set_inputs(&mut db).to(vec![b]);
     b_in.set_inputs(&mut db).to(vec![a.clone()]);
 
-    a.eval(&db);
+    UnexpectedCycle::catch(|| a.eval(&db)).unwrap_err();
 }
 
 /// a:Ni(b) --> b:Xi(a)
@@ -370,7 +369,6 @@ fn two_indirect_iterate_converge_initial_value() {
 ///
 /// Two-query cycle, enter indirectly at node without iteration, panic.
 #[test]
-#[should_panic(expected = "dependency graph cycle")]
 fn two_indirect_panic() {
     let mut db = DbImpl::new();
     let a_in = Inputs::new(&db, vec![]);
@@ -383,7 +381,7 @@ fn two_indirect_panic() {
     b_in.set_inputs(&mut db).to(vec![c]);
     c_in.set_inputs(&mut db).to(vec![b]);
 
-    a.eval(&db);
+    UnexpectedCycle::catch(|| a.eval(&db)).unwrap_err();
 }
 
 /// a:Np(b) -> b:Ni(v200,c) -> c:Xp(b)
