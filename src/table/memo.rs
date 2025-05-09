@@ -19,6 +19,12 @@ pub(crate) struct MemoTable {
     memos: RwLock<ThinVec<MemoEntry>>,
 }
 
+impl MemoTable {
+    pub(crate) fn clear(&self) {
+        self.memos.write().clear();
+    }
+}
+
 pub trait Memo: Any + Send + Sync {
     /// Returns the `origin` of this memo
     fn origin(&self) -> &QueryOrigin;

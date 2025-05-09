@@ -87,14 +87,6 @@ impl Durability {
     pub(crate) fn index(self) -> usize {
         self.0 as usize
     }
-
-    pub(crate) fn as_u8(self) -> u8 {
-        self.0 as u8
-    }
-
-    pub(crate) fn from_u8(value: u8) -> Self {
-        Self(DurabilityVal::from(value))
-    }
 }
 
 impl Default for Durability {

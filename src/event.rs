@@ -107,8 +107,17 @@ pub enum EventKind {
         revision: Revision,
     },
 
+    /// Indicates that a value was interned by reusing an existing slot.
+    DidReuseInternedValue {
+        // The key of the interned value.
+        key: DatabaseKeyIndex,
+
+        // The revision the value was interned in.
+        revision: Revision,
+    },
+
     /// Indicates that a previously interned value was read in a new revision.
-    DidReinternValue {
+    DidValidateInternedValue {
         // The key of the interned value.
         key: DatabaseKeyIndex,
 
