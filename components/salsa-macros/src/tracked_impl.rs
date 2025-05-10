@@ -109,7 +109,7 @@ impl Macro {
         // Construct the body of the method
 
         let block = parse_quote!({
-            salsa::plumbing::setup_method_body! {
+            salsa::plumbing::setup_tracked_method_body! {
                 salsa_tracked_attr: #salsa_tracked_attr,
                 self: #self_token,
                 self_ty: #self_ty,
