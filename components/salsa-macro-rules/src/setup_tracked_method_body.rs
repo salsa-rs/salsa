@@ -1,5 +1,5 @@
 #[macro_export]
-macro_rules! setup_method_body {
+macro_rules! setup_tracked_method_body {
     (
         salsa_tracked_attr: #[$salsa_tracked_attr:meta],
         self: $self:ident,
