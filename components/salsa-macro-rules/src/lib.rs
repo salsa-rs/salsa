@@ -19,6 +19,7 @@ mod return_mode;
 mod setup_accumulator_impl;
 mod setup_input_struct;
 mod setup_interned_struct;
+mod setup_tracked_assoc_fn_body;
 mod setup_tracked_fn;
 mod setup_tracked_method_body;
 mod setup_tracked_struct;

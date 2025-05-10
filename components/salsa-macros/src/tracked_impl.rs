@@ -25,7 +25,7 @@ struct Macro {
 }
 
 struct MethodArguments<'syn> {
-    self_token: &'syn syn::token::SelfValue,
+    self_token: Option<&'syn syn::token::SelfValue>,
     db_ty: &'syn syn::Type,
     db_ident: &'syn syn::Ident,
     db_lt: Option<&'syn syn::Lifetime>,
@@ -106,30 +106,54 @@ impl Macro {
         inner_fn.vis = syn::Visibility::Inherited;
         inner_fn.sig.ident = inner_fn_name.clone();
 
-        // Construct the body of the method
+        // Construct the body of the method or associated function
 
-        let block = parse_quote!({
-            salsa::plumbing::setup_tracked_method_body! {
-                salsa_tracked_attr: #salsa_tracked_attr,
-                self: #self_token,
-                self_ty: #self_ty,
-                db_lt: #db_lt,
-                db: #db_ident,
-                db_ty: (#db_ty),
-                input_ids: [#(#input_ids),*],
-                input_tys: [#(#input_tys),*],
-                output_ty: #output_ty,
-                inner_fn_name: #inner_fn_name,
-                inner_fn: #inner_fn,
+        let block = if let Some(self_token) = self_token {
+            parse_quote!({
+                salsa::plumbing::setup_tracked_method_body! {
+                    salsa_tracked_attr: #salsa_tracked_attr,
+                    self: #self_token,
+                    self_ty: #self_ty,
+                    db_lt: #db_lt,
+                    db: #db_ident,
+                    db_ty: (#db_ty),
+                    input_ids: [#(#input_ids),*],
+                    input_tys: [#(#input_tys),*],
+                    output_ty: #output_ty,
+                    inner_fn_name: #inner_fn_name,
+                    inner_fn: #inner_fn,
 
-                // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
-                // We have the procedural macro generate names for those items that are
-                // not used elsewhere in the user's code.
-                unused_names: [
-                    #InnerTrait,
-                ]
-            }
-        });
+                    // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
+                    // We have the procedural macro generate names for those items that are
+                    // not used elsewhere in the user's code.
+                    unused_names: [
+                        #InnerTrait,
+                    ]
+                }
+            })
+        } else {
+            parse_quote!({
+                salsa::plumbing::setup_tracked_assoc_fn_body! {
+                    salsa_tracked_attr: #salsa_tracked_attr,
+                    self_ty: #self_ty,
+                    db_lt: #db_lt,
+                    db: #db_ident,
+                    db_ty: (#db_ty),
+                    input_ids: [#(#input_ids),*],
+                    input_tys: [#(#input_tys),*],
+                    output_ty: #output_ty,
+                    inner_fn_name: #inner_fn_name,
+                    inner_fn: #inner_fn,
+
+                    // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
+                    // We have the procedural macro generate names for those items that are
+                    // not used elsewhere in the user's code.
+                    unused_names: [
+                        #InnerTrait,
+                    ]
+                }
+            })
+        };
 
         // Update the method that will actually appear in the impl to have the new body
         // and its true return type
@@ -147,12 +171,19 @@ impl Macro {
     ) -> syn::Result<MethodArguments<'syn>> {
         let db_lt = self.extract_db_lifetime(impl_item, fn_item)?;
 
-        let self_token = self.check_self_argument(fn_item)?;
+        let is_method = matches!(&fn_item.sig.inputs[0], syn::FnArg::Receiver(_));
 
-        let (db_ident, db_ty) = self.check_db_argument(&fn_item.sig.inputs[1])?;
+        let (self_token, db_input_index, skipped_inputs) = if is_method {
+            (Some(self.check_self_argument(fn_item)?), 1, 2)
+        } else {
+            (None, 0, 1)
+        };
 
-        let input_ids: Vec<syn::Ident> = crate::fn_util::input_ids(&self.hygiene, &fn_item.sig, 2);
-        let input_tys = crate::fn_util::input_tys(&fn_item.sig, 2)?;
+        let (db_ident, db_ty) = self.check_db_argument(&fn_item.sig.inputs[db_input_index])?;
+
+        let input_ids: Vec<syn::Ident> =
+            crate::fn_util::input_ids(&self.hygiene, &fn_item.sig, skipped_inputs);
+        let input_tys = crate::fn_util::input_tys(&fn_item.sig, skipped_inputs)?;
         let output_ty = crate::fn_util::output_ty(db_lt, &fn_item.sig)?;
 
         Ok(MethodArguments {
