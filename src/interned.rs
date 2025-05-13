@@ -103,13 +103,14 @@ where
 struct ValueShared {
     /// The interned ID for this value.
     ///
-    /// This is necessary to identify slots in the LRU list.
+    /// Storing this on the value itself is necessary to identify slots
+    /// from the LRU list.
     id: Id,
 
     /// The revision the value was first interned in.
     first_interned_at: Revision,
 
-    /// The most recent interned revision.
+    /// The revision the value was most-recently interned in.
     last_interned_at: Revision,
 
     /// The minimum durability of all inputs consumed by the creator
@@ -327,8 +328,16 @@ where
         if let Some(value) = cursor.get() {
             let is_stale = value.shared.with(|value_shared| {
                 // SAFETY: We hold the lock.
-                let last_interned_at = unsafe { (*value_shared).last_interned_at };
-                self.revision_queue.is_stale(last_interned_at)
+                let value_shared = unsafe { &*value_shared };
+
+                // The value must not have been read in the current revision to be collected
+                // safely, but we also do not want to collect values that have been read recently.
+                let is_stale = self.revision_queue.is_stale(value_shared.last_interned_at);
+
+                // We can't collect higher durability values until we have a mutable reference to the database.
+                let is_low_durability = value_shared.durability == Durability::LOW;
+
+                is_stale && is_low_durability
             });
 
             if is_stale {
@@ -337,34 +346,20 @@ where
                     .active_query()
                     .map(|(_, stamp)| (stamp.durability, current_revision))
                     // If there is no active query this durability does not actually matter.
-                    // `last_interned_at` needs to be `Revision::MAX`, see the intern_access_in_different_revision test.
+                    // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
                     .unwrap_or((Durability::MAX, Revision::max()));
 
-                let value = value.shared.get_mut().with(|value_shared| {
+                let id = value.shared.get_mut().with(|value_shared| {
                     // SAFETY: We hold the lock.
                     let value_shared = unsafe { &mut *value_shared };
 
                     // Mark the slot as reused.
                     value_shared.first_interned_at = current_revision;
                     value_shared.last_interned_at = last_interned_at;
-
-                    // Remove the value from the LRU list.
-                    //
-                    // SAFETY: The value pointer is valid for the lifetime of the database.
-                    unsafe { &*UnsafeRef::into_raw(cursor.remove().unwrap()) }
-                });
-
-                let id = value.shared.with_mut(|value_shared| {
-                    // SAFETY: We hold the lock.
-                    let value_shared = unsafe { &mut *value_shared };
-
-                    // Note we need to retain the previous durability here to ensure queries trying
-                    // to read the old value are revalidated.
-                    value_shared.durability = std::cmp::max(value_shared.durability, durability);
-
-                    let index = self.database_key_index(value_shared.id);
+                    value_shared.durability = durability;
 
                     // Record a dependency on the value.
+                    let index = self.database_key_index(value_shared.id);
                     zalsa_local.report_tracked_read_simple(
                         index,
                         value_shared.durability,
@@ -381,12 +376,59 @@ where
                     value_shared.id
                 });
 
+                // Remove the value from the LRU list.
+                //
+                // SAFETY: The value pointer is valid for the lifetime of the database.
+                let value = unsafe { &*UnsafeRef::into_raw(cursor.remove().unwrap()) };
+
                 // Reuse the value slot with the new data.
                 //
                 // SAFETY: We hold the lock and marked the value as reused, so any readers in the
                 // current revision will see it is not valid.
-                value.fields.with_mut(|fields| unsafe {
-                    *fields = self.to_internal_data(assemble(id, key));
+                value.fields.with_mut(|old_fields| {
+                    let old_fields = unsafe { &mut *old_fields };
+
+                    // Remove the old value from the ID map.
+                    let old_fields_ref = &*old_fields;
+
+                    let eq = |id: &_| {
+                        let data = table.get::<Value<C>>(*id);
+
+                        data.fields.with(|fields| {
+                            // SAFETY: We hold the lock.
+                            let fields = unsafe { &*fields };
+
+                            // SAFETY: it's safe to go from Data<'static> to Data<'db>
+                            // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
+                            let data = unsafe { Self::from_internal_data(fields) };
+
+                            data == old_fields_ref
+                        })
+                    };
+
+                    let old_data_hash = self.hasher.hash_one(old_fields_ref);
+                    shared
+                        .key_map
+                        .find_entry(old_data_hash, eq)
+                        .expect("interned value in LRU so must be in key_map")
+                        .remove();
+
+                    // Update the fields.
+                    *old_fields = unsafe { self.to_internal_data(assemble(id, key)) };
+
+                    // Insert the new value into the ID map.
+                    let hasher = |id: &_| {
+                        // This closure is only called if the table is resized. So while it's expensive
+                        // to lookup all values, it will only happen rarely.
+                        let value = zalsa.table().get::<Value<C>>(*id);
+
+                        // SAFETY: We hold the lock.
+                        value
+                            .fields
+                            .with(|fields| unsafe { self.hasher.hash_one(&*fields) })
+                    };
+
+                    shared.key_map.insert_unique(data_hash, id, hasher);
                 });
 
                 // TODO: Need to free the memory safely here.
@@ -436,7 +478,7 @@ where
             .active_query()
             .map(|(_, stamp)| (stamp.durability, current_revision))
             // If there is no active query this durability does not actually matter.
-            // `last_interned_at` needs to be `Revision::MAX`, see the intern_access_in_different_revision test.
+            // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
             .unwrap_or((Durability::MAX, Revision::max()));
 
         // Allocate the value slot.
@@ -486,12 +528,8 @@ where
 
         let index = self.database_key_index(id);
 
-        // SAFETY: We hold the lock.
-        value.shared.with_mut(|value_shared| {
-            // Record a dependency on this value.
-            let first_interned_at = unsafe { (*value_shared).first_interned_at };
-            zalsa_local.report_tracked_read_simple(index, durability, first_interned_at);
-        });
+        // Record a dependency on the value.
+        zalsa_local.report_tracked_read_simple(index, durability, current_revision);
 
         zalsa.event(&|| {
             Event::new(EventKind::DidInternValue {
@@ -522,6 +560,10 @@ where
                 // SAFETY: We hold the lock.
                 let value_shared = unsafe { &*value_shared };
 
+                // Record a read dependency on the value.
+                //
+                // This is necessary as interned slots may be reused, in which case any queries
+                // that created or read from the previous value need to be revalidated.
                 zalsa_local.report_tracked_read_simple(
                     self.database_key_index(id),
                     value_shared.durability,
