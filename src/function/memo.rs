@@ -164,45 +164,42 @@ impl<V> Memo<V> {
         ) -> bool {
             let mut retry = false;
 
-            let hit_cycle = cycle_heads
-                .into_iter()
-                .filter(|&head| head.database_key_index != database_key_index)
-                .any(|head| {
-                    let head_index = head.database_key_index;
-                    let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
-                    let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
-                    if matches!(
-                        cycle_head_kind,
-                        CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
-                    ) {
-                        // This cycle is already finalized, so we don't need to wait on it;
-                        // keep looping through cycle heads.
-                        retry = true;
-                        false
-                    } else if ingredient.wait_for(zalsa, head_index.key_index()) {
-                        // There's a new memo available for the cycle head; fetch our own
-                        // updated memo and see if it's still provisional or if the cycle
-                        // has resolved.
-                        retry = true;
-                        false
-                    } else {
-                        // We hit a cycle blocking on the cycle head; this means it's in
-                        // our own active query stack and we are responsible to resolve the
-                        // cycle, so go ahead and return the provisional memo.
-                        true
-                    }
-                });
+            for head in cycle_heads {
+                let head_index = head.database_key_index;
+
+                if head_index == database_key_index {
+                    continue;
+                }
+
+                let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
+                let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
+                if matches!(
+                    cycle_head_kind,
+                    CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
+                ) {
+                    // This cycle is already finalized, so we don't need to wait on it;
+                    // keep looping through cycle heads.
+                    retry = true;
+                } else if ingredient.wait_for(zalsa, head_index.key_index()) {
+                    // There's a new memo available for the cycle head; fetch our own
+                    // updated memo and see if it's still provisional or if the cycle
+                    // has resolved.
+                    retry = true;
+                } else {
+                    // We hit a cycle blocking on the cycle head; this means it's in
+                    // our own active query stack and we are responsible to resolve the
+                    // cycle, so go ahead and return the provisional memo.
+                    return false;
+                }
+            }
+
             // If `retry` is `true`, all our cycle heads (barring ourself) are complete; re-fetch
             // and we should get a non-provisional memo. If we get here and `retry` is still
             // `false`, we have no cycle heads other than ourself, so we are a provisional value of
             // the cycle head (either initial value, or from a later iteration) and should be
             // returned to caller to allow fixpoint iteration to proceed. (All cases in the loop
             // above other than "cycle head is self" are either terminal or set `retry`.)
-            if hit_cycle {
-                false
-            } else {
-                retry
-            }
+            retry
         }
     }
 
