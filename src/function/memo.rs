@@ -146,12 +146,14 @@ impl<V> Memo<V> {
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
-        if !self.may_be_provisional() {
-            return false;
-        };
         if self.revisions.cycle_heads.is_empty() {
             return false;
         }
+
+        if !self.may_be_provisional() {
+            return false;
+        };
+
         return provisional_retry_cold(zalsa, database_key_index, &self.revisions.cycle_heads);
 
         #[inline(never)]
