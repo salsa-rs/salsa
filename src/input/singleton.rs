@@ -1,4 +1,4 @@
-use crate::loom::sync::atomic::{AtomicU32, Ordering};
+use crate::loom::sync::atomic::{AtomicU64, Ordering};
 use crate::Id;
 
 mod sealed {
@@ -11,7 +11,7 @@ pub trait SingletonChoice: sealed::Sealed + Default {
 }
 
 pub struct Singleton {
-    index: AtomicU32,
+    index: AtomicU64,
 }
 impl sealed::Sealed for Singleton {}
 impl SingletonChoice for Singleton {
@@ -22,7 +22,7 @@ impl SingletonChoice for Singleton {
         let id = cb();
         if self
             .index
-            .compare_exchange(0, id.as_u32() + 1, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(0, id.as_bits(), Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             panic!("singleton struct may not be duplicated");
@@ -33,8 +33,9 @@ impl SingletonChoice for Singleton {
     fn index(&self) -> Option<Id> {
         match self.index.load(Ordering::Acquire) {
             0 => None,
-            // SAFETY: Our u32 is derived from an ID and thus safe to convert back.
-            id => Some(unsafe { Id::from_u32(id - 1) }),
+
+            // SAFETY: Our u64 is derived from an ID and thus safe to convert back.
+            id => Some(unsafe { Id::from_bits(id) }),
         }
     }
 }
@@ -42,7 +43,7 @@ impl SingletonChoice for Singleton {
 impl Default for Singleton {
     fn default() -> Self {
         Self {
-            index: AtomicU32::new(0),
+            index: AtomicU64::new(0),
         }
     }
 }
