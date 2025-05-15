@@ -42,14 +42,53 @@ pub(crate) trait Slot: Any + Send + Sync {
     fn memos_mut(&mut self) -> &mut MemoTable;
 }
 
+/// A wrapper around `Slot::memos` that goes through the `UnsafeCell` indirection.
+///
+/// This is only really necessary when running under `loom`, as loom's cell primitives
+/// are not `repr(transparent)` over their inner type.
+///
+/// # Safety
+///
+/// - The slot must be initialized and valid for reads.
+/// - The safety pre-condition of `T::memos` must be satisfied.
+unsafe fn memos_raw<T>(data: &UnsafeCell<MaybeUninit<T>>, current_revision: Revision) -> &MemoTable
+where
+    T: Slot,
+{
+    // SAFETY: Guaranteed by caller.
+    unsafe {
+        data.with(|ptr| (*ptr).assume_init_ref())
+            .memos(current_revision)
+    }
+}
+
+/// A wrapper around `Slot::memos_mut` that goes through the `UnsafeCell` indirection.
+///
+/// This is only really necessary when running under `loom`, as loom's cell primitives
+/// are not `repr(transparent)` over their inner type.
+///
+/// # Safety
+///
+/// The slot must be initialized and valid for writes.
+unsafe fn memos_mut_raw<T>(data: &mut UnsafeCell<MaybeUninit<T>>) -> &mut MemoTable
+where
+    T: Slot,
+{
+    // SAFETY: Guaranteed by caller.
+    data.with_mut(|ptr| unsafe { (*ptr).assume_init_mut() })
+        .memos_mut()
+}
+
 /// [Slot::memos]
 type SlotMemosFnRaw = unsafe fn(*const (), current_revision: Revision) -> *const MemoTable;
 /// [Slot::memos]
-type SlotMemosFn<T> = unsafe fn(&T, current_revision: Revision) -> &MemoTable;
+type SlotMemosFn<T> =
+    unsafe fn(&UnsafeCell<MaybeUninit<T>>, current_revision: Revision) -> &MemoTable;
+
 /// [Slot::memos_mut]
 type SlotMemosMutFnRaw = unsafe fn(*mut ()) -> *mut MemoTable;
 /// [Slot::memos_mut]
-type SlotMemosMutFn<T> = fn(&mut T) -> &mut MemoTable;
+type SlotMemosMutFn<T> = unsafe fn(&mut UnsafeCell<MaybeUninit<T>>) -> &mut MemoTable;
 
 struct SlotVTable {
     layout: Layout,
@@ -70,8 +109,9 @@ impl SlotVTable {
                 // SAFETY: The caller is required to supply a correct data pointer and initialized length
                 unsafe {
                     let data = Box::from_raw(data.cast::<PageData<T>>());
+
                     for i in 0..initialized {
-                        data[i].with_mut(|item| {
+                        data[i].with_mut(|item: *mut MaybeUninit<T>| {
                             let item = item.cast::<T>();
                             memo_types.attach_memos_mut((*item).memos_mut()).drop();
                             ptr::drop_in_place(item);
@@ -80,10 +120,10 @@ impl SlotVTable {
                 },
                 layout: Layout::new::<T>(),
                 // SAFETY: The signatures are compatible
-                memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnRaw>(T::memos) },
+                memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnRaw>(memos_raw::<T>) },
                 // SAFETY: The signatures are compatible
                 memos_mut: unsafe {
-                    mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnRaw>(T::memos_mut)
+                    mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnRaw>(memos_mut_raw::<T>)
                 },
             }
         }
@@ -178,9 +218,9 @@ impl Table {
     ///
     /// If `id` is out of bounds or the does not have the type `T`.
     pub(crate) fn get<T: Slot>(&self, id: Id) -> &T {
-        let (page, slot) = split_id(id);
-        let page_ref = self.page::<T>(page);
-        &page_ref.data()[slot.0]
+        self.get_raw(id)
+            // SAFETY: Guaranteed by caller.
+            .with(|ptr| unsafe { (*ptr).assume_init_ref() })
     }
 
     /// Get a raw pointer to the data for `id`, which must have been allocated from this table.
@@ -193,6 +233,7 @@ impl Table {
     ///
     /// See [`Page::get_raw`][].
     // TODO: This could return an `&UnsafeCell<T>` directly, but loom's `UnsafeCell` is not `repr(C)`
+    #[inline]
     pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> &UnsafeCell<MaybeUninit<T>> {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
@@ -256,7 +297,9 @@ impl Table {
         self.pages
             .iter()
             .filter_map(|(_, page)| page.cast_type::<T>())
-            .flat_map(|view| view.data())
+            .flat_map(|view| view.page_data())
+            // SAFETY: `page_data` is the initialized part of the page
+            .map(|data| unsafe { data.with(|ptr| (*ptr).assume_init_ref()) })
     }
 
     pub(crate) fn fetch_or_push_page<T: Slot>(
@@ -290,13 +333,6 @@ impl<'p, T: Slot> PageView<'p, T> {
         let len = self.0.allocated.load(Ordering::Acquire);
         // SAFETY: `len` is the initialized length of the page
         unsafe { slice::from_raw_parts(self.0.data.cast::<PageDataEntry<T>>().as_ptr(), len) }
-    }
-
-    #[inline]
-    fn data(&self) -> &'p [T] {
-        let len = self.0.allocated.load(Ordering::Acquire);
-        // SAFETY: `len` is the initialized length of the page
-        unsafe { slice::from_raw_parts(self.0.data.cast::<T>().as_ptr(), len) }
     }
 
     pub(crate) fn allocate<V>(&self, page: PageIndex, value: V) -> Result<Id, V>
@@ -333,8 +369,11 @@ impl Page {
             Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]);
 
         #[cfg(loom)]
-        let data: Box<PageData<T>> =
-            Box::new([const { MaybeUninit::uninit() }; PAGE_LEN].map(UnsafeCell::new));
+        let data: Box<PageData<T>> = (0..PAGE_LEN)
+            .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
+            .collect::<Vec<PageDataEntry<T>>>()
+            .try_into()
+            .unwrap();
 
         Self {
             slot_vtable: SlotVTable::of::<T>(),
@@ -376,6 +415,7 @@ impl Page {
             self.slot_type_name,
             std::any::type_name::<T>(),
         );
+
         PageView(self, PhantomData)
     }
 
