@@ -44,20 +44,9 @@ where
         loop {
             if let Some(memo) = self
                 .fetch_hot(zalsa, id, memo_ingredient_index)
-                .or_else(|| self.fetch_cold(zalsa, db, id, memo_ingredient_index))
+                .or_else(|| self.fetch_cold_with_retry(zalsa, db, id, memo_ingredient_index))
             {
-                // If we get back a provisional cycle memo, and it's provisional on any cycle heads
-                // that are claimed by a different thread, we can't propagate the provisional memo
-                // any further (it could escape outside the cycle); we need to block on the other
-                // thread completing fixpoint iteration of the cycle, and then we can re-query for
-                // our no-longer-provisional memo.
-                // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
-                // never have provisional entries.
-                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-                    || !memo.provisional_retry(zalsa, self.database_key_index(id))
-                {
-                    return memo;
-                }
+                return memo;
             }
         }
     }
@@ -89,6 +78,31 @@ where
     }
 
     #[inline(never)]
+    fn fetch_cold_with_retry<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        db: &'db C::DbView,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db Memo<C::Output<'db>>> {
+        let memo = self.fetch_cold(zalsa, db, id, memo_ingredient_index)?;
+
+        // If we get back a provisional cycle memo, and it's provisional on any cycle heads
+        // that are claimed by a different thread, we can't propagate the provisional memo
+        // any further (it could escape outside the cycle); we need to block on the other
+        // thread completing fixpoint iteration of the cycle, and then we can re-query for
+        // our no-longer-provisional memo.
+        // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
+        // never have provisional entries.
+        if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
+            || !memo.provisional_retry(zalsa, self.database_key_index(id))
+        {
+            Some(memo)
+        } else {
+            None
+        }
+    }
+
     fn fetch_cold<'db>(
         &'db self,
         zalsa: &'db Zalsa,
