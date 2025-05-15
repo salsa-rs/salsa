@@ -232,8 +232,7 @@ fn test_reuse_interned_input() {
 
     #[salsa::tracked]
     fn use_interned<'db>(db: &'db dyn Database, interned: Interned<'db>) -> usize {
-        let field = interned.field1(db);
-        field
+        interned.field1(db)
     }
 
     let mut db = common::EventLoggerDatabase::default();
@@ -284,8 +283,7 @@ fn test_reuse_multiple_interned_input() {
 
     #[salsa::tracked]
     fn use_interned<'db>(db: &'db dyn Database, interned: Interned<'db>) -> usize {
-        let field = interned.field1(db);
-        field
+        interned.field1(db)
     }
 
     // A query that reads an interned value.

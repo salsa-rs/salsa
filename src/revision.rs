@@ -74,13 +74,6 @@ impl From<Revision> for AtomicRevision {
 }
 
 impl AtomicRevision {
-    #[inline]
-    pub(crate) const fn start() -> Self {
-        Self {
-            data: AtomicUsize::new(START),
-        }
-    }
-
     pub(crate) fn load(&self) -> Revision {
         Revision {
             // SAFETY: We know that the value is non-zero because we only ever store `START` which 1, or a
