@@ -435,7 +435,14 @@ where
         };
 
         if let Some(id) = self.free_list.pop() {
-            Self::data_raw(zalsa.table(), id).with_mut(|data_raw| {
+            // Increment the ID generation before reusing it, as if we have allocated a new
+            // slot in the table.
+            //
+            // If the generation will wrap, we instead saturate to the generation `u16::MAX`.
+            // "Leaked" IDs may be reused with the same generation.
+            let id = id.with_generation(id.generation().saturating_add(1));
+
+            return Self::data_raw(zalsa.table(), id).with_mut(|data_raw| {
                 let data_raw = data_raw.cast::<Value<C>>();
 
                 assert!(
@@ -450,10 +457,10 @@ where
                 }
 
                 id
-            })
-        } else {
-            zalsa_local.allocate::<Value<C>>(zalsa, self.ingredient_index, value)
+            });
         }
+
+        zalsa_local.allocate::<Value<C>>(zalsa, self.ingredient_index, value)
     }
 
     /// Get mutable access to the data for `id` -- this holds a write lock for the duration
@@ -637,6 +644,7 @@ where
 
         // SAFETY: We use the correct types table.
         let table = unsafe { self.memo_table_types.attach_memos_mut(&mut memo_table) };
+
         // `Database::salsa_event` is a user supplied callback which may panic
         // in that case we need a drop guard to free the memo table
         struct TableDropGuard<'a>(MemoTableWithTypesMut<'a>);
@@ -725,12 +733,20 @@ where
 
         data.read_lock(zalsa.current_revision());
 
-        // Add a dependency on the tracked struct itself.
-        zalsa_local.report_tracked_read_simple(
-            DatabaseKeyIndex::new(self.ingredient_index, id),
-            data.durability,
-            data.created_at,
-        );
+        // Note that we do not need to add a dependency on the tracked struct
+        // in general, as IDs that are reused increment their generation,
+        // invalidating any dependent queries directly.
+        //
+        // However, IDs that have hit the maximum generation are "leaked", and may
+        // be reused without a new generation, and so a dependency must be created
+        // on any query that reads from them.
+        if id.generation() == u16::MAX {
+            zalsa_local.report_tracked_read_simple(
+                DatabaseKeyIndex::new(self.ingredient_index, id),
+                data.durability,
+                data.created_at,
+            );
+        }
 
         data.fields()
     }
@@ -960,23 +976,23 @@ mod tests {
         };
         // SAFETY: We don't use the IDs within salsa internals so this is fine
         unsafe {
-            assert_eq!(d.insert(i1, Id::from_u32(0)), None);
-            assert_eq!(d.insert(i2, Id::from_u32(1)), None);
-            assert_eq!(d.insert(i3, Id::from_u32(2)), None);
-            assert_eq!(d.insert(i4, Id::from_u32(3)), None);
-            assert_eq!(d.insert(i5, Id::from_u32(4)), None);
-            assert_eq!(d.insert(i6, Id::from_u32(5)), None);
-            assert_eq!(d.insert(i7, Id::from_u32(6)), None);
-            assert_eq!(d.insert(i8, Id::from_u32(7)), None);
+            assert_eq!(d.insert(i1, Id::from_data(0)), None);
+            assert_eq!(d.insert(i2, Id::from_data(1)), None);
+            assert_eq!(d.insert(i3, Id::from_data(2)), None);
+            assert_eq!(d.insert(i4, Id::from_data(3)), None);
+            assert_eq!(d.insert(i5, Id::from_data(4)), None);
+            assert_eq!(d.insert(i6, Id::from_data(5)), None);
+            assert_eq!(d.insert(i7, Id::from_data(6)), None);
+            assert_eq!(d.insert(i8, Id::from_data(7)), None);
 
-            assert_eq!(d.get(&i1), Some(Id::from_u32(0)));
-            assert_eq!(d.get(&i2), Some(Id::from_u32(1)));
-            assert_eq!(d.get(&i3), Some(Id::from_u32(2)));
-            assert_eq!(d.get(&i4), Some(Id::from_u32(3)));
-            assert_eq!(d.get(&i5), Some(Id::from_u32(4)));
-            assert_eq!(d.get(&i6), Some(Id::from_u32(5)));
-            assert_eq!(d.get(&i7), Some(Id::from_u32(6)));
-            assert_eq!(d.get(&i8), Some(Id::from_u32(7)));
+            assert_eq!(d.get(&i1), Some(Id::from_data(0)));
+            assert_eq!(d.get(&i2), Some(Id::from_data(1)));
+            assert_eq!(d.get(&i3), Some(Id::from_data(2)));
+            assert_eq!(d.get(&i4), Some(Id::from_data(3)));
+            assert_eq!(d.get(&i5), Some(Id::from_data(4)));
+            assert_eq!(d.get(&i6), Some(Id::from_data(5)));
+            assert_eq!(d.get(&i7), Some(Id::from_data(6)));
+            assert_eq!(d.get(&i8), Some(Id::from_data(7)));
         };
     }
 }
