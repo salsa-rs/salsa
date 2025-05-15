@@ -24,7 +24,7 @@ struct Macro {
     hygiene: Hygiene,
 }
 
-struct MethodArguments<'syn> {
+struct AssociatedFunctionArguments<'syn> {
     self_token: Option<&'syn syn::token::SelfValue>,
     db_ty: &'syn syn::Type,
     db_ident: &'syn syn::Ident,
@@ -92,7 +92,7 @@ impl Macro {
         let InnerTrait = self.hygiene.ident("InnerTrait");
         let inner_fn_name = self.hygiene.ident(&fn_item.sig.ident.to_string());
 
-        let MethodArguments {
+        let AssociatedFunctionArguments {
             self_token,
             db_ty,
             db_ident,
@@ -168,7 +168,7 @@ impl Macro {
         &self,
         impl_item: &'syn syn::ItemImpl,
         fn_item: &'syn syn::ImplItemFn,
-    ) -> syn::Result<MethodArguments<'syn>> {
+    ) -> syn::Result<AssociatedFunctionArguments<'syn>> {
         let db_lt = self.extract_db_lifetime(impl_item, fn_item)?;
 
         let is_method = matches!(&fn_item.sig.inputs[0], syn::FnArg::Receiver(_));
@@ -186,7 +186,7 @@ impl Macro {
         let input_tys = crate::fn_util::input_tys(&fn_item.sig, skipped_inputs)?;
         let output_ty = crate::fn_util::output_ty(db_lt, &fn_item.sig)?;
 
-        Ok(MethodArguments {
+        Ok(AssociatedFunctionArguments {
             self_token,
             db_ident,
             db_lt,
