@@ -12,8 +12,7 @@ use crate::{Database, Id};
 /// only for inserting into maps and the like.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseKeyIndex {
-    ingredient_index: IngredientIndex,
-    key_index: Id,
+    packed_key_index: Id,
 }
 // ANCHOR_END: DatabaseKeyIndex
 
@@ -21,17 +20,18 @@ impl DatabaseKeyIndex {
     #[inline]
     pub(crate) fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
         Self {
-            key_index,
-            ingredient_index,
+            // Pack the ingredient index with the key.
+            packed_key_index: key_index.with_ingredient_index(ingredient_index.as_u16()),
         }
     }
 
     pub fn ingredient_index(self) -> IngredientIndex {
-        self.ingredient_index
+        IngredientIndex::from(self.packed_key_index.ingredient_index() as usize)
     }
 
     pub fn key_index(self) -> Id {
-        self.key_index
+        // Clear the ingredient index from the key as it not part of the dependency.
+        self.packed_key_index.with_ingredient_index(0)
     }
 
     pub(crate) fn maybe_changed_after(
@@ -44,15 +44,15 @@ impl DatabaseKeyIndex {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {
             zalsa
-                .lookup_ingredient(self.ingredient_index)
-                .maybe_changed_after(db, self.key_index, last_verified_at, cycle_heads)
+                .lookup_ingredient(self.ingredient_index())
+                .maybe_changed_after(db, self.key_index(), last_verified_at, cycle_heads)
         }
     }
 
     pub(crate) fn remove_stale_output(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
         zalsa
-            .lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(zalsa, executor, self.key_index)
+            .lookup_ingredient(self.ingredient_index())
+            .remove_stale_output(zalsa, executor, self.key_index())
     }
 
     pub(crate) fn mark_validated_output(
@@ -61,21 +61,21 @@ impl DatabaseKeyIndex {
         database_key_index: DatabaseKeyIndex,
     ) {
         zalsa
-            .lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(zalsa, database_key_index, self.key_index)
+            .lookup_ingredient(self.ingredient_index())
+            .mark_validated_output(zalsa, database_key_index, self.key_index())
     }
 }
 
 impl fmt::Debug for DatabaseKeyIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         crate::attach::with_attached_database(|db| {
-            let ingredient = db.zalsa().lookup_ingredient(self.ingredient_index);
-            ingredient.fmt_index(self.key_index, f)
+            let ingredient = db.zalsa().lookup_ingredient(self.ingredient_index());
+            ingredient.fmt_index(self.key_index(), f)
         })
         .unwrap_or_else(|| {
             f.debug_tuple("DatabaseKeyIndex")
-                .field(&self.ingredient_index)
-                .field(&self.key_index)
+                .field(&self.ingredient_index())
+                .field(&self.key_index())
                 .finish()
         })
     }
