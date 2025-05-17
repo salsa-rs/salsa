@@ -24,8 +24,11 @@ impl Revision {
     }
 
     #[inline]
-    pub(crate) fn start() -> Self {
-        Self::from(START)
+    pub(crate) const fn start() -> Self {
+        Self {
+            // SAFETY: `START` is non-zero.
+            generation: unsafe { NonZeroUsize::new_unchecked(START) },
+        }
     }
 
     #[inline]
@@ -46,7 +49,7 @@ impl Revision {
     }
 
     #[inline]
-    fn as_usize(self) -> usize {
+    pub(crate) fn as_usize(self) -> usize {
         self.generation.get()
     }
 }
