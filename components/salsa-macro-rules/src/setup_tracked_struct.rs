@@ -91,7 +91,7 @@ macro_rules! setup_tracked_struct {
         ]
     ) => {
         $(#[$attr])*
-        #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[derive(Copy, Clone, PartialEq, Eq, Hash)]
         $vis struct $Struct<$db_lt>(
             salsa::Id,
             std::marker::PhantomData < & $db_lt salsa::plumbing::tracked_struct::Value < $Struct<'static> > >

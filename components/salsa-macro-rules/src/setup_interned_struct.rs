@@ -72,7 +72,7 @@ macro_rules! setup_interned_struct {
         ]
     ) => {
         $(#[$attr])*
-        #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+        #[derive(Copy, Clone, PartialEq, Eq, Hash)]
         $vis struct $Struct< $($db_lt_arg)? >(
             $Id,
             std::marker::PhantomData < & $interior_lt salsa::plumbing::interned::Value <$StructWithStatic> >
