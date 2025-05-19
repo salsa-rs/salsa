@@ -60,7 +60,7 @@ macro_rules! setup_input_struct {
         ]
     ) => {
         $(#[$attr])*
-        #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+        #[derive(Copy, Clone, PartialEq, Eq, Hash)]
         $vis struct $Struct(salsa::Id);
 
         #[allow(clippy::all)]
