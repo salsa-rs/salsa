@@ -100,11 +100,15 @@ where
         cycle_heads: &mut CycleHeads,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
+        let zalsa_local = db.zalsa_local();
 
-        let _claim_guard = match self.sync_table.try_claim(zalsa, key_index) {
+        let _claim_guard = match self
+            .sync_table
+            .try_claim(zalsa, zalsa_local.id(), key_index)
+        {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
-                CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
+                CycleRecoveryStrategy::Panic => zalsa_local.with_query_stack(|stack| {
                     panic!(
                         "dependency graph cycle when validating {database_key_index:#?}, \
                             set cycle_fn/cycle_initial to fixpoint iterate.\n\
@@ -158,7 +162,7 @@ where
         // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && cycle_heads.is_empty() {
-            let active_query = db.zalsa_local().push_query(database_key_index, 0);
+            let active_query = zalsa_local.push_query(database_key_index, 0);
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 

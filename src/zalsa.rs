@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::num::NonZeroU32;
 use std::panic::RefUnwindSafe;
+use std::sync::atomic::AtomicUsize;
 
 use rustc_hash::FxHashMap;
 
@@ -15,7 +16,7 @@ use crate::runtime::Runtime;
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
-use crate::zalsa_local::ZalsaLocal;
+use crate::zalsa_local::{ZalsaLocal, ZalsaLocalId};
 use crate::{Database, Durability, Id, Revision};
 
 /// Internal plumbing trait.
@@ -125,6 +126,8 @@ pub struct Zalsa {
     /// as input.
     memo_ingredient_indices: RwLock<Vec<Vec<IngredientIndex>>>,
 
+    next_local_id: AtomicUsize,
+
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
     /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
     /// so that we can protect `ingredients_vec` as well and predict what the
@@ -167,6 +170,7 @@ impl Zalsa {
         Self {
             views_of: Views::new::<Db>(),
             nonce: NONCE.nonce(),
+            next_local_id: AtomicUsize::default(),
             jar_map: Default::default(),
             ingredient_to_id_struct_type_id_map: Default::default(),
             ingredients_vec: boxcar::Vec::new(),
@@ -187,6 +191,10 @@ impl Zalsa {
 
     pub(crate) fn runtime_mut(&mut self) -> &mut Runtime {
         &mut self.runtime
+    }
+
+    pub(crate) fn next_local_id(&self) -> ZalsaLocalId {
+        ZalsaLocalId::new(self.next_local_id.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Returns the [`Table`] used to store the value of salsa structs

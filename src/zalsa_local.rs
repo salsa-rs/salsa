@@ -23,6 +23,8 @@ use crate::{Accumulator, Cancelled, Id, Revision};
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
 pub struct ZalsaLocal {
+    id: ZalsaLocalId,
+
     /// Vector of active queries.
     ///
     /// Unwinding note: pushes onto this vector must be popped -- even
@@ -35,11 +37,16 @@ pub struct ZalsaLocal {
 }
 
 impl ZalsaLocal {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(id: ZalsaLocalId) -> Self {
         ZalsaLocal {
+            id,
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: RefCell::new(FxHashMap::default()),
         }
+    }
+
+    pub(crate) fn id(&self) -> ZalsaLocalId {
+        self.id
     }
 
     pub(crate) fn record_unfilled_pages(&mut self, table: &Table) {
@@ -564,5 +571,14 @@ impl Drop for ActiveQueryGuard<'_> {
                 self.push_len,
             );
         });
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct ZalsaLocalId(usize);
+
+impl ZalsaLocalId {
+    pub(crate) fn new(id: usize) -> Self {
+        ZalsaLocalId(id)
     }
 }

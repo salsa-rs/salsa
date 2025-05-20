@@ -1,5 +1,6 @@
 use crate::key::DatabaseKeyIndex;
 use crate::loom::thread::{self, ThreadId};
+use crate::zalsa_local::ZalsaLocalId;
 use crate::Revision;
 
 /// The `Event` struct identifies various notable things that can
@@ -44,7 +45,7 @@ pub enum EventKind {
     /// before they have answered us.
     WillBlockOn {
         /// The id of the thread we will block on.
-        other_thread_id: ThreadId,
+        other_thread_id: ZalsaLocalId,
 
         /// The database-key for the affected value. Implements `Debug`.
         database_key: DatabaseKeyIndex,

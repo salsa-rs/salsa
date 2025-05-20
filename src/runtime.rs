@@ -3,8 +3,8 @@ use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::loom::sync::atomic::{AtomicBool, Ordering};
 use crate::loom::sync::{AtomicMut, Mutex};
-use crate::loom::thread::{self, ThreadId};
 use crate::table::Table;
+use crate::zalsa_local::ZalsaLocalId;
 use crate::{Cancelled, Event, EventKind, Revision};
 
 mod dependency_graph;
@@ -168,14 +168,14 @@ impl Runtime {
     pub(crate) fn block_on<QueryMutexGuard>(
         &self,
         zalsa: &crate::zalsa::Zalsa,
+        from_id: ZalsaLocalId,
         database_key: DatabaseKeyIndex,
-        other_id: ThreadId,
+        other_id: ZalsaLocalId,
         query_mutex_guard: QueryMutexGuard,
     ) -> BlockResult {
         let dg = self.dependency_graph.lock();
-        let thread_id = thread::current().id();
 
-        if dg.depends_on(other_id, thread_id) {
+        if dg.depends_on(other_id, from_id) {
             return BlockResult::Cycle;
         }
 
@@ -187,7 +187,7 @@ impl Runtime {
         });
 
         let result =
-            DependencyGraph::block_on(dg, thread_id, database_key, other_id, query_mutex_guard);
+            DependencyGraph::block_on(dg, from_id, database_key, other_id, query_mutex_guard);
 
         match result {
             WaitResult::Completed => BlockResult::Completed,

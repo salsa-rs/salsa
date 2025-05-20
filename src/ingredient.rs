@@ -9,7 +9,7 @@ use crate::plumbing::IngredientIndices;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa};
-use crate::zalsa_local::QueryOrigin;
+use crate::zalsa_local::{QueryOrigin, ZalsaLocalId};
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -80,8 +80,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// A return value of `true` indicates that a result is now available. A return value of
     /// `false` means that a cycle was encountered; the waited-on query is either already claimed
     /// by the current thread, or by a thread waiting on the current thread.
-    fn wait_for(&self, zalsa: &Zalsa, key_index: Id) -> bool {
-        _ = (zalsa, key_index);
+    fn wait_for(&self, zalsa: &Zalsa, from_id: ZalsaLocalId, key_index: Id) -> bool {
+        _ = (zalsa, from_id, key_index);
         true
     }
 
