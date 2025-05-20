@@ -7,6 +7,7 @@ use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::loom::sync::atomic::Ordering;
+use crate::plumbing::ZalsaLocal;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -144,6 +145,7 @@ impl<V> Memo<V> {
     pub(super) fn provisional_retry(
         &self,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
         if self.revisions.cycle_heads.is_empty() {
@@ -154,11 +156,17 @@ impl<V> Memo<V> {
             return false;
         };
 
-        return provisional_retry_cold(zalsa, database_key_index, &self.revisions.cycle_heads);
+        return provisional_retry_cold(
+            zalsa,
+            zalsa_local,
+            database_key_index,
+            &self.revisions.cycle_heads,
+        );
 
         #[inline(never)]
         fn provisional_retry_cold(
             zalsa: &Zalsa,
+            zalsa_local: &ZalsaLocal,
             database_key_index: DatabaseKeyIndex,
             cycle_heads: &CycleHeads,
         ) -> bool {
@@ -180,7 +188,7 @@ impl<V> Memo<V> {
                     // This cycle is already finalized, so we don't need to wait on it;
                     // keep looping through cycle heads.
                     retry = true;
-                } else if ingredient.wait_for(zalsa, head_index.key_index()) {
+                } else if ingredient.wait_for(zalsa, zalsa_local.id(), head_index.key_index()) {
                     // There's a new memo available for the cycle head; fetch our own
                     // updated memo and see if it's still provisional or if the cycle
                     // has resolved.

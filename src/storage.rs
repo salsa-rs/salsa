@@ -54,8 +54,8 @@ impl<Db: Database> StorageHandle<Db> {
 
     pub fn into_storage(self) -> Storage<Db> {
         Storage {
+            zalsa_local: ZalsaLocal::new(self.zalsa_impl.next_local_id()),
             handle: self,
-            zalsa_local: ZalsaLocal::new(),
         }
     }
 }
@@ -109,9 +109,10 @@ impl<Db: Database> Storage<Db> {
     ///
     /// The `event_callback` function is invoked by the salsa runtime at various points during execution.
     pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
+        let handle = StorageHandle::new(event_callback);
         Self {
-            handle: StorageHandle::new(event_callback),
-            zalsa_local: ZalsaLocal::new(),
+            zalsa_local: ZalsaLocal::new(handle.zalsa_impl.next_local_id()),
+            handle,
         }
     }
 
@@ -194,7 +195,7 @@ impl<Db: Database> Clone for Storage<Db> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            zalsa_local: ZalsaLocal::new(),
+            zalsa_local: ZalsaLocal::new(self.handle.zalsa_impl.next_local_id()),
         }
     }
 }

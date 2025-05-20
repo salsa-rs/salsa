@@ -2,9 +2,9 @@ use rustc_hash::FxHashMap;
 
 use crate::key::DatabaseKeyIndex;
 use crate::loom::sync::Mutex;
-use crate::loom::thread::{self, ThreadId};
 use crate::runtime::{BlockResult, WaitResult};
 use crate::zalsa::Zalsa;
+use crate::zalsa_local::ZalsaLocalId;
 use crate::{Id, IngredientIndex};
 
 /// Tracks the keys that are currently being processed; used to coordinate between
@@ -21,7 +21,7 @@ pub(crate) enum ClaimResult<'a> {
 }
 
 struct SyncState {
-    id: ThreadId,
+    id: ZalsaLocalId,
 
     /// Set to true if any other queries are blocked,
     /// waiting for this query to complete.
@@ -36,7 +36,12 @@ impl SyncTable {
         }
     }
 
-    pub(crate) fn try_claim<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> ClaimResult<'me> {
+    pub(crate) fn try_claim<'me>(
+        &'me self,
+        zalsa: &'me Zalsa,
+        from_id: ZalsaLocalId,
+        key_index: Id,
+    ) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
         match write.entry(key_index) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
@@ -53,6 +58,7 @@ impl SyncTable {
                 *anyone_waiting = true;
                 match zalsa.runtime().block_on(
                     zalsa,
+                    from_id,
                     DatabaseKeyIndex::new(self.ingredient, key_index),
                     id,
                     write,
@@ -63,7 +69,7 @@ impl SyncTable {
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(SyncState {
-                    id: thread::current().id(),
+                    id: from_id,
                     anyone_waiting: false,
                 });
                 ClaimResult::Claimed(ClaimGuard {

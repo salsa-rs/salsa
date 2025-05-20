@@ -95,7 +95,7 @@ where
         // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
         // never have provisional entries.
         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-            || !memo.provisional_retry(zalsa, self.database_key_index(id))
+            || !memo.provisional_retry(zalsa, db.zalsa_local(), self.database_key_index(id))
         {
             Some(memo)
         } else {
@@ -110,8 +110,9 @@ where
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
+        let zalsa_local = db.zalsa_local();
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = match self.sync_table.try_claim(zalsa, id) {
+        let _claim_guard = match self.sync_table.try_claim(zalsa, zalsa_local.id(), id) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => {
                 let database_key_index = self.database_key_index(id);
@@ -139,7 +140,7 @@ where
                 }
                 // no provisional value; create/insert/return initial provisional value
                 return match C::CYCLE_STRATEGY {
-                    CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
+                    CycleRecoveryStrategy::Panic => zalsa_local.with_query_stack(|stack| {
                         panic!(
                             "dependency graph cycle when querying {database_key_index:#?}, \
                             set cycle_fn/cycle_initial to fixpoint iterate.\n\
@@ -166,7 +167,7 @@ where
                         tracing::debug!(
                             "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
                         );
-                        let active_query = db.zalsa_local().push_query(database_key_index, 0);
+                        let active_query = zalsa_local.push_query(database_key_index, 0);
                         let fallback_value = self.initial_value(db, id).expect(
                             "`CycleRecoveryStrategy::FallbackImmediate` should have initial_value",
                         );
@@ -209,7 +210,7 @@ where
 
         let memo = self.execute(
             db,
-            db.zalsa_local().push_query(self.database_key_index(id), 0),
+            zalsa_local.push_query(self.database_key_index(id), 0),
             opt_old_memo,
         );
 

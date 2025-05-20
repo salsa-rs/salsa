@@ -5,9 +5,9 @@ use smallvec::SmallVec;
 
 use crate::key::DatabaseKeyIndex;
 use crate::loom::sync::MutexGuard;
-use crate::loom::thread::ThreadId;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
+use crate::zalsa_local::ZalsaLocalId;
 
 #[derive(Debug, Default)]
 pub(super) struct DependencyGraph {
@@ -15,23 +15,23 @@ pub(super) struct DependencyGraph {
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<ThreadId, edge::Edge>,
+    edges: FxHashMap<ZalsaLocalId, edge::Edge>,
 
     /// Encodes the `ThreadId` that are blocked waiting for the result
     /// of a given query.
-    query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[ThreadId; 4]>>,
+    query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[ZalsaLocalId; 4]>>,
 
     /// When a key K completes which had dependent queries Qs blocked on it,
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
-    wait_results: FxHashMap<ThreadId, WaitResult>,
+    wait_results: FxHashMap<ZalsaLocalId, WaitResult>,
 }
 
 impl DependencyGraph {
     /// True if `from_id` depends on `to_id`.
     ///
     /// (i.e., there is a path from `from_id` to `to_id` in the graph.)
-    pub(super) fn depends_on(&self, from_id: ThreadId, to_id: ThreadId) -> bool {
+    pub(super) fn depends_on(&self, from_id: ZalsaLocalId, to_id: ZalsaLocalId) -> bool {
         let mut p = from_id;
         while let Some(q) = self.edges.get(&p).map(|edge| edge.blocked_on_id) {
             if q == to_id {
@@ -58,9 +58,9 @@ impl DependencyGraph {
     /// * `held_mutex` is a read lock (or stronger) on `database_key`
     pub(super) fn block_on<QueryMutexGuard>(
         mut me: MutexGuard<'_, Self>,
-        from_id: ThreadId,
+        from_id: ZalsaLocalId,
         database_key: DatabaseKeyIndex,
-        to_id: ThreadId,
+        to_id: ZalsaLocalId,
         query_mutex_guard: QueryMutexGuard,
     ) -> WaitResult {
         let cvar = std::pin::pin!(EdgeCondvar::default());
@@ -93,9 +93,9 @@ impl DependencyGraph {
     /// [`Self::wait_results`] entry has been inserted.
     unsafe fn add_edge(
         &mut self,
-        from_id: ThreadId,
+        from_id: ZalsaLocalId,
         database_key: DatabaseKeyIndex,
-        to_id: ThreadId,
+        to_id: ZalsaLocalId,
         cvar: Pin<&EdgeCondvar>,
     ) {
         assert_ne!(from_id, to_id);
@@ -130,7 +130,7 @@ impl DependencyGraph {
     /// Unblock the runtime with the given id with the given wait-result.
     /// This will cause it resume execution (though it will have to grab
     /// the lock on this data structure first, to recover the wait result).
-    fn unblock_runtime(&mut self, id: ThreadId, wait_result: WaitResult) {
+    fn unblock_runtime(&mut self, id: ZalsaLocalId, wait_result: WaitResult) {
         let edge = self.edges.remove(&id).expect("not blocked");
         self.wait_results.insert(id, wait_result);
 
@@ -142,7 +142,7 @@ impl DependencyGraph {
 
 mod edge {
     use crate::loom::sync::{Condvar, MutexGuard};
-    use crate::loom::thread::ThreadId;
+    use crate::zalsa_local::ZalsaLocalId;
 
     use std::pin::Pin;
 
@@ -161,7 +161,7 @@ mod edge {
 
     #[derive(Debug)]
     pub(super) struct Edge {
-        pub(super) blocked_on_id: ThreadId,
+        pub(super) blocked_on_id: ZalsaLocalId,
 
         /// Signalled whenever a query with dependents completes.
         /// Allows those dependents to check if they are ready to unblock.
@@ -173,7 +173,7 @@ mod edge {
         /// # SAFETY
         ///
         /// The caller must ensure that the [`EdgeCondvar`] is kept alive until the [`Edge`] is dropped.
-        pub(super) unsafe fn new(blocked_on_id: ThreadId, condvar: Pin<&EdgeCondvar>) -> Self {
+        pub(super) unsafe fn new(blocked_on_id: ZalsaLocalId, condvar: Pin<&EdgeCondvar>) -> Self {
             Self {
                 blocked_on_id,
                 // SAFETY: The caller is responsible for ensuring that the `EdgeCondvar` outlives the `Edge`.

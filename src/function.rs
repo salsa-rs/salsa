@@ -17,7 +17,7 @@ use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::QueryOrigin;
+use crate::zalsa_local::{QueryOrigin, ZalsaLocalId};
 use crate::{Database, Id, Revision};
 
 mod accumulated;
@@ -260,8 +260,8 @@ where
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
-    fn wait_for(&self, zalsa: &Zalsa, key_index: Id) -> bool {
-        match self.sync_table.try_claim(zalsa, key_index) {
+    fn wait_for(&self, zalsa: &Zalsa, from_id: ZalsaLocalId, key_index: Id) -> bool {
+        match self.sync_table.try_claim(zalsa, from_id, key_index) {
             ClaimResult::Retry | ClaimResult::Claimed(_) => true,
             ClaimResult::Cycle => false,
         }
