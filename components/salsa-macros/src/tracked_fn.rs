@@ -36,7 +36,7 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const NO_LIFETIME: bool = false;
 
-    const NO_CLONE: bool = false;
+    const NON_UPDATE_RETURN_TYPE: bool = true;
 
     const SINGLETON: bool = false;
 
@@ -84,6 +84,7 @@ impl Macro {
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
+        let requires_update = self.args.non_update_return_type.is_none();
         let eq = if let Some(token) = &self.args.no_eq {
             if self.args.cycle_fn.is_some() {
                 return Err(syn::Error::new_spanned(
@@ -172,12 +173,16 @@ impl Macro {
         let maybe_update_path = quote_spanned! {output_ty.span() =>
             UpdateDispatch::<#output_ty>::maybe_update
         };
-        let assert_return_type_is_update = quote! {
-            #[allow(clippy::all, warnings)]
-            fn _assert_return_type_is_update<#db_lt>()  {
-                use #zalsa::{UpdateFallback, UpdateDispatch};
-                #maybe_update_path;
+        let assert_return_type_is_update = if requires_update {
+            quote! {
+                #[allow(clippy::all, warnings)]
+                fn _assert_return_type_is_update<#db_lt>()  {
+                    use #zalsa::{UpdateFallback, UpdateDispatch};
+                    #maybe_update_path;
+                }
             }
+        } else {
+            quote! {}
         };
 
         Ok(crate::debug::dump_tokens(

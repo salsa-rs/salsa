@@ -38,7 +38,7 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const NO_LIFETIME: bool = false;
 
-    const NO_CLONE: bool = false;
+    const NON_UPDATE_RETURN_TYPE: bool = false;
 
     const SINGLETON: bool = true;
 

@@ -33,11 +33,6 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `no_lifetime` identifier.
     pub no_lifetime: Option<syn::Ident>,
 
-    /// Signal we should not generate a `Clone` impl.
-    ///
-    /// If this is `Some`, the value is the `no_clone` identifier.
-    pub no_clone: Option<syn::Ident>,
-
     /// The `singleton` option is used on input with only one field
     /// It allows the creation of convenient methods
     pub singleton: Option<syn::Ident>,
@@ -47,6 +42,13 @@ pub(crate) struct Options<A: AllowedOptions> {
     ///
     /// If this is `Some`, the value is the `specify` identifier.
     pub specify: Option<syn::Ident>,
+
+    /// The `non_update_return_type` option is used to signal that a tracked function's
+    /// return type does not require `Update` to be implemented. This is unsafe and
+    /// generally discouraged as it allows for dangling references.
+    ///
+    /// If this is `Some`, the value is the `non_update_return_type` identifier.
+    pub non_update_return_type: Option<syn::Ident>,
 
     /// The `db = <path>` option is used to indicate the db.
     ///
@@ -100,10 +102,10 @@ impl<A: AllowedOptions> Default for Options<A> {
         Self {
             returns: Default::default(),
             specify: Default::default(),
+            non_update_return_type: Default::default(),
             no_eq: Default::default(),
             debug: Default::default(),
             no_lifetime: Default::default(),
-            no_clone: Default::default(),
             db_path: Default::default(),
             cycle_fn: Default::default(),
             cycle_initial: Default::default(),
@@ -125,7 +127,7 @@ pub(crate) trait AllowedOptions {
     const NO_EQ: bool;
     const DEBUG: bool;
     const NO_LIFETIME: bool;
-    const NO_CLONE: bool;
+    const NON_UPDATE_RETURN_TYPE: bool;
     const SINGLETON: bool;
     const DATA: bool;
     const DB: bool;
@@ -199,18 +201,28 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`no_lifetime` option not allowed here",
                     ));
                 }
-            } else if ident == "no_clone" {
-                if A::NO_CLONE {
-                    if let Some(old) = options.no_clone.replace(ident) {
+            } else if ident == "unsafe" {
+                if A::NON_UPDATE_RETURN_TYPE {
+                    let content;
+                    parenthesized!(content in input);
+                    let ident = syn::Ident::parse_any(&content)?;
+                    if ident == "non_update_return_type" {
+                        if let Some(old) = options.non_update_return_type.replace(ident) {
+                            return Err(syn::Error::new(
+                                old.span(),
+                                "option `non_update_return_type` provided twice",
+                            ));
+                        }
+                    } else {
                         return Err(syn::Error::new(
-                            old.span(),
-                            "option `no_clone` provided twice",
+                            ident.span(),
+                            "expected `non_update_return_type`",
                         ));
                     }
                 } else {
                     return Err(syn::Error::new(
                         ident.span(),
-                        "`no_clone` option not allowed here",
+                        "`unsafe` options not allowed here",
                     ));
                 }
             } else if ident == "singleton" {

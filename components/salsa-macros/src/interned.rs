@@ -43,7 +43,7 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const NO_LIFETIME: bool = true;
 
-    const NO_CLONE: bool = false;
+    const NON_UPDATE_RETURN_TYPE: bool = false;
 
     const SINGLETON: bool = true;
 
