@@ -12,7 +12,7 @@ description = "A generic framework for on-demand, incrementalized computation (e
 salsa-macro-rules = { version = "0.21.1", path = "components/salsa-macro-rules" }
 salsa-macros = { version = "0.21.1", path = "components/salsa-macros", optional = true }
 
-boxcar = { version = "0.2.12", features = ["loom"] }
+boxcar = { version = "0.2.12" }
 crossbeam-queue = "0.3.11"
 dashmap = { version = "6", features = ["raw-api"] }
 hashbrown = "0.15"
@@ -36,7 +36,7 @@ loom = { version = "0.7.2", optional = true }
 default = ["salsa_unstable", "rayon", "macros"]
 # FIXME: remove `salsa_unstable` before 1.0.
 salsa_unstable = []
-loom = ["dep:loom"]
+loom = ["dep:loom", "boxcar/loom"]
 macros = ["dep:salsa-macros"]
 
 # This interlocks the `salsa-macros` and `salsa` versions together
