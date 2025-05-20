@@ -295,11 +295,7 @@ impl ZalsaLocal {
             let top_query = stack
                 .last_mut()
                 .expect("cannot store a tracked struct ID outside of a tracked function");
-            let old_id = top_query.tracked_struct_ids.insert(identity, id);
-            assert!(
-                old_id.is_none(),
-                "overwrote a previous id for `{identity:?}`"
-            );
+            top_query.tracked_struct_ids.insert(identity, id);
         })
     }
 
