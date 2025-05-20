@@ -434,14 +434,17 @@ where
             memos: Default::default(),
         };
 
-        if let Some(id) = self.free_list.pop() {
+        while let Some(id) = self.free_list.pop() {
             // Increment the ID generation before reusing it, as if we have allocated a new
             // slot in the table.
             //
-            // If the generation will wrap, we instead saturate to the generation `u16::MAX`.
-            // "Leaked" IDs may be reused with the same generation.
-            let id = id.with_generation(id.generation().saturating_add(1));
+            // If the generation will wrap, we are forced to leak the slot. We reserve enough
+            // bits for the generation that this should not be a problem in practice.
+            let Some(generation) = id.generation().checked_add(1) else {
+                continue;
+            };
 
+            let id = id.with_generation(generation);
             return Self::data_raw(zalsa.table(), id).with_mut(|data_raw| {
                 let data_raw = data_raw.cast::<Value<C>>();
 
@@ -727,7 +730,7 @@ where
         db: &'db dyn crate::Database,
         s: C::Struct<'db>,
     ) -> &'db C::Fields<'db> {
-        let (zalsa, zalsa_local) = db.zalsas();
+        let zalsa = db.zalsa();
         let id = AsId::as_id(&s);
         let data = Self::data(zalsa.table(), id);
 
@@ -736,17 +739,6 @@ where
         // Note that we do not need to add a dependency on the tracked struct
         // in general, as IDs that are reused increment their generation,
         // invalidating any dependent queries directly.
-        //
-        // However, IDs that have hit the maximum generation are "leaked", and may
-        // be reused without a new generation, and so a dependency must be created
-        // on any query that reads from them.
-        if id.generation() == u16::MAX {
-            zalsa_local.report_tracked_read_simple(
-                DatabaseKeyIndex::new(self.ingredient_index, id),
-                data.durability,
-                data.created_at,
-            );
-        }
 
         data.fields()
     }

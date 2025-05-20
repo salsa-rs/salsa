@@ -76,13 +76,13 @@ crate::loom::maybe_lazy_static! {
 /// The database contains a number of jars, and each jar contains a number of ingredients.
 /// Each ingredient is given a unique index as the database is being created.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct IngredientIndex(u16);
+pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
     /// Create an ingredient index from a usize.
     pub(crate) fn from(v: usize) -> Self {
-        assert!(v <= u16::MAX as usize);
-        Self(v as u16)
+        assert!(v <= u32::MAX as usize);
+        Self(v as u32)
     }
 
     /// Convert the ingredient index back into a usize.
@@ -90,18 +90,8 @@ impl IngredientIndex {
         self.0 as usize
     }
 
-    /// Convert the ingredient index back into a usize.
-    pub(crate) fn as_u16(self) -> u16 {
-        self.0
-    }
-
     pub fn successor(self, index: usize) -> Self {
-        let index = self
-            .0
-            .checked_add((1 + index) as u16)
-            .expect("exceeded maximum number of ingredients");
-
-        IngredientIndex(index)
+        IngredientIndex(self.0 + 1 + index as u32)
     }
 }
 
@@ -508,7 +498,7 @@ where
         let nonce = Nonce::<StorageNonce>::from_u32(unsafe {
             NonZeroU32::new_unchecked((cached_data >> u32::BITS) as u32)
         });
-        let mut index = IngredientIndex(cached_data as u16);
+        let mut index = IngredientIndex(cached_data as u32);
 
         if zalsa.nonce() != nonce {
             index = create_index();

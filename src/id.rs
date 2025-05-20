@@ -6,10 +6,8 @@ use crate::zalsa::Zalsa;
 
 /// The `Id` of a salsa struct in the database [`Table`](`crate::table::Table`).
 ///
-/// The high-order bits of an `Id` store a 16-bit generation counter
-/// as well as an optional 16-bit ingredient index.
-///
-/// The low-order bits pack a [`PageIndex`](`crate::table::PageIndex`) and
+/// The high-order bits of an `Id` store a 32-bit generation counter, while
+/// the low-order bits pack a [`PageIndex`](`crate::table::PageIndex`) and
 /// [`SlotIndex`](`crate::table::SlotIndex`) within the page.
 ///
 /// The low-order bits of `Id` are a `u32` ranging from `0..Id::MAX_U32`.
@@ -27,9 +25,6 @@ pub struct Id {
 impl Id {
     pub const MAX_U32: u32 = u32::MAX - 0xFF;
     pub const MAX_USIZE: usize = Self::MAX_U32 as usize;
-
-    const INGREDIENT_MASK: u64 = 0x0000FFFFFFFFFFFF;
-    const GENERATION_MASK: u64 = 0xFFFF0000FFFFFFFF;
 
     /// Create a `salsa::Id` from a u32 value, without a generation. This
     /// value should be less than [`Self::MAX_U32`].
@@ -77,36 +72,16 @@ impl Id {
     /// but will differ from other identifiers of the slot based on the
     /// provided generation.
     #[inline]
-    pub fn with_generation(self, generation: u16) -> Id {
+    pub fn with_generation(self, generation: u32) -> Id {
         let mut value = self.value.get();
 
-        value &= Id::GENERATION_MASK;
+        value &= 0xFFFFFFFF;
         value |= (generation as u64) << 32;
 
         Id {
             // SAFETY: The niche of `value` is in the lower bits, which we did not touch.
             value: unsafe { NonZeroU64::new_unchecked(value) },
         }
-    }
-
-    /// Mark the `Id` with an ingredient index.
-    #[inline]
-    pub fn with_ingredient_index(self, ingredient: u16) -> Id {
-        let mut value = self.value.get();
-
-        value &= Id::INGREDIENT_MASK;
-        value |= (ingredient as u64) << 48;
-
-        Id {
-            // SAFETY: The niche of `value` is in the lower bits, which we did not touch.
-            value: unsafe { NonZeroU64::new_unchecked(value) },
-        }
-    }
-
-    /// Return the internal `u64` representation of this `Id`.
-    #[inline]
-    pub const fn as_bits(self) -> u64 {
-        self.value.get()
     }
 
     /// Return the data portion of this `Id`.
@@ -118,14 +93,15 @@ impl Id {
 
     /// Return the generation of this `Id`.
     #[inline]
-    pub const fn generation(self) -> u16 {
-        ((self.value.get() & !Id::GENERATION_MASK) >> 32) as u16
+    pub const fn generation(self) -> u32 {
+        // Shift away the low-order bits.
+        (self.value.get() >> 32) as u32
     }
 
-    /// Return the ingredient index of this `Id`.
+    /// Return the internal `u64` representation of this `Id`.
     #[inline]
-    pub const fn ingredient_index(self) -> u16 {
-        (self.value.get() >> 48) as u16
+    pub const fn as_bits(self) -> u64 {
+        self.value.get()
     }
 }
 

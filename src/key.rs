@@ -12,7 +12,9 @@ use crate::{Database, Id};
 /// only for inserting into maps and the like.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseKeyIndex {
-    packed_key_index: Id,
+    key_index: u32,
+    key_generation: u32,
+    ingredient_index: IngredientIndex,
 }
 // ANCHOR_END: DatabaseKeyIndex
 
@@ -20,18 +22,19 @@ impl DatabaseKeyIndex {
     #[inline]
     pub(crate) fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
         Self {
-            // Pack the ingredient index with the key.
-            packed_key_index: key_index.with_ingredient_index(ingredient_index.as_u16()),
+            key_index: key_index.data(),
+            key_generation: key_index.generation(),
+            ingredient_index,
         }
     }
 
     pub fn ingredient_index(self) -> IngredientIndex {
-        IngredientIndex::from(self.packed_key_index.ingredient_index() as usize)
+        self.ingredient_index
     }
 
     pub fn key_index(self) -> Id {
-        // Clear the ingredient index from the key as it not part of the dependency.
-        self.packed_key_index.with_ingredient_index(0)
+        // SAFETY: `self.key_index` was returned by `Id::data`.
+        unsafe { Id::from_data(self.key_index) }.with_generation(self.key_generation)
     }
 
     pub(crate) fn maybe_changed_after(
