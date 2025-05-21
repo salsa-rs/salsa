@@ -150,13 +150,10 @@ impl<V> Memo<V> {
             cycle_heads: &CycleHeads,
         ) -> bool {
             let mut retry = false;
+            let mut hit_cycle = false;
 
             for head in cycle_heads {
                 let head_index = head.database_key_index;
-
-                if head_index == database_key_index {
-                    continue;
-                }
 
                 let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
                 let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
@@ -167,7 +164,9 @@ impl<V> Memo<V> {
                     // This cycle is already finalized, so we don't need to wait on it;
                     // keep looping through cycle heads.
                     retry = true;
+                    tracing::trace!("Dependent cycle head {head_index:?} has been finalized.");
                 } else if ingredient.wait_for(zalsa, head_index.key_index()) {
+                    tracing::trace!("Dependent cycle head {head_index:?} has been released (there's a new memo)");
                     // There's a new memo available for the cycle head; fetch our own
                     // updated memo and see if it's still provisional or if the cycle
                     // has resolved.
@@ -176,7 +175,10 @@ impl<V> Memo<V> {
                     // We hit a cycle blocking on the cycle head; this means it's in
                     // our own active query stack and we are responsible to resolve the
                     // cycle, so go ahead and return the provisional memo.
-                    return false;
+                    tracing::debug!(
+                        "Waiting for {head_index:?} results in a cycle, return {database_key_index:?} once all other cycle heads completed to allow the outer cycle to make progress."
+                    );
+                    hit_cycle = true;
                 }
             }
 
@@ -186,7 +188,14 @@ impl<V> Memo<V> {
             // the cycle head (either initial value, or from a later iteration) and should be
             // returned to caller to allow fixpoint iteration to proceed. (All cases in the loop
             // above other than "cycle head is self" are either terminal or set `retry`.)
-            retry
+            if hit_cycle {
+                false
+            } else if retry {
+                tracing::debug!("Retrying {database_key_index:?}");
+                true
+            } else {
+                false
+            }
         }
     }
 
