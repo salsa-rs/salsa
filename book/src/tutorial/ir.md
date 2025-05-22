@@ -17,9 +17,6 @@ All Salsa structs store the actual values of their fields in the Salsa database.
 This permits us to track when the values of those fields change to figure out what work will need to be re-executed.
 
 When you annotate a struct with one of the above Salsa attributes, Salsa actually generates a bunch of code to link that struct into the database.
-This code must be connected to some [jar](./jar.md).
-By default, this is `crate::Jar`, but you can specify a different jar with the `jar=` attribute (e.g., `#[salsa::input(jar = MyJar)]`).
-You must also list the struct in the jar definition itself, or you will get errors.
 
 ## Input structs
 
