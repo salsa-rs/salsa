@@ -49,6 +49,9 @@
 //! cycle head may then iterate, which may result in a new set of iterations on the inner cycle,
 //! for each iteration of the outer cycle.
 
+use core::fmt;
+use std::panic;
+
 use thin_vec::{thin_vec, ThinVec};
 
 use crate::key::DatabaseKeyIndex;
@@ -57,6 +60,52 @@ use crate::key::DatabaseKeyIndex;
 ///
 /// Should only be relevant in case of a badly configured cycle recovery.
 pub const MAX_ITERATIONS: u32 = 200;
+
+pub struct UnexpectedCycle(Option<crate::Backtrace>);
+
+impl fmt::Debug for UnexpectedCycle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("cycle detected but no cycle handler found")?;
+        if let Some(backtrace) = &self.0 {
+            f.write_str(": ")?;
+            backtrace.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for UnexpectedCycle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("cycle detected but no cycle handler found")?;
+        if let Some(backtrace) = &self.0 {
+            f.write_str("\n")?;
+            backtrace.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
+impl UnexpectedCycle {
+    pub(crate) fn throw() -> ! {
+        // We use resume and not panic here to avoid running the panic
+        // hook (that is, to avoid collecting and printing backtrace).
+        panic::resume_unwind(Box::new(Self(crate::Backtrace::capture())));
+    }
+
+    /// Runs `f`, and catches any salsa cycle.
+    pub fn catch<F, T>(f: F) -> Result<T, UnexpectedCycle>
+    where
+        F: FnOnce() -> T + panic::UnwindSafe,
+    {
+        match panic::catch_unwind(f) {
+            Ok(t) => Ok(t),
+            Err(payload) => match payload.downcast() {
+                Ok(cycle) => Err(*cycle),
+                Err(payload) => panic::resume_unwind(payload),
+            },
+        }
+    }
+}
 
 /// Return value from a cycle recovery function.
 #[derive(Debug)]
