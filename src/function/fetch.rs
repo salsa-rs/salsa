@@ -16,7 +16,7 @@ where
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);
-        let _span = tracing::debug_span!("fetch", query = ?database_key_index).entered();
+        let _span = tracing::debug_span!("fetch", query = ?{database_key_index}).entered();
 
         let memo = self.refresh_memo(db, zalsa, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
