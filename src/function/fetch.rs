@@ -15,6 +15,9 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
+        let database_key_index = self.database_key_index(id);
+        let _span = tracing::debug_span!("fetch", query = ?database_key_index).entered();
+
         let memo = self.refresh_memo(db, zalsa, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
@@ -22,7 +25,7 @@ where
         self.lru.record_use(id);
 
         zalsa_local.report_tracked_read(
-            self.database_key_index(id),
+            database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
             memo.revisions.accumulated.is_some(),
