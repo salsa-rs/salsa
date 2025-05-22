@@ -367,7 +367,7 @@ where
     pub fn new_struct<'db>(
         &'db self,
         db: &'db dyn Database,
-        fields: C::Fields<'db>,
+        mut fields: C::Fields<'db>,
     ) -> C::Struct<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
 
@@ -385,32 +385,39 @@ where
         };
 
         let current_revision = zalsa.current_revision();
-        match zalsa_local.tracked_struct_id(&identity) {
-            Some(id) => {
-                // The struct already exists in the intern map.
-                let index = self.database_key_index(id);
-                tracing::trace!("Reuse tracked struct {id:?}", id = index);
-                zalsa_local.add_output(index);
+        if let Some(id) = zalsa_local.tracked_struct_id(&identity) {
+            // The struct already exists in the intern map.
+            let index = self.database_key_index(id);
+            tracing::trace!("Reuse tracked struct {id:?}", id = index);
+            zalsa_local.add_output(index);
 
-                let updated_id = self.update(zalsa, current_revision, id, &current_deps, fields);
-                if id != updated_id {
-                    // Overwrite the previous ID if we are reusing the slot with new fields.
+            // SAFETY: The `id` was present in the interned map, so the value must be initialized.
+            let update_result =
+                unsafe { self.update(zalsa, current_revision, id, &current_deps, fields) };
+
+            fields = match update_result {
+                // Overwrite the previous ID if we are reusing the old slot with new fields.
+                Ok(updated_id) if updated_id != id => {
                     zalsa_local.store_tracked_struct_id(identity, updated_id);
+                    return FromId::from_id(updated_id);
                 }
 
-                FromId::from_id(updated_id)
-            }
+                // The id has not changed.
+                Ok(id) => return FromId::from_id(id),
 
-            None => {
-                // This is a new tracked struct, so create an entry in the struct map.
-                let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
-                let key = self.database_key_index(id);
-                tracing::trace!("Allocated new tracked struct {key:?}");
-                zalsa_local.add_output(key);
-                zalsa_local.store_tracked_struct_id(identity, id);
-                FromId::from_id(id)
-            }
+                // Failed to perform the update, we are forced to allocate a new slot.
+                Err(fields) => fields,
+            };
         }
+
+        // We failed to perform the update, or this is a new tracked struct, so allocate a new entry
+        // in the struct map.
+        let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
+        let key = self.database_key_index(id);
+        tracing::trace!("Allocated new tracked struct {key:?}");
+        zalsa_local.add_output(key);
+        zalsa_local.store_tracked_struct_id(identity, id);
+        FromId::from_id(id)
     }
 
     fn allocate<'db>(
@@ -430,24 +437,27 @@ where
             memos: Default::default(),
         };
 
-        if let Some(id) = self.free_list.pop() {
+        while let Some(id) = self.free_list.pop() {
             // Increment the ID generation before reusing it, as if we have allocated a new
             // slot in the table.
-            let id = id.with_generation(id.generation() + 1);
+            //
+            // If the generation would overflow, we are forced to leak the slot. Note that this
+            // shouldn't be a problem in general as sufficient bits are reserved for the generation.
+            let Some(id) = id.next_generation() else {
+                continue;
+            };
 
             return Self::data_raw(zalsa.table(), id).with_mut(|data_raw| {
-                let data_raw = data_raw.cast::<Value<C>>();
+                let data = unsafe { (*data_raw).assume_init_mut() };
 
                 assert!(
-                    unsafe { (*data_raw).updated_at.load().is_none() },
+                    data.updated_at.load().is_none(),
                     "free list entry for `{id:?}` does not have `None` for `updated_at`"
                 );
 
                 // Overwrite the free-list entry. Use `*foo = ` because the entry
                 // has been previously initialized and we want to free the old contents.
-                unsafe {
-                    *data_raw = value(id);
-                }
+                *data = value(id);
 
                 id
             });
@@ -463,14 +473,18 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value is already updated in this revision.
-    fn update<'db>(
+    ///
+    /// # Safety
+    ///
+    /// The value at the given `id` must be initialized.
+    unsafe fn update<'db>(
         &'db self,
         zalsa: &'db Zalsa,
         current_revision: Revision,
         mut id: Id,
         current_deps: &StampedValue<()>,
         fields: C::Fields<'db>,
-    ) -> Id {
+    ) -> Result<Id, C::Fields<'db>> {
         let data_raw = Self::data_raw(zalsa.table(), id);
 
         // The protocol is:
@@ -507,37 +521,47 @@ where
         // during the current revision and thus obtained an `&` reference to those fields
         // that is still live.
 
-        // UNSAFE: Marking as mut requires exclusive access for the duration of
-        // the `mut`. We have now *claimed* this data by swapping in `None`,
-        // any attempt to read concurrently will panic.
-        let locked = data_raw.with(|data| {
-            let data = data.cast::<Value<C>>();
+        let lock_result = data_raw.with(|data_raw| {
+            // SAFETY: Guaranteed by caller.
+            let data = unsafe { (*data_raw).assume_init_ref() };
 
-            let last_updated_at = unsafe { (*data).updated_at.load() };
+            let last_updated_at = data.updated_at.load();
             assert!(
                 last_updated_at.is_some(),
                 "two concurrent writers to {id:?}, should not be possible"
             );
+
             if last_updated_at == Some(current_revision) {
-                // already read-locked
-                return false;
+                return Ok(false);
+            }
+
+            // Updating the fields may make it necessary to increment the generation of the ID. In
+            // the unlikely case that the ID is already at its maximum generation, we are forced to leak
+            // the previous slot and allocate a new value.
+            if id.generation() == u32::MAX {
+                return Err(());
             }
 
             // Acquire the write-lock. This can only fail if there is a parallel thread
             // reading from this same `id`, which can only happen if the user has leaked it.
             // Tsk tsk.
-            let swapped_out = unsafe { (*data).updated_at.swap(None) };
+            let swapped_out = data.updated_at.swap(None) ;
             if swapped_out != last_updated_at {
-                panic!(
-                "failed to acquire write lock, id `{id:?}` must have been leaked across threads"
-            );
+                panic!("failed to acquire write lock, id `{id:?}` must have been leaked across threads");
             }
 
-            true
+            Ok(true)
         });
 
-        if !locked {
-            return id;
+        match lock_result {
+            // We cannot perform the update as the ID is at its maximum generation.
+            Err(()) => return Err(fields),
+
+            // The value is already read-locked, but we can reuse it safely as per above.
+            Ok(false) => return Ok(id),
+
+            // Acquired the write-lock.
+            Ok(true) => {}
         }
 
         data_raw.with_mut(|data| {
@@ -551,26 +575,35 @@ where
             // from a previous revision. As such, it continues to meet
             // its validity invariant and any owned content also continues
             // to meet its safety invariant.
-            unsafe {
-                if C::update_fields(
+            let untracked_update = unsafe {
+                C::update_fields(
                     current_deps.changed_at,
                     &mut data.revisions,
                     mem::transmute::<*mut C::Fields<'static>, *mut C::Fields<'db>>(
                         std::ptr::addr_of_mut!(data.fields),
                     ),
                     fields,
-                ) {
-                    // Consider this a new tracked-struct when any non-tracked field got updated.
-                    // This should be rare and only ever happen if there's a hash collision.
-                    //
-                    // Note that we hold the lock and have exclusive access to the tracked struct data,
-                    // so there should be no live instances of IDs from the previous generation. We clear
-                    // the memos and return a new ID here as if we have allocated a new slot.
-                    let mut table = data.take_memo_table();
-                    self.clear_memos(zalsa, &mut table, id);
-                    id = id.with_generation(id.generation() + 1);
-                }
+                )
+            };
+
+            if untracked_update {
+                // Consider this a new tracked-struct when any non-tracked field got updated.
+                // This should be rare and only ever happen if there's a hash collision.
+                //
+                // Note that we hold the lock and have exclusive access to the tracked struct data,
+                // so there should be no live instances of IDs from the previous generation. We clear
+                // the memos and return a new ID here as if we have allocated a new slot.
+                let mut table = data.take_memo_table();
+
+                // SAFETY: The memo table belongs to a value that we allocated, so it has the
+                // correct type.
+                unsafe { self.clear_memos(zalsa, &mut table, id) };
+
+                id = id
+                    .next_generation()
+                    .expect("already verified that generation is not maximum");
             }
+
             if current_deps.durability < data.durability {
                 data.revisions = C::new_revisions(current_deps.changed_at);
             }
@@ -578,7 +611,7 @@ where
             let swapped_out = data.updated_at.swap(Some(current_revision));
             assert!(swapped_out.is_none());
 
-            id
+            Ok(id)
         })
     }
 
@@ -612,13 +645,12 @@ where
         let current_revision = zalsa.current_revision();
         let data_raw = Self::data_raw(zalsa.table(), id);
 
-        data_raw.with(|data| {
-            let data = data.cast::<Value<C>>();
+        data_raw.with(|data_raw| {
+            let data = unsafe { (*data_raw).assume_init_ref() };
 
             // We want to set `updated_at` to `None`, signalling that other field values
             // cannot be read. The current value should be `Some(R0)` for some older revision.
-            let updated_at = unsafe { &(*data).updated_at };
-            match updated_at.load() {
+            match data.updated_at.load() {
                 None => {
                     panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
                 }
@@ -626,7 +658,7 @@ where
                     "cannot delete read-locked id `{id:?}`; value leaked across threads or user functions not deterministic"
                 ),
                 Some(r) => {
-                    if updated_at.compare_exchange(Some(r), None).is_err() {
+                    if data.updated_at.compare_exchange(Some(r), None).is_err() {
                         panic!("race occurred when deleting value `{id:?}`")
                     }
                 }
@@ -638,12 +670,21 @@ where
             unsafe { (*data).assume_init_mut() }.take_memo_table()
         });
 
-        self.clear_memos(zalsa, &mut memo_table, id);
+        // SAFETY: The memo table belongs to a value that we allocated, so it
+        // has the correct type.
+        unsafe { self.clear_memos(zalsa, &mut memo_table, id) };
+
+        // now that all cleanup has occurred, make available for re-use
+        self.free_list.push(id);
     }
 
     /// Clears the given memo table.
-    pub(crate) fn clear_memos(&self, zalsa: &Zalsa, memo_table: &mut MemoTable, id: Id) {
-        // SAFETY: We use the correct types table.
+    ///
+    /// # Safety
+    ///
+    /// The `MemoTable` must belong to a `Value` of the correct type.
+    pub(crate) unsafe fn clear_memos(&self, zalsa: &Zalsa, memo_table: &mut MemoTable, id: Id) {
+        // SAFETY: The caller guarantees this is the correct types table.
         let table = unsafe { self.memo_table_types.attach_memos_mut(memo_table) };
 
         // `Database::salsa_event` is a user supplied callback which may panic
@@ -656,7 +697,9 @@ where
                 unsafe { self.0.drop() };
             }
         }
+
         let mut table_guard = TableDropGuard(table);
+
         // SAFETY: We have `&mut MemoTable`, so no more references to these memos exist and we are good
         // to drop them.
         unsafe {
@@ -673,10 +716,8 @@ where
                 }
             })
         };
-        mem::forget(table_guard);
 
-        // now that all cleanup has occurred, make available for re-use
-        self.free_list.push(id);
+        mem::forget(table_guard);
     }
 
     /// Return reference to the field data ignoring dependency tracking.
@@ -735,8 +776,8 @@ where
         data.read_lock(zalsa.current_revision());
 
         // Note that we do not need to add a dependency on the tracked struct
-        // in general, as IDs that are reused increment their generation,
-        // invalidating any dependent queries directly.
+        // as IDs that are reused increment their generation, invalidating any
+        // dependent queries directly.
 
         data.fields()
     }
@@ -964,23 +1005,23 @@ mod tests {
         };
         // SAFETY: We don't use the IDs within salsa internals so this is fine
         unsafe {
-            assert_eq!(d.insert(i1, Id::from_data(0)), None);
-            assert_eq!(d.insert(i2, Id::from_data(1)), None);
-            assert_eq!(d.insert(i3, Id::from_data(2)), None);
-            assert_eq!(d.insert(i4, Id::from_data(3)), None);
-            assert_eq!(d.insert(i5, Id::from_data(4)), None);
-            assert_eq!(d.insert(i6, Id::from_data(5)), None);
-            assert_eq!(d.insert(i7, Id::from_data(6)), None);
-            assert_eq!(d.insert(i8, Id::from_data(7)), None);
+            assert_eq!(d.insert(i1, Id::from_index(0)), None);
+            assert_eq!(d.insert(i2, Id::from_index(1)), None);
+            assert_eq!(d.insert(i3, Id::from_index(2)), None);
+            assert_eq!(d.insert(i4, Id::from_index(3)), None);
+            assert_eq!(d.insert(i5, Id::from_index(4)), None);
+            assert_eq!(d.insert(i6, Id::from_index(5)), None);
+            assert_eq!(d.insert(i7, Id::from_index(6)), None);
+            assert_eq!(d.insert(i8, Id::from_index(7)), None);
 
-            assert_eq!(d.get(&i1), Some(Id::from_data(0)));
-            assert_eq!(d.get(&i2), Some(Id::from_data(1)));
-            assert_eq!(d.get(&i3), Some(Id::from_data(2)));
-            assert_eq!(d.get(&i4), Some(Id::from_data(3)));
-            assert_eq!(d.get(&i5), Some(Id::from_data(4)));
-            assert_eq!(d.get(&i6), Some(Id::from_data(5)));
-            assert_eq!(d.get(&i7), Some(Id::from_data(6)));
-            assert_eq!(d.get(&i8), Some(Id::from_data(7)));
+            assert_eq!(d.get(&i1), Some(Id::from_index(0)));
+            assert_eq!(d.get(&i2), Some(Id::from_index(1)));
+            assert_eq!(d.get(&i3), Some(Id::from_index(2)));
+            assert_eq!(d.get(&i4), Some(Id::from_index(3)));
+            assert_eq!(d.get(&i5), Some(Id::from_index(4)));
+            assert_eq!(d.get(&i6), Some(Id::from_index(5)));
+            assert_eq!(d.get(&i7), Some(Id::from_index(6)));
+            assert_eq!(d.get(&i8), Some(Id::from_index(7)));
         };
     }
 }

@@ -39,7 +39,7 @@ impl Id {
     #[doc(hidden)]
     #[track_caller]
     #[inline]
-    pub const unsafe fn from_data(v: u32) -> Self {
+    pub const unsafe fn from_index(v: u32) -> Self {
         debug_assert!(v < Self::MAX_U32);
 
         Id {
@@ -66,13 +66,24 @@ impl Id {
         }
     }
 
+    /// Returns a new `Id` with same index, but the generation incremented by one.
+    ///
+    /// Returns `None` if the generation would overflow, i.e. the current generation
+    /// is `u32::MAX`.
+    #[inline]
+    pub fn next_generation(self) -> Option<Id> {
+        self.generation()
+            .checked_add(1)
+            .map(|generation| self.with_generation(generation))
+    }
+
     /// Mark the `Id` with a generation.
     ///
     /// This `Id` will refer to the same page and slot in the database,
     /// but will differ from other identifiers of the slot based on the
     /// provided generation.
     #[inline]
-    pub fn with_generation(self, generation: u32) -> Id {
+    pub const fn with_generation(self, generation: u32) -> Id {
         let mut value = self.value.get();
 
         value &= 0xFFFFFFFF;
@@ -84,9 +95,9 @@ impl Id {
         }
     }
 
-    /// Return the data portion of this `Id`.
+    /// Return the index portion of this `Id`.
     #[inline]
-    pub const fn data(self) -> u32 {
+    pub const fn index(self) -> u32 {
         // Truncate the high-order bits.
         (self.value.get() as u32) - 1
     }
@@ -108,9 +119,9 @@ impl Id {
 impl Debug for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.generation() == 0 {
-            write!(f, "Id({:x})", self.data())
+            write!(f, "Id({:x})", self.index())
         } else {
-            write!(f, "Id({:x}g{:x})", self.data(), self.generation())
+            write!(f, "Id({:x}g{:x})", self.index(), self.generation())
         }
     }
 }

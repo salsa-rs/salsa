@@ -22,19 +22,19 @@ impl DatabaseKeyIndex {
     #[inline]
     pub(crate) fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
         Self {
-            key_index: key_index.data(),
+            key_index: key_index.index(),
             key_generation: key_index.generation(),
             ingredient_index,
         }
     }
 
-    pub fn ingredient_index(self) -> IngredientIndex {
+    pub const fn ingredient_index(self) -> IngredientIndex {
         self.ingredient_index
     }
 
-    pub fn key_index(self) -> Id {
+    pub const fn key_index(self) -> Id {
         // SAFETY: `self.key_index` was returned by `Id::data`.
-        unsafe { Id::from_data(self.key_index) }.with_generation(self.key_generation)
+        unsafe { Id::from_index(self.key_index) }.with_generation(self.key_generation)
     }
 
     pub(crate) fn maybe_changed_after(

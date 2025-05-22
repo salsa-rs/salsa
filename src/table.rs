@@ -400,13 +400,13 @@ fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
     let page = page.0 as u32;
     let slot = slot.0 as u32;
     // SAFETY: `slot` is guaranteed to be small enough that the resulting Id won't be bigger than `Id::MAX_U32`
-    unsafe { Id::from_data((page << PAGE_LEN_BITS) | slot) }
+    unsafe { Id::from_index((page << PAGE_LEN_BITS) | slot) }
 }
 
 #[inline]
 fn split_id(id: Id) -> (PageIndex, SlotIndex) {
-    let data = id.data() as usize;
-    let slot = data & PAGE_LEN_MASK;
-    let page = data >> PAGE_LEN_BITS;
+    let index = id.index() as usize;
+    let slot = index & PAGE_LEN_MASK;
+    let page = index >> PAGE_LEN_BITS;
     (PageIndex::new(page), SlotIndex::new(slot))
 }
