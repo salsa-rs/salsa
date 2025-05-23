@@ -1,6 +1,6 @@
 //! Utility for tests that lets us log when notable events happen.
 
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 use std::sync::{Arc, Mutex};
 

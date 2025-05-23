@@ -1,8 +1,8 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
-use crate::loom::sync::atomic::AtomicBool;
 use crate::revision::AtomicRevision;
+use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryOrigin, QueryRevisions};

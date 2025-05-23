@@ -1,17 +1,17 @@
+use std::cell::Cell;
 use std::ptr::NonNull;
 
-use crate::loom::cell::Cell;
 use crate::Database;
 
-#[cfg(loom)]
-crate::loom::thread_local! {
+#[cfg(feature = "shuttle")]
+crate::sync::thread_local! {
     /// The thread-local state salsa requires for a given thread
     static ATTACHED: Attached = Attached::new();
 }
 
-// loom's `thread_local` macro does not support const-initialization.
-#[cfg(not(loom))]
-crate::loom::thread_local! {
+// shuttle's `thread_local` macro does not support const-initialization.
+#[cfg(not(feature = "shuttle"))]
+crate::sync::thread_local! {
     /// The thread-local state salsa requires for a given thread
     static ATTACHED: Attached = const { Attached::new() }
 }
@@ -28,14 +28,6 @@ struct Attached {
 }
 
 impl Attached {
-    #[cfg(loom)]
-    fn new() -> Self {
-        Self {
-            database: Cell::new(None),
-        }
-    }
-
-    #[cfg(not(loom))]
     const fn new() -> Self {
         Self {
             database: Cell::new(None),
@@ -58,9 +50,7 @@ impl Attached {
                     Some(current_db) => {
                         let new_db = NonNull::from(db);
                         if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
-                            panic!(
-                                                "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}",
-                                            );
+                            panic!("Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}");
                         }
                         Self { state: None }
                     }

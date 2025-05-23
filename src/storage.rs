@@ -2,7 +2,7 @@
 use std::marker::PhantomData;
 use std::panic::RefUnwindSafe;
 
-use crate::loom::sync::{Arc, Condvar, Mutex};
+use crate::sync::{Arc, Condvar, Mutex};
 use crate::zalsa::{Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{self, ZalsaLocal};
 use crate::{Database, Event, EventKind};

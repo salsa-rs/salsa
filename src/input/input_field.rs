@@ -5,7 +5,7 @@ use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
-use crate::loom::sync::Arc;
+use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::IngredientIndex;
 use crate::{Database, Id, Revision};

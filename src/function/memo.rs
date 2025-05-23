@@ -3,11 +3,11 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
-use crate::cycle::{CycleHeadKind, CycleHeads, EMPTY_CYCLE_HEADS};
+use crate::cycle::{empty_cycle_heads, CycleHeadKind, CycleHeads};
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
-use crate::loom::sync::atomic::Ordering;
 use crate::revision::AtomicRevision;
+use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOrigin, QueryRevisions};
@@ -98,7 +98,7 @@ pub struct Memo<V> {
 }
 
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
-#[cfg(not(loom))]
+#[cfg(not(feature = "shuttle"))]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
     [(); std::mem::size_of::<[usize; 13]>()];
 
@@ -196,7 +196,7 @@ impl<V> Memo<V> {
         if self.may_be_provisional() {
             &self.revisions.cycle_heads
         } else {
-            &EMPTY_CYCLE_HEADS
+            empty_cycle_heads()
         }
     }
 

@@ -2,7 +2,6 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, UnexpectedCycle};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
-use crate::loom::sync::AtomicMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::QueryRevisions;
 use crate::Id;
@@ -163,7 +162,7 @@ where
                         let mut revisions = active_query.pop();
                         revisions.cycle_heads = CycleHeads::initial(database_key_index);
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
-                        revisions.verified_final.write_mut(false);
+                        *revisions.verified_final.get_mut() = false;
                         Some(self.insert_memo(
                             zalsa,
                             id,

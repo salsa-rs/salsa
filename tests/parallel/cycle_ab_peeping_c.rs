@@ -6,10 +6,10 @@
 //!
 //! The trick is that the call from Thread T2 comes before B has reached a fixed point.
 //! We want to be sure that C sees the final value (and blocks until it is complete).
+use crate::sync::thread;
+use crate::{Knobs, KnobsDatabase};
 
 use salsa::CycleRecoveryAction;
-
-use crate::setup::{Knobs, KnobsDatabase};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
 struct CycleValue(u32);
@@ -62,14 +62,14 @@ fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
 
 #[test]
 fn the_test() {
-    std::thread::scope(|scope| {
+    crate::sync::check(|| {
         let db_t1 = Knobs::default();
 
         let db_t2 = db_t1.clone();
         db_t2.signal_on_will_block(2);
 
-        let t1 = scope.spawn(move || query_a(&db_t1));
-        let t2 = scope.spawn(move || query_c(&db_t2));
+        let t1 = thread::spawn(move || query_a(&db_t1));
+        let t2 = thread::spawn(move || query_c(&db_t2));
 
         let (r_t1, r_t2) = (t1.join().unwrap(), t2.join().unwrap());
 

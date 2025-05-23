@@ -1,9 +1,9 @@
 use rustc_hash::FxHashMap;
 
 use crate::key::DatabaseKeyIndex;
-use crate::loom::sync::Mutex;
-use crate::loom::thread::{self, ThreadId};
 use crate::runtime::{BlockResult, WaitResult};
+use crate::sync::thread::{self, ThreadId};
+use crate::sync::Mutex;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
 
@@ -99,7 +99,7 @@ impl ClaimGuard<'_> {
         if anyone_waiting {
             self.zalsa.runtime().unblock_queries_blocked_on(
                 DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index),
-                if std::thread::panicking() {
+                if thread::panicking() {
                     WaitResult::Panicked
                 } else {
                     WaitResult::Completed

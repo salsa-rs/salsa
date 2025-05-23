@@ -4,10 +4,10 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::key::DatabaseKeyIndex;
-use crate::loom::sync::MutexGuard;
-use crate::loom::thread::ThreadId;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
+use crate::sync::thread::ThreadId;
+use crate::sync::MutexGuard;
 
 #[derive(Debug, Default)]
 pub(super) struct DependencyGraph {
@@ -141,8 +141,8 @@ impl DependencyGraph {
 }
 
 mod edge {
-    use crate::loom::sync::{Condvar, MutexGuard};
-    use crate::loom::thread::ThreadId;
+    use crate::sync::thread::ThreadId;
+    use crate::sync::{Condvar, MutexGuard};
 
     use std::pin::Pin;
 

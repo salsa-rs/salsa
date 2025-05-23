@@ -1,6 +1,7 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
 use std::any::TypeId;
+use std::cell::Cell;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
@@ -11,14 +12,13 @@ use dashmap::SharedValue;
 use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::function::VerifyResult;
-use crate::hash::FxDashMap;
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
-use crate::loom::cell::Cell;
-use crate::loom::sync::atomic::{AtomicU8, Ordering};
-use crate::loom::sync::Arc;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
+use crate::sync::atomic::{AtomicU8, Ordering};
+use crate::sync::Arc;
+use crate::sync::FxDashMap;
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};

@@ -1,9 +1,10 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+#![allow(dead_code)]
 
 use salsa::{Database, Storage};
 
-use crate::signal::Signal;
+use super::signal::Signal;
+use super::sync::atomic::{AtomicUsize, Ordering};
+use super::sync::Arc;
 
 /// Various "knobs" and utilities used by tests to force
 /// a certain behavior.
