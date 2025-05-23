@@ -8,10 +8,10 @@ use std::panic::RefUnwindSafe;
 use rustc_hash::FxHashMap;
 
 use crate::ingredient::{Ingredient, Jar};
-use crate::loom::sync::atomic::{AtomicU64, Ordering};
-use crate::loom::sync::{Mutex, RwLock};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
+use crate::sync::atomic::{AtomicU64, Ordering};
+use crate::sync::{Mutex, RwLock};
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
@@ -67,9 +67,7 @@ pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
 pub struct StorageNonce;
 
 // Generator for storage nonces.
-crate::loom::maybe_lazy_static! {
-    static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
-}
+static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
 
 /// An ingredient index identifies a particular [`Ingredient`] in the database.
 ///
@@ -426,16 +424,7 @@ where
     const UNINITIALIZED: u64 = 0;
 
     /// Create a new cache
-    #[cfg(not(loom))]
     pub const fn new() -> Self {
-        Self {
-            cached_data: AtomicU64::new(Self::UNINITIALIZED),
-            phantom: PhantomData,
-        }
-    }
-
-    #[cfg(loom)]
-    pub fn new() -> Self {
         Self {
             cached_data: AtomicU64::new(Self::UNINITIALIZED),
             phantom: PhantomData,

@@ -17,7 +17,6 @@ mod ingredient;
 mod input;
 mod interned;
 mod key;
-mod loom;
 mod memo_ingredient_indices;
 mod nonce;
 #[cfg(feature = "rayon")]
@@ -27,6 +26,7 @@ mod revision;
 mod runtime;
 mod salsa_struct;
 mod storage;
+mod sync;
 mod table;
 mod tracked_struct;
 mod update;
@@ -80,7 +80,6 @@ pub mod plumbing {
         setup_tracked_struct, unexpected_cycle_initial, unexpected_cycle_recovery,
     };
 
-    pub use crate::__maybe_lazy_static;
     pub use crate::accumulator::Accumulator;
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};

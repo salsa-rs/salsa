@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crate::hash::FxLinkedHashSet;
-use crate::loom::sync::Mutex;
+use crate::sync::Mutex;
 use crate::Id;
 
 pub(super) struct Lru {

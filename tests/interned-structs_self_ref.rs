@@ -82,10 +82,8 @@ const _: () = {
         where
             Db: ?Sized + zalsa_::Database,
         {
-            zalsa_::__maybe_lazy_static! {
-                static CACHE: zalsa_::IngredientCache<zalsa_struct_::IngredientImpl<Configuration_>> =
-                    zalsa_::IngredientCache::new();
-            }
+            static CACHE: zalsa_::IngredientCache<zalsa_struct_::IngredientImpl<Configuration_>> =
+                zalsa_::IngredientCache::new();
 
             let zalsa = db.zalsa();
             CACHE.get_or_create(zalsa, || {

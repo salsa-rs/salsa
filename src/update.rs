@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[cfg(feature = "rayon")]
 use rayon::iter::Either;
 
-use crate::loom::sync::Arc;
+use crate::sync::Arc;
 use crate::Revision;
 
 /// This is used by the macro generated code.

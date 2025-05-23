@@ -1,4 +1,4 @@
-use crate::loom::sync::atomic::{AtomicU32, Ordering};
+use crate::sync::atomic::{AtomicU32, Ordering};
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 
@@ -15,17 +15,7 @@ pub(crate) struct NonceGenerator<T> {
 pub struct Nonce<T>(NonZeroU32, PhantomData<T>);
 
 impl<T> NonceGenerator<T> {
-    #[cfg(not(loom))]
     pub(crate) const fn new() -> Self {
-        Self {
-            // start at 1 so we can detect rollover more easily
-            value: AtomicU32::new(1),
-            phantom: PhantomData,
-        }
-    }
-
-    #[cfg(loom)]
-    pub(crate) fn new() -> Self {
         Self {
             // start at 1 so we can detect rollover more easily
             value: AtomicU32::new(1),

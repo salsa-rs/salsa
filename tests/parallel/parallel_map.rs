@@ -1,4 +1,4 @@
-#![cfg(feature = "rayon")]
+#![cfg(all(feature = "rayon", not(feature = "shuttle")))]
 // test for rayon-like parallel map interactions.
 
 use salsa::{Cancelled, Setter};

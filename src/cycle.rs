@@ -55,6 +55,7 @@ use std::panic;
 use thin_vec::{thin_vec, ThinVec};
 
 use crate::key::DatabaseKeyIndex;
+use crate::sync::OnceLock;
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
 ///
@@ -258,13 +259,10 @@ impl From<CycleHead> for CycleHeads {
     }
 }
 
-#[cfg(not(loom))]
-pub(crate) static EMPTY_CYCLE_HEADS: std::sync::LazyLock<CycleHeads> =
-    std::sync::LazyLock::new(|| CycleHeads(ThinVec::new()));
-
-#[cfg(loom)]
-loom::lazy_static! {
-    pub(crate) static ref EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(ThinVec::new());
+#[inline]
+pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
+    static EMPTY_CYCLE_HEADS: OnceLock<CycleHeads> = OnceLock::new();
+    EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
 }
 
 #[derive(Debug, PartialEq, Eq)]

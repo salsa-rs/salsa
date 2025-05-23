@@ -14,10 +14,10 @@
 //!  +------------------+--------------------+
 //!
 //! ```
+use crate::sync::thread;
+use crate::{Knobs, KnobsDatabase};
 
 use salsa::CycleRecoveryAction;
-
-use crate::setup::{Knobs, KnobsDatabase};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
 struct CycleValue(u32);
@@ -71,14 +71,14 @@ fn initial(_db: &dyn KnobsDatabase) -> CycleValue {
 
 #[test_log::test]
 fn the_test() {
-    std::thread::scope(|scope| {
+    crate::sync::check(|| {
         let db_t1 = Knobs::default();
         let db_t2 = db_t1.clone();
         let db_t3 = db_t1.clone();
 
-        let t1 = scope.spawn(move || query_a(&db_t1));
-        let t2 = scope.spawn(move || query_b(&db_t2));
-        let t3 = scope.spawn(move || query_c(&db_t3));
+        let t1 = thread::spawn(move || query_a(&db_t1));
+        let t2 = thread::spawn(move || query_b(&db_t2));
+        let t3 = thread::spawn(move || query_c(&db_t3));
 
         let r_t1 = t1.join().unwrap();
         let r_t2 = t2.join().unwrap();

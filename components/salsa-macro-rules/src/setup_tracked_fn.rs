@@ -74,8 +74,6 @@ macro_rules! setup_tracked_fn {
     ) => {
         // Suppress this clippy lint because we sometimes require `'db` where the ordinary Rust rules would not.
         #[allow(clippy::needless_lifetimes)]
-        // Suppress the lint against `cfg(loom)`.
-        #[allow(unexpected_cfgs)]
         $(#[$attr])*
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
@@ -85,10 +83,8 @@ macro_rules! setup_tracked_fn {
 
             struct $Configuration;
 
-            $zalsa::__maybe_lazy_static! {
-                static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =
-                    $zalsa::IngredientCache::new();
-            }
+            static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =
+                $zalsa::IngredientCache::new();
 
             $zalsa::macro_if! {
                 if $needs_interner {
@@ -98,10 +94,8 @@ macro_rules! setup_tracked_fn {
                         std::marker::PhantomData<&$db_lt $zalsa::interned::Value<$Configuration>>,
                     );
 
-                    $zalsa::__maybe_lazy_static! {
-                        static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
-                            $zalsa::IngredientCache::new();
-                    }
+                    static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
+                        $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;

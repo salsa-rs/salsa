@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use crate::accumulator::accumulated::Accumulated;
 use crate::accumulator::{Accumulator, AnyAccumulated};
-use crate::loom::sync::atomic::{AtomicBool, Ordering};
+use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::IngredientIndex;
 
 #[derive(Default)]

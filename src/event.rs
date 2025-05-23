@@ -1,5 +1,5 @@
 use crate::key::DatabaseKeyIndex;
-use crate::loom::thread::{self, ThreadId};
+use crate::sync::thread::{self, ThreadId};
 use crate::Revision;
 
 /// The `Event` struct identifies various notable things that can

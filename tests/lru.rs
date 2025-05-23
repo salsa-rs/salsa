@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 mod common;
 use common::LogDatabase;
+
 use salsa::Database as _;
 use test_log::test;
 

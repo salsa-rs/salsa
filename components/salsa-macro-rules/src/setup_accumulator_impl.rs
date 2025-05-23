@@ -21,13 +21,9 @@ macro_rules! setup_accumulator_impl {
             use salsa::plumbing as $zalsa;
             use salsa::plumbing::accumulator as $zalsa_struct;
 
-            // Suppress the lint against `cfg(loom)`.
-            #[allow(unexpected_cfgs)]
             fn $ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<$Struct> {
-                $zalsa::__maybe_lazy_static! {
-                    static $CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Struct>> =
-                        $zalsa::IngredientCache::new();
-                }
+                static $CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Struct>> =
+                    $zalsa::IngredientCache::new();
 
                 $CACHE.get_or_create(zalsa, || {
                     zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()

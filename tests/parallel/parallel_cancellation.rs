@@ -1,5 +1,7 @@
-//! Test for thread cancellation.
+// Shuttle doesn't like panics inside of its runtime.
+#![cfg(not(feature = "shuttle"))]
 
+//! Test for thread cancellation.
 use salsa::{Cancelled, Setter};
 
 use crate::setup::{Knobs, KnobsDatabase};

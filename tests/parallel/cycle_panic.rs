@@ -1,3 +1,6 @@
+// Shuttle doesn't like panics inside of its runtime.
+#![cfg(not(feature = "shuttle"))]
+
 //! Test for panic in cycle recovery function, in cross-thread cycle.
 use crate::setup::{Knobs, KnobsDatabase};
 
@@ -27,16 +30,14 @@ fn initial(_db: &dyn KnobsDatabase) -> u32 {
 fn execute() {
     let db = Knobs::default();
 
-    std::thread::scope(|scope| {
-        let db_t1 = db.clone();
-        let t1 = scope.spawn(move || query_a(&db_t1));
+    let db_t1 = db.clone();
+    let t1 = std::thread::spawn(move || query_a(&db_t1));
 
-        let db_t2 = db.clone();
-        let t2 = scope.spawn(move || query_b(&db_t2));
+    let db_t2 = db.clone();
+    let t2 = std::thread::spawn(move || query_b(&db_t2));
 
-        // The main thing here is that we don't deadlock.
-        let (r1, r2) = (t1.join(), t2.join());
-        assert!(r1.is_err());
-        assert!(r2.is_err());
-    });
+    // The main thing here is that we don't deadlock.
+    let (r1, r2) = (t1.join(), t2.join());
+    assert!(r1.is_err());
+    assert!(r2.is_err());
 }
