@@ -1,9 +1,10 @@
 //! Test for a tracked struct where an untracked field has a
 //! very poorly chosen hash impl (always returns 0).
-//! This demonstrates that the `untracked fields on a struct
-//! can change values and yet the struct can have the same
-//! id (because struct ids are based on the *hash* of the
-//! untracked fields).
+//!
+//! This demonstrates that tracked struct ids will always change if
+//! untracked fields on a struct change values, because although struct
+//! ids are based on the *hash* of the untracked fields, ids are generational
+//! based on the field values.
 
 use salsa::{Database as Db, Setter};
 use test_log::test;
@@ -70,11 +71,11 @@ fn dependent_query() {
     assert!(with_tracked(&db, tracked));
 
     input.set_field(&mut db).to(false);
+
     // We now re-run the query that creates the tracked struct.
-    // Salsa will re-use the `MyTracked` struct from the previous revision
-    // because it thinks it is unchanged because of `BadHash`'s bad hash function.
-    // That's why Salsa updates the `MyTracked` struct in-place and the struct
-    // should be considered re-created even though it still has the same id.
+    //
+    // Salsa will re-use the `MyTracked` struct from the previous revision,
+    // but practically it has been re-created due to generational ids.
     let tracked = create_tracked(&db, input);
     assert!(!with_tracked(&db, tracked));
 }
