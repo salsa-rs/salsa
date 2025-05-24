@@ -102,12 +102,12 @@ pub fn run_memo_drops(receiver: &MemoDropReceiver) {
 }
 
 pub fn memo_drop_channel() -> (MemoDropSender, MemoDropReceiver) {
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = crossbeam_channel::unbounded();
     (MemoDropSender(tx), MemoDropReceiver(rx))
 }
 
 #[derive(Clone)]
-pub struct MemoDropSender(std::sync::mpsc::Sender<MemoDropAction>);
+pub struct MemoDropSender(crossbeam_channel::Sender<MemoDropAction>);
 
 impl MemoDropSender {
     /// Put the memo into the drop queue.
@@ -133,7 +133,7 @@ impl MemoDropSender {
     }
 }
 
-pub struct MemoDropReceiver(std::sync::mpsc::Receiver<MemoDropAction>);
+pub struct MemoDropReceiver(crossbeam_channel::Receiver<MemoDropAction>);
 
 /// A drop action to be performed by the owner of the `MemoDropReceiver`.
 #[derive(Debug)]
