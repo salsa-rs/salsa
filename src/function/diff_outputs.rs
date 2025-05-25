@@ -14,9 +14,6 @@ where
     ///
     /// This function takes a `&mut` reference to `revisions` to remove outputs
     /// that no longer exist in this revision from [`QueryRevisions::tracked_struct_ids`].
-    ///
-    /// If `provisional` is true, the new outputs are from a cycle-provisional result. In
-    /// that case, we won't panic if we see outputs from the current revision become stale.
     pub(super) fn diff_outputs(
         &self,
         zalsa: &Zalsa,
@@ -25,6 +22,9 @@ where
         revisions: &mut QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
+        //
+        // Ignore key_generation here, because we use the same tracked struct allocation for
+        // all generations with the same key_index and can't report it as stale
         let mut old_outputs: FxIndexSet<_> = old_memo
             .revisions
             .origin
