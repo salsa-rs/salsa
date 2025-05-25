@@ -80,6 +80,16 @@ impl Macro {
         let db_lt = db_lifetime::db_lifetime(&item.sig.generics);
         let input_ids = self.input_ids(&item);
         let input_tys = self.input_tys(&item)?;
+        let interned_input_tys = input_tys.iter().map(|&ty| {
+            let mut ty = ty.clone();
+            syn::visit_mut::visit_type_mut(
+                &mut ToDbLifetimeVisitor {
+                    db_lifetime: db_lt.clone(),
+                },
+                &mut ty,
+            );
+            ty
+        });
         let output_ty = self.output_ty(&db_lt, &item)?;
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
@@ -196,6 +206,7 @@ impl Macro {
                 db: #db_ident,
                 input_ids: [#(#input_ids),*],
                 input_tys: [#(#input_tys),*],
+                interned_input_tys: [#(#interned_input_tys),*],
                 output_ty: #output_ty,
                 inner_fn: { #inner_fn },
                 cycle_recovery_fn: #cycle_recovery_fn,
@@ -283,6 +294,16 @@ impl Macro {
 
     fn output_ty(&self, db_lt: &syn::Lifetime, item: &syn::ItemFn) -> syn::Result<syn::Type> {
         fn_util::output_ty(Some(db_lt), &item.sig)
+    }
+}
+
+struct ToDbLifetimeVisitor {
+    db_lifetime: syn::Lifetime,
+}
+
+impl syn::visit_mut::VisitMut for ToDbLifetimeVisitor {
+    fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
+        i.clone_from(&self.db_lifetime);
     }
 }
 

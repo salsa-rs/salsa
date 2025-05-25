@@ -28,6 +28,9 @@ macro_rules! setup_tracked_fn {
         // Types of the function arguments (may reference `$generics`).
         input_tys: [$($input_ty:ty),*],
 
+        // Types of the function arguments as should be put in interned struct.
+        interned_input_tys: [$($interned_input_ty:ty),*],
+
         // Return type of the function (may reference `$generics`).
         output_ty: $output_ty:ty,
 
@@ -135,12 +138,12 @@ macro_rules! setup_tracked_fn {
                         };
                         const DEBUG_NAME: &'static str = concat!(stringify!($fn_name), "::interned_arguments");
 
-                        type Fields<$db_lt> = ($($input_ty),*);
+                        type Fields<$db_lt> = ($($interned_input_ty),*);
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
                     }
                 } else {
-                    type $InternedData<$db_lt> = ($($input_ty),*);
+                    type $InternedData<$db_lt> = ($($interned_input_ty),*);
                 }
             }
 
@@ -185,7 +188,7 @@ macro_rules! setup_tracked_fn {
 
                 type SalsaStruct<$db_lt> = $InternedData<$db_lt>;
 
-                type Input<$db_lt> = ($($input_ty),*);
+                type Input<$db_lt> = ($($interned_input_ty),*);
 
                 type Output<$db_lt> = $output_ty;
 
@@ -193,7 +196,7 @@ macro_rules! setup_tracked_fn {
 
                 $($values_equal)+
 
-                fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
+                fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
                     $($assert_return_type_is_update)*
 
                     $($inner_fn)*
@@ -201,7 +204,7 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
-                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
+                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
                     $($cycle_recovery_initial)*(db, $($input_id),*)
                 }
 
@@ -209,7 +212,7 @@ macro_rules! setup_tracked_fn {
                     db: &$db_lt dyn $Db,
                     value: &Self::Output<$db_lt>,
                     count: u32,
-                    ($($input_id),*): ($($input_ty),*)
+                    ($($input_id),*): ($($interned_input_ty),*)
                 ) -> $zalsa::CycleRecoveryAction<Self::Output<$db_lt>> {
                     $($cycle_recovery_fn)*(db, value, count, $($input_id),*)
                 }
@@ -305,7 +308,7 @@ macro_rules! setup_tracked_fn {
             impl $fn_name {
                 pub fn accumulated<$db_lt, A: salsa::Accumulator>(
                     $db: &$db_lt dyn $Db,
-                    $($input_id: $input_ty,)*
+                    $($input_id: $interned_input_ty,)*
                 ) -> Vec<&$db_lt A> {
                     use salsa::plumbing as $zalsa;
                     let key = $zalsa::macro_if! {
@@ -322,7 +325,7 @@ macro_rules! setup_tracked_fn {
                 $zalsa::macro_if! { $is_specifiable =>
                     pub fn specify<$db_lt>(
                         $db: &$db_lt dyn $Db,
-                        $($input_id: $input_ty,)*
+                        $($input_id: $interned_input_ty,)*
                         value: $output_ty,
                     ) {
                         let key = $zalsa::AsId::as_id(&($($input_id),*));
