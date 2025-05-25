@@ -3,7 +3,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
 use crate::zalsa_local::QueryRevisions;
-use crate::{DatabaseKeyIndex, Event, EventKind};
+use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -25,7 +25,12 @@ where
         revisions: &mut QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
-        let mut old_outputs: FxIndexSet<_> = old_memo.revisions.origin.outputs().collect();
+        let mut old_outputs: FxIndexSet<_> = old_memo
+            .revisions
+            .origin
+            .outputs()
+            .map(|a| (a.ingredient_index(), a.key_index().index()))
+            .collect();
 
         if old_outputs.is_empty() {
             return;
@@ -34,7 +39,10 @@ where
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
         for new_output in revisions.origin.outputs() {
-            old_outputs.swap_remove(&new_output);
+            old_outputs.swap_remove(&(
+                new_output.ingredient_index(),
+                new_output.key_index().index(),
+            ));
         }
 
         if old_outputs.is_empty() {
@@ -43,12 +51,14 @@ where
 
         // Remove the outputs that are no longer present in the current revision
         // to prevent that the next revision is seeded with an id mapping that no longer exists.
-        revisions.tracked_struct_ids.retain(|&k, &mut value| {
-            !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
-        });
+        revisions
+            .tracked_struct_ids
+            .retain(|&k, &mut value| !old_outputs.contains(&(k.ingredient_index(), value.index())));
 
-        for old_output in old_outputs {
-            Self::report_stale_output(zalsa, key, old_output);
+        for (ingredient_index, key_index) in old_outputs {
+            // SAFETY: key_index acquired from valid output
+            let id = unsafe { Id::from_index(key_index) };
+            Self::report_stale_output(zalsa, key, DatabaseKeyIndex::new(ingredient_index, id));
         }
     }
 
