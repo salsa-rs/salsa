@@ -181,6 +181,7 @@ impl Runtime {
         let dg = self.dependency_graph.lock();
 
         if dg.depends_on(other_id, thread_id) {
+            tracing::debug!("block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}");
             return BlockResult::Cycle;
         }
 
@@ -190,6 +191,10 @@ impl Runtime {
                 database_key,
             })
         });
+
+        tracing::debug!(
+            "block_on: thread {thread_id:?} is blocking on {database_key:?} in thread {other_id:?}"
+        );
 
         let result =
             DependencyGraph::block_on(dg, thread_id, database_key, other_id, query_mutex_guard);

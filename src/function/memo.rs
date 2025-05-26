@@ -171,6 +171,7 @@ impl<V> Memo<V> {
                     // There's a new memo available for the cycle head; fetch our own
                     // updated memo and see if it's still provisional or if the cycle
                     // has resolved.
+                    tracing::trace!("Dependent cycle head {head_index:?} has been released (there's a new memo)");
                     retry = true;
                 } else {
                     // We hit a cycle blocking on the cycle head; this means it's in
