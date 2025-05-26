@@ -188,9 +188,10 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
-        memo: memo::Memo<C::Output<'db>>,
+        mut memo: memo::Memo<C::Output<'db>>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C::Output<'db>> {
+        memo.revisions.tracked_struct_ids.shrink_to_fit();
         // We convert to a `NonNull` here as soon as possible because we are going to alias
         // into the `Box`, which is a `noalias` type.
         // FIXME: Use `Box::into_non_null` once stable
