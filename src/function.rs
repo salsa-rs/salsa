@@ -247,9 +247,14 @@ where
         let is_provisional = self
             .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .is_some_and(|memo| {
-                memo.cycle_heads()
-                    .into_iter()
-                    .any(|head| head.database_key_index == self.database_key_index(input))
+                match memo.cycle_heads().iter().as_slice() {
+                    [] => false,
+                    [head] => head.database_key_index == self.database_key_index(input),
+                    // If there are multiple cycle heads, we assume that the memo is still provisional.
+                    // This indicates that this memo is part of an outer cycle that should be awaited first.
+                    [..] => true,
+                }
+
             });
         if is_provisional {
             CycleHeadKind::Provisional

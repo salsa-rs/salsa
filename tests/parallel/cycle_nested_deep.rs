@@ -55,7 +55,7 @@ fn query_d(db: &dyn KnobsDatabase) -> CycleValue {
     query_c(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
 fn query_e(db: &dyn KnobsDatabase) -> CycleValue {
     query_c(db)
 }
@@ -81,19 +81,23 @@ fn the_test() {
             let db_t3 = db_t1.clone();
 
             let t1 = thread::spawn(move ||
-                                       {
-                                           let _span =
-                                               tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
-                                           query_a(&db_t1)
-                                       });
+           {
+               let _span =
+                   tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
+               let result = query_a(&db_t1);
+                 db_t1.signal(1);
+               result
+           });
             let t2 = thread::spawn(move || {
                 let _span =
                     tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
+                db_t2.wait_for(1);
                 query_d(&db_t2)
             });
             let t3 = thread::spawn(move || {
                 let _span =
                     tracing::debug_span!("t3", thread_id = ?thread::current().id()).entered();
+                db_t3.wait_for(1);
                 query_e(&db_t3)
             });
 
