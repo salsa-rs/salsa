@@ -1,8 +1,8 @@
+pub(crate) use maybe_changed_after::VerifyResult;
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
-
-pub(crate) use maybe_changed_after::VerifyResult;
+use std::sync::atomic::Ordering;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy};
@@ -246,16 +246,7 @@ where
     fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
         let is_provisional = self
             .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .is_some_and(|memo| {
-                match memo.cycle_heads().iter().as_slice() {
-                    [] => false,
-                    [head] => head.database_key_index == self.database_key_index(input),
-                    // If there are multiple cycle heads, we assume that the memo is still provisional.
-                    // This indicates that this memo is part of an outer cycle that should be awaited first.
-                    [..] => true,
-                }
-
-            });
+            .is_some_and(|memo| !memo.revisions.verified_final.load(Ordering::Relaxed));
         if is_provisional {
             CycleHeadKind::Provisional
         } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
