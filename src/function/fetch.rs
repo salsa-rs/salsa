@@ -180,7 +180,34 @@ where
         };
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+        let mut opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+
+        // If this is a provisional memo from the same revision. Await all cycle heads because they could be
+        // running on a different thread.
+        if let Some(mut old_memo) = opt_old_memo {
+            if old_memo.value.is_some()
+                && old_memo.may_be_provisional()
+                && old_memo.verified_at.load() == zalsa.current_revision()
+            {
+                opt_old_memo = loop {
+                    old_memo.await_heads(zalsa, self.database_key_index(id));
+
+                    let new_old = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+                    match new_old {
+                        None => unreachable!("Expected memo to be present"),
+                        // If the new memo is the same as the old, then this means that this is still the "latest" memo for this
+                        Some(new_old) if std::ptr::eq(new_old, old_memo) => {
+                            break Some(new_old);
+                        }
+                        Some(new_old) => {
+                            tracing::debug!("Provisional memo has been updated by another thread while waiting for its cycle heads");
+                            old_memo = new_old;
+                        }
+                    }
+                };
+            }
+        }
+
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 let mut cycle_heads = CycleHeads::default();

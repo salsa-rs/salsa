@@ -201,6 +201,35 @@ impl<V> Memo<V> {
         }
     }
 
+    #[inline(always)]
+    pub(super) fn await_heads(&self, zalsa: &Zalsa, database_key_index: DatabaseKeyIndex) {
+        for head in &self.revisions.cycle_heads {
+            let head_index = head.database_key_index;
+
+            if database_key_index == head_index {
+                continue;
+            }
+
+            let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
+            let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
+
+            if matches!(
+                cycle_head_kind,
+                CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
+            ) {
+                // This cycle is already finalized, so we don't need to wait on it;
+                // keep looping through cycle heads.
+                tracing::trace!("Dependent cycle head {head_index:?} has been finalized.");
+            } else if ingredient.wait_for(zalsa, head_index.key_index()) {
+                tracing::trace!("Dependent cycle head {head_index:?} has been released");
+            } else {
+                // We hit a cycle blocking on the cycle head; this means it's in
+                // our own active query stack and we are responsible to resolve the
+                // cycle
+            }
+        }
+    }
+
     /// Cycle heads that should be propagated to dependent queries.
     #[inline(always)]
     pub(super) fn cycle_heads(&self) -> &CycleHeads {
