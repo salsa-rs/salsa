@@ -15,7 +15,18 @@ struct Input {
 #[salsa::interned]
 #[derive(Debug)]
 struct Interned<'db> {
-    field1: usize,
+    field1: BadHash,
+}
+
+// Use a consistent hash value to ensure that interned value sharding
+// does not interefere with garbage collection.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+struct BadHash(usize);
+
+impl std::hash::Hash for BadHash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_i16(0);
+    }
 }
 
 #[salsa::interned]
@@ -28,20 +39,20 @@ struct NestedInterned<'db> {
 fn test_intern_new() {
     #[salsa::tracked]
     fn function<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
-        Interned::new(db, input.field1(db))
+        Interned::new(db, BadHash(input.field1(db)))
     }
 
     let mut db = common::EventLoggerDatabase::default();
     let input = Input::new(&db, 0);
 
     let result_in_rev_1 = function(&db, input);
-    assert_eq!(result_in_rev_1.field1(&db), 0);
+    assert_eq!(result_in_rev_1.field1(&db).0, 0);
 
     // Modify the input to force a new value to be created.
     input.set_field1(&mut db).to(1);
 
     let result_in_rev_2 = function(&db, input);
-    assert_eq!(result_in_rev_2.field1(&db), 1);
+    assert_eq!(result_in_rev_2.field1(&db).0, 1);
 
     db.assert_logs(expect![[r#"
         [
@@ -60,7 +71,7 @@ fn test_reintern() {
     #[salsa::tracked]
     fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         let _ = input.field1(db);
-        Interned::new(db, 0)
+        Interned::new(db, BadHash(0))
     }
 
     let mut db = common::EventLoggerDatabase::default();
@@ -74,7 +85,7 @@ fn test_reintern() {
             "DidInternValue { key: Interned(Id(400)), revision: R1 }",
         ]"#]]);
 
-    assert_eq!(result_in_rev_1.field1(&db), 0);
+    assert_eq!(result_in_rev_1.field1(&db).0, 0);
 
     // Modify the input to force the value to be re-interned.
     input.set_field1(&mut db).to(1);
@@ -88,28 +99,28 @@ fn test_reintern() {
             "DidValidateInternedValue { key: Interned(Id(400)), revision: R2 }",
         ]"#]]);
 
-    assert_eq!(result_in_rev_2.field1(&db), 0);
+    assert_eq!(result_in_rev_2.field1(&db).0, 0);
 }
 
 #[test]
 fn test_durability() {
     #[salsa::tracked]
     fn function<'db>(db: &'db dyn Database, _input: Input) -> Interned<'db> {
-        Interned::new(db, 0)
+        Interned::new(db, BadHash(0))
     }
 
     let mut db = common::EventLoggerDatabase::default();
     let input = Input::new(&db, 0);
 
     let result_in_rev_1 = function(&db, input);
-    assert_eq!(result_in_rev_1.field1(&db), 0);
+    assert_eq!(result_in_rev_1.field1(&db).0, 0);
 
     // Modify the input to bump the revision without re-interning the value, as there
     // is no read dependency.
     input.set_field1(&mut db).to(1);
 
     let result_in_rev_2 = function(&db, input);
-    assert_eq!(result_in_rev_2.field1(&db), 0);
+    assert_eq!(result_in_rev_2.field1(&db).0, 0);
 
     db.assert_logs(expect![[r#"
         [
@@ -126,14 +137,14 @@ fn test_durability() {
 fn test_reuse() {
     #[salsa::tracked]
     fn function<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
-        Interned::new(db, input.field1(db))
+        Interned::new(db, BadHash(input.field1(db)))
     }
 
     let mut db = common::EventLoggerDatabase::default();
     let input = Input::new(&db, 0);
 
     let result = function(&db, input);
-    assert_eq!(result.field1(&db), 0);
+    assert_eq!(result.field1(&db).0, 0);
 
     // Modify the input to bump the revision and intern a new value.
     //
@@ -143,13 +154,13 @@ fn test_reuse() {
         input.set_field1(&mut db).to(i);
 
         let result = function(&db, input);
-        assert_eq!(result.field1(&db), i);
+        assert_eq!(result.field1(&db).0, i);
     }
 
     // Values that have been reused should be re-interned.
     for i in 1..10 {
         let result = function(&db, Input::new(&db, i));
-        assert_eq!(result.field1(&db), i);
+        assert_eq!(result.field1(&db).0, i);
     }
 
     db.assert_logs(expect![[r#"
@@ -227,12 +238,12 @@ fn test_reuse_interned_input() {
     // A query that creates an interned value.
     #[salsa::tracked]
     fn create_interned<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
-        Interned::new(db, input.field1(db))
+        Interned::new(db, BadHash(input.field1(db)))
     }
 
     #[salsa::tracked]
     fn use_interned<'db>(db: &'db dyn Database, interned: Interned<'db>) -> usize {
-        interned.field1(db)
+        interned.field1(db).0
     }
 
     let mut db = common::EventLoggerDatabase::default();
@@ -269,7 +280,7 @@ fn test_reuse_multiple_interned_input() {
     // A query that creates an interned value.
     #[salsa::tracked]
     fn create_interned<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
-        Interned::new(db, input.field1(db))
+        Interned::new(db, BadHash(input.field1(db)))
     }
 
     // A query that creates an interned value.
@@ -283,7 +294,7 @@ fn test_reuse_multiple_interned_input() {
 
     #[salsa::tracked]
     fn use_interned<'db>(db: &'db dyn Database, interned: Interned<'db>) -> usize {
-        interned.field1(db)
+        interned.field1(db).0
     }
 
     // A query that reads an interned value.
@@ -292,7 +303,7 @@ fn test_reuse_multiple_interned_input() {
         db: &'db dyn Database,
         nested_interned: NestedInterned<'db>,
     ) -> usize {
-        nested_interned.interned(db).field1(db)
+        nested_interned.interned(db).field1(db).0
     }
 
     let mut db = common::EventLoggerDatabase::default();

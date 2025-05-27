@@ -4,10 +4,9 @@ use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
+use crossbeam_utils::CachePadded;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
-use parking_lot::Mutex;
 use rustc_hash::FxBuildHasher;
 
 use crate::cycle::CycleHeads;
@@ -16,6 +15,8 @@ use crate::function::VerifyResult;
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
 use crate::plumbing::{IngredientIndices, Jar, ZalsaLocal};
+use crate::revision::AtomicRevision;
+use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -52,18 +53,24 @@ pub struct IngredientImpl<C: Configuration> {
     /// Index of this ingredient in the database (used to construct database-IDs, etc).
     ingredient_index: IngredientIndex,
 
-    /// A hasher for the shared ID map.
+    /// A hasher for the sharded ID maps.
     hasher: FxBuildHasher,
 
-    /// Shared data that can only be accessed through a lock.
-    shared: Mutex<IngredientImplShared<C>>,
+    /// A shift used to determine the shard for a given hash.
+    shift: u32,
+
+    /// Sharded data that can only be accessed through a lock.
+    shards: Box<[CachePadded<Mutex<IngredientShard<C>>>]>,
+
+    /// A queue of recent revisions in which values were interned.
+    revision_queue: RevisionQueue,
 
     memo_table_types: Arc<MemoTableTypes>,
 
     _marker: PhantomData<fn() -> C>,
 }
 
-struct IngredientImplShared<C: Configuration> {
+struct IngredientShard<C: Configuration> {
     /// Maps from data to the existing interned ID for that data.
     ///
     /// This doesn't hold the fields themselves to save memory, instead it points
@@ -72,9 +79,15 @@ struct IngredientImplShared<C: Configuration> {
 
     /// An intrusive linked list for LRU.
     lru: LinkedList<ValueAdapter<C>>,
+}
 
-    /// A queue of recent revisions in which values were interned.
-    revision_queue: RevisionQueue,
+impl<C: Configuration> Default for IngredientShard<C> {
+    fn default() -> Self {
+        Self {
+            lru: LinkedList::default(),
+            key_map: hashbrown::HashTable::new(),
+        }
+    }
 }
 
 // SAFETY: `LinkedListLink` is `!Sync`, however, the linked list is only accessed through the
@@ -88,6 +101,9 @@ pub struct Value<C>
 where
     C: Configuration,
 {
+    /// The index of the shard containing this value.
+    shard: u16,
+
     /// An intrusive linked list for LRU.
     link: LinkedListLink,
 
@@ -169,17 +185,33 @@ where
     C: Configuration,
 {
     pub fn new(ingredient_index: IngredientIndex) -> Self {
+        static SHARDS: OnceLock<usize> = OnceLock::new();
+        let shards = *SHARDS.get_or_init(|| {
+            let num_cpus = std::thread::available_parallelism()
+                .map(usize::from)
+                .unwrap_or(1);
+
+            (num_cpus * 4).next_power_of_two()
+        });
+
         Self {
             ingredient_index,
             hasher: FxBuildHasher,
             memo_table_types: Arc::new(MemoTableTypes::default()),
-            shared: Mutex::new(IngredientImplShared {
-                key_map: hashbrown::HashTable::default(),
-                lru: LinkedList::default(),
-                revision_queue: RevisionQueue::default(),
-            }),
+            revision_queue: RevisionQueue::default(),
+            shift: usize::BITS - shards.trailing_zeros(),
+            shards: (0..shards).map(|_| Default::default()).collect(),
             _marker: PhantomData,
         }
+    }
+
+    /// Returns the shard for a given hash.
+    ///
+    /// Note that this value is guaranteed to be in-bounds for `self.shards`.
+    #[inline]
+    fn shard(&self, hash: u64) -> usize {
+        // https://github.com/xacrimon/dashmap/blob/366ce7e7872866a06de66eb95002fa6cf2c117a7/src/lib.rs#L421
+        ((hash as usize) << 7) >> self.shift
     }
 
     /// # Safety
@@ -245,28 +277,31 @@ where
         C::Fields<'db>: HashEqLike<Key>,
     {
         let (zalsa, zalsa_local) = db.zalsas();
-        let current_revision = zalsa.current_revision();
-
-        let data_hash = self.hasher.hash_one(&key);
-
-        let shared = &mut *self.shared.lock();
 
         // Record the current revision as active.
-        shared.revision_queue.record(current_revision);
+        let current_revision = zalsa.current_revision();
+        self.revision_queue.record(current_revision);
+
+        // Hash the value before acquiring the lock.
+        let hash = self.hasher.hash_one(&key);
+
+        let shard_index = self.shard(hash);
+        // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.
+        let shard = unsafe { &mut *self.shards.get_unchecked(shard_index).lock() };
 
         let found_value = Cell::new(None);
-        // SAFETY: We hold the lock.
+        // SAFETY: We hold the lock for the shard containing the value.
         let eq = |id: &_| unsafe { Self::value_eq(*id, &key, zalsa, &found_value) };
 
         // Attempt a fast-path lookup of already interned data.
-        if let Some(&id) = shared.key_map.find(data_hash, eq) {
+        if let Some(&id) = shard.key_map.find(hash, eq) {
             let value = found_value
                 .get()
                 .expect("found the interned value, so `found_value` should be set");
 
             let index = self.database_key_index(id);
 
-            // SAFETY: We hold the lock.
+            // SAFETY: We hold the lock for the shard containing the value.
             let value_shared = unsafe { &mut *value.shared.get() };
 
             // Validate the value in this revision to avoid reuse.
@@ -282,13 +317,13 @@ where
 
                 // Move the value to the front of the LRU list.
                 //
-                // SAFETY: We hold the lock and `value` was previously interned, so is
-                // in the list.
-                unsafe { shared.lru.cursor_mut_from_ptr(value).remove() };
+                // SAFETY: We hold the lock for the shard containing the value, and `value` was
+                // previously interned, so is in the list.
+                unsafe { shard.lru.cursor_mut_from_ptr(value).remove() };
 
                 // SAFETY: The value pointer is valid for the lifetime of the database
                 // and never accessed mutably directly.
-                unsafe { shared.lru.push_front(UnsafeRef::from_raw(value)) };
+                unsafe { shard.lru.push_front(UnsafeRef::from_raw(value)) };
             }
 
             // Record the maximum durability across all queries that intern this value.
@@ -306,16 +341,25 @@ where
             return value_shared.id;
         }
 
-        // Fill up the table for the first few revisions without attempting GC.
-        if !shared.revision_queue.is_primed() {
-            return self.intern_id_cold(db, key, zalsa, zalsa_local, assemble, shared, data_hash);
+        // Fill up the table for the first few revisions without attempting garbage collection.
+        if !self.revision_queue.is_primed() {
+            return self.intern_id_cold(
+                db,
+                key,
+                zalsa,
+                zalsa_local,
+                assemble,
+                shard,
+                shard_index,
+                hash,
+            );
         }
 
         // Otherwise, try to reuse a stale slot.
-        let mut cursor = shared.lru.back_mut();
+        let mut cursor = shard.lru.back_mut();
 
         while let Some(value) = cursor.get() {
-            // SAFETY: We hold the lock.
+            // SAFETY: We hold the lock for the shard containing the value.
             let value_shared = unsafe { &mut *value.shared.get() };
 
             // The value must not have been read in the current revision to be collected
@@ -323,10 +367,7 @@ where
             //
             // Note that the list is sorted by LRU, so if the tail of the list is not stale, we
             // will not find any stale slots.
-            if !shared
-                .revision_queue
-                .is_stale(value_shared.last_interned_at)
-            {
+            if !self.revision_queue.is_stale(value_shared.last_interned_at) {
                 break;
             }
 
@@ -347,24 +388,24 @@ where
                 // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
                 .unwrap_or((Durability::MAX, Revision::max()));
 
-            let prev_id = value_shared.id;
+            let old_id = value_shared.id;
 
             // Increment the generation of the ID, as if we allocated a new slot.
             //
             // If the ID is at its maximum generation, we are forced to leak the slot.
-            let Some(next_id) = value_shared.id.next_generation() else {
+            let Some(new_id) = value_shared.id.next_generation() else {
                 // Remove the value from the LRU list.
                 cursor.remove().unwrap();
 
                 // Retry with the previous element.
-                cursor = shared.lru.back_mut();
+                cursor = shard.lru.back_mut();
 
                 continue;
             };
 
             // Mark the slot as reused.
             *value_shared = ValueShared {
-                id: next_id,
+                id: new_id,
                 durability,
                 last_interned_at,
                 // Record the revision in which we are re-interning the value.
@@ -391,55 +432,67 @@ where
             // SAFETY: The value pointer is valid for the lifetime of the database.
             let value = unsafe { &*UnsafeRef::into_raw(cursor.remove().unwrap()) };
 
-            // SAFETY: We hold the lock and ensured that the value has not been
-            // read in this revision. Additionally, we marked the value as reused,
-            // so any readers will see that the fields are no longer valid.
+            // SAFETY: We hold the lock for the shard containing the value, and the
+            // value has not been interned in the current revision, so no references to
+            // it can exist.
             let old_fields = unsafe { &mut *value.fields.get() };
-
-            let old_data_hash = self.hasher.hash_one(&*old_fields);
 
             // Remove the previous value from the ID map.
             //
             // Note that while the ID stays the same when a slot is reused, the fields,
-            // and thus the hash, will change.
-            shared
+            // and thus the hash, will change, so we need to re-insert the value into the
+            // map. Crucially, we know that the hashes for the old and new fields both map
+            // to the same shard, because we determined the initial shard based on the new
+            // fields and only accessed the LRU list for that shard.
+            let old_hash = self.hasher.hash_one(&*old_fields);
+            shard
                 .key_map
-                .find_entry(old_data_hash, |found_id: &Id| *found_id == prev_id)
+                .find_entry(old_hash, |found_id: &Id| *found_id == old_id)
                 .expect("interned value in LRU so must be in key_map")
                 .remove();
 
             // Update the fields.
             //
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
-            *old_fields = unsafe { self.to_internal_data(assemble(next_id, key)) };
+            *old_fields = unsafe { self.to_internal_data(assemble(new_id, key)) };
 
-            // SAFETY: We hold the lock.
+            // SAFETY: We hold the lock for the shard containing the value.
             let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
 
             // Insert the new value into the ID map.
-            shared.key_map.insert_unique(data_hash, next_id, hasher);
+            shard.key_map.insert_unique(hash, new_id, hasher);
 
             // Free the memos associated with the previous interned value.
             //
-            // SAFETY: We hold the lock, and the value has not been interned
-            // in the current revision, so no references to it can exist.
+            // SAFETY: We hold the lock for the shard containing the value, and the
+            // value has not been interned in the current revision, so no references to
+            // it can exist.
             let mut memo_table = unsafe { std::mem::take(&mut *value.memos.get()) };
 
             // SAFETY: The memo table belongs to a value that we allocated, so it has the
             // correct type.
-            unsafe { self.clear_memos(zalsa, &mut memo_table, next_id) };
+            unsafe { self.clear_memos(zalsa, &mut memo_table, new_id) };
 
             // Move the value to the front of the LRU list.
             //
             // SAFETY: The value pointer is valid for the lifetime of the database.
             // and never accessed mutably directly.
-            shared.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
+            shard.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
 
-            return next_id;
+            return new_id;
         }
 
         // If we could not find any stale slots, we are forced to allocate a new one.
-        self.intern_id_cold(db, key, zalsa, zalsa_local, assemble, shared, data_hash)
+        self.intern_id_cold(
+            db,
+            key,
+            zalsa,
+            zalsa_local,
+            assemble,
+            shard,
+            shard_index,
+            hash,
+        )
     }
 
     /// The cold path for interning a value, allocating a new slot.
@@ -453,8 +506,9 @@ where
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
-        shared: &mut IngredientImplShared<C>,
-        data_hash: u64,
+        shard: &mut IngredientShard<C>,
+        shard_index: usize,
+        hash: u64,
     ) -> crate::Id
     where
         Key: Hash,
@@ -472,6 +526,7 @@ where
 
         // Allocate the value slot.
         let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
+            shard: shard_index as u16,
             link: LinkedListLink::new(),
             memos: UnsafeCell::new(MemoTable::default()),
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
@@ -491,18 +546,18 @@ where
         //
         // SAFETY: The value pointer is valid for the lifetime of the database
         // and never accessed mutably directly.
-        shared.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
+        shard.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
 
-        // SAFETY: We hold the lock.
+        // SAFETY: We hold the lock for the shard containing the value.
         let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
 
         // Insert the value into the ID map.
-        shared.key_map.insert_unique(data_hash, id, hasher);
+        shard.key_map.insert_unique(hash, id, hasher);
 
-        debug_assert_eq!(data_hash, {
+        debug_assert_eq!(hash, {
             let value = zalsa.table().get::<Value<C>>(id);
 
-            // SAFETY: We hold the lock.
+            // SAFETY: We hold the lock for the shard containing the value.
             unsafe { self.hasher.hash_one(&*value.fields.get()) }
         });
 
@@ -574,7 +629,7 @@ where
         // to lookup all values, it will only happen rarely.
         let value = zalsa.table().get::<Value<C>>(id);
 
-        // SAFETY: We hold the lock.
+        // SAFETY: We hold the lock for the shard containing the value.
         unsafe { self.hasher.hash_one(&*value.fields.get()) }
     }
 
@@ -595,13 +650,14 @@ where
         let value = zalsa.table().get::<Value<C>>(id);
         found_value.set(Some(value));
 
-        // SAFETY: We hold the lock.
+        // SAFETY: We hold the lock for the shard containing the value.
         let fields = unsafe { &*value.fields.get() };
 
         HashEqLike::eq(Self::from_internal_data(fields), key)
     }
 
     /// Returns the database key index for an interned value with the given id.
+    #[inline]
     pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex::new(self.ingredient_index, id)
     }
@@ -613,9 +669,9 @@ where
 
         debug_assert!(
             {
-                let _shared = self.shared.lock();
+                let _shard = self.shards[value.shard as usize].lock();
 
-                // SAFETY: We hold the lock.
+                // SAFETY: We hold the lock for the shard containing the value.
                 let value_shared = unsafe { &mut *value.shared.get() };
 
                 let last_changed_revision = zalsa.last_changed_revision(value_shared.durability);
@@ -640,8 +696,10 @@ where
     pub fn reset(&mut self, db: &mut dyn Database) {
         _ = db.zalsa_mut();
 
-        // We can clear the key_map now that we have cancelled all other handles.
-        self.shared.lock().key_map.clear();
+        for shard in self.shards.iter() {
+            // We can clear the key maps now that we have cancelled all other handles.
+            shard.lock().key_map.clear();
+        }
     }
 
     #[cfg(feature = "salsa_unstable")]
@@ -674,16 +732,17 @@ where
         _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
+
+        // Record the current revision as active.
         let current_revision = zalsa.current_revision();
+        self.revision_queue.record(current_revision);
 
         let value = zalsa.table().get::<Value<C>>(input);
 
-        let mut shared = self.shared.lock();
+        // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
+        let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
 
-        // Record the current revision as active.
-        shared.revision_queue.record(current_revision);
-
-        // SAFETY: We hold the lock.
+        // SAFETY: We hold the lock for the shard containing the value.
         let value_shared = unsafe { &mut *value.shared.get() };
 
         // The slot was reused.
@@ -757,38 +816,49 @@ const REVS: usize = 1;
 /// revisions. However, we only consider revisions in which interned values were actually
 /// read, as revisions may be created in bursts.
 struct RevisionQueue {
-    revisions: [Revision; REVS],
+    lock: Mutex<()>,
+    revisions: [AtomicRevision; REVS],
 }
 
 impl Default for RevisionQueue {
     fn default() -> RevisionQueue {
         RevisionQueue {
-            revisions: [const { Revision::start() }; REVS],
+            lock: Mutex::new(()),
+            revisions: [const { AtomicRevision::start() }; REVS],
         }
     }
 }
 
 impl RevisionQueue {
     /// Record the given revision as active.
-    fn record(&mut self, revision: Revision) {
+    #[inline]
+    fn record(&self, revision: Revision) {
         // Fast-path: We already recorded this revision.
-        if self.revisions[0] >= revision {
+        if self.revisions[0].load() >= revision {
             return;
         }
+
+        self.record_cold(revision);
+    }
+
+    #[cold]
+    fn record_cold(&self, revision: Revision) {
+        let _lock = self.lock.lock();
 
         // Otherwise, update the queue, maintaining sorted order.
         //
         // Note that this should only happen once per revision.
         for i in (1..REVS).rev() {
-            self.revisions[i] = self.revisions[i - 1];
+            self.revisions[i].store(self.revisions[i - 1].load());
         }
 
-        self.revisions[0] = revision;
+        self.revisions[0].store(revision);
     }
 
     /// Returns `true` if the given revision is old enough to be considered stale.
+    #[inline]
     fn is_stale(&self, revision: Revision) -> bool {
-        let oldest = self.revisions[REVS - 1];
+        let oldest = self.revisions[REVS - 1].load();
 
         // If we have not recorded `REVS` revisions yet, nothing can be stale.
         if oldest == Revision::start() {
@@ -799,8 +869,9 @@ impl RevisionQueue {
     }
 
     /// Returns `true` if `REVS` revisions have been recorded as active.
+    #[inline]
     fn is_primed(&self) -> bool {
-        self.revisions[REVS - 1] > Revision::start()
+        self.revisions[REVS - 1].load() > Revision::start()
     }
 }
 
