@@ -11,16 +11,16 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
-    field: bool,
+    field: u64,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 struct BadHash {
-    field: bool,
+    field: u64,
 }
 
-impl From<bool> for BadHash {
-    fn from(value: bool) -> Self {
+impl From<u64> for BadHash {
+    fn from(value: u64) -> Self {
         Self { field: value }
     }
 }
@@ -46,9 +46,9 @@ fn the_fn(db: &dyn Db, input: MyInput) {
 fn execute() {
     let mut db = salsa::DatabaseImpl::new();
 
-    let input = MyInput::new(&db, true);
+    let input = MyInput::new(&db, 1);
     the_fn(&db, input);
-    input.set_field(&mut db).to(false);
+    input.set_field(&mut db).to(0);
     the_fn(&db, input);
 }
 
@@ -58,7 +58,7 @@ fn create_tracked<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn with_tracked<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> bool {
+fn with_tracked<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u64 {
     tracked.field(db).field
 }
 
@@ -66,16 +66,19 @@ fn with_tracked<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> bool {
 fn dependent_query() {
     let mut db = salsa::DatabaseImpl::new();
 
-    let input = MyInput::new(&db, true);
+    let input = MyInput::new(&db, 1);
     let tracked = create_tracked(&db, input);
-    assert!(with_tracked(&db, tracked));
+    assert_eq!(with_tracked(&db, tracked), 1);
 
-    input.set_field(&mut db).to(false);
+    input.set_field(&mut db).to(0);
 
     // We now re-run the query that creates the tracked struct.
     //
     // Salsa will re-use the `MyTracked` struct from the previous revision,
     // but practically it has been re-created due to generational ids.
     let tracked = create_tracked(&db, input);
-    assert!(!with_tracked(&db, tracked));
+    assert_eq!(with_tracked(&db, tracked), 0);
+    input.set_field(&mut db).to(2);
+    let tracked = create_tracked(&db, input);
+    assert_eq!(with_tracked(&db, tracked), 2);
 }
