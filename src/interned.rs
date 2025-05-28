@@ -141,10 +141,6 @@ struct ValueShared {
     /// the value is re-interned with a new ID.
     id: Id,
 
-    /// The revision the value was first interned in, i.e. the latest revision
-    /// in which the slot was reused.
-    first_interned_at: Revision,
-
     /// The revision the value was most-recently interned in.
     last_interned_at: Revision,
 
@@ -343,10 +339,13 @@ where
             }
 
             // Record a dependency on the value.
+            //
+            // Note that we can use `Revision::start()` here as the ID with the given generation
+            // is unique to this use of the interned slot.
             zalsa_local.report_tracked_read_simple(
                 index,
                 value_shared.durability,
-                value_shared.first_interned_at,
+                Revision::start(),
             );
 
             return value_shared.id;
@@ -419,16 +418,17 @@ where
                 id: new_id,
                 durability,
                 last_interned_at,
-                // Record the revision in which we are re-interning the value.
-                first_interned_at: current_revision,
             };
 
             // Record a dependency on the new value.
+            //
+            // Note that we can use `Revision::start()` here as we just incremented the ID generation,
+            // so it as if a new input has been created.
             let index = self.database_key_index(value_shared.id);
             zalsa_local.report_tracked_read_simple(
                 index,
                 value_shared.durability,
-                value_shared.first_interned_at,
+                Revision::start(),
             );
 
             zalsa.event(&|| {
@@ -546,8 +546,6 @@ where
                 id,
                 durability,
                 last_interned_at,
-                // Record the revision in which we are re-interning the value.
-                first_interned_at: current_revision,
             }),
         });
 
@@ -575,7 +573,7 @@ where
         let index = self.database_key_index(id);
 
         // Record a dependency on the newly interned value.
-        zalsa_local.report_tracked_read_simple(index, durability, current_revision);
+        zalsa_local.report_tracked_read_simple(index, durability, Revision::start());
 
         zalsa.event(&|| {
             Event::new(EventKind::DidInternValue {
@@ -739,7 +737,7 @@ where
         &self,
         db: &dyn Database,
         input: Id,
-        revision: Revision,
+        _revision: Revision,
         _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
@@ -757,7 +755,7 @@ where
         let value_shared = unsafe { &mut *value.shared.get() };
 
         // The slot was reused.
-        if value_shared.first_interned_at > revision {
+        if value_shared.id.generation() > input.generation() {
             return VerifyResult::Changed;
         }
 
