@@ -119,7 +119,8 @@ where
     /// or the value has been validated in the current revision.
     memos: UnsafeCell<MemoTable>,
 
-    /// Data that can only be accessed while holding the lock.
+    /// Data that can only be accessed while holding the lock for the
+    /// `key_map` shard containing the value ID.
     shared: UnsafeCell<ValueShared>,
 }
 
@@ -129,16 +130,26 @@ struct ValueShared {
     ///
     /// Storing this on the value itself is necessary to identify slots
     /// from the LRU list, as well as keep track of the generation.
+    ///
+    /// Values that are reused increment the ID generation, as if they had
+    /// allocated a new slot. This eliminates the need for dependency edges
+    /// on queries that *read* from an interned value, as any memos dependent
+    /// on the previous value will not match the new ID.
+    ///
+    /// However, reusing a slot invalidates the previous ID, so dependency edges
+    /// on queries that *create* an interned value are still required to ensure
+    /// the value is re-interned with a new ID.
     id: Id,
 
-    /// The revision the value was first interned in.
+    /// The revision the value was first interned in, i.e. the latest revision
+    /// in which the slot was reused.
     first_interned_at: Revision,
 
     /// The revision the value was most-recently interned in.
     last_interned_at: Revision,
 
     /// The minimum durability of all inputs consumed by the creator
-    /// query prior to creating this tracked struct. If any of those
+    /// query prior to creating this interned struct. If any of those
     /// inputs changes, then the creator query may create this struct
     /// with different values.
     durability: Durability,
