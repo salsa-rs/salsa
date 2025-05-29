@@ -113,11 +113,11 @@ where
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
+        let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let _claim_guard = match self.sync_table.try_claim(zalsa, id) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => {
-                let database_key_index = self.database_key_index(id);
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists
@@ -180,31 +180,33 @@ where
         };
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let mut opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+        let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
-        // If this is a provisional memo from the same revision. Await all cycle heads because they could be
-        // running on a different thread.
-        if let Some(mut old_memo) = opt_old_memo {
+        // If this is a provisional memo from the same revision, await all its cycle heads because
+        // we need to ensure that only one thread is iterating on a cycle at a given time.
+        // For example, if we have a nested cycle like so:
+        // ```
+        // a -> b -> c -> b
+        //        -> a
+        //
+        // d -> b
+        // ```
+        // thread 1 calls `a` and `a` completes the inner cycle `b -> c` but hasn't finished the outer cycle `a` yet.
+        // thread 2 now calls `b`. We don't want that thread 2 iterates `b` while thread 1 is iterating `a` at the same time
+        // because it can result in thread b overriding provisional memos that thread a has accessed already and still relies upon.
+        //
+        // By waiting, we ensure that thread 1 completes a (based on a provisional value for `b`) and `b`
+        // becomes the new outer cycle, which thread 2 drives to completion.
+        if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some()
                 && old_memo.may_be_provisional()
                 && old_memo.verified_at.load() == zalsa.current_revision()
             {
-                opt_old_memo = loop {
-                    old_memo.await_heads(zalsa, self.database_key_index(id));
+                old_memo.await_heads(zalsa, database_key_index);
 
-                    let new_old = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-                    match new_old {
-                        None => unreachable!("Expected memo to be present"),
-                        // If the new memo is the same as the old, then this means that this is still the "latest" memo for this
-                        Some(new_old) if std::ptr::eq(new_old, old_memo) => {
-                            break Some(new_old);
-                        }
-                        Some(new_old) => {
-                            tracing::debug!("Provisional memo has been updated by another thread while waiting for its cycle heads");
-                            old_memo = new_old;
-                        }
-                    }
-                };
+                // It's possible that one of the cycle heads replaced the memo for this ingredient
+                // with fixpoint initial. We ignore that memo because we know it's only a temporary memo
+                // and instead continue with the memo we already have (acquired).
             }
         }
 
@@ -215,7 +217,7 @@ where
                     db,
                     zalsa,
                     old_memo,
-                    self.database_key_index(id),
+                    database_key_index,
                     &mut cycle_heads,
                 ) {
                     if cycle_heads.is_empty() {
@@ -229,7 +231,7 @@ where
 
         let memo = self.execute(
             db,
-            db.zalsa_local().push_query(self.database_key_index(id), 0),
+            db.zalsa_local().push_query(database_key_index, 0),
             opt_old_memo,
         );
 
