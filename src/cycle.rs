@@ -62,25 +62,18 @@ use crate::sync::OnceLock;
 /// Should only be relevant in case of a badly configured cycle recovery.
 pub const MAX_ITERATIONS: u32 = 200;
 
-pub struct UnexpectedCycle(Option<crate::Backtrace>);
-
-impl fmt::Debug for UnexpectedCycle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("cycle detected but no cycle handler found")?;
-        if let Some(backtrace) = &self.0 {
-            f.write_str(": ")?;
-            backtrace.fmt(f)?;
-        }
-        Ok(())
-    }
+pub struct UnexpectedCycle {
+    backtrace: std::backtrace::Backtrace,
+    query_trace: Option<crate::Backtrace>,
 }
 
 impl fmt::Display for UnexpectedCycle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("cycle detected but no cycle handler found")?;
-        if let Some(backtrace) = &self.0 {
+        f.write_str("cycle detected but no cycle handler found\n")?;
+        self.backtrace.fmt(f)?;
+        if let Some(query_trace) = &self.query_trace {
             f.write_str("\n")?;
-            backtrace.fmt(f)?;
+            query_trace.fmt(f)?;
         }
         Ok(())
     }
@@ -89,8 +82,11 @@ impl fmt::Display for UnexpectedCycle {
 impl UnexpectedCycle {
     pub(crate) fn throw() -> ! {
         // We use resume and not panic here to avoid running the panic
-        // hook (that is, to avoid collecting and printing backtrace).
-        panic::resume_unwind(Box::new(Self(crate::Backtrace::capture())));
+        // hook (that is to avoid printing the backtrace).
+        panic::resume_unwind(Box::new(Self {
+            backtrace: std::backtrace::Backtrace::capture(),
+            query_trace: crate::Backtrace::capture(),
+        }));
     }
 
     /// Runs `f`, and catches any salsa cycle.
