@@ -187,6 +187,21 @@ where
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
+        if let Some(old_memo) = opt_old_memo {
+            if old_memo.value.is_some() {
+                let mut cycle_heads = CycleHeads::default();
+                if let VerifyResult::Unchanged(_) =
+                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
+                {
+                    if cycle_heads.is_empty() {
+                        // SAFETY: memo is present in memo_map and we have verified that it is
+                        // still valid for the current revision.
+                        return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+                    }
+                }
+            }
+        }
+
         // If this is a provisional memo from the same revision, await all its cycle heads because
         // we need to ensure that only one thread is iterating on a cycle at a given time.
         // For example, if we have a nested cycle like so:
@@ -215,21 +230,6 @@ where
                 // It's possible that one of the cycle heads replaced the memo for this ingredient
                 // with fixpoint initial. We ignore that memo because we know it's only a temporary memo
                 // and instead continue with the memo we already have (acquired).
-            }
-        }
-
-        if let Some(old_memo) = opt_old_memo {
-            if old_memo.value.is_some() {
-                let mut cycle_heads = CycleHeads::default();
-                if let VerifyResult::Unchanged(_) =
-                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
-                {
-                    if cycle_heads.is_empty() {
-                        // SAFETY: memo is present in memo_map and we have verified that it is
-                        // still valid for the current revision.
-                        return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
-                    }
-                }
             }
         }
 
