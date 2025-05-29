@@ -11,7 +11,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions};
+use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
 use crate::{Accumulator, IngredientIndex, Revision};
 
 #[derive(Debug)]
@@ -203,18 +203,27 @@ impl ActiveQuery {
             .is_empty()
             .not()
             .then(|| Box::new(mem::take(accumulated)));
-        let tracked_struct_ids = mem::take(tracked_struct_ids);
+
+        let (verified_final, extra) = if tracked_struct_ids.is_empty() && cycle_heads.is_empty() {
+            (true, None)
+        } else {
+            let extra = QueryRevisionsExtra {
+                tracked_struct_ids: mem::take(tracked_struct_ids),
+                cycle_heads: mem::take(cycle_heads),
+            };
+
+            (extra.cycle_heads.is_empty(), Some(Box::new(extra)))
+        };
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
-        let cycle_heads = mem::take(cycle_heads);
+
         QueryRevisions {
             changed_at,
             durability,
             origin,
-            tracked_struct_ids,
             accumulated_inputs,
             accumulated,
-            verified_final: AtomicBool::new(cycle_heads.is_empty()),
-            cycle_heads,
+            verified_final: AtomicBool::new(verified_final),
+            extra,
         }
     }
 

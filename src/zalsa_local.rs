@@ -7,7 +7,7 @@ use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
 use crate::active_query::QueryStack;
-use crate::cycle::CycleHeads;
+use crate::cycle::{empty_cycle_heads, CycleHeads};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -328,6 +328,30 @@ pub(crate) struct QueryRevisions {
     /// How was this query computed?
     pub(crate) origin: QueryOrigin,
 
+    pub(super) accumulated: Option<Box<AccumulatedMap>>,
+
+    /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
+    /// has any direct or indirect accumulated values.
+    pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
+
+    /// Are the `cycle_heads` verified to not be provisional anymore?
+    ///
+    /// Note that this field could be in `QueryRevisionsExtra` as it is only
+    /// relevant for queries that participate in a cycle, but we get it for
+    /// free anyways due to padding.
+    pub(super) verified_final: AtomicBool,
+
+    /// Lazily allocated state.
+    pub(super) extra: Option<Box<QueryRevisionsExtra>>,
+}
+
+/// Data on `QueryRevisions` that is lazily allocated to save memory
+/// in the common case.
+///
+/// In particular, not all queries create tracked structs or participate
+/// in cycles.
+#[derive(Debug)]
+pub(crate) struct QueryRevisionsExtra {
     /// The ids of tracked structs created by this query.
     ///
     /// This table plays an important role when queries are
@@ -347,15 +371,6 @@ pub(crate) struct QueryRevisions {
     ///   only entries that appeared in the new revision.
     pub(super) tracked_struct_ids: IdentityMap,
 
-    pub(super) accumulated: Option<Box<AccumulatedMap>>,
-
-    /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
-    /// has any direct or indirect accumulated values.
-    pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
-
-    /// Are the `cycle_heads` verified to not be provisional anymore?
-    pub(super) verified_final: AtomicBool,
-
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
     /// for managing a fixpoint iteration. In a cycle like
@@ -369,7 +384,7 @@ pub(crate) struct QueryRevisions {
 
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
-const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 9]>()];
+const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 5]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -377,12 +392,33 @@ impl QueryRevisions {
             changed_at: Revision::start(),
             durability: Durability::MAX,
             origin: QueryOrigin::fixpoint_initial(),
-            tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
-            cycle_heads: CycleHeads::initial(query),
+            extra: Some(Box::new(QueryRevisionsExtra {
+                cycle_heads: CycleHeads::initial(query),
+                tracked_struct_ids: IdentityMap::default(),
+            })),
         }
+    }
+
+    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
+        match &self.extra {
+            Some(extra) => &extra.cycle_heads,
+            None => empty_cycle_heads(),
+        }
+    }
+
+    pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads) {
+        match &mut self.extra {
+            Some(extra) => extra.cycle_heads = cycle_heads,
+            None => {
+                self.extra = Some(Box::new(QueryRevisionsExtra {
+                    cycle_heads,
+                    tracked_struct_ids: IdentityMap::default(),
+                }))
+            }
+        };
     }
 }
 /// Tracks the way that a memoized value for a query was created.

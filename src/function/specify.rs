@@ -66,11 +66,10 @@ where
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
             origin: QueryOrigin::assigned(active_query_key),
-            tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(true),
-            cycle_heads: Default::default(),
+            extra: None,
         };
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
