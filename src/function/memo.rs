@@ -144,7 +144,7 @@ impl<V> Memo<V> {
             return false;
         };
 
-        if self.block_on_heads(zalsa, zalsa_local, database_key_index) {
+        if self.block_on_heads(zalsa, zalsa_local) {
             // If we get here, we are a provisional value of
             // the cycle head (either initial value, or from a later iteration) and should be
             // returned to caller to allow fixpoint iteration to proceed.
@@ -162,12 +162,11 @@ impl<V> Memo<V> {
     /// Blocks on all cycle heads (recursively) that this memo depends on.
     ///
     /// Returns `true` if awaiting the cycle heads resulted in a cycle.
-    pub(super) fn block_on_heads(
-        &self,
-        zalsa: &Zalsa,
-        zalsa_local: &ZalsaLocal,
-        self_key: DatabaseKeyIndex,
-    ) -> bool {
+    #[inline(always)]
+    pub(super) fn block_on_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
+        // IMPORTANT: If you make changes to this function, make sure to run `cycle_nested_deep` with
+        // shuttle with at least 10k iterations.
+
         // The most common case is that the entire cycle is running in the same thread.
         // If that's the case, short circuit and return `true` immediately.
         if self.validate_same_iteration(zalsa_local) {
@@ -175,14 +174,12 @@ impl<V> Memo<V> {
         }
 
         // Otherwise, await all cycle heads, recursively.
-        return await_heads_cold(zalsa, self.cycle_heads(), self_key);
+        return block_on_heads_cold(zalsa, self.cycle_heads());
 
         #[inline(never)]
-        fn await_heads_cold(zalsa: &Zalsa, heads: &CycleHeads, self_key: DatabaseKeyIndex) -> bool {
+        fn block_on_heads_cold(zalsa: &Zalsa, heads: &CycleHeads) -> bool {
             let mut queue: Vec<_> = heads.iter().map(|head| head.database_key_index).collect();
-            let mut queued: FxHashSet<_> = std::iter::once(self_key)
-                .chain(queue.iter().copied())
-                .collect();
+            let mut queued: FxHashSet<_> = queue.iter().copied().collect();
             let mut hit_cycle = false;
 
             while let Some(head) = queue.pop() {
@@ -211,8 +208,7 @@ impl<V> Memo<V> {
                             // Because of that, recurse here to collect all cycle heads.
                             // This also ensures that if a query added new cycle heads, that they are awaited too.
                             // IMPORTANT: It's critical that we get the cycle head from the latest memo
-                            // here, in case the memo has become part of another cycle (we need to add that too!)
-                            // I recommend running `cycle_nested_deep` with 1000 iterations if you make any changes here.
+                            // here, in case the memo has become part of another cycle (we need to block on that too!).
                             queue.extend(
                                 ingredient
                                     .cycle_heads(zalsa, head.key_index())

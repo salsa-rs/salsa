@@ -207,7 +207,10 @@ where
                 && old_memo.may_be_provisional()
                 && old_memo.verified_at.load() == zalsa.current_revision()
             {
-                old_memo.block_on_heads(zalsa, zalsa_local, database_key_index);
+                // TODO(micha) 29th May 2025: It would be nice if `block_on_heads` would release
+                // and re-acquire the lock if it blocks on any other thread. That would allow any other thread
+                // to claim this query (e.g. thread a in the example above) and make progress on it.
+                old_memo.block_on_heads(zalsa, zalsa_local);
 
                 // It's possible that one of the cycle heads replaced the memo for this ingredient
                 // with fixpoint initial. We ignore that memo because we know it's only a temporary memo
