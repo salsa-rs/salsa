@@ -5,7 +5,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryOrigin, QueryRevisions};
+use crate::zalsa_local::{QueryOrigin, QueryOriginRef, QueryRevisions};
 use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
@@ -65,7 +65,7 @@ where
         let mut revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
-            origin: QueryOrigin::Assigned(active_query_key),
+            origin: QueryOrigin::assigned(active_query_key),
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
@@ -116,8 +116,8 @@ where
 
         // If we are marking this as validated, it must be a value that was
         // assigned by `executor`.
-        match memo.revisions.origin {
-            QueryOrigin::Assigned(by_query) => assert_eq!(by_query, executor),
+        match memo.revisions.origin.as_ref() {
+            QueryOriginRef::Assigned(by_query) => assert_eq!(by_query, executor),
             _ => panic!(
                 "expected a query assigned by `{:?}`, not `{:?}`",
                 executor, memo.revisions.origin,

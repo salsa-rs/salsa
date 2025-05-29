@@ -9,7 +9,7 @@ use thin_vec::ThinVec;
 
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::sync::{OnceLock, RwLock};
-use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
+use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOriginRef};
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -21,7 +21,7 @@ pub(crate) struct MemoTable {
 
 pub trait Memo: Any + Send + Sync {
     /// Returns the `origin` of this memo
-    fn origin(&self) -> &QueryOrigin;
+    fn origin(&self) -> QueryOriginRef<'_>;
 }
 
 /// Data for a memoized entry.
@@ -103,7 +103,7 @@ impl MemoEntryType {
 struct DummyMemo {}
 
 impl Memo for DummyMemo {
-    fn origin(&self) -> &QueryOrigin {
+    fn origin(&self) -> QueryOriginRef<'_> {
         unreachable!("should not get here")
     }
 }

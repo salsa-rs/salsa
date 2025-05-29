@@ -7,7 +7,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdge, QueryOrigin};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{AsDynDatabase as _, Id, Revision};
 
 /// Result of memo validation.
@@ -353,8 +353,8 @@ where
             return VerifyResult::unchanged();
         }
 
-        match &old_memo.revisions.origin {
-            QueryOrigin::Assigned(_) => {
+        match old_memo.revisions.origin.as_ref() {
+            QueryOriginRef::Assigned(_) => {
                 // If the value was assigned by another query,
                 // and that query were up-to-date,
                 // then we would have updated the `verified_at` field already.
@@ -372,15 +372,15 @@ where
             // when we hit the cycle. Any dependencies accessed when creating the fixpoint initial
             // are tracked by the outer query. Nothing should have changed assuming that the
             // fixpoint initial function is deterministic.
-            QueryOrigin::FixpointInitial => {
+            QueryOriginRef::FixpointInitial => {
                 cycle_heads.push_initial(database_key_index);
                 VerifyResult::unchanged()
             }
-            QueryOrigin::DerivedUntracked(_) => {
+            QueryOriginRef::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
                 VerifyResult::Changed
             }
-            QueryOrigin::Derived(edges) => {
+            QueryOriginRef::Derived(edges) => {
                 let is_provisional = old_memo.may_be_provisional();
 
                 // If the value is from the same revision but is still provisional, consider it changed
@@ -398,7 +398,7 @@ where
                 // they executed. It's possible that if the value of some input I0 is no longer
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
-                for &edge in edges.input_outputs.iter() {
+                for &edge in edges {
                     match edge {
                         QueryEdge::Input(dependency_index) => {
                             match dependency_index.maybe_changed_after(

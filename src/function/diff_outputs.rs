@@ -28,6 +28,7 @@ where
         let mut old_outputs: FxIndexSet<_> = old_memo
             .revisions
             .origin
+            .as_ref()
             .outputs()
             .map(|a| (a.ingredient_index(), a.key_index().index()))
             .collect();
@@ -38,7 +39,7 @@ where
 
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
-        for new_output in revisions.origin.outputs() {
+        for new_output in revisions.origin.as_ref().outputs() {
             old_outputs.swap_remove(&(
                 new_output.ingredient_index(),
                 new_output.key_index().index(),
