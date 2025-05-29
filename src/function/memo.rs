@@ -11,7 +11,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
+use crate::zalsa_local::{QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -133,6 +133,7 @@ impl<V> Memo<V> {
     pub(super) fn provisional_retry(
         &self,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
         if self.revisions.cycle_heads.is_empty() {
@@ -143,7 +144,7 @@ impl<V> Memo<V> {
             return false;
         };
 
-        if self.await_heads(zalsa) {
+        if self.await_heads(zalsa, zalsa_local) {
             // If we get here, we are a provisional value of
             // the cycle head (either initial value, or from a later iteration) and should be
             // returned to caller to allow fixpoint iteration to proceed.
@@ -162,7 +163,14 @@ impl<V> Memo<V> {
     ///
     /// Returns `true` if awaiting the cycle heads resulted in a cycle.
     #[inline(never)]
-    pub(super) fn await_heads(&self, zalsa: &Zalsa) -> bool {
+    pub(super) fn await_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
+        // The most common case is that the entire cycle is running in the same thread.
+        // If that's the case, short circuit and return `true` immediately.
+        if self.validate_same_iteration(zalsa_local) {
+            return true;
+        }
+
+        // Otherwise, await all cycle heads, recursively.
         let mut queue: Vec<_> = self
             .revisions
             .cycle_heads
@@ -218,6 +226,26 @@ impl<V> Memo<V> {
         }
 
         hit_cycle
+    }
+
+    /// If this is a provisional memo, validate that it was cached in the same iteration of the
+    /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
+    /// runaway re-execution of the same queries within a fixpoint iteration.
+    pub(super) fn validate_same_iteration(&self, zalsa_local: &ZalsaLocal) -> bool {
+        let cycle_heads = &self.revisions.cycle_heads;
+        if cycle_heads.is_empty() {
+            return true;
+        }
+
+        zalsa_local.with_query_stack(|stack| {
+            cycle_heads.iter().all(|cycle_head| {
+                stack
+                    .iter()
+                    .rev()
+                    .find(|query| query.database_key_index == cycle_head.database_key_index)
+                    .is_some_and(|query| query.iteration_count() == cycle_head.iteration_count)
+            })
+        })
     }
 
     /// Cycle heads that should be propagated to dependent queries.

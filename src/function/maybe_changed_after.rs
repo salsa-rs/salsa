@@ -4,10 +4,9 @@ use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef, ZalsaLocal};
 use crate::{AsDynDatabase as _, Id, Revision};
 
 /// Result of memo validation.
@@ -303,20 +302,7 @@ where
             memo = memo.tracing_debug()
         );
 
-        let cycle_heads = &memo.revisions.cycle_heads;
-        if cycle_heads.is_empty() {
-            return true;
-        }
-
-        zalsa_local.with_query_stack(|stack| {
-            cycle_heads.iter().all(|cycle_head| {
-                stack
-                    .iter()
-                    .rev()
-                    .find(|query| query.database_key_index == cycle_head.database_key_index)
-                    .is_some_and(|query| query.iteration_count() == cycle_head.iteration_count)
-            })
-        })
+        memo.validate_same_iteration(zalsa_local)
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the

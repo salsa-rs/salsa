@@ -3,7 +3,7 @@ use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::QueryRevisions;
+use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::Id;
 
 impl<C> IngredientImpl<C>
@@ -18,7 +18,7 @@ where
         #[cfg(debug_assertions)]
         let _span = tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
-        let memo = self.refresh_memo(db, zalsa, id);
+        let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
 
@@ -41,13 +41,16 @@ where
         &'db self,
         db: &'db C::DbView,
         zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         loop {
             if let Some(memo) = self
                 .fetch_hot(zalsa, id, memo_ingredient_index)
-                .or_else(|| self.fetch_cold_with_retry(zalsa, db, id, memo_ingredient_index))
+                .or_else(|| {
+                    self.fetch_cold_with_retry(zalsa, zalsa_local, db, id, memo_ingredient_index)
+                })
             {
                 return memo;
             }
@@ -84,11 +87,12 @@ where
     fn fetch_cold_with_retry<'db>(
         &'db self,
         zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
-        let memo = self.fetch_cold(zalsa, db, id, memo_ingredient_index)?;
+        let memo = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)?;
 
         // If we get back a provisional cycle memo, and it's provisional on any cycle heads
         // that are claimed by a different thread, we can't propagate the provisional memo
@@ -98,7 +102,7 @@ where
         // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
         // never have provisional entries.
         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-            || !memo.provisional_retry(zalsa, self.database_key_index(id))
+            || !memo.provisional_retry(zalsa, zalsa_local, self.database_key_index(id))
         {
             Some(memo)
         } else {
@@ -109,6 +113,7 @@ where
     fn fetch_cold<'db>(
         &'db self,
         zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
@@ -161,7 +166,7 @@ where
                         tracing::debug!(
                             "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
                         );
-                        let active_query = db.zalsa_local().push_query(database_key_index, 0);
+                        let active_query = zalsa_local.push_query(database_key_index, 0);
                         let fallback_value = C::cycle_initial(db, C::id_to_input(db, id));
                         let mut revisions = active_query.pop();
                         revisions.cycle_heads = CycleHeads::initial(database_key_index);
@@ -202,7 +207,7 @@ where
                 && old_memo.may_be_provisional()
                 && old_memo.verified_at.load() == zalsa.current_revision()
             {
-                old_memo.await_heads(zalsa);
+                old_memo.await_heads(zalsa, zalsa_local);
 
                 // It's possible that one of the cycle heads replaced the memo for this ingredient
                 // with fixpoint initial. We ignore that memo because we know it's only a temporary memo
@@ -227,7 +232,7 @@ where
 
         let memo = self.execute(
             db,
-            db.zalsa_local().push_query(database_key_index, 0),
+            zalsa_local.push_query(database_key_index, 0),
             opt_old_memo,
         );
 

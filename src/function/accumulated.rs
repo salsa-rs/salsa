@@ -96,8 +96,9 @@ where
         db: &'db C::DbView,
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+        let (zalsa, zalsa_local) = db.zalsas();
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
-        let memo = self.refresh_memo(db, db.zalsa(), key);
+        let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
         (
             memo.revisions.accumulated.as_deref(),
             memo.revisions.accumulated_inputs.load(),
