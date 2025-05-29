@@ -207,7 +207,7 @@ where
                 && old_memo.may_be_provisional()
                 && old_memo.verified_at.load() == zalsa.current_revision()
             {
-                old_memo.await_heads(zalsa, zalsa_local);
+                old_memo.block_on_heads(zalsa, zalsa_local, database_key_index);
 
                 // It's possible that one of the cycle heads replaced the memo for this ingredient
                 // with fixpoint initial. We ignore that memo because we know it's only a temporary memo
