@@ -99,6 +99,7 @@ pub struct Memo<V> {
 
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
 #[cfg(not(feature = "shuttle"))]
+#[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
     [(); std::mem::size_of::<[usize; 13]>()];
 
