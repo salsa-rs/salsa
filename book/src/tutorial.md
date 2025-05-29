@@ -19,3 +19,5 @@ When executed, this program prints `12`, `3.14`, and `22`.
 
 If the program contains errors (e.g., a reference to an undefined function), it prints those out too.
 And, of course, it will be reactive, so small changes to the input don't require recompiling (or rexecuting, necessarily) the entire thing.
+
+In the main `salsa` repo, you can find the full code for this example at `examples/calc`, and run it using `cargo run --example=calc`.
