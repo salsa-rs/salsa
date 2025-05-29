@@ -328,8 +328,6 @@ pub(crate) struct QueryRevisions {
     /// How was this query computed?
     pub(crate) origin: QueryOrigin,
 
-    pub(super) accumulated: Option<Box<AccumulatedMap>>,
-
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
     /// has any direct or indirect accumulated values.
     pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
@@ -352,6 +350,8 @@ pub(crate) struct QueryRevisions {
 /// in cycles.
 #[derive(Debug)]
 pub(crate) struct QueryRevisionsExtra {
+    pub(super) accumulated: AccumulatedMap,
+
     /// The ids of tracked structs created by this query.
     ///
     /// This table plays an important role when queries are
@@ -384,7 +384,7 @@ pub(crate) struct QueryRevisionsExtra {
 
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
-const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 5]>()];
+const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 4]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -392,14 +392,21 @@ impl QueryRevisions {
             changed_at: Revision::start(),
             durability: Durability::MAX,
             origin: QueryOrigin::fixpoint_initial(),
-            accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
             extra: Some(Box::new(QueryRevisionsExtra {
                 cycle_heads: CycleHeads::initial(query),
                 tracked_struct_ids: IdentityMap::default(),
+                accumulated: AccumulatedMap::default(),
             })),
         }
+    }
+
+    pub(crate) fn accumulated(&self) -> Option<&AccumulatedMap> {
+        self.extra
+            .as_ref()
+            .map(|extra| &extra.accumulated)
+            .filter(|map| !map.is_empty())
     }
 
     pub(crate) fn cycle_heads(&self) -> &CycleHeads {
@@ -416,6 +423,7 @@ impl QueryRevisions {
                 self.extra = Some(Box::new(QueryRevisionsExtra {
                     cycle_heads,
                     tracked_struct_ids: IdentityMap::default(),
+                    accumulated: AccumulatedMap::default(),
                 }))
             }
         };

@@ -28,7 +28,7 @@ where
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            memo.revisions.accumulated.is_some(),
+            memo.revisions.accumulated().is_some(),
             &memo.revisions.accumulated_inputs,
             memo.cycle_heads(),
         );

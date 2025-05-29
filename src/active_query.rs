@@ -1,4 +1,3 @@
-use std::ops::Not;
 use std::{fmt, mem, ops};
 
 use crate::accumulator::accumulated_map::{
@@ -199,21 +198,19 @@ impl ActiveQuery {
             QueryOrigin::derived(input_outputs.drain(..))
         };
         disambiguator_map.clear();
-        let accumulated = accumulated
-            .is_empty()
-            .not()
-            .then(|| Box::new(mem::take(accumulated)));
 
-        let (verified_final, extra) = if tracked_struct_ids.is_empty() && cycle_heads.is_empty() {
-            (true, None)
-        } else {
-            let extra = QueryRevisionsExtra {
-                tracked_struct_ids: mem::take(tracked_struct_ids),
-                cycle_heads: mem::take(cycle_heads),
+        let (verified_final, extra) =
+            if tracked_struct_ids.is_empty() && cycle_heads.is_empty() && accumulated.is_empty() {
+                (true, None)
+            } else {
+                let extra = QueryRevisionsExtra {
+                    tracked_struct_ids: mem::take(tracked_struct_ids),
+                    cycle_heads: mem::take(cycle_heads),
+                    accumulated: mem::take(accumulated),
+                };
+
+                (extra.cycle_heads.is_empty(), Some(Box::new(extra)))
             };
-
-            (extra.cycle_heads.is_empty(), Some(Box::new(extra)))
-        };
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
 
         QueryRevisions {
@@ -221,7 +218,6 @@ impl ActiveQuery {
             durability,
             origin,
             accumulated_inputs,
-            accumulated,
             verified_final: AtomicBool::new(verified_final),
             extra,
         }

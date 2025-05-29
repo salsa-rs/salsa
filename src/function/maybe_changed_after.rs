@@ -159,7 +159,7 @@ where
             return Some(if changed_at > revision {
                 VerifyResult::Changed
             } else {
-                VerifyResult::Unchanged(match &memo.revisions.accumulated {
+                VerifyResult::Unchanged(match memo.revisions.accumulated() {
                     Some(_) => InputAccumulatedValues::Any,
                     None => memo.revisions.accumulated_inputs.load(),
                 })

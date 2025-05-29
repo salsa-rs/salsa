@@ -66,7 +66,6 @@ where
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
             origin: QueryOrigin::assigned(active_query_key),
-            accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(true),
             extra: None,
