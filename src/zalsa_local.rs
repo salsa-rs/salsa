@@ -440,22 +440,26 @@ impl<'a> QueryOriginRef<'a> {
 
 #[derive(Clone, Copy)]
 enum QueryOriginKind {
-    /// The value was assigned as the output of another query (e.g., using `specify`).
+    /// The value was assigned as the output of another query.
+    ///
+    /// This can, for example, can occur when `specify` is used.
     Assigned,
 
     /// The value was derived by executing a function
-    /// and we were able to track ALL of that function's inputs.
+    /// _and_ Salsa was able to track all of said function's inputs.
     Derived,
 
     /// The value was derived by executing a function
     /// but that function also reported that it read untracked inputs.
     DerivedUntracked,
 
-    /// The value is an initial provisional value for a query that supports fixpoint iteration.
+    /// An initial provisional value.
+    ///
+    /// This will occur occur in queries that support fixpoint iteration.
     FixpointInitial,
 }
 
-/// Tracks the way that a memoized value for a query was created.
+/// Tracks how a memoized value for a given query was created.
 ///
 /// This type is a manual enum packed to 13 bytes to reduce the size of `QueryRevisions`.
 #[repr(Rust, packed)]
@@ -463,7 +467,7 @@ pub struct QueryOrigin {
     /// The tag of this enum.
     ///
     /// Note that this tag only requires two bits and could likely be packed into
-    /// some other field. However, we get this byte for free due to alignment.
+    /// some other field. However, we get this byte for free thanks to alignment.
     kind: QueryOriginKind,
 
     /// The data portion of this enum.
@@ -485,14 +489,14 @@ pub struct QueryOrigin {
 union QueryOriginData {
     /// Query edges for `QueryOriginKind::Derived` or `QueryOriginKind::DerivedUntracked`.
     ///
-    /// The edges between a memoized value and other queries in the dependency graph,
+    /// The query edges are between a memoized value and other queries in the dependency graph,
     /// including both dependency edges (e.g., when creating the memoized value for Q0
     /// executed another function Q1) and output edges (e.g., when Q0 specified the value
     /// for another query Q2).
     ///
     /// Note that we always track input dependencies even when there are untracked reads.
-    /// Untracked reads mean that we can't verify values, so we don't use the list of inputs
-    /// for that, but we still use it for finding the transitive inputs to an accumulator.
+    /// Untracked reads mean that Salsa can't verify values, so the list of inputs is unused.
+    /// However, Salsa still uses these edges to find the transitive inputs to an accumulator.
     ///
     /// You can access the input/output list via the methods [`inputs`] and [`outputs`] respectively.
     ///
@@ -528,7 +532,8 @@ impl QueryOrigin {
         let input_outputs = input_outputs.into_iter().collect::<Box<[_]>>();
 
         // Exceeding `u32::MAX` query edges should never happen in real-world usage.
-        let length = u32::try_from(input_outputs.len()).unwrap();
+        let length = u32::try_from(input_outputs.len())
+            .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
 
         // SAFETY: `Box::into_raw` returns a non-null pointer.
         let input_outputs =
