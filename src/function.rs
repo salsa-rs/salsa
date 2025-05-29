@@ -17,7 +17,7 @@ use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::QueryOrigin;
+use crate::zalsa_local::QueryOriginRef;
 use crate::{Database, Id, Revision};
 
 mod accumulated;
@@ -268,7 +268,7 @@ where
         }
     }
 
-    fn origin(&self, zalsa: &Zalsa, key: Id) -> Option<QueryOrigin> {
+    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
         self.origin(zalsa, key)
     }
 

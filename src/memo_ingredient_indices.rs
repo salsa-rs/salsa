@@ -77,7 +77,7 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
         };
         let mut indices = Vec::new();
         indices.resize(
-            last.as_usize() + 1,
+            (last.as_u32() as usize) + 1,
             MemoIngredientIndex::from_usize((u32::MAX - 1) as usize),
         );
         for &struct_ingredient in &struct_indices.indices {
@@ -88,7 +88,7 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
             let mi = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
             memo_types.set(mi, &memo_type);
 
-            indices[struct_ingredient.as_usize()] = mi;
+            indices[struct_ingredient.as_u32() as usize] = mi;
         }
         MemoIngredientIndices {
             indices: indices.into_boxed_slice(),
@@ -125,7 +125,7 @@ impl MemoIngredientMap for MemoIngredientIndices {
     }
     #[inline(always)]
     fn get(&self, index: IngredientIndex) -> MemoIngredientIndex {
-        self.indices[index.as_usize()]
+        self.indices[index.as_u32() as usize]
     }
 }
 

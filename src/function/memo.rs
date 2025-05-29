@@ -10,7 +10,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryOrigin, QueryRevisions};
+use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -64,16 +64,16 @@ impl<C: Configuration> IngredientImpl<C> {
         memo_ingredient_index: MemoIngredientIndex,
     ) {
         let map = |memo: &mut Memo<C::Output<'static>>| {
-            match &memo.revisions.origin {
-                QueryOrigin::Assigned(_)
-                | QueryOrigin::DerivedUntracked(_)
-                | QueryOrigin::FixpointInitial => {
+            match memo.revisions.origin.as_ref() {
+                QueryOriginRef::Assigned(_)
+                | QueryOriginRef::DerivedUntracked(_)
+                | QueryOriginRef::FixpointInitial => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
                 }
-                QueryOrigin::Derived(_) => {
+                QueryOriginRef::Derived(_) => {
                     // Set the memo value to `None`.
                     memo.value = None;
                 }
@@ -101,7 +101,7 @@ pub struct Memo<V> {
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 13]>()];
+    [(); std::mem::size_of::<[usize; 11]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
@@ -230,7 +230,7 @@ impl<V> Memo<V> {
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) {
-        for output in self.revisions.origin.outputs() {
+        for output in self.revisions.origin.as_ref().outputs() {
             output.mark_validated_output(zalsa, database_key_index);
         }
     }
@@ -262,7 +262,7 @@ impl<V> Memo<V> {
 }
 
 impl<V: Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
-    fn origin(&self) -> &QueryOrigin {
-        &self.revisions.origin
+    fn origin(&self) -> QueryOriginRef<'_> {
+        self.revisions.origin.as_ref()
     }
 }

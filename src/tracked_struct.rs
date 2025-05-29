@@ -447,7 +447,7 @@ where
             // shouldn't be a problem in general as sufficient bits are reserved for the generation.
             let Some(id) = id.next_generation() else {
                 tracing::info!(
-                    "leaking tracked struct {:?} due to generation oveflow",
+                    "leaking tracked struct {:?} due to generation overflow",
                     self.database_key_index(id)
                 );
 
@@ -547,7 +547,7 @@ where
             // the previous slot and allocate a new value.
             if id.generation() == u32::MAX {
                 tracing::info!(
-                    "leaking tracked struct {:?} due to generation oveflow",
+                    "leaking tracked struct {:?} due to generation overflow",
                     self.database_key_index(id)
                 );
 
