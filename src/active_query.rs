@@ -91,7 +91,7 @@ impl ActiveQuery {
     ) {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
-        self.input_outputs.insert(QueryEdge::Input(input));
+        self.input_outputs.insert(QueryEdge::input(input));
         self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
             true => InputAccumulatedValues::Any,
             false => accumulated_inputs.load(),
@@ -107,7 +107,7 @@ impl ActiveQuery {
     ) {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
-        self.input_outputs.insert(QueryEdge::Input(input));
+        self.input_outputs.insert(QueryEdge::input(input));
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
@@ -128,12 +128,12 @@ impl ActiveQuery {
 
     /// Adds a key to our list of outputs.
     pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
-        self.input_outputs.insert(QueryEdge::Output(key));
+        self.input_outputs.insert(QueryEdge::output(key));
     }
 
     /// True if the given key was output by this query.
     pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
-        self.input_outputs.contains(&QueryEdge::Output(key))
+        self.input_outputs.contains(&QueryEdge::output(key))
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {

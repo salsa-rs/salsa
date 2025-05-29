@@ -77,9 +77,14 @@ static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
 pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
-    /// Create an ingredient index from a usize.
+    /// The maximum supported ingredient index.
+    ///
+    /// This reserves one bit for an optional tag.
+    const MAX_INDEX: u32 = 0x7FFF_FFFF;
+
+    /// Create an ingredient index from a `usize`.
     pub(crate) fn from(v: usize) -> Self {
-        assert!(v <= u32::MAX as usize);
+        assert!(v <= Self::MAX_INDEX as usize);
         Self(v as u32)
     }
 
@@ -90,6 +95,18 @@ impl IngredientIndex {
 
     pub fn successor(self, index: usize) -> Self {
         IngredientIndex(self.0 + 1 + index as u32)
+    }
+
+    /// Returns a new `IngredientIndex` with the tag bit set to the provided value.
+    pub(crate) fn with_tag(mut self, tag: bool) -> IngredientIndex {
+        self.0 &= Self::MAX_INDEX;
+        self.0 |= (tag as u32) << 31;
+        self
+    }
+
+    /// Returns the value of the tag bit.
+    pub(crate) fn tag(self) -> bool {
+        self.0 & !Self::MAX_INDEX != 0
     }
 }
 
@@ -309,7 +326,7 @@ impl Zalsa {
                 actual_index,
                 "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
                 self.ingredients_vec[actual_index],
-                expected_index,
+                expected_index.as_u32(),
                 actual_index,
             );
         }
@@ -466,7 +483,7 @@ where
             ) -> IngredientIndex {
                 let index = create_index();
                 let nonce = zalsa.nonce().into_u32().get() as u64;
-                let packed = (nonce << u32::BITS) | (index.0 as u64);
+                let packed = (nonce << u32::BITS) | (index.as_u32() as u64);
                 debug_assert_ne!(packed, IngredientCache::<I>::UNINITIALIZED);
 
                 // Discard the result, whether we won over the cache or not does not matter

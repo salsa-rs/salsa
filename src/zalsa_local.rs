@@ -637,8 +637,51 @@ impl std::fmt::Debug for QueryOrigin {
     }
 }
 
+/// An input or output query edge.
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct QueryEdge {
+    key: DatabaseKeyIndex,
+}
+
+impl QueryEdge {
+    /// Create an input query edge with the given index.
+    pub fn input(key: DatabaseKeyIndex) -> QueryEdge {
+        Self { key }
+    }
+
+    /// Create an output query edge with the given index.
+    pub fn output(key: DatabaseKeyIndex) -> QueryEdge {
+        let ingredient_index = key.ingredient_index().with_tag(true);
+
+        Self {
+            key: DatabaseKeyIndex::new(ingredient_index, key.key_index()),
+        }
+    }
+
+    /// Returns the kind of this query edge.
+    pub fn kind(self) -> QueryEdgeKind {
+        // Clear the tag to restore the original index.
+        let untagged = DatabaseKeyIndex::new(
+            self.key.ingredient_index().with_tag(false),
+            self.key.key_index(),
+        );
+
+        if self.key.ingredient_index().tag() {
+            QueryEdgeKind::Output(untagged)
+        } else {
+            QueryEdgeKind::Input(untagged)
+        }
+    }
+}
+
+impl std::fmt::Debug for QueryEdge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.kind().fmt(f)
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum QueryEdge {
+pub enum QueryEdgeKind {
     Input(DatabaseKeyIndex),
     Output(DatabaseKeyIndex),
 }
@@ -649,9 +692,9 @@ pub enum QueryEdge {
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
-    input_outputs.iter().filter_map(|&edge| match edge {
-        QueryEdge::Input(dependency_index) => Some(dependency_index),
-        QueryEdge::Output(_) => None,
+    input_outputs.iter().filter_map(|&edge| match edge.kind() {
+        QueryEdgeKind::Input(dependency_index) => Some(dependency_index),
+        QueryEdgeKind::Output(_) => None,
     })
 }
 
@@ -661,9 +704,9 @@ pub(crate) fn input_edges(
 pub(crate) fn output_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
-    input_outputs.iter().filter_map(|&edge| match edge {
-        QueryEdge::Output(dependency_index) => Some(dependency_index),
-        QueryEdge::Input(_) => None,
+    input_outputs.iter().filter_map(|&edge| match edge.kind() {
+        QueryEdgeKind::Output(dependency_index) => Some(dependency_index),
+        QueryEdgeKind::Input(_) => None,
     })
 }
 
