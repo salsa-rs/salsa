@@ -268,6 +268,6 @@ pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
 #[derive(Debug, PartialEq, Eq)]
 pub enum CycleHeadKind {
     Provisional,
-    NotProvisional,
+    Final,
     FallbackImmediate,
 }

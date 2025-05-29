@@ -144,8 +144,13 @@ impl<V> Memo<V> {
         };
 
         if self.await_heads(zalsa) {
+            // If we get here, we are a provisional value of
+            // the cycle head (either initial value, or from a later iteration) and should be
+            // returned to caller to allow fixpoint iteration to proceed.
             false
         } else {
+            // all our cycle heads are complete; re-fetch
+            // and we should get a non-provisional memo.
             tracing::debug!(
                 "Retrying provisional memo {database_key_index:?} after awaiting cycle heads."
             );
@@ -156,10 +161,16 @@ impl<V> Memo<V> {
     /// Awaits all cycle heads (recursively) that this memo depends on.
     ///
     /// Returns `true` if awaiting the cycle heads resulted in a cycle.
+    #[inline(never)]
     pub(super) fn await_heads(&self, zalsa: &Zalsa) -> bool {
         let mut hit_cycle = false;
 
-        let mut visited = FxHashSet::default();
+        let mut queued: FxHashSet<_> = self
+            .revisions
+            .cycle_heads
+            .iter()
+            .map(|head| head.database_key_index)
+            .collect();
         let mut queue: Vec<_> = self.revisions.cycle_heads.iter().collect();
 
         while let Some(head) = queue.pop() {
@@ -170,38 +181,38 @@ impl<V> Memo<V> {
 
             if matches!(
                 cycle_head_kind,
-                CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
+                CycleHeadKind::Final | CycleHeadKind::FallbackImmediate
             ) {
                 // This cycle is already finalized, so we don't need to wait on it;
                 // keep looping through cycle heads.
                 tracing::trace!("Dependent cycle head {head_index:?} has been finalized.");
+                continue;
             } else if ingredient.wait_for(zalsa, head_index.key_index()) {
-                // There's a new memo available for the cycle head; fetch our own
-                // updated memo and see if it's still provisional or if the cycle
-                // has resolved.
+                // There's a new memo available for the cycle head (may still be provisional).
                 tracing::trace!(
                     "Dependent cycle head {head_index:?} has been released (there's a new memo)"
                 );
-                // Recursively wait for all cycle heads that this head depends on.
-                // This is normally not necessary, because cycle heads are transitively added
-                // as query dependencies (they aggregate). The exception to this are queries
-                // that depend on a fixpoint initial value. We don't know all the dependencies of
-                // the query yet, so they can't be carried over. We only know them once the cycle
-                // completes but the cycle heads of the queries don't get updated.
-                // Because of that, recurse here to collect all cycle heads.
-                queue.extend(
-                    ingredient
-                        .cycle_heads(zalsa, head_index.key_index())
-                        .iter()
-                        .filter(|head| visited.insert(head.database_key_index)),
-                );
             } else {
-                // We hit a cycle blocking on the cycle head; this means it's in
-                // our own active query stack and we are responsible to resolve the
-                // cycle, so go ahead and return the provisional memo.
+                // We hit a cycle blocking on the cycle head; this means this query actively
+                // participates in the cycle and some other query is blocked on this thread.
                 tracing::debug!("Waiting for {head_index:?} results in a cycle");
                 hit_cycle = true;
             }
+
+            // Recursively wait for all cycle heads that this head depends on.
+            // This is normally not necessary, because cycle heads are transitively added
+            // as query dependencies (they aggregate). The exception to this are queries
+            // that depend on a fixpoint initial value. They only depend on the fixpoint initial
+            // value but not on its dependencies because they aren't known yet. They're only known
+            // once the cycle completes but the cycle heads of the queries don't get updated.
+            // Because of that, recurse here to collect all cycle heads.
+            // This also ensures that if a query added new cycle heads, that they are awaited too.
+            queue.extend(
+                ingredient
+                    .cycle_heads(zalsa, head_index.key_index())
+                    .iter()
+                    .filter(|head| queued.insert(head.database_key_index)),
+            );
         }
 
         hit_cycle

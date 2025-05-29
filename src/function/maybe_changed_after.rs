@@ -263,7 +263,7 @@ where
                 .cycle_head_kind(zalsa, cycle_head.database_key_index.key_index());
             match kind {
                 CycleHeadKind::Provisional => return false,
-                CycleHeadKind::NotProvisional => {
+                CycleHeadKind::Final => {
                     // FIXME: We can ignore this, I just don't have a use-case for this.
                     if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                         panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")

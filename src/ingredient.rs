@@ -69,7 +69,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Is the value for `input` in this ingredient a cycle head that is still provisional?
     fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
         _ = (zalsa, input);
-        CycleHeadKind::NotProvisional
+        CycleHeadKind::Final
     }
 
     /// Returns the cycle heads for this ingredient.

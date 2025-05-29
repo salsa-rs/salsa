@@ -254,7 +254,7 @@ where
         } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
             CycleHeadKind::FallbackImmediate
         } else {
-            CycleHeadKind::NotProvisional
+            CycleHeadKind::Final
         }
     }
 
