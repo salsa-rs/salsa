@@ -163,56 +163,58 @@ impl<V> Memo<V> {
     /// Returns `true` if awaiting the cycle heads resulted in a cycle.
     #[inline(never)]
     pub(super) fn await_heads(&self, zalsa: &Zalsa) -> bool {
-        let mut hit_cycle = false;
-
-        let mut queued: FxHashSet<_> = self
+        let mut queue: Vec<_> = self
             .revisions
             .cycle_heads
             .iter()
             .map(|head| head.database_key_index)
             .collect();
-        let mut queue: Vec<_> = self.revisions.cycle_heads.iter().collect();
+        let mut queued: FxHashSet<_> = queue.iter().copied().collect();
+        let mut hit_cycle = false;
 
         while let Some(head) = queue.pop() {
-            let head_index = head.database_key_index;
+            let ingredient = zalsa.lookup_ingredient(head.ingredient_index());
+            let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head.key_index());
 
-            let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
-            let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
+            match cycle_head_kind {
+                CycleHeadKind::Final | CycleHeadKind::FallbackImmediate => {
+                    // This cycle is already finalized, so we don't need to wait on it;
+                    // keep looping through cycle heads.
+                    tracing::trace!("Dependent cycle head {head:?} has been finalized.");
+                }
+                CycleHeadKind::Provisional => {
+                    if ingredient.wait_for(zalsa, head.key_index()) {
+                        // There's a new memo available for the cycle head (may still be provisional).
+                        tracing::trace!(
+                            "Dependent cycle head {head:?} has been released (there's a new memo)"
+                        );
 
-            if matches!(
-                cycle_head_kind,
-                CycleHeadKind::Final | CycleHeadKind::FallbackImmediate
-            ) {
-                // This cycle is already finalized, so we don't need to wait on it;
-                // keep looping through cycle heads.
-                tracing::trace!("Dependent cycle head {head_index:?} has been finalized.");
-                continue;
-            } else if ingredient.wait_for(zalsa, head_index.key_index()) {
-                // There's a new memo available for the cycle head (may still be provisional).
-                tracing::trace!(
-                    "Dependent cycle head {head_index:?} has been released (there's a new memo)"
-                );
-            } else {
-                // We hit a cycle blocking on the cycle head; this means this query actively
-                // participates in the cycle and some other query is blocked on this thread.
-                tracing::debug!("Waiting for {head_index:?} results in a cycle");
-                hit_cycle = true;
+                        // Recursively wait for all cycle heads that this head depends on.
+                        // This is normally not necessary, because cycle heads are transitively added
+                        // as query dependencies (they aggregate). The exception to this are queries
+                        // that depend on a fixpoint initial value. They only depend on the fixpoint initial
+                        // value but not on its dependencies because they aren't known yet. They're only known
+                        // once the cycle completes but the cycle heads of the queries don't get updated.
+                        // Because of that, recurse here to collect all cycle heads.
+                        // This also ensures that if a query added new cycle heads, that they are awaited too.
+                        // IMPORTANT: It's critical that we get the cycle head from the latest memo
+                        // here, in case the memo has become part of another cycle (we need to add that too!)
+                        // I recommend running `cycle_nested_deep` with 1000 iterations if you make any changes here.
+                        queue.extend(
+                            ingredient
+                                .cycle_heads(zalsa, head.key_index())
+                                .iter()
+                                .map(|head| head.database_key_index)
+                                .filter(|head| queued.insert(*head)),
+                        );
+                    } else {
+                        // We hit a cycle blocking on the cycle head; this means this query actively
+                        // participates in the cycle and some other query is blocked on this thread.
+                        tracing::debug!("Waiting for {head:?} results in a cycle");
+                        hit_cycle = true;
+                    }
+                }
             }
-
-            // Recursively wait for all cycle heads that this head depends on.
-            // This is normally not necessary, because cycle heads are transitively added
-            // as query dependencies (they aggregate). The exception to this are queries
-            // that depend on a fixpoint initial value. They only depend on the fixpoint initial
-            // value but not on its dependencies because they aren't known yet. They're only known
-            // once the cycle completes but the cycle heads of the queries don't get updated.
-            // Because of that, recurse here to collect all cycle heads.
-            // This also ensures that if a query added new cycle heads, that they are awaited too.
-            queue.extend(
-                ingredient
-                    .cycle_heads(zalsa, head_index.key_index())
-                    .iter()
-                    .filter(|head| queued.insert(head.database_key_index)),
-            );
         }
 
         hit_cycle
