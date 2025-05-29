@@ -220,10 +220,7 @@ impl Zalsa {
     #[inline]
     pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
         let index = index.as_u32() as usize;
-        self.ingredients_vec
-            .get(index)
-            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
-            .as_ref()
+        unsafe { self.ingredients_vec.get_unchecked(index).as_ref() }
     }
 
     pub(crate) fn ingredient_index_for_memo(
@@ -346,10 +343,7 @@ impl Zalsa {
         index: IngredientIndex,
     ) -> (&mut dyn Ingredient, &mut Runtime) {
         let index = index.as_u32() as usize;
-        let ingredient = self
-            .ingredients_vec
-            .get_mut(index)
-            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+        let ingredient = unsafe { self.ingredients_vec.get_unchecked_mut(index) };
         (ingredient.as_mut(), &mut self.runtime)
     }
 
@@ -376,11 +370,7 @@ impl Zalsa {
 
         for (_, index) in self.ingredients_requiring_reset.iter() {
             let index = index.as_u32() as usize;
-            let ingredient = self
-                .ingredients_vec
-                .get_mut(index)
-                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
-
+            let ingredient = unsafe { self.ingredients_vec.get_unchecked_mut(index) };
             ingredient.reset_for_new_revision(self.runtime.table_mut());
         }
 
@@ -393,9 +383,7 @@ impl Zalsa {
         let _span = tracing::debug_span!("evict_lru").entered();
         for (_, index) in self.ingredients_requiring_reset.iter() {
             let index = index.as_u32() as usize;
-            self.ingredients_vec
-                .get_mut(index)
-                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
+            unsafe { self.ingredients_vec.get_unchecked_mut(index) }
                 .reset_for_new_revision(self.runtime.table_mut());
         }
     }
