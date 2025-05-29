@@ -1,16 +1,16 @@
 use std::any::Any;
 use std::fmt;
+use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 pub(crate) use maybe_changed_after::VerifyResult;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy};
-use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::Ingredient;
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::MemoIngredientMap;
+use crate::plumbing::{MemoDropSender, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -22,7 +22,6 @@ use crate::{Database, Id, Revision};
 
 mod accumulated;
 mod backdate;
-mod delete;
 mod diff_outputs;
 mod execute;
 mod fetch;
@@ -137,7 +136,8 @@ pub struct IngredientImpl<C: Configuration> {
     /// current revision: you would be right, but we are being defensive, because
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
-    deleted_entries: DeletedEntries<C>,
+    delete: MemoDropSender,
+    config: PhantomData<fn(C) -> C>,
 }
 
 impl<C> IngredientImpl<C>
@@ -149,14 +149,16 @@ where
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
         view_caster: DatabaseDownCaster<C::DbView>,
+        delete: MemoDropSender,
     ) -> Self {
         Self {
             index,
             memo_ingredient_indices,
             lru: lru::Lru::new(lru),
-            deleted_entries: Default::default(),
             view_caster,
             sync_table: SyncTable::new(index),
+            delete,
+            config: PhantomData,
         }
     }
 
@@ -197,16 +199,7 @@ where
         // FIXME: Use `Box::into_non_null` once stable
         let memo = NonNull::from(Box::leak(Box::new(memo)));
 
-        if let Some(old_value) =
-            self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
-        {
-            // In case there is a reference to the old memo out there, we have to store it
-            // in the deleted entries. This will get cleared when a new revision starts.
-            //
-            // SAFETY: Once the revision starts, there will be no outstanding borrows to the
-            // memo contents, and so it will be safe to free.
-            unsafe { self.deleted_entries.push(old_value) };
-        }
+        self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index);
         // SAFETY: memo has been inserted into the table
         unsafe { self.extend_memo_lifetime(memo.as_ref()) }
     }
@@ -302,10 +295,9 @@ where
             Self::evict_value_from_memo_for(
                 table.memos_mut(evict),
                 self.memo_ingredient_indices.get(ingredient_index),
+                &self.delete,
             )
         });
-
-        self.deleted_entries.clear();
     }
 
     fn debug_name(&self) -> &'static str {

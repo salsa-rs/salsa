@@ -87,19 +87,22 @@ impl Default for Database {
     fn default() -> Self {
         let logger = Logger::default();
         Self {
-            storage: Storage::new(Some(Box::new({
-                let logger = logger.clone();
-                move |event| match event.kind {
-                    salsa::EventKind::WillExecute { .. }
-                    | salsa::EventKind::DidValidateMemoizedValue { .. } => {
-                        logger.push_log(format!("salsa_event({:?})", event.kind));
+            storage: Storage::new(
+                false,
+                Some(Box::new({
+                    let logger = logger.clone();
+                    move |event| match event.kind {
+                        salsa::EventKind::WillExecute { .. }
+                        | salsa::EventKind::DidValidateMemoizedValue { .. } => {
+                            logger.push_log(format!("salsa_event({:?})", event.kind));
+                        }
+                        salsa::EventKind::WillCheckCancellation => {}
+                        _ => {
+                            logger.push_log(format!("salsa_event({:?})", event.kind));
+                        }
                     }
-                    salsa::EventKind::WillCheckCancellation => {}
-                    _ => {
-                        logger.push_log(format!("salsa_event({:?})", event.kind));
-                    }
-                }
-            }))),
+                })),
+            ),
             logger,
             input: Default::default(),
         }

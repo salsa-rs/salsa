@@ -6,6 +6,7 @@ use std::ptr::NonNull;
 use crate::cycle::{empty_cycle_heads, CycleHeadKind, CycleHeads};
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
+use crate::plumbing::MemoDropSender;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
@@ -16,27 +17,23 @@ use crate::{Event, EventKind, Id, Revision};
 impl<C: Configuration> IngredientImpl<C> {
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
     pub(super) fn insert_memo_into_table_for<'db>(
-        &self,
+        &'db self,
         zalsa: &'db Zalsa,
         id: Id,
         memo: NonNull<Memo<C::Output<'db>>>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<NonNull<Memo<C::Output<'db>>>> {
+    ) {
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         let static_memo = unsafe {
             transmute::<NonNull<Memo<C::Output<'db>>>, NonNull<Memo<C::Output<'static>>>>(memo)
         };
-        let old_static_memo = zalsa
+        let old_memo = zalsa
             .memo_table_for(id)
-            .insert(memo_ingredient_index, static_memo)?;
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        Some(unsafe {
-            transmute::<NonNull<Memo<C::Output<'static>>>, NonNull<Memo<C::Output<'db>>>>(
-                old_static_memo,
-            )
-        })
+            .insert(memo_ingredient_index, static_memo);
+        if let Some(old_memo) = old_memo {
+            self.delete.delay(old_memo);
+        }
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
@@ -62,9 +59,11 @@ impl<C: Configuration> IngredientImpl<C> {
     pub(super) fn evict_value_from_memo_for(
         table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,
+        delayed: &MemoDropSender,
     ) {
-        let map = |memo: &mut Memo<C::Output<'static>>| {
-            match &memo.revisions.origin {
+        if let Some(memo) = table.fetch_raw::<Memo<C::Output<'static>>>(memo_ingredient_index) {
+            // SAFETY: The memo is live
+            match unsafe { &memo.as_ref().revisions.origin } {
                 QueryOrigin::Assigned(_)
                 | QueryOrigin::DerivedUntracked(_)
                 | QueryOrigin::FixpointInitial => {
@@ -73,14 +72,9 @@ impl<C: Configuration> IngredientImpl<C> {
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
                 }
-                QueryOrigin::Derived(_) => {
-                    // Set the memo value to `None`.
-                    memo.value = None;
-                }
+                QueryOrigin::Derived(_) => delayed.clear_value(memo),
             }
-        };
-
-        table.map_memo(memo_ingredient_index, map)
+        }
     }
 }
 
@@ -264,5 +258,8 @@ impl<V> Memo<V> {
 impl<V: Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
     fn origin(&self) -> &QueryOrigin {
         &self.revisions.origin
+    }
+    fn clear_value(&mut self) {
+        self.value = None;
     }
 }
