@@ -3,8 +3,9 @@
 //! The trick is that different threads call into the same cycle from different entry queries.
 //!
 //! * Thread 1: `a` -> b -> c (which calls back into d, e, b, a)
-//! * Thread 2: `d` -> `c`
-//! * Thread 3: `e` -> `c`
+//! * Thread 2: `b`
+//! * Thread 3: `d` -> `c`
+//! * Thread 4: `e` -> `c`
 use crate::sync::thread;
 use crate::{Knobs, KnobsDatabase};
 
@@ -65,6 +66,7 @@ fn the_test() {
         let db_t1 = Knobs::default();
         let db_t2 = db_t1.clone();
         let db_t3 = db_t1.clone();
+        let db_t4 = db_t1.clone();
 
         let t1 = thread::spawn(move || {
             let _span = tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
@@ -73,11 +75,16 @@ fn the_test() {
             result
         });
         let t2 = thread::spawn(move || {
+            let _span = tracing::debug_span!("t4", thread_id = ?thread::current().id()).entered();
+            db_t4.wait_for(1);
+            query_b(&db_t4)
+        });
+        let t3 = thread::spawn(move || {
             let _span = tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
             db_t2.wait_for(1);
             query_d(&db_t2)
         });
-        let t3 = thread::spawn(move || {
+        let t4 = thread::spawn(move || {
             let _span = tracing::debug_span!("t3", thread_id = ?thread::current().id()).entered();
             db_t3.wait_for(1);
             query_e(&db_t3)
@@ -86,7 +93,8 @@ fn the_test() {
         let r_t1 = t1.join().unwrap();
         let r_t2 = t2.join().unwrap();
         let r_t3 = t3.join().unwrap();
+        let r_t4 = t4.join().unwrap();
 
-        assert_eq!((r_t1, r_t2, r_t3), (MAX, MAX, MAX));
+        assert_eq!((r_t1, r_t2, r_t3, r_t4), (MAX, MAX, MAX, MAX));
     });
 }

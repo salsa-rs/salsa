@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 use std::fmt;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
+use crate::cycle::{empty_cycle_heads, CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
 use crate::function::VerifyResult;
 use crate::plumbing::IngredientIndices;
 use crate::sync::Arc;
@@ -67,12 +67,15 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ) -> VerifyResult;
 
     /// Is the value for `input` in this ingredient a cycle head that is still provisional?
-    ///
-    /// In the case of nested cycles, we are not asking here whether the value is provisional due
-    /// to the outer cycle being unresolved, only whether its own cycle remains provisional.
     fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
         _ = (zalsa, input);
         CycleHeadKind::NotProvisional
+    }
+
+    /// Returns the cycle heads for this ingredient.
+    fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
+        _ = (zalsa, input);
+        empty_cycle_heads()
     }
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.

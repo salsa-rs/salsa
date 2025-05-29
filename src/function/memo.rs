@@ -5,6 +5,7 @@ use std::ptr::NonNull;
 
 use crate::cycle::{empty_cycle_heads, CycleHeadKind, CycleHeads};
 use crate::function::{Configuration, IngredientImpl};
+use crate::hash::FxHashSet;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
@@ -142,73 +143,27 @@ impl<V> Memo<V> {
             return false;
         };
 
-        return provisional_retry_cold(zalsa, database_key_index, &self.revisions.cycle_heads);
-
-        #[inline(never)]
-        fn provisional_retry_cold(
-            zalsa: &Zalsa,
-            database_key_index: DatabaseKeyIndex,
-            cycle_heads: &CycleHeads,
-        ) -> bool {
-            let mut retry = false;
-            let mut hit_cycle = false;
-
-            for head in cycle_heads {
-                let head_index = head.database_key_index;
-
-                let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
-                let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
-                if matches!(
-                    cycle_head_kind,
-                    CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
-                ) {
-                    // This cycle is already finalized, so we don't need to wait on it;
-                    // keep looping through cycle heads.
-                    retry = true;
-                    tracing::trace!("Dependent cycle head {head_index:?} has been finalized.");
-                } else if ingredient.wait_for(zalsa, head_index.key_index()) {
-                    tracing::trace!("Dependent cycle head {head_index:?} has been released (there's a new memo)");
-                    // There's a new memo available for the cycle head; fetch our own
-                    // updated memo and see if it's still provisional or if the cycle
-                    // has resolved.
-                    tracing::trace!("Dependent cycle head {head_index:?} has been released (there's a new memo)");
-                    retry = true;
-                } else {
-                    // We hit a cycle blocking on the cycle head; this means it's in
-                    // our own active query stack and we are responsible to resolve the
-                    // cycle, so go ahead and return the provisional memo.
-                    tracing::debug!(
-                        "Waiting for {head_index:?} results in a cycle, return {database_key_index:?} once all other cycle heads completed to allow the outer cycle to make progress."
-                    );
-                    hit_cycle = true;
-                }
-            }
-
-            // If `retry` is `true`, all our cycle heads (barring ourself) are complete; re-fetch
-            // and we should get a non-provisional memo. If we get here and `retry` is still
-            // `false`, we have no cycle heads other than ourself, so we are a provisional value of
-            // the cycle head (either initial value, or from a later iteration) and should be
-            // returned to caller to allow fixpoint iteration to proceed. (All cases in the loop
-            // above other than "cycle head is self" are either terminal or set `retry`.)
-            if hit_cycle {
-                false
-            } else if retry {
-                tracing::debug!("Retrying {database_key_index:?}");
-                true
-            } else {
-                false
-            }
+        if self.await_heads(zalsa) {
+            false
+        } else {
+            tracing::debug!(
+                "Retrying provisional memo {database_key_index:?} after awaiting cycle heads."
+            );
+            true
         }
     }
 
-    #[inline(always)]
-    pub(super) fn await_heads(&self, zalsa: &Zalsa, database_key_index: DatabaseKeyIndex) {
-        for head in &self.revisions.cycle_heads {
-            let head_index = head.database_key_index;
+    /// Awaits all cycle heads (recursively) that this memo depends on.
+    ///
+    /// Returns `true` if awaiting the cycle heads resulted in a cycle.
+    pub(super) fn await_heads(&self, zalsa: &Zalsa) -> bool {
+        let mut hit_cycle = false;
 
-            if database_key_index == head_index {
-                continue;
-            }
+        let mut visited = FxHashSet::default();
+        let mut queue: Vec<_> = self.revisions.cycle_heads.iter().collect();
+
+        while let Some(head) = queue.pop() {
+            let head_index = head.database_key_index;
 
             let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
             let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
@@ -221,13 +176,35 @@ impl<V> Memo<V> {
                 // keep looping through cycle heads.
                 tracing::trace!("Dependent cycle head {head_index:?} has been finalized.");
             } else if ingredient.wait_for(zalsa, head_index.key_index()) {
-                tracing::trace!("Dependent cycle head {head_index:?} has been released");
+                // There's a new memo available for the cycle head; fetch our own
+                // updated memo and see if it's still provisional or if the cycle
+                // has resolved.
+                tracing::trace!(
+                    "Dependent cycle head {head_index:?} has been released (there's a new memo)"
+                );
+                // Recursively wait for all cycle heads that this head depends on.
+                // This is normally not necessary, because cycle heads are transitively added
+                // as query dependencies (they aggregate). The exception to this are queries
+                // that depend on a fixpoint initial value. We don't know all the dependencies of
+                // the query yet, so they can't be carried over. We only know them once the cycle
+                // completes but the cycle heads of the queries don't get updated.
+                // Because of that, recurse here to collect all cycle heads.
+                queue.extend(
+                    ingredient
+                        .cycle_heads(zalsa, head_index.key_index())
+                        .iter()
+                        .filter(|head| visited.insert(head.database_key_index)),
+                );
             } else {
                 // We hit a cycle blocking on the cycle head; this means it's in
                 // our own active query stack and we are responsible to resolve the
-                // cycle
+                // cycle, so go ahead and return the provisional memo.
+                tracing::debug!("Waiting for {head_index:?} results in a cycle");
+                hit_cycle = true;
             }
         }
+
+        hit_cycle
     }
 
     /// Cycle heads that should be propagated to dependent queries.

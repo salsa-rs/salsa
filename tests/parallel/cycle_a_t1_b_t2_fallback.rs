@@ -12,7 +12,7 @@
 //!  +--------------------+
 //! ```
 use crate::sync::thread;
-use crate::{Knobs, KnobsDatabase};
+use crate::KnobsDatabase;
 
 const FALLBACK_A: u32 = 0b01;
 const FALLBACK_B: u32 = 0b10;
@@ -53,6 +53,9 @@ fn cycle_result_b(_db: &dyn KnobsDatabase) -> u32 {
 #[test_log::test]
 #[cfg(not(feature = "shuttle"))] // This test is currently failing.
 fn the_test() {
+    use crate::sync::thread;
+    use crate::Knobs;
+
     crate::sync::check(|| {
         let db_t1 = Knobs::default();
         let db_t2 = db_t1.clone();

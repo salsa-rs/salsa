@@ -5,7 +5,9 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy};
+use crate::cycle::{
+    empty_cycle_heads, CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy,
+};
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::Ingredient;
@@ -254,6 +256,12 @@ where
         } else {
             CycleHeadKind::NotProvisional
         }
+    }
+
+    fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
+        self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+            .map(|memo| memo.cycle_heads())
+            .unwrap_or(empty_cycle_heads())
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.

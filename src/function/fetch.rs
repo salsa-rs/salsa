@@ -202,7 +202,7 @@ where
                 && old_memo.may_be_provisional()
                 && old_memo.verified_at.load() == zalsa.current_revision()
             {
-                old_memo.await_heads(zalsa, database_key_index);
+                old_memo.await_heads(zalsa);
 
                 // It's possible that one of the cycle heads replaced the memo for this ingredient
                 // with fixpoint initial. We ignore that memo because we know it's only a temporary memo
@@ -213,13 +213,9 @@ where
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 let mut cycle_heads = CycleHeads::default();
-                if let VerifyResult::Unchanged(_) = self.deep_verify_memo(
-                    db,
-                    zalsa,
-                    old_memo,
-                    database_key_index,
-                    &mut cycle_heads,
-                ) {
+                if let VerifyResult::Unchanged(_) =
+                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
+                {
                     if cycle_heads.is_empty() {
                         // SAFETY: memo is present in memo_map and we have verified that it is
                         // still valid for the current revision.
