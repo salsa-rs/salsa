@@ -101,7 +101,7 @@ pub struct Memo<V> {
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 11]>()];
+    [(); std::mem::size_of::<[usize; 6]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
@@ -134,7 +134,7 @@ impl<V> Memo<V> {
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
-        if self.revisions.cycle_heads.is_empty() {
+        if self.revisions.cycle_heads().is_empty() {
             return false;
         }
 
@@ -142,7 +142,7 @@ impl<V> Memo<V> {
             return false;
         };
 
-        return provisional_retry_cold(zalsa, database_key_index, &self.revisions.cycle_heads);
+        return provisional_retry_cold(zalsa, database_key_index, self.revisions.cycle_heads());
 
         #[inline(never)]
         fn provisional_retry_cold(
@@ -204,7 +204,7 @@ impl<V> Memo<V> {
     #[inline(always)]
     pub(super) fn cycle_heads(&self) -> &CycleHeads {
         if self.may_be_provisional() {
-            &self.revisions.cycle_heads
+            self.revisions.cycle_heads()
         } else {
             empty_cycle_heads()
         }

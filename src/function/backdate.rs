@@ -22,7 +22,7 @@ where
         // right now whether backdating could be made safe for queries participating in queries.
         // TODO: Write a test that demonstrates that backdating queries participating in a cycle isn't safe
         // OR write many tests showing that it is (and fixing the case where it didn't correctly account for today).
-        if !revisions.cycle_heads.is_empty() {
+        if !revisions.cycle_heads().is_empty() {
             return;
         }
 

@@ -159,7 +159,7 @@ where
             return Some(if changed_at > revision {
                 VerifyResult::Changed
             } else {
-                VerifyResult::Unchanged(match &memo.revisions.accumulated {
+                VerifyResult::Unchanged(match memo.revisions.accumulated() {
                     Some(_) => InputAccumulatedValues::Any,
                     None => memo.revisions.accumulated_inputs.load(),
                 })
@@ -257,7 +257,7 @@ where
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
-        for cycle_head in &memo.revisions.cycle_heads {
+        for cycle_head in memo.revisions.cycle_heads() {
             let kind = zalsa
                 .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
                 .cycle_head_kind(zalsa, cycle_head.database_key_index.key_index());
@@ -303,7 +303,7 @@ where
             memo = memo.tracing_debug()
         );
 
-        let cycle_heads = &memo.revisions.cycle_heads;
+        let cycle_heads = memo.revisions.cycle_heads();
         if cycle_heads.is_empty() {
             return true;
         }

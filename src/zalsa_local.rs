@@ -7,7 +7,7 @@ use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
 use crate::active_query::QueryStack;
-use crate::cycle::CycleHeads;
+use crate::cycle::{empty_cycle_heads, CycleHeads};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -328,6 +328,57 @@ pub(crate) struct QueryRevisions {
     /// How was this query computed?
     pub(crate) origin: QueryOrigin,
 
+    /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
+    /// has any direct or indirect accumulated values.
+    ///
+    /// Note that this field could be in `QueryRevisionsExtra` as it is only relevant
+    /// for accumulators, but we get it for free anyways due to padding.
+    pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
+
+    /// Are the `cycle_heads` verified to not be provisional anymore?
+    ///
+    /// Note that this field could be in `QueryRevisionsExtra` as it is only
+    /// relevant for queries that participate in a cycle, but we get it for
+    /// free anyways due to padding.
+    pub(super) verified_final: AtomicBool,
+
+    /// Lazily allocated state.
+    pub(super) extra: QueryRevisionsExtra,
+}
+
+/// Data on `QueryRevisions` that is lazily allocated to save memory
+/// in the common case.
+///
+/// In particular, not all queries create tracked structs, participate
+/// in cycles, or create accumulators.
+#[derive(Debug, Default)]
+pub(crate) struct QueryRevisionsExtra(Option<Box<QueryRevisionsExtraInner>>);
+
+impl QueryRevisionsExtra {
+    pub fn new(
+        accumulated: AccumulatedMap,
+        tracked_struct_ids: IdentityMap,
+        cycle_heads: CycleHeads,
+    ) -> Self {
+        let inner =
+            if tracked_struct_ids.is_empty() && cycle_heads.is_empty() && accumulated.is_empty() {
+                None
+            } else {
+                Some(Box::new(QueryRevisionsExtraInner {
+                    accumulated,
+                    cycle_heads,
+                    tracked_struct_ids,
+                }))
+            };
+
+        Self(inner)
+    }
+}
+
+#[derive(Debug)]
+struct QueryRevisionsExtraInner {
+    accumulated: AccumulatedMap,
+
     /// The ids of tracked structs created by this query.
     ///
     /// This table plays an important role when queries are
@@ -345,16 +396,7 @@ pub(crate) struct QueryRevisions {
     ///   previous revision. To handle this, `diff_outputs` compares
     ///   the structs from the old/new revision and retains
     ///   only entries that appeared in the new revision.
-    pub(super) tracked_struct_ids: IdentityMap,
-
-    pub(super) accumulated: Option<Box<AccumulatedMap>>,
-
-    /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
-    /// has any direct or indirect accumulated values.
-    pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
-
-    /// Are the `cycle_heads` verified to not be provisional anymore?
-    pub(super) verified_final: AtomicBool,
+    tracked_struct_ids: IdentityMap,
 
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
@@ -364,12 +406,17 @@ pub(crate) struct QueryRevisions {
     /// which must provide the initial provisional value and decide,
     /// after each iteration, whether the cycle has converged or must
     /// iterate again.
-    pub(super) cycle_heads: CycleHeads,
+    cycle_heads: CycleHeads,
 }
 
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
-const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 9]>()];
+const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 4]>()];
+
+#[cfg(not(feature = "shuttle"))]
+#[cfg(target_pointer_width = "64")]
+const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
+    [(); std::mem::size_of::<[usize; 9]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -377,14 +424,75 @@ impl QueryRevisions {
             changed_at: Revision::start(),
             durability: Durability::MAX,
             origin: QueryOrigin::fixpoint_initial(),
-            tracked_struct_ids: Default::default(),
-            accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
-            cycle_heads: CycleHeads::initial(query),
+            extra: QueryRevisionsExtra::new(
+                AccumulatedMap::default(),
+                IdentityMap::default(),
+                CycleHeads::initial(query),
+            ),
         }
     }
+
+    /// Returns a reference to the `AccumulatedMap` for this query, or `None` if the map is empty.
+    pub(crate) fn accumulated(&self) -> Option<&AccumulatedMap> {
+        self.extra
+            .0
+            .as_ref()
+            .map(|extra| &extra.accumulated)
+            .filter(|map| !map.is_empty())
+    }
+
+    /// Returns a reference to the `CycleHeads` for this query.
+    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
+        match &self.extra.0 {
+            Some(extra) => &extra.cycle_heads,
+            None => empty_cycle_heads(),
+        }
+    }
+
+    /// Returns a mutable reference to the `CycleHeads` for this query, or `None` if the list is empty.
+    pub(crate) fn cycle_heads_mut(&mut self) -> Option<&mut CycleHeads> {
+        self.extra
+            .0
+            .as_mut()
+            .map(|extra| &mut extra.cycle_heads)
+            .filter(|cycle_heads| !cycle_heads.is_empty())
+    }
+
+    /// Sets the `CycleHeads` for this query.
+    pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads) {
+        match &mut self.extra.0 {
+            Some(extra) => extra.cycle_heads = cycle_heads,
+            None => {
+                self.extra = QueryRevisionsExtra::new(
+                    AccumulatedMap::default(),
+                    IdentityMap::default(),
+                    cycle_heads,
+                );
+            }
+        };
+    }
+
+    /// Returns a reference to the `IdentityMap` for this query, or `None` if the map is empty.
+    pub fn tracked_struct_ids(&self) -> Option<&IdentityMap> {
+        self.extra
+            .0
+            .as_ref()
+            .map(|extra| &extra.tracked_struct_ids)
+            .filter(|tracked_struct_ids| !tracked_struct_ids.is_empty())
+    }
+
+    /// Returns a mutable reference to the `IdentityMap` for this query, or `None` if the map is empty.
+    pub fn tracked_struct_ids_mut(&mut self) -> Option<&mut IdentityMap> {
+        self.extra
+            .0
+            .as_mut()
+            .map(|extra| &mut extra.tracked_struct_ids)
+            .filter(|tracked_struct_ids| !tracked_struct_ids.is_empty())
+    }
 }
+
 /// Tracks the way that a memoized value for a query was created.
 ///
 /// This is a read-only reference to a `PackedQueryOrigin`.
