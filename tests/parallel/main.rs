@@ -5,6 +5,7 @@ mod cycle_a_t1_b_t2;
 mod cycle_a_t1_b_t2_fallback;
 mod cycle_ab_peeping_c;
 mod cycle_nested_deep;
+mod cycle_nested_deep_conditional;
 mod cycle_nested_three_threads;
 mod cycle_panic;
 mod cycle_provisional_depending_on_itself;
