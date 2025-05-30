@@ -237,6 +237,11 @@ where
                     "{database_key_index:?}: execute: fixpoint iteration has a final value"
                 );
                 cycle_heads.remove(&database_key_index);
+
+                if cycle_heads.is_empty() {
+                    // If there are no more cycle heads, we can mark this as verified.
+                    revisions.verified_final.store(true, Ordering::Relaxed);
+                }
             }
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
