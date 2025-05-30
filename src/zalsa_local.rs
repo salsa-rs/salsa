@@ -638,6 +638,11 @@ impl std::fmt::Debug for QueryOrigin {
 }
 
 /// An input or output query edge.
+///
+/// This type is a packed version of `QueryEdgeKind`, tagging the `IngredientIndex`
+/// in `key` with a discriminator for the input and output variants without increasing
+/// the size of the type. Notably, this type is 12 bytes as opposed to the 16 byte
+/// `QueryEdgeKind`, which is meaningful as inputs and outputs are stored contiguously.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct QueryEdge {
     key: DatabaseKeyIndex,
