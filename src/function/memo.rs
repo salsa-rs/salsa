@@ -169,7 +169,7 @@ impl<V> Memo<V> {
 
         // The most common case is that the entire cycle is running in the same thread.
         // If that's the case, short circuit and return `true` immediately.
-        if self.validate_same_iteration(zalsa_local) {
+        if self.all_cycles_on_stack(zalsa_local) {
             return true;
         }
 
@@ -246,6 +246,22 @@ impl<V> Memo<V> {
                     .rev()
                     .find(|query| query.database_key_index == cycle_head.database_key_index)
                     .is_some_and(|query| query.iteration_count() == cycle_head.iteration_count)
+            })
+        })
+    }
+
+    fn all_cycles_on_stack(&self, zalsa_local: &ZalsaLocal) -> bool {
+        let cycle_heads = &self.revisions.cycle_heads;
+        if cycle_heads.is_empty() {
+            return true;
+        }
+
+        zalsa_local.with_query_stack(|stack| {
+            cycle_heads.iter().all(|cycle_head| {
+                stack
+                    .iter()
+                    .rev()
+                    .any(|query| query.database_key_index == cycle_head.database_key_index)
             })
         })
     }
