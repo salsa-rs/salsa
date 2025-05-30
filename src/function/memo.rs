@@ -161,7 +161,8 @@ impl<V> Memo<V> {
 
     /// Blocks on all cycle heads (recursively) that this memo depends on.
     ///
-    /// Returns `true` if awaiting the cycle heads resulted in a cycle.
+    /// Returns `true` if awaiting all cycle heads results in a cycle. This means, they're all waiting
+    /// for us to make progress.
     #[inline(always)]
     pub(super) fn block_on_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
         // IMPORTANT: If you make changes to this function, make sure to run `cycle_nested_deep` with
@@ -181,7 +182,7 @@ impl<V> Memo<V> {
             // TODO: Test if we can change `queued` to only track the `DatabaseKey` or if the iteration is important
             let mut queue: Vec<_> = heads.iter().copied().collect();
             let mut queued: FxHashSet<_> = heads.iter().copied().collect();
-            let mut hit_cycle = false;
+            let mut all_cycles = true;
 
             while let Some(head) = queue.pop() {
                 let head_database_key = head.database_key_index;
@@ -195,14 +196,16 @@ impl<V> Memo<V> {
                         // This cycle is already finalized, so we don't need to wait on it;
                         // keep looping through cycle heads.
                         tracing::trace!("Dependent cycle head {head:?} has been finalized.");
+                        all_cycles = false;
                     }
                     CycleHeadKind::Provisional => {
                         if ingredient.wait_for(zalsa, head_key_index) {
                             // There's a new memo available for the cycle head (may still be provisional).
                             tracing::trace!(
-                            "Dependent cycle head {head:?} has been released (there's a new memo)"
-                        );
+                                "Dependent cycle head {head:?} has been released (there's a new memo)"
+                            );
 
+                            all_cycles = false;
                             // Recursively wait for all cycle heads that this head depends on.
                             // This is normally not necessary, because cycle heads are transitively added
                             // as query dependencies (they aggregate). The exception to this are queries
@@ -224,13 +227,12 @@ impl<V> Memo<V> {
                             // We hit a cycle blocking on the cycle head; this means this query actively
                             // participates in the cycle and some other query is blocked on this thread.
                             tracing::debug!("Waiting for {head:?} results in a cycle");
-                            hit_cycle = true;
                         }
                     }
                 }
             }
 
-            hit_cycle
+            all_cycles
         }
     }
 
