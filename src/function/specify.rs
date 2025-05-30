@@ -5,7 +5,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryOrigin, QueryOriginRef, QueryRevisions};
+use crate::zalsa_local::{QueryOrigin, QueryOriginRef, QueryRevisions, QueryRevisionsExtra};
 use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
@@ -68,7 +68,7 @@ where
             origin: QueryOrigin::assigned(active_query_key),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(true),
-            extra: None,
+            extra: QueryRevisionsExtra::default(),
         };
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);

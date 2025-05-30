@@ -191,8 +191,8 @@ where
         mut memo: memo::Memo<C::Output<'db>>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C::Output<'db>> {
-        if let Some(extra) = &mut memo.revisions.extra {
-            extra.tracked_struct_ids.shrink_to_fit();
+        if let Some(tracked_struct_ids) = memo.revisions.tracked_struct_ids_mut() {
+            tracked_struct_ids.shrink_to_fit();
         }
 
         // We convert to a `NonNull` here as soon as possible because we are going to alias
