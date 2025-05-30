@@ -190,7 +190,7 @@ impl ActiveQuery {
             ref mut accumulated,
             accumulated_inputs,
             ref mut cycle_heads,
-            iteration_count: _,
+            iteration_count,
         } = self;
 
         let origin = if untracked_read {
@@ -213,6 +213,7 @@ impl ActiveQuery {
             tracked_struct_ids,
             accumulated_inputs,
             accumulated,
+            iteration: u8::try_from(iteration_count).expect("iteration count to be less than 250"),
             verified_final: AtomicBool::new(cycle_heads.is_empty()),
             cycle_heads,
         }

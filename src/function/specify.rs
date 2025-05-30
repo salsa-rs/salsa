@@ -69,6 +69,7 @@ where
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
+            iteration: 0,
             verified_final: AtomicBool::new(true),
             cycle_heads: Default::default(),
         };

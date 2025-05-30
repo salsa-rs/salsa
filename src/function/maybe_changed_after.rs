@@ -257,9 +257,21 @@ where
             memo = memo.tracing_debug()
         );
         for cycle_head in &memo.revisions.cycle_heads {
+            // Test if our cycle heads (with the same revision) are now finalized.
+            // It's important to also account for the revision for the case where:
+            // thread 1: `b` -> `a` (but only in the first iteration)
+            //               -> `c` -> `b`
+            // thread 2: `a` -> `b`
+            //
+            // If we don't account for the revision, then `a` (from iteration 0) will be finalized
+            // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
             let kind = zalsa
                 .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-                .cycle_head_kind(zalsa, cycle_head.database_key_index.key_index());
+                .cycle_head_kind(
+                    zalsa,
+                    cycle_head.database_key_index.key_index(),
+                    Some(cycle_head.iteration_count),
+                );
             match kind {
                 CycleHeadKind::Provisional => return false,
                 CycleHeadKind::Final => {

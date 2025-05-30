@@ -245,10 +245,13 @@ where
 
     /// True if the input `input` contains a memo that cites itself as a cycle head.
     /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
-    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
+    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id, iteration: Option<u32>) -> CycleHeadKind {
         let is_provisional = self
             .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .is_some_and(|memo| !memo.revisions.verified_final.load(Ordering::Relaxed));
+            .is_some_and(|memo| {
+                Some(memo.revisions.iteration as u32) != iteration
+                    || !memo.revisions.verified_final.load(Ordering::Relaxed)
+            });
         if is_provisional {
             CycleHeadKind::Provisional
         } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {

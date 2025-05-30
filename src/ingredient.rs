@@ -67,8 +67,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ) -> VerifyResult;
 
     /// Is the value for `input` in this ingredient a cycle head that is still provisional?
-    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
-        _ = (zalsa, input);
+    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id, iteration: Option<u32>) -> CycleHeadKind {
+        _ = (zalsa, input, iteration);
         CycleHeadKind::Final
     }
 

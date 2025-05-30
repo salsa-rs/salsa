@@ -102,7 +102,7 @@ pub struct Memo<V> {
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 11]>()];
+    [(); std::mem::size_of::<[usize; 12]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
@@ -178,13 +178,17 @@ impl<V> Memo<V> {
 
         #[inline(never)]
         fn block_on_heads_cold(zalsa: &Zalsa, heads: &CycleHeads) -> bool {
-            let mut queue: Vec<_> = heads.iter().map(|head| head.database_key_index).collect();
-            let mut queued: FxHashSet<_> = queue.iter().copied().collect();
+            // TODO: Test if we can change `queued` to only track the `DatabaseKey` or if the iteration is important
+            let mut queue: Vec<_> = heads.iter().copied().collect();
+            let mut queued: FxHashSet<_> = heads.iter().copied().collect();
             let mut hit_cycle = false;
 
             while let Some(head) = queue.pop() {
-                let ingredient = zalsa.lookup_ingredient(head.ingredient_index());
-                let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head.key_index());
+                let head_database_key = head.database_key_index;
+                let head_key_index = head_database_key.key_index();
+                let ingredient = zalsa.lookup_ingredient(head_database_key.ingredient_index());
+                // We don't care about the iteration. If it's final, we can go.
+                let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_key_index, None);
 
                 match cycle_head_kind {
                     CycleHeadKind::Final | CycleHeadKind::FallbackImmediate => {
@@ -193,7 +197,7 @@ impl<V> Memo<V> {
                         tracing::trace!("Dependent cycle head {head:?} has been finalized.");
                     }
                     CycleHeadKind::Provisional => {
-                        if ingredient.wait_for(zalsa, head.key_index()) {
+                        if ingredient.wait_for(zalsa, head_key_index) {
                             // There's a new memo available for the cycle head (may still be provisional).
                             tracing::trace!(
                             "Dependent cycle head {head:?} has been released (there's a new memo)"
@@ -211,9 +215,9 @@ impl<V> Memo<V> {
                             // here, in case the memo has become part of another cycle (we need to block on that too!).
                             queue.extend(
                                 ingredient
-                                    .cycle_heads(zalsa, head.key_index())
+                                    .cycle_heads(zalsa, head_key_index)
                                     .iter()
-                                    .map(|head| head.database_key_index)
+                                    .copied()
                                     .filter(|head| queued.insert(*head)),
                             );
                         } else {

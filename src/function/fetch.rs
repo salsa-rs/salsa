@@ -45,11 +45,19 @@ where
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        let mut retries = 0;
         loop {
             if let Some(memo) = self
                 .fetch_hot(zalsa, id, memo_ingredient_index)
                 .or_else(|| {
-                    self.fetch_cold_with_retry(zalsa, zalsa_local, db, id, memo_ingredient_index)
+                    self.fetch_cold_with_retry(
+                        zalsa,
+                        zalsa_local,
+                        db,
+                        id,
+                        memo_ingredient_index,
+                        &mut retries,
+                    )
                 })
             {
                 return memo;
@@ -91,6 +99,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
+        retries: &mut u32,
     ) -> Option<&'db Memo<C::Output<'db>>> {
         let memo = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)?;
 
@@ -106,6 +115,12 @@ where
         {
             Some(memo)
         } else {
+            assert!(
+                *retries < 250,
+                "Maximum cold fetch retries exceeded for {id:?}",
+            );
+
+            *retries += 1;
             None
         }
     }

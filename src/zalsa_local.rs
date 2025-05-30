@@ -355,6 +355,7 @@ pub(crate) struct QueryRevisions {
 
     /// Are the `cycle_heads` verified to not be provisional anymore?
     pub(super) verified_final: AtomicBool,
+    pub(super) iteration: u8,
 
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
@@ -369,7 +370,7 @@ pub(crate) struct QueryRevisions {
 
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
-const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 9]>()];
+const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 10]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -380,6 +381,7 @@ impl QueryRevisions {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
+            iteration: 0,
             verified_final: AtomicBool::new(false),
             cycle_heads: CycleHeads::initial(query),
         }

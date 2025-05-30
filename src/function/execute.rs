@@ -189,7 +189,7 @@ where
                         C::id_to_input(db, id),
                     ) {
                         crate::CycleRecoveryAction::Iterate => {
-                            tracing::debug!("{database_key_index:?}: execute: iterate again");
+                            tracing::debug!("{database_key_index:?}: execute: iterate again, revisions: {revisions:#?}");
                         }
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
                             tracing::debug!(
