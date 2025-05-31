@@ -74,7 +74,9 @@ where
                     // Cycle participants that don't have a fallback will be discarded in
                     // `validate_provisional()`.
                     let cycle_heads = std::mem::take(cycle_heads);
-                    let active_query = db.zalsa_local().push_query(database_key_index, IterationCount::initial());
+                    let active_query = db
+                        .zalsa_local()
+                        .push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, C::id_to_input(db, id));
                     revisions = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.

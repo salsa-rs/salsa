@@ -204,7 +204,7 @@ impl ActiveQuery {
             mem::take(accumulated),
             mem::take(tracked_struct_ids),
             mem::take(cycle_heads),
-            iteration_count
+            iteration_count,
         );
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
 
