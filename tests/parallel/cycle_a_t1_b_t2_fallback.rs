@@ -11,8 +11,7 @@
 //!  |                    |
 //!  +--------------------+
 //! ```
-use crate::sync::thread;
-use crate::{Knobs, KnobsDatabase};
+use crate::KnobsDatabase;
 
 const FALLBACK_A: u32 = 0b01;
 const FALLBACK_B: u32 = 0b10;
