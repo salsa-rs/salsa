@@ -451,12 +451,15 @@ where
     C: Configuration,
 {
     #[inline(always)]
-    unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
-        &self.memos
+    unsafe fn memos(
+        this: *const Self,
+        _current_revision: Revision,
+    ) -> *const crate::table::memo::MemoTable {
+        unsafe { &raw const (*this).memos }
     }
 
     #[inline(always)]
-    fn memos_mut(&mut self) -> &mut MemoTable {
+    fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
     }
 }

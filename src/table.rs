@@ -36,26 +36,26 @@ pub(crate) trait Slot: Any + Send + Sync {
     /// # Safety condition
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
-    unsafe fn memos(&self, current_revision: Revision) -> &MemoTable;
+    unsafe fn memos(slot: *const Self, current_revision: Revision) -> *const MemoTable;
 
     /// Mutably access the [`MemoTable`] for this slot.
     fn memos_mut(&mut self) -> &mut MemoTable;
 }
 
 /// [Slot::memos]
-type SlotMemosFnRaw = unsafe fn(*const (), current_revision: Revision) -> *const MemoTable;
+type SlotMemosFnErased = unsafe fn(*const (), current_revision: Revision) -> *const MemoTable;
 /// [Slot::memos]
-type SlotMemosFn<T> = unsafe fn(&T, current_revision: Revision) -> &MemoTable;
+type SlotMemosFn<T> = unsafe fn(*const T, current_revision: Revision) -> *const MemoTable;
 /// [Slot::memos_mut]
-type SlotMemosMutFnRaw = unsafe fn(*mut ()) -> *mut MemoTable;
+type SlotMemosMutFnErased = unsafe fn(*mut ()) -> *mut MemoTable;
 /// [Slot::memos_mut]
 type SlotMemosMutFn<T> = fn(&mut T) -> &mut MemoTable;
 
 struct SlotVTable {
     layout: Layout,
     /// [`Slot`] methods
-    memos: SlotMemosFnRaw,
-    memos_mut: SlotMemosMutFnRaw,
+    memos: SlotMemosFnErased,
+    memos_mut: SlotMemosMutFnErased,
     /// A drop impl to call when the own page drops
     /// SAFETY: The caller is required to supply a correct data pointer to a `Box<PageDataEntry<T>>` and initialized length,
     /// and correct memo types.
@@ -78,10 +78,10 @@ impl SlotVTable {
                 },
                 layout: Layout::new::<T>(),
                 // SAFETY: The signatures are compatible
-                memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnRaw>(T::memos) },
+                memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnErased>(T::memos) },
                 // SAFETY: The signatures are compatible
                 memos_mut: unsafe {
-                    mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnRaw>(T::memos_mut)
+                    mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnErased>(T::memos_mut)
                 },
             }
         }
