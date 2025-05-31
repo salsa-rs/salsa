@@ -89,6 +89,10 @@ harness = false
 [workspace]
 members = ["components/salsa-macro-rules", "components/salsa-macros"]
 
+[[example]]
+name = "calc"
+crate-type = ["bin"]
+
 [workspace.package]
 authors = ["Salsa developers"]
 edition = "2021"
