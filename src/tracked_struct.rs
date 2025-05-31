@@ -7,6 +7,7 @@ use std::ops::Index;
 use std::{fmt, mem};
 
 use crossbeam_queue::SegQueue;
+use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
 use crate::cycle::CycleHeads;
@@ -258,7 +259,7 @@ impl IdentityMap {
         self.table.clear()
     }
 
-    pub(crate) fn into_boxed_slice(self) -> Box<[(Identity, Id)]> {
+    pub(crate) fn into_thin_vec(self) -> ThinVec<(Identity, Id)> {
         self.table.into_iter().collect()
     }
 }

@@ -3,6 +3,7 @@ use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 
 use rustc_hash::FxHashMap;
+use thin_vec::ThinVec;
 use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
@@ -371,7 +372,7 @@ impl QueryRevisionsExtra {
             Some(Box::new(QueryRevisionsExtraInner {
                 accumulated,
                 cycle_heads,
-                tracked_struct_ids: tracked_struct_ids.into_boxed_slice(),
+                tracked_struct_ids: tracked_struct_ids.into_thin_vec(),
                 iteration,
             }))
         };
@@ -401,7 +402,7 @@ struct QueryRevisionsExtraInner {
     ///   previous revision. To handle this, `diff_outputs` compares
     ///   the structs from the old/new revision and retains
     ///   only entries that appeared in the new revision.
-    tracked_struct_ids: Box<[(Identity, Id)]>,
+    tracked_struct_ids: ThinVec<(Identity, Id)>,
 
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
@@ -423,7 +424,7 @@ const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
-    [(); std::mem::size_of::<[usize; 8]>()];
+    [(); std::mem::size_of::<[usize; 7]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -507,18 +508,12 @@ impl QueryRevisions {
     }
 
     /// Returns a mutable reference to the `IdentityMap` for this query, or `None` if the map is empty.
-    pub fn retain_tracked_struct_ids<F>(&mut self, f: F)
-    where
-        F: FnMut(&(Identity, Id)) -> bool,
-    {
-        let Some(extra) = self.extra.0.as_mut() else {
-            return;
-        };
-
-        let tracked_struct_ids = std::mem::take(&mut extra.tracked_struct_ids);
-        let mut tracked_struct_ids = tracked_struct_ids.into_vec();
-        tracked_struct_ids.retain(f);
-        extra.tracked_struct_ids = tracked_struct_ids.into_boxed_slice()
+    pub fn tracked_struct_ids_mut(&mut self) -> Option<&mut ThinVec<(Identity, Id)>> {
+        self.extra
+            .0
+            .as_mut()
+            .map(|extra| &mut extra.tracked_struct_ids)
+            .filter(|tracked_struct_ids| !tracked_struct_ids.is_empty())
     }
 }
 

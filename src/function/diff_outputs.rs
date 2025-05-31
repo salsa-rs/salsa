@@ -46,15 +46,14 @@ where
             ));
         }
 
-        if old_outputs.is_empty() {
+        let Some(tracked_struct_ids) = revisions.tracked_struct_ids_mut() else {
             return;
-        }
+        };
 
         // Remove the outputs that are no longer present in the current revision
         // to prevent that the next revision is seeded with an id mapping that no longer exists.
-        revisions.retain_tracked_struct_ids(|(k, value)| {
-            !old_outputs.contains(&(k.ingredient_index(), value.index()))
-        });
+        tracked_struct_ids
+            .retain(|(k, value)| !old_outputs.contains(&(k.ingredient_index(), value.index())));
 
         for (ingredient_index, key_index) in old_outputs {
             // SAFETY: key_index acquired from valid output
