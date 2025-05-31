@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.22.0...salsa-v0.23.0) - 2025-05-31
+
+### Other
+
+- Set `validate_final` in `execute` after removing the last cycle head ([#890](https://github.com/salsa-rs/salsa/pull/890))
+- Pack `QueryEdge` memory layout ([#886](https://github.com/salsa-rs/salsa/pull/886))
+- Lazily allocate extra memo state ([#888](https://github.com/salsa-rs/salsa/pull/888))
+- Pack `QueryOrigin` memory layout ([#885](https://github.com/salsa-rs/salsa/pull/885))
+- Restrict memo size assertion to 64bit platforms ([#884](https://github.com/salsa-rs/salsa/pull/884))
+- Don't report stale outputs if there is newer generation in new_outputs ([#879](https://github.com/salsa-rs/salsa/pull/879))
+- Fix hang in nested fixpoint iteration ([#871](https://github.com/salsa-rs/salsa/pull/871))
+- Add debug spans for `new_revision` and `evict_lru` ([#881](https://github.com/salsa-rs/salsa/pull/881))
+- Add fetch span ([#875](https://github.com/salsa-rs/salsa/pull/875))
+- shrink_to_fit `IdentityMap` before storing it ([#816](https://github.com/salsa-rs/salsa/pull/816))
+- Allow lifetimes in arguments in tracked fns with >1 parameters ([#880](https://github.com/salsa-rs/salsa/pull/880))
+- Replace loom with shuttle ([#876](https://github.com/salsa-rs/salsa/pull/876))
+- Use generational identifiers for tracked structs ([#864](https://github.com/salsa-rs/salsa/pull/864))
+
 ## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.21.1...salsa-v0.22.0) - 2025-05-23
 
 ### Fixed
