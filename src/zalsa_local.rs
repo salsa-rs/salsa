@@ -491,7 +491,7 @@ impl QueryRevisions {
     }
 
     /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
-    pub(crate) const fn update_iteration_count(&mut self, iteration_count: IterationCount) {
+    pub(crate) fn update_iteration_count(&mut self, iteration_count: IterationCount) {
         if let Some(extra) = &mut self.extra.0 {
             extra.iteration = iteration_count
         }
