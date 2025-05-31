@@ -225,6 +225,7 @@ impl Clone for IdentityMap {
 impl IdentityMap {
     pub(crate) fn clone_from_slice(&mut self, source: &[(Identity, Id)]) {
         self.table.clear();
+        self.table.reserve(source.len(), |(k, _)| k.hash);
 
         for (key, id) in source {
             self.insert(*key, *id);
