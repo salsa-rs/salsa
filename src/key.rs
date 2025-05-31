@@ -12,8 +12,7 @@ use crate::{Database, Id};
 /// only for inserting into maps and the like.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseKeyIndex {
-    key_index: u32,
-    key_generation: u32,
+    key_index: Id,
     ingredient_index: IngredientIndex,
 }
 // ANCHOR_END: DatabaseKeyIndex
@@ -22,8 +21,7 @@ impl DatabaseKeyIndex {
     #[inline]
     pub(crate) fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
         Self {
-            key_index: key_index.index(),
-            key_generation: key_index.generation(),
+            key_index,
             ingredient_index,
         }
     }
@@ -33,8 +31,7 @@ impl DatabaseKeyIndex {
     }
 
     pub const fn key_index(self) -> Id {
-        // SAFETY: `self.key_index` was returned by `Id::data`.
-        unsafe { Id::from_index(self.key_index) }.with_generation(self.key_generation)
+        self.key_index
     }
 
     pub(crate) fn maybe_changed_after(

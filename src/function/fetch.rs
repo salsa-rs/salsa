@@ -28,7 +28,7 @@ where
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            memo.revisions.accumulated.is_some(),
+            memo.revisions.accumulated().is_some(),
             &memo.revisions.accumulated_inputs,
             memo.cycle_heads(),
         );
@@ -143,7 +143,7 @@ where
                 let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
                 if let Some(memo) = memo_guard {
                     if memo.value.is_some()
-                        && memo.revisions.cycle_heads.contains(&database_key_index)
+                        && memo.revisions.cycle_heads().contains(&database_key_index)
                     {
                         let can_shallow_update =
                             self.shallow_verify_memo(zalsa, database_key_index, memo);
@@ -184,7 +184,7 @@ where
                             zalsa_local.push_query(database_key_index, IterationCount::initial());
                         let fallback_value = C::cycle_initial(db, C::id_to_input(db, id));
                         let mut revisions = active_query.pop();
-                        revisions.cycle_heads = CycleHeads::initial(database_key_index);
+                        revisions.set_cycle_heads(CycleHeads::initial(database_key_index));
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
                         *revisions.verified_final.get_mut() = false;
                         Some(self.insert_memo(

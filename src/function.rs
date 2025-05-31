@@ -195,7 +195,10 @@ where
         mut memo: memo::Memo<C::Output<'db>>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C::Output<'db>> {
-        memo.revisions.tracked_struct_ids.shrink_to_fit();
+        if let Some(tracked_struct_ids) = memo.revisions.tracked_struct_ids_mut() {
+            tracked_struct_ids.shrink_to_fit();
+        }
+
         // We convert to a `NonNull` here as soon as possible because we are going to alias
         // into the `Box`, which is a `noalias` type.
         // FIXME: Use `Box::into_non_null` once stable
@@ -256,7 +259,7 @@ where
         let is_provisional = self
             .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .is_some_and(|memo| {
-                Some(memo.revisions.iteration) != iteration
+                Some(memo.revisions.iteration()) != iteration
                     || !memo.revisions.verified_final.load(Ordering::Relaxed)
             });
         if is_provisional {
@@ -270,7 +273,7 @@ where
 
     fn iteration(&self, zalsa: &Zalsa, input: Id) -> Option<IterationCount> {
         self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .map(|memo| memo.revisions.iteration)
+            .map(|memo| memo.revisions.iteration())
     }
 
     fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {

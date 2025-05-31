@@ -1,4 +1,3 @@
-use std::ops::Not;
 use std::{fmt, mem, ops};
 
 use crate::accumulator::accumulated_map::{
@@ -11,7 +10,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions};
+use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
 use crate::{Accumulator, IngredientIndex, Revision};
 
 #[derive(Debug)]
@@ -91,7 +90,7 @@ impl ActiveQuery {
     ) {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
-        self.input_outputs.insert(QueryEdge::Input(input));
+        self.input_outputs.insert(QueryEdge::input(input));
         self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
             true => InputAccumulatedValues::Any,
             false => accumulated_inputs.load(),
@@ -107,7 +106,7 @@ impl ActiveQuery {
     ) {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
-        self.input_outputs.insert(QueryEdge::Input(input));
+        self.input_outputs.insert(QueryEdge::input(input));
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
@@ -128,12 +127,12 @@ impl ActiveQuery {
 
     /// Adds a key to our list of outputs.
     pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
-        self.input_outputs.insert(QueryEdge::Output(key));
+        self.input_outputs.insert(QueryEdge::output(key));
     }
 
     /// True if the given key was output by this query.
     pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
-        self.input_outputs.contains(&QueryEdge::Output(key))
+        self.input_outputs.contains(&QueryEdge::output(key))
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
@@ -199,23 +198,23 @@ impl ActiveQuery {
             QueryOrigin::derived(input_outputs.drain(..))
         };
         disambiguator_map.clear();
-        let accumulated = accumulated
-            .is_empty()
-            .not()
-            .then(|| Box::new(mem::take(accumulated)));
-        let tracked_struct_ids = mem::take(tracked_struct_ids);
+
+        let verified_final = cycle_heads.is_empty();
+        let extra = QueryRevisionsExtra::new(
+            mem::take(accumulated),
+            mem::take(tracked_struct_ids),
+            mem::take(cycle_heads),
+            iteration_count
+        );
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
-        let cycle_heads = mem::take(cycle_heads);
+
         QueryRevisions {
             changed_at,
             durability,
             origin,
-            tracked_struct_ids,
             accumulated_inputs,
-            accumulated,
-            iteration: iteration_count,
-            verified_final: AtomicBool::new(cycle_heads.is_empty()),
-            cycle_heads,
+            verified_final: AtomicBool::new(verified_final),
+            extra,
         }
     }
 

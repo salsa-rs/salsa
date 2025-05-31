@@ -9,7 +9,7 @@ use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef, ZalsaLocal};
+use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
 use crate::{AsDynDatabase as _, Id, Revision};
 
 /// Result of memo validation.
@@ -166,7 +166,7 @@ where
             return Some(if changed_at > revision {
                 VerifyResult::Changed
             } else {
-                VerifyResult::Unchanged(match &memo.revisions.accumulated {
+                VerifyResult::Unchanged(match memo.revisions.accumulated() {
                     Some(_) => InputAccumulatedValues::Any,
                     None => memo.revisions.accumulated_inputs.load(),
                 })
@@ -264,7 +264,7 @@ where
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
-        for cycle_head in &memo.revisions.cycle_heads {
+        for cycle_head in memo.revisions.cycle_heads() {
             // Test if our cycle heads (with the same revision) are now finalized.
             // It's important to also account for the revision for the case where:
             // thread 1: `b` -> `a` (but only in the first iteration)
@@ -323,7 +323,7 @@ where
             memo = memo.tracing_debug()
         );
 
-        let cycle_heads = &memo.revisions.cycle_heads;
+        let cycle_heads = memo.revisions.cycle_heads();
         if cycle_heads.is_empty() {
             return true;
         }
@@ -433,8 +433,8 @@ where
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
                 for &edge in edges {
-                    match edge {
-                        QueryEdge::Input(dependency_index) => {
+                    match edge.kind() {
+                        QueryEdgeKind::Input(dependency_index) => {
                             match dependency_index.maybe_changed_after(
                                 dyn_db,
                                 zalsa,
@@ -447,7 +447,7 @@ where
                                 }
                             }
                         }
-                        QueryEdge::Output(dependency_index) => {
+                        QueryEdgeKind::Output(dependency_index) => {
                             // Subtle: Mark outputs as validated now, even though we may
                             // later find an input that requires us to re-execute the function.
                             // Even if it re-execute, the function will wind up writing the same value,

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 use crate::zalsa::Zalsa;
 
@@ -19,7 +19,8 @@ use crate::zalsa::Zalsa;
 /// it is wrapped in new types.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id {
-    value: NonZeroU64,
+    index: NonZeroU32,
+    generation: u32,
 }
 
 impl Id {
@@ -39,16 +40,17 @@ impl Id {
     #[doc(hidden)]
     #[track_caller]
     #[inline]
-    pub const unsafe fn from_index(v: u32) -> Self {
-        debug_assert!(v < Self::MAX_U32);
+    pub const unsafe fn from_index(index: u32) -> Self {
+        debug_assert!(index < Self::MAX_U32);
 
         Id {
             // SAFETY: Caller obligation.
-            value: unsafe { NonZeroU64::new_unchecked((v + 1) as u64) },
+            index: unsafe { NonZeroU32::new_unchecked(index + 1) },
+            generation: 0,
         }
     }
 
-    /// Create a `salsa::Id` from a u64 value.
+    /// Create a `salsa::Id` from a `u64` value.
     ///
     /// This should only be used to recreate an `Id` together with `Id::as_u64`.
     ///
@@ -59,11 +61,18 @@ impl Id {
     #[doc(hidden)]
     #[track_caller]
     #[inline]
-    pub const unsafe fn from_bits(v: u64) -> Self {
-        Id {
-            // SAFETY: Caller obligation.
-            value: unsafe { NonZeroU64::new_unchecked(v) },
-        }
+    pub const unsafe fn from_bits(bits: u64) -> Self {
+        // SAFETY: Caller obligation.
+        let index = unsafe { NonZeroU32::new_unchecked(bits as u32) };
+        let generation = (bits >> 32) as u32;
+
+        Id { index, generation }
+    }
+
+    /// Return a `u64` representation of this `Id`.
+    #[inline]
+    pub fn as_bits(self) -> u64 {
+        u64::from(self.index.get()) | (u64::from(self.generation) << 32)
     }
 
     /// Returns a new `Id` with same index, but the generation incremented by one.
@@ -84,35 +93,22 @@ impl Id {
     /// provided generation.
     #[inline]
     pub const fn with_generation(self, generation: u32) -> Id {
-        let mut value = self.value.get();
-
-        value &= 0xFFFFFFFF;
-        value |= (generation as u64) << 32;
-
         Id {
-            // SAFETY: The niche of `value` is in the lower bits, which we did not touch.
-            value: unsafe { NonZeroU64::new_unchecked(value) },
+            index: self.index,
+            generation,
         }
     }
 
     /// Return the index portion of this `Id`.
     #[inline]
     pub const fn index(self) -> u32 {
-        // Truncate the high-order bits.
-        (self.value.get() as u32) - 1
+        self.index.get() - 1
     }
 
     /// Return the generation of this `Id`.
     #[inline]
     pub const fn generation(self) -> u32 {
-        // Shift away the low-order bits.
-        (self.value.get() >> 32) as u32
-    }
-
-    /// Return the internal `u64` representation of this `Id`.
-    #[inline]
-    pub const fn as_bits(self) -> u64 {
-        self.value.get()
+        self.generation
     }
 }
 

@@ -104,12 +104,13 @@ pub struct Memo<V> {
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 12]>()];
+    [(); std::mem::size_of::<[usize; 6]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
         debug_assert!(
-            !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads.is_empty()
+            !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_empty(),
+            "Memo must be finalized if it has no cycle heads"
         );
         Memo {
             value,
@@ -141,7 +142,7 @@ impl<V> Memo<V> {
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
-        if self.revisions.cycle_heads.is_empty() {
+        if self.revisions.cycle_heads().is_empty() {
             return false;
         }
 
@@ -215,7 +216,8 @@ impl<V> Memo<V> {
         if self.all_cycles_on_stack(zalsa_local) {
             return true;
         }
-        let cycle_heads = TryClaimCycleHeadsIter::new(zalsa, &self.revisions.cycle_heads);
+
+        let cycle_heads = TryClaimCycleHeadsIter::new(zalsa, self.revisions.cycle_heads());
 
         for claim_result in cycle_heads {
             match claim_result {
@@ -232,7 +234,7 @@ impl<V> Memo<V> {
     }
 
     fn all_cycles_on_stack(&self, zalsa_local: &ZalsaLocal) -> bool {
-        let cycle_heads = &self.revisions.cycle_heads;
+        let cycle_heads = self.revisions.cycle_heads();
         if cycle_heads.is_empty() {
             return true;
         }
@@ -251,7 +253,7 @@ impl<V> Memo<V> {
     #[inline(always)]
     pub(super) fn cycle_heads(&self) -> &CycleHeads {
         if self.may_be_provisional() {
-            &self.revisions.cycle_heads
+            self.revisions.cycle_heads()
         } else {
             empty_cycle_heads()
         }

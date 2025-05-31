@@ -52,9 +52,9 @@ where
                     id,
                 );
 
-                if !revisions.cycle_heads.is_empty() {
+                if let Some(cycle_heads) = revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
-                    if revisions.cycle_heads.contains(&database_key_index) {
+                    if cycle_heads.contains(&database_key_index) {
                         // Ignore the computed value, leave the fallback value there.
                         let memo = self
                             .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
@@ -73,17 +73,16 @@ where
                     // If we're in the middle of a cycle and we have a fallback, use it instead.
                     // Cycle participants that don't have a fallback will be discarded in
                     // `validate_provisional()`.
-                    let cycle_heads = revisions.cycle_heads;
-                    let active_query = db
-                        .zalsa_local()
-                        .push_query(database_key_index, IterationCount::initial());
+                    let cycle_heads = std::mem::take(cycle_heads);
+                    let active_query = db.zalsa_local().push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, C::id_to_input(db, id));
                     revisions = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
                     // When verifying this, we will see we have fallback and mark ourselves verified.
-                    revisions.cycle_heads = cycle_heads;
+                    revisions.set_cycle_heads(cycle_heads);
                     revisions.verified_final = AtomicBool::new(false);
                 }
+
                 (new_value, revisions)
             }
             CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
@@ -144,7 +143,10 @@ where
             );
 
             // Did the new result we got depend on our own provisional value, in a cycle?
-            if revisions.cycle_heads.contains(&database_key_index) {
+            if let Some(cycle_heads) = revisions
+                .cycle_heads_mut()
+                .filter(|cycle_heads| cycle_heads.contains(&database_key_index))
+            {
                 let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
                     // We have a last provisional value from our previous time around the loop.
                     last_provisional.value.as_ref()
@@ -214,14 +216,11 @@ where
                             fell_back,
                         })
                     });
-                    revisions
-                        .cycle_heads
-                        .update_iteration_count(database_key_index, iteration_count);
-                    revisions.iteration = iteration_count;
+                    cycle_heads.update_iteration_count(database_key_index, iteration_count);
+                    revisions.update_iteration_count(iteration_count);
                     tracing::debug!(
                         "{database_key_index:?}: execute: iterate again, revisions: {revisions:#?}"
                     );
-
                     opt_last_provisional = Some(self.insert_memo(
                         zalsa,
                         id,
@@ -238,9 +237,9 @@ where
                 tracing::debug!(
                     "{database_key_index:?}: execute: fixpoint iteration has a final value"
                 );
-                revisions.cycle_heads.remove(&database_key_index);
+                cycle_heads.remove(&database_key_index);
 
-                if revisions.cycle_heads.is_empty() {
+                if cycle_heads.is_empty() {
                     // If there are no more cycle heads, we can mark this as verified.
                     revisions.verified_final.store(true, Ordering::Relaxed);
                 }
@@ -263,7 +262,9 @@ where
         if let Some(old_memo) = opt_old_memo {
             // If we already executed this query once, then use the tracked-struct ids from the
             // previous execution as the starting point for the new one.
-            active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
+            if let Some(tracked_struct_ids) = old_memo.revisions.tracked_struct_ids() {
+                active_query.seed_tracked_struct_ids(tracked_struct_ids);
+            }
 
             // Copy over all inputs and outputs from a previous iteration.
             // This is necessary to:
