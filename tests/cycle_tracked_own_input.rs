@@ -115,7 +115,7 @@ fn main() {
             "WillExecute { database_key: infer_type_param(Id(400)) }",
             "WillCheckCancellation",
             "DidInternValue { key: Class(Id(c00)), revision: R2 }",
-            "WillIterateCycle { database_key: infer_class(Id(0)), iteration_count: 1, fell_back: false }",
+            "WillIterateCycle { database_key: infer_class(Id(0)), iteration_count: IterationCount(1), fell_back: false }",
             "WillCheckCancellation",
             "WillExecute { database_key: infer_type_param(Id(400)) }",
             "WillCheckCancellation",

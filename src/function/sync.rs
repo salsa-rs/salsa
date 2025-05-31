@@ -1,11 +1,13 @@
 use rustc_hash::FxHashMap;
 
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::{BlockResult, WaitResult};
+use crate::runtime::{BlockResult, BlockedOn, WaitResult};
 use crate::sync::thread::{self, ThreadId};
 use crate::sync::Mutex;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
+
+pub(crate) type SyncGuard<'me> = crate::sync::MutexGuard<'me, FxHashMap<Id, SyncState>>;
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
@@ -15,12 +17,15 @@ pub(crate) struct SyncTable {
 }
 
 pub(crate) enum ClaimResult<'a> {
-    Retry,
+    /// Can't claim the query because it is running on an other thread.
+    BlockedOn(BlockedOn<'a>),
+    /// Claiming the query results in a cycle.
     Cycle,
+    /// Successfully claimed the query.
     Claimed(ClaimGuard<'a>),
 }
 
-struct SyncState {
+pub(crate) struct SyncState {
     id: ThreadId,
 
     /// Set to true if any other queries are blocked,
@@ -51,13 +56,12 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 *anyone_waiting = true;
-                match zalsa.runtime().block_on(
-                    zalsa,
+                match zalsa.runtime().block(
                     DatabaseKeyIndex::new(self.ingredient, key_index),
                     id,
                     write,
                 ) {
-                    BlockResult::Completed => ClaimResult::Retry,
+                    BlockResult::BlockedOn(blocked_on) => ClaimResult::BlockedOn(blocked_on),
                     BlockResult::Cycle => ClaimResult::Cycle,
                 }
             }
@@ -70,7 +74,6 @@ impl SyncTable {
                     key_index,
                     zalsa,
                     sync_table: self,
-                    _padding: false,
                 })
             }
         }
@@ -84,9 +87,6 @@ pub(crate) struct ClaimGuard<'me> {
     key_index: Id,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,
-    // Reduce the size of ClaimResult by making more niches available in ClaimGuard; this fits into
-    // the padding of ClaimGuard so doesn't increase its size.
-    _padding: bool,
 }
 
 impl ClaimGuard<'_> {

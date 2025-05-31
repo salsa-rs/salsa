@@ -1,4 +1,5 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::cycle::IterationCount;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::revision::AtomicRevision;
@@ -69,7 +70,7 @@ where
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
-            iteration: 0,
+            iteration: IterationCount::initial(),
             verified_final: AtomicBool::new(true),
             cycle_heads: Default::default(),
         };

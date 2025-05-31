@@ -4,7 +4,7 @@ use std::{fmt, mem, ops};
 use crate::accumulator::accumulated_map::{
     AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
-use crate::cycle::CycleHeads;
+use crate::cycle::{CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
@@ -62,7 +62,7 @@ pub(crate) struct ActiveQuery {
     cycle_heads: CycleHeads,
 
     /// If this query is a cycle head, iteration count of that cycle.
-    iteration_count: u32,
+    iteration_count: IterationCount,
 }
 
 impl ActiveQuery {
@@ -148,7 +148,7 @@ impl ActiveQuery {
         }
     }
 
-    pub(super) fn iteration_count(&self) -> u32 {
+    pub(super) fn iteration_count(&self) -> IterationCount {
         self.iteration_count
     }
 
@@ -162,7 +162,7 @@ impl ActiveQuery {
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, iteration_count: u32) -> Self {
+    fn new(database_key_index: DatabaseKeyIndex, iteration_count: IterationCount) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -213,7 +213,7 @@ impl ActiveQuery {
             tracked_struct_ids,
             accumulated_inputs,
             accumulated,
-            iteration: u8::try_from(iteration_count).expect("iteration count to be less than 250"),
+            iteration: iteration_count,
             verified_final: AtomicBool::new(cycle_heads.is_empty()),
             cycle_heads,
         }
@@ -238,10 +238,14 @@ impl ActiveQuery {
         tracked_struct_ids.clear();
         accumulated.clear();
         *cycle_heads = Default::default();
-        *iteration_count = 0;
+        *iteration_count = IterationCount::initial();
     }
 
-    fn reset_for(&mut self, new_database_key_index: DatabaseKeyIndex, new_iteration_count: u32) {
+    fn reset_for(
+        &mut self,
+        new_database_key_index: DatabaseKeyIndex,
+        new_iteration_count: IterationCount,
+    ) {
         let Self {
             database_key_index,
             durability,
@@ -325,7 +329,7 @@ impl QueryStack {
     pub(crate) fn push_new_query(
         &mut self,
         database_key_index: DatabaseKeyIndex,
-        iteration_count: u32,
+        iteration_count: IterationCount,
     ) {
         if self.len < self.stack.len() {
             self.stack[self.len].reset_for(database_key_index, iteration_count);
@@ -375,7 +379,7 @@ struct CapturedQuery {
     durability: Durability,
     changed_at: Revision,
     cycle_heads: CycleHeads,
-    iteration_count: u32,
+    iteration_count: IterationCount,
 }
 
 impl fmt::Debug for CapturedQuery {
@@ -451,7 +455,7 @@ impl fmt::Display for Backtrace {
             write!(fmt, "{idx:>4}: {database_key_index:?}")?;
             if full {
                 write!(fmt, " -> ({changed_at:?}, {durability:#?}")?;
-                if !cycle_heads.is_empty() || iteration_count > 0 {
+                if !cycle_heads.is_empty() || !iteration_count.is_initial() {
                     write!(fmt, ", iteration = {iteration_count:?}")?;
                 }
                 write!(fmt, ")")?;

@@ -3,14 +3,16 @@ use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
+pub(crate) use sync::SyncGuard;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{
     empty_cycle_heads, CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy,
+    IterationCount,
 };
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
-use crate::ingredient::Ingredient;
+use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::MemoIngredientMap;
 use crate::salsa_struct::SalsaStructInDb;
@@ -245,11 +247,16 @@ where
 
     /// True if the input `input` contains a memo that cites itself as a cycle head.
     /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
-    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id, iteration: Option<u32>) -> CycleHeadKind {
+    fn cycle_head_kind(
+        &self,
+        zalsa: &Zalsa,
+        input: Id,
+        iteration: Option<IterationCount>,
+    ) -> CycleHeadKind {
         let is_provisional = self
             .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .is_some_and(|memo| {
-                Some(memo.revisions.iteration as u32) != iteration
+                Some(memo.revisions.iteration) != iteration
                     || !memo.revisions.verified_final.load(Ordering::Relaxed)
             });
         if is_provisional {
@@ -261,6 +268,11 @@ where
         }
     }
 
+    fn iteration(&self, zalsa: &Zalsa, input: Id) -> Option<IterationCount> {
+        self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+            .map(|memo| memo.revisions.iteration)
+    }
+
     fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
         self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .map(|memo| memo.cycle_heads())
@@ -268,10 +280,11 @@ where
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
-    fn wait_for(&self, zalsa: &Zalsa, key_index: Id) -> bool {
+    fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim(zalsa, key_index) {
-            ClaimResult::Retry | ClaimResult::Claimed(_) => true,
-            ClaimResult::Cycle => false,
+            ClaimResult::BlockedOn(blocked_on) => WaitForResult::running(blocked_on),
+            ClaimResult::Cycle => WaitForResult::Cycle,
+            ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }
 

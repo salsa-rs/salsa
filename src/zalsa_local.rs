@@ -7,7 +7,7 @@ use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
 use crate::active_query::QueryStack;
-use crate::cycle::CycleHeads;
+use crate::cycle::{CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -99,7 +99,7 @@ impl ZalsaLocal {
     pub(crate) fn push_query(
         &self,
         database_key_index: DatabaseKeyIndex,
-        iteration_count: u32,
+        iteration_count: IterationCount,
     ) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
         query_stack.push_new_query(database_key_index, iteration_count);
@@ -355,7 +355,7 @@ pub(crate) struct QueryRevisions {
 
     /// Are the `cycle_heads` verified to not be provisional anymore?
     pub(super) verified_final: AtomicBool,
-    pub(super) iteration: u8,
+    pub(super) iteration: IterationCount,
 
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
@@ -381,7 +381,7 @@ impl QueryRevisions {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
-            iteration: 0,
+            iteration: IterationCount::initial(),
             verified_final: AtomicBool::new(false),
             cycle_heads: CycleHeads::initial(query),
         }
