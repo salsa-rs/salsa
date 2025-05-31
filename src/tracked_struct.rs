@@ -258,7 +258,7 @@ impl IdentityMap {
         self.table.clear()
     }
 
-    pub(crate) fn into_vec(self) -> Vec<(Identity, Id)> {
+    pub(crate) fn into_boxed_slice(self) -> Box<[(Identity, Id)]> {
         self.table.into_iter().collect()
     }
 }
