@@ -104,11 +104,11 @@ where
         let database_key_index = self.database_key_index(key_index);
 
         let _claim_guard = match self.sync_table.try_claim(zalsa, key_index) {
-            ClaimResult::BlockedOn(blocked_on) => {
-                blocked_on.wait_for(zalsa);
+            ClaimResult::Running(blocked_on) => {
+                blocked_on.block_on(zalsa);
                 return None;
             }
-            ClaimResult::Cycle => match C::CYCLE_STRATEGY {
+            ClaimResult::Cycle { .. } => match C::CYCLE_STRATEGY {
                 CycleRecoveryStrategy::Panic => UnexpectedCycle::throw(),
                 CycleRecoveryStrategy::FallbackImmediate => {
                     return Some(VerifyResult::unchanged());
@@ -343,9 +343,9 @@ where
 
                         match ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index())
                         {
-                            WaitForResult::Running(_) | WaitForResult::Available => None,
-                            WaitForResult::Cycle => ingredient
+                            WaitForResult::Cycle { same_thread: false } => ingredient
                                 .iteration(zalsa, cycle_head.database_key_index.key_index()),
+                            _ => None,
                         }
                     })
                     == Some(cycle_head.iteration_count)

@@ -7,7 +7,7 @@ use crate::cycle::{
 };
 use crate::function::VerifyResult;
 use crate::plumbing::IngredientIndices;
-use crate::runtime::BlockedOn;
+use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
@@ -223,20 +223,5 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available,
-    Cycle,
-}
-
-impl<'a> WaitForResult<'a> {
-    pub(crate) const fn running(blocked_on: BlockedOn<'a>) -> Self {
-        WaitForResult::Running(Running(blocked_on))
-    }
-}
-
-#[derive(Debug)]
-pub struct Running<'me>(BlockedOn<'me>);
-
-impl<'a> Running<'a> {
-    pub(crate) fn into_blocked_on(self) -> BlockedOn<'a> {
-        self.0
-    }
+    Cycle { same_thread: bool },
 }

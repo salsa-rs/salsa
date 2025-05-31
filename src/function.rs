@@ -285,8 +285,8 @@ where
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim(zalsa, key_index) {
-            ClaimResult::BlockedOn(blocked_on) => WaitForResult::running(blocked_on),
-            ClaimResult::Cycle => WaitForResult::Cycle,
+            ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
+            ClaimResult::Cycle { same_thread } => WaitForResult::Cycle { same_thread },
             ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }

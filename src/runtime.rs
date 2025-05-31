@@ -42,25 +42,19 @@ pub(super) enum WaitResult {
     Panicked,
 }
 
-impl WaitResult {
-    pub(crate) const fn is_panicked(self) -> bool {
-        matches!(self, WaitResult::Panicked)
-    }
-}
-
 #[derive(Debug)]
 pub(crate) enum BlockResult<'me> {
     /// The query is running on another thread.
-    BlockedOn(BlockedOn<'me>),
+    Running(Running<'me>),
 
     /// Blocking resulted in a cycle.
     ///
-    /// There's another thread that is waiting on the current thread,
+    /// The lock is hold by the current thread or there's another thread that is waiting on the current thread,
     /// and blocking this thread on the other thread would result in a deadlock/cycle.
-    Cycle,
+    Cycle { same_thread: bool },
 }
 
-pub(crate) struct BlockedOn<'me>(Box<BlockedOnInner<'me>>);
+pub struct Running<'me>(Box<BlockedOnInner<'me>>);
 
 struct BlockedOnInner<'me> {
     dg: crate::sync::MutexGuard<'me, DependencyGraph>,
@@ -70,12 +64,13 @@ struct BlockedOnInner<'me> {
     thread_id: ThreadId,
 }
 
-impl BlockedOn<'_> {
+impl Running<'_> {
     pub(crate) fn database_key(&self) -> DatabaseKeyIndex {
         self.0.database_key
     }
 
-    pub(crate) fn wait_for(self, zalsa: &Zalsa) {
+    /// Blocks on the other thread to complete the computation.
+    pub(crate) fn block_on(self, zalsa: &Zalsa) {
         let BlockedOnInner {
             dg,
             query_mutex_guard,
@@ -98,18 +93,21 @@ impl BlockedOn<'_> {
         let result =
             DependencyGraph::block_on(dg, thread_id, database_key, other_id, query_mutex_guard);
 
-        if result.is_panicked() {
-            // If the other thread panicked, then we consider this thread
-            // cancelled. The assumption is that the panic will be detected
-            // by the other thread and responded to appropriately.
-            Cancelled::PropagatedPanic.throw()
+        match result {
+            WaitResult::Panicked => {
+                // If the other thread panicked, then we consider this thread
+                // cancelled. The assumption is that the panic will be detected
+                // by the other thread and responded to appropriately.
+                Cancelled::PropagatedPanic.throw()
+            }
+            WaitResult::Completed => {}
         }
     }
 }
 
-impl std::fmt::Debug for BlockedOn<'_> {
+impl std::fmt::Debug for Running<'_> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt.debug_struct("BlockedOn")
+        fmt.debug_struct("Running")
             .field("database_key", &self.0.database_key)
             .field("other_id", &self.0.other_id)
             .field("thread_id", &self.0.thread_id)
@@ -245,17 +243,17 @@ impl Runtime {
         let thread_id = thread::current().id();
         // Cycle in the same thread.
         if thread_id == other_id {
-            return BlockResult::Cycle;
+            return BlockResult::Cycle { same_thread: true };
         }
 
         let dg = self.dependency_graph.lock();
 
         if dg.depends_on(other_id, thread_id) {
             tracing::debug!("block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}");
-            return BlockResult::Cycle;
+            return BlockResult::Cycle { same_thread: false };
         }
 
-        BlockResult::BlockedOn(BlockedOn(Box::new(BlockedOnInner {
+        BlockResult::Running(Running(Box::new(BlockedOnInner {
             dg,
             query_mutex_guard,
             database_key,

@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::{BlockResult, BlockedOn, WaitResult};
+use crate::runtime::{BlockResult, Running, WaitResult};
 use crate::sync::thread::{self, ThreadId};
 use crate::sync::Mutex;
 use crate::zalsa::Zalsa;
@@ -18,9 +18,9 @@ pub(crate) struct SyncTable {
 
 pub(crate) enum ClaimResult<'a> {
     /// Can't claim the query because it is running on an other thread.
-    BlockedOn(BlockedOn<'a>),
+    Running(Running<'a>),
     /// Claiming the query results in a cycle.
-    Cycle,
+    Cycle { same_thread: bool },
     /// Successfully claimed the query.
     Claimed(ClaimGuard<'a>),
 }
@@ -61,8 +61,8 @@ impl SyncTable {
                     id,
                     write,
                 ) {
-                    BlockResult::BlockedOn(blocked_on) => ClaimResult::BlockedOn(blocked_on),
-                    BlockResult::Cycle => ClaimResult::Cycle,
+                    BlockResult::Running(blocked_on) => ClaimResult::Running(blocked_on),
+                    BlockResult::Cycle { same_thread } => ClaimResult::Cycle { same_thread },
                 }
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {

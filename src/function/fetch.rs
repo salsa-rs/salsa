@@ -121,8 +121,8 @@ where
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let claim_guard = match self.sync_table.try_claim(zalsa, id) {
-            ClaimResult::BlockedOn(blocked_on) => {
-                blocked_on.wait_for(zalsa);
+            ClaimResult::Running(blocked_on) => {
+                blocked_on.block_on(zalsa);
 
                 let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
@@ -136,7 +136,7 @@ where
                 }
                 return None;
             }
-            ClaimResult::Cycle => {
+            ClaimResult::Cycle { .. } => {
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists

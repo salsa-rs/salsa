@@ -9,7 +9,7 @@ use crate::hash::FxHashSet;
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
-use crate::runtime::BlockedOn;
+use crate::runtime::Running;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -185,6 +185,7 @@ impl<V> Memo<V> {
 
         #[inline(never)]
         fn block_on_heads_cold(zalsa: &Zalsa, heads: &CycleHeads) -> bool {
+            let _entered = tracing::debug_span!("block_on_heads").entered();
             let mut cycle_heads = TryClaimCycleHeadsIter::new(zalsa, heads);
             let mut all_cycles = true;
 
@@ -213,6 +214,7 @@ impl<V> Memo<V> {
     /// Unlike `block_on_heads`, this code does not block on any cycle head. Instead it returns `false` if
     /// claiming all cycle heads failed because one of them is running on another thread.
     pub(super) fn try_claim_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
+        let _entered = tracing::debug_span!("try_claim_heads").entered();
         if self.all_cycles_on_stack(zalsa_local) {
             return true;
         }
@@ -331,14 +333,14 @@ pub(super) enum TryClaimHeadsResult<'me> {
 }
 
 pub(super) struct RunningCycleHead<'me> {
-    blocked_on: BlockedOn<'me>,
+    inner: Running<'me>,
     ingredient: &'me dyn Ingredient,
 }
 
 impl<'a> RunningCycleHead<'a> {
     fn block_on(self, cycle_heads: &mut TryClaimCycleHeadsIter<'a>) {
-        let key_index = self.blocked_on.database_key().key_index();
-        self.blocked_on.wait_for(cycle_heads.zalsa);
+        let key_index = self.inner.database_key().key_index();
+        self.inner.block_on(cycle_heads.zalsa);
 
         cycle_heads.queue_ingredient_heads(self.ingredient, key_index);
     }
@@ -407,19 +409,17 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
             }
             CycleHeadKind::Provisional => {
                 match ingredient.wait_for(self.zalsa, head_key_index) {
-                    WaitForResult::Cycle => {
+                    WaitForResult::Cycle { .. } => {
                         // We hit a cycle blocking on the cycle head; this means this query actively
                         // participates in the cycle and some other query is blocked on this thread.
                         tracing::debug!("Waiting for {head:?} results in a cycle");
                         Some(TryClaimHeadsResult::Cycle)
                     }
                     WaitForResult::Running(running) => {
-                        tracing::debug!(
-                            "Ingredient {head:?} is running: {running:?}, blocking on it"
-                        );
+                        tracing::debug!("Ingredient {head:?} is running: {running:?}");
 
                         Some(TryClaimHeadsResult::Running(RunningCycleHead {
-                            blocked_on: running.into_blocked_on(),
+                            inner: running,
                             ingredient,
                         }))
                     }
