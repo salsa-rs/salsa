@@ -2,9 +2,12 @@ use std::any::{Any, TypeId};
 use std::fmt;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
+use crate::cycle::{
+    empty_cycle_heads, CycleHeadKind, CycleHeads, CycleRecoveryStrategy, IterationCount,
+};
 use crate::function::VerifyResult;
 use crate::plumbing::IngredientIndices;
+use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
@@ -67,12 +70,25 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ) -> VerifyResult;
 
     /// Is the value for `input` in this ingredient a cycle head that is still provisional?
-    ///
-    /// In the case of nested cycles, we are not asking here whether the value is provisional due
-    /// to the outer cycle being unresolved, only whether its own cycle remains provisional.
-    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
+    fn cycle_head_kind(
+        &self,
+        zalsa: &Zalsa,
+        input: Id,
+        iteration: Option<IterationCount>,
+    ) -> CycleHeadKind {
+        _ = (zalsa, input, iteration);
+        CycleHeadKind::Final
+    }
+
+    fn iteration(&self, zalsa: &Zalsa, input: Id) -> Option<IterationCount> {
         _ = (zalsa, input);
-        CycleHeadKind::NotProvisional
+        None
+    }
+
+    /// Returns the cycle heads for this ingredient.
+    fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
+        _ = (zalsa, input);
+        empty_cycle_heads()
     }
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
@@ -80,9 +96,9 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// A return value of `true` indicates that a result is now available. A return value of
     /// `false` means that a cycle was encountered; the waited-on query is either already claimed
     /// by the current thread, or by a thread waiting on the current thread.
-    fn wait_for(&self, zalsa: &Zalsa, key_index: Id) -> bool {
+    fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         _ = (zalsa, key_index);
-        true
+        WaitForResult::Available
     }
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
@@ -202,4 +218,10 @@ impl dyn Ingredient {
 /// A helper function to show human readable fmt.
 pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(fmt, "{debug_name}({id:?})")
+}
+
+pub enum WaitForResult<'me> {
+    Running(Running<'me>),
+    Available,
+    Cycle { same_thread: bool },
 }

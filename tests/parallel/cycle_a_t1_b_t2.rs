@@ -62,11 +62,18 @@ fn initial(_db: &dyn KnobsDatabase) -> CycleValue {
 #[test_log::test]
 fn the_test() {
     crate::sync::check(|| {
+        tracing::debug!("New run");
         let db_t1 = Knobs::default();
         let db_t2 = db_t1.clone();
 
-        let t1 = thread::spawn(move || query_a(&db_t1));
-        let t2 = thread::spawn(move || query_b(&db_t2));
+        let t1 = thread::spawn(move || {
+            let _span = tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
+            query_a(&db_t1)
+        });
+        let t2 = thread::spawn(move || {
+            let _span = tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
+            query_b(&db_t2)
+        });
 
         let (r_t1, r_t2) = (t1.join().unwrap(), t2.join().unwrap());
 

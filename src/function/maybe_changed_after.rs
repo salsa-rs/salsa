@@ -1,13 +1,15 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, UnexpectedCycle};
+use crate::cycle::{
+    CycleHeadKind, CycleHeads, CycleRecoveryStrategy, IterationCount, UnexpectedCycle,
+};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
+use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef};
+use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
 use crate::{AsDynDatabase as _, Id, Revision};
 
 /// Result of memo validation.
@@ -102,8 +104,11 @@ where
         let database_key_index = self.database_key_index(key_index);
 
         let _claim_guard = match self.sync_table.try_claim(zalsa, key_index) {
-            ClaimResult::Retry => return None,
-            ClaimResult::Cycle => match C::CYCLE_STRATEGY {
+            ClaimResult::Running(blocked_on) => {
+                blocked_on.block_on(zalsa);
+                return None;
+            }
+            ClaimResult::Cycle { .. } => match C::CYCLE_STRATEGY {
                 CycleRecoveryStrategy::Panic => UnexpectedCycle::throw(),
                 CycleRecoveryStrategy::FallbackImmediate => {
                     return Some(VerifyResult::unchanged());
@@ -152,7 +157,9 @@ where
         // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && cycle_heads.is_empty() {
-            let active_query = db.zalsa_local().push_query(database_key_index, 0);
+            let active_query = db
+                .zalsa_local()
+                .push_query(database_key_index, IterationCount::initial());
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
@@ -241,7 +248,7 @@ where
     ) -> bool {
         !memo.may_be_provisional()
             || self.validate_provisional(zalsa, database_key_index, memo)
-            || self.validate_same_iteration(zalsa_local, database_key_index, memo)
+            || self.validate_same_iteration(zalsa, zalsa_local, database_key_index, memo)
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
@@ -258,12 +265,24 @@ where
             memo = memo.tracing_debug()
         );
         for cycle_head in memo.revisions.cycle_heads() {
+            // Test if our cycle heads (with the same revision) are now finalized.
+            // It's important to also account for the revision for the case where:
+            // thread 1: `b` -> `a` (but only in the first iteration)
+            //               -> `c` -> `b`
+            // thread 2: `a` -> `b`
+            //
+            // If we don't account for the revision, then `a` (from iteration 0) will be finalized
+            // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
             let kind = zalsa
                 .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-                .cycle_head_kind(zalsa, cycle_head.database_key_index.key_index());
+                .cycle_head_kind(
+                    zalsa,
+                    cycle_head.database_key_index.key_index(),
+                    Some(cycle_head.iteration_count),
+                );
             match kind {
                 CycleHeadKind::Provisional => return false,
-                CycleHeadKind::NotProvisional => {
+                CycleHeadKind::Final => {
                     // FIXME: We can ignore this, I just don't have a use-case for this.
                     if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                         panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
@@ -294,6 +313,7 @@ where
     /// runaway re-execution of the same queries within a fixpoint iteration.
     pub(super) fn validate_same_iteration(
         &self,
+        zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
@@ -314,7 +334,21 @@ where
                     .iter()
                     .rev()
                     .find(|query| query.database_key_index == cycle_head.database_key_index)
-                    .is_some_and(|query| query.iteration_count() == cycle_head.iteration_count)
+                    .map(|query| query.iteration_count())
+                    .or_else(|| {
+                        // If this is a cycle head is owned by another thread that is blocked by this ingredient,
+                        // check if it has the same iteration count.
+                        let ingredient = zalsa
+                            .lookup_ingredient(cycle_head.database_key_index.ingredient_index());
+
+                        match ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index())
+                        {
+                            WaitForResult::Cycle { same_thread: false } => ingredient
+                                .iteration(zalsa, cycle_head.database_key_index.key_index()),
+                            _ => None,
+                        }
+                    })
+                    == Some(cycle_head.iteration_count)
             })
         })
     }

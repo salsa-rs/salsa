@@ -1,3 +1,4 @@
+use crate::cycle::IterationCount;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::thread::{self, ThreadId};
 use crate::Revision;
@@ -61,7 +62,7 @@ pub enum EventKind {
     WillIterateCycle {
         /// The database-key for the cycle head. Implements `Debug`.
         database_key: DatabaseKeyIndex,
-        iteration_count: u32,
+        iteration_count: IterationCount,
         fell_back: bool,
     },
 
