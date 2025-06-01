@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{
-    empty_cycle_heads, CycleHeadKind, CycleHeads, CycleRecoveryStrategy, IterationCount,
+    empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
 use crate::function::VerifyResult;
 use crate::plumbing::IngredientIndices;
@@ -69,20 +69,16 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult;
 
-    /// Is the value for `input` in this ingredient a cycle head that is still provisional?
-    fn cycle_head_kind(
-        &self,
-        zalsa: &Zalsa,
-        input: Id,
-        iteration: Option<IterationCount>,
-    ) -> CycleHeadKind {
-        _ = (zalsa, input, iteration);
-        CycleHeadKind::Final
-    }
-
-    fn iteration(&self, zalsa: &Zalsa, input: Id) -> Option<IterationCount> {
+    /// Returns information about the current provisional status of `input`.
+    ///
+    /// Is it a provisional value or has it been finalized and in which iteration.
+    ///
+    /// Returns `None` if `input` doesn't exist.
+    fn provisional_status(&self, zalsa: &Zalsa, input: Id) -> Option<ProvisionalStatus> {
         _ = (zalsa, input);
-        None
+        Some(ProvisionalStatus::Final {
+            iteration: IterationCount::initial(),
+        })
     }
 
     /// Returns the cycle heads for this ingredient.
@@ -224,4 +220,11 @@ pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available,
     Cycle { same_thread: bool },
+}
+
+impl WaitForResult<'_> {
+    /// Returns `true` if waiting for this input results in a cycle with another thread.
+    pub const fn is_cycle_with_other_thread(&self) -> bool {
+        matches!(self, WaitForResult::Cycle { same_thread: false })
+    }
 }

@@ -1,11 +1,10 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{
-    CycleHeadKind, CycleHeads, CycleRecoveryStrategy, IterationCount, UnexpectedCycle,
+    CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus, UnexpectedCycle,
 };
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
-use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
@@ -266,29 +265,32 @@ where
         );
         for cycle_head in memo.revisions.cycle_heads() {
             // Test if our cycle heads (with the same revision) are now finalized.
-            // It's important to also account for the revision for the case where:
-            // thread 1: `b` -> `a` (but only in the first iteration)
-            //               -> `c` -> `b`
-            // thread 2: `a` -> `b`
-            //
-            // If we don't account for the revision, then `a` (from iteration 0) will be finalized
-            // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
-            let kind = zalsa
+            let Some(kind) = zalsa
                 .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-                .cycle_head_kind(
-                    zalsa,
-                    cycle_head.database_key_index.key_index(),
-                    Some(cycle_head.iteration_count),
-                );
+                .provisional_status(zalsa, cycle_head.database_key_index.key_index())
+            else {
+                return false;
+            };
             match kind {
-                CycleHeadKind::Provisional => return false,
-                CycleHeadKind::Final => {
+                ProvisionalStatus::Provisional { .. } => return false,
+                ProvisionalStatus::Final { iteration } => {
+                    // It's important to also account for the revision for the case where:
+                    // thread 1: `b` -> `a` (but only in the first iteration)
+                    //               -> `c` -> `b`
+                    // thread 2: `a` -> `b`
+                    //
+                    // If we don't account for the revision, then `a` (from iteration 0) will be finalized
+                    // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
+                    if iteration != cycle_head.iteration_count {
+                        return false;
+                    }
+
                     // FIXME: We can ignore this, I just don't have a use-case for this.
                     if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                         panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
                     }
                 }
-                CycleHeadKind::FallbackImmediate => match C::CYCLE_STRATEGY {
+                ProvisionalStatus::FallbackImmediate => match C::CYCLE_STRATEGY {
                     CycleRecoveryStrategy::Panic => {
                         // Queries without fallback are not considered when inside a cycle.
                         return false;
@@ -340,13 +342,16 @@ where
                         // check if it has the same iteration count.
                         let ingredient = zalsa
                             .lookup_ingredient(cycle_head.database_key_index.ingredient_index());
+                        let wait_result =
+                            ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index());
 
-                        match ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index())
-                        {
-                            WaitForResult::Cycle { same_thread: false } => ingredient
-                                .iteration(zalsa, cycle_head.database_key_index.key_index()),
-                            _ => None,
+                        if !wait_result.is_cycle_with_other_thread() {
+                            return None;
                         }
+
+                        let provisional_status = ingredient
+                            .provisional_status(zalsa, cycle_head.database_key_index.key_index())?;
+                        provisional_status.iteration()
                     })
                     == Some(cycle_head.iteration_count)
             })

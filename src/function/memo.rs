@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
-use crate::cycle::{empty_cycle_heads, CycleHead, CycleHeadKind, CycleHeads};
+use crate::cycle::{empty_cycle_heads, CycleHead, CycleHeads, IterationCount, ProvisionalStatus};
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
 use crate::ingredient::{Ingredient, WaitForResult};
@@ -397,17 +397,21 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
         let ingredient = self
             .zalsa
             .lookup_ingredient(head_database_key.ingredient_index());
-        // We don't care about the iteration. If it's final, we can go.
-        let cycle_head_kind = ingredient.cycle_head_kind(self.zalsa, head_key_index, None);
+
+        let cycle_head_kind = ingredient
+            .provisional_status(self.zalsa, head_key_index)
+            .unwrap_or(ProvisionalStatus::Provisional {
+                iteration: IterationCount::initial(),
+            });
 
         match cycle_head_kind {
-            CycleHeadKind::Final | CycleHeadKind::FallbackImmediate => {
+            ProvisionalStatus::Final { .. } | ProvisionalStatus::FallbackImmediate => {
                 // This cycle is already finalized, so we don't need to wait on it;
                 // keep looping through cycle heads.
                 tracing::trace!("Dependent cycle head {head:?} has been finalized.");
                 Some(TryClaimHeadsResult::Finalized)
             }
-            CycleHeadKind::Provisional => {
+            ProvisionalStatus::Provisional { .. } => {
                 match ingredient.wait_for(self.zalsa, head_key_index) {
                     WaitForResult::Cycle { .. } => {
                         // We hit a cycle blocking on the cycle head; this means this query actively

@@ -7,8 +7,7 @@ pub(crate) use sync::SyncGuard;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{
-    empty_cycle_heads, CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy,
-    IterationCount,
+    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
 };
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
@@ -248,32 +247,26 @@ where
         self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
-    /// True if the input `input` contains a memo that cites itself as a cycle head.
-    /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
-    fn cycle_head_kind(
-        &self,
-        zalsa: &Zalsa,
-        input: Id,
-        iteration: Option<IterationCount>,
-    ) -> CycleHeadKind {
-        let is_provisional = self
-            .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .is_some_and(|memo| {
-                Some(memo.revisions.iteration()) != iteration
-                    || !memo.revisions.verified_final.load(Ordering::Relaxed)
-            });
-        if is_provisional {
-            CycleHeadKind::Provisional
-        } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-            CycleHeadKind::FallbackImmediate
-        } else {
-            CycleHeadKind::Final
-        }
-    }
+    /// Returns `final` only if the memo has the `verified_final` flag set and the cycle recovery strategy is not `FallbackImmediate`.
+    ///
+    /// Otherwise, the value is still provisional. For both final and provisional, it also
+    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
+    fn provisional_status(&self, zalsa: &Zalsa, input: Id) -> Option<ProvisionalStatus> {
+        let memo =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
 
-    fn iteration(&self, zalsa: &Zalsa, input: Id) -> Option<IterationCount> {
-        self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .map(|memo| memo.revisions.iteration())
+        let iteration = memo.revisions.iteration();
+        let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
+
+        Some(if verified_final {
+            if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                ProvisionalStatus::FallbackImmediate
+            } else {
+                ProvisionalStatus::Final { iteration }
+            }
+        } else {
+            ProvisionalStatus::Provisional { iteration }
+        })
     }
 
     fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {

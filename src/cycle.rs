@@ -292,8 +292,18 @@ pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum CycleHeadKind {
-    Provisional,
-    Final,
+pub enum ProvisionalStatus {
+    Provisional { iteration: IterationCount },
+    Final { iteration: IterationCount },
     FallbackImmediate,
+}
+
+impl ProvisionalStatus {
+    pub(crate) const fn iteration(&self) -> Option<IterationCount> {
+        match self {
+            ProvisionalStatus::Provisional { iteration } => Some(*iteration),
+            ProvisionalStatus::Final { iteration } => Some(*iteration),
+            ProvisionalStatus::FallbackImmediate => None,
+        }
+    }
 }

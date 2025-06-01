@@ -50,7 +50,7 @@ fn cycle_result_b(_db: &dyn KnobsDatabase) -> u32 {
 }
 
 #[test_log::test]
-#[cfg(not(feature = "shuttle"))] // This test is currently failing.
+// #[cfg(not(feature = "shuttle"))] // This test is currently failing.
 fn the_test() {
     use crate::sync::thread;
     use crate::Knobs;
