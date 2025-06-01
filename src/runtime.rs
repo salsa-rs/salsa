@@ -1,10 +1,12 @@
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
+use crate::function::SyncGuard;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
 use crate::sync::Mutex;
 use crate::table::Table;
+use crate::zalsa::Zalsa;
 use crate::{Cancelled, Event, EventKind, Revision};
 
 mod dependency_graph;
@@ -34,16 +36,83 @@ pub struct Runtime {
     table: Table,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum WaitResult {
+#[derive(Copy, Clone, Debug)]
+pub(super) enum WaitResult {
     Completed,
     Panicked,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum BlockResult {
-    Completed,
-    Cycle,
+#[derive(Debug)]
+pub(crate) enum BlockResult<'me> {
+    /// The query is running on another thread.
+    Running(Running<'me>),
+
+    /// Blocking resulted in a cycle.
+    ///
+    /// The lock is hold by the current thread or there's another thread that is waiting on the current thread,
+    /// and blocking this thread on the other thread would result in a deadlock/cycle.
+    Cycle { same_thread: bool },
+}
+
+pub struct Running<'me>(Box<BlockedOnInner<'me>>);
+
+struct BlockedOnInner<'me> {
+    dg: crate::sync::MutexGuard<'me, DependencyGraph>,
+    query_mutex_guard: SyncGuard<'me>,
+    database_key: DatabaseKeyIndex,
+    other_id: ThreadId,
+    thread_id: ThreadId,
+}
+
+impl Running<'_> {
+    pub(crate) fn database_key(&self) -> DatabaseKeyIndex {
+        self.0.database_key
+    }
+
+    /// Blocks on the other thread to complete the computation.
+    pub(crate) fn block_on(self, zalsa: &Zalsa) {
+        let BlockedOnInner {
+            dg,
+            query_mutex_guard,
+            database_key,
+            other_id,
+            thread_id,
+        } = *self.0;
+
+        zalsa.event(&|| {
+            Event::new(EventKind::WillBlockOn {
+                other_thread_id: other_id,
+                database_key,
+            })
+        });
+
+        tracing::debug!(
+            "block_on: thread {thread_id:?} is blocking on {database_key:?} in thread {other_id:?}",
+        );
+
+        let result =
+            DependencyGraph::block_on(dg, thread_id, database_key, other_id, query_mutex_guard);
+
+        match result {
+            WaitResult::Panicked => {
+                // If the other thread panicked, then we consider this thread
+                // cancelled. The assumption is that the panic will be detected
+                // by the other thread and responded to appropriately.
+                Cancelled::PropagatedPanic.throw()
+            }
+            WaitResult::Completed => {}
+        }
+    }
+}
+
+impl std::fmt::Debug for Running<'_> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt.debug_struct("Running")
+            .field("database_key", &self.0.database_key)
+            .field("other_id", &self.0.other_id)
+            .field("thread_id", &self.0.thread_id)
+            .finish()
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -165,43 +234,32 @@ impl Runtime {
     ///
     /// If the thread `other_id` panics, then our thread is considered
     /// cancelled, so this function will panic with a `Cancelled` value.
-    pub(crate) fn block_on<QueryMutexGuard>(
-        &self,
-        zalsa: &crate::zalsa::Zalsa,
+    pub(crate) fn block<'a>(
+        &'a self,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
-        query_mutex_guard: QueryMutexGuard,
-    ) -> BlockResult {
+        query_mutex_guard: SyncGuard<'a>,
+    ) -> BlockResult<'a> {
         let thread_id = thread::current().id();
         // Cycle in the same thread.
         if thread_id == other_id {
-            return BlockResult::Cycle;
+            return BlockResult::Cycle { same_thread: true };
         }
 
         let dg = self.dependency_graph.lock();
 
         if dg.depends_on(other_id, thread_id) {
-            return BlockResult::Cycle;
+            tracing::debug!("block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}");
+            return BlockResult::Cycle { same_thread: false };
         }
 
-        zalsa.event(&|| {
-            Event::new(EventKind::WillBlockOn {
-                other_thread_id: other_id,
-                database_key,
-            })
-        });
-
-        let result =
-            DependencyGraph::block_on(dg, thread_id, database_key, other_id, query_mutex_guard);
-
-        match result {
-            WaitResult::Completed => BlockResult::Completed,
-
-            // If the other thread panicked, then we consider this thread
-            // cancelled. The assumption is that the panic will be detected
-            // by the other thread and responded to appropriately.
-            WaitResult::Panicked => Cancelled::PropagatedPanic.throw(),
-        }
+        BlockResult::Running(Running(Box::new(BlockedOnInner {
+            dg,
+            query_mutex_guard,
+            database_key,
+            other_id,
+            thread_id,
+        })))
     }
 
     /// Invoked when this runtime completed computing `database_key` with

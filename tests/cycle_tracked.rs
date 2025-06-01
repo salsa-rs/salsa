@@ -163,7 +163,7 @@ fn main() {
             "WillExecute { database_key: cost_to_start(Id(401)) }",
             "WillCheckCancellation",
             "WillCheckCancellation",
-            "WillIterateCycle { database_key: cost_to_start(Id(403)), iteration_count: 1, fell_back: false }",
+            "WillIterateCycle { database_key: cost_to_start(Id(403)), iteration_count: IterationCount(1), fell_back: false }",
             "WillCheckCancellation",
             "WillCheckCancellation",
             "WillCheckCancellation",

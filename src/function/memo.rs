@@ -3,14 +3,17 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
-use crate::cycle::{empty_cycle_heads, CycleHeadKind, CycleHeads};
+use crate::cycle::{empty_cycle_heads, CycleHead, CycleHeads, IterationCount, ProvisionalStatus};
 use crate::function::{Configuration, IngredientImpl};
+use crate::hash::FxHashSet;
+use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
+use crate::runtime::Running;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
+use crate::zalsa_local::{QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -105,6 +108,10 @@ const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
+        debug_assert!(
+            !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_empty(),
+            "Memo must be finalized if it has no cycle heads"
+        );
         Memo {
             value,
             verified_at: AtomicRevision::from(revision_now),
@@ -132,6 +139,7 @@ impl<V> Memo<V> {
     pub(super) fn provisional_retry(
         &self,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
         if self.revisions.cycle_heads().is_empty() {
@@ -142,62 +150,105 @@ impl<V> Memo<V> {
             return false;
         };
 
-        return provisional_retry_cold(zalsa, database_key_index, self.revisions.cycle_heads());
+        if self.block_on_heads(zalsa, zalsa_local) {
+            // If we get here, we are a provisional value of
+            // the cycle head (either initial value, or from a later iteration) and should be
+            // returned to caller to allow fixpoint iteration to proceed.
+            false
+        } else {
+            // all our cycle heads are complete; re-fetch
+            // and we should get a non-provisional memo.
+            tracing::debug!(
+                "Retrying provisional memo {database_key_index:?} after awaiting cycle heads."
+            );
+            true
+        }
+    }
+
+    /// Blocks on all cycle heads (recursively) that this memo depends on.
+    ///
+    /// Returns `true` if awaiting all cycle heads results in a cycle. This means, they're all waiting
+    /// for us to make progress.
+    #[inline(always)]
+    pub(super) fn block_on_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
+        // IMPORTANT: If you make changes to this function, make sure to run `cycle_nested_deep` with
+        // shuttle with at least 10k iterations.
+
+        // The most common case is that the entire cycle is running in the same thread.
+        // If that's the case, short circuit and return `true` immediately.
+        if self.all_cycles_on_stack(zalsa_local) {
+            return true;
+        }
+
+        // Otherwise, await all cycle heads, recursively.
+        return block_on_heads_cold(zalsa, self.cycle_heads());
 
         #[inline(never)]
-        fn provisional_retry_cold(
-            zalsa: &Zalsa,
-            database_key_index: DatabaseKeyIndex,
-            cycle_heads: &CycleHeads,
-        ) -> bool {
-            let mut retry = false;
-            let mut hit_cycle = false;
+        fn block_on_heads_cold(zalsa: &Zalsa, heads: &CycleHeads) -> bool {
+            let _entered = tracing::debug_span!("block_on_heads").entered();
+            let mut cycle_heads = TryClaimCycleHeadsIter::new(zalsa, heads);
+            let mut all_cycles = true;
 
-            for head in cycle_heads {
-                let head_index = head.database_key_index;
-
-                let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
-                let cycle_head_kind = ingredient.cycle_head_kind(zalsa, head_index.key_index());
-                if matches!(
-                    cycle_head_kind,
-                    CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
-                ) {
-                    // This cycle is already finalized, so we don't need to wait on it;
-                    // keep looping through cycle heads.
-                    retry = true;
-                    tracing::trace!("Dependent cycle head {head_index:?} has been finalized.");
-                } else if ingredient.wait_for(zalsa, head_index.key_index()) {
-                    tracing::trace!("Dependent cycle head {head_index:?} has been released (there's a new memo)");
-                    // There's a new memo available for the cycle head; fetch our own
-                    // updated memo and see if it's still provisional or if the cycle
-                    // has resolved.
-                    retry = true;
-                } else {
-                    // We hit a cycle blocking on the cycle head; this means it's in
-                    // our own active query stack and we are responsible to resolve the
-                    // cycle, so go ahead and return the provisional memo.
-                    tracing::debug!(
-                        "Waiting for {head_index:?} results in a cycle, return {database_key_index:?} once all other cycle heads completed to allow the outer cycle to make progress."
-                    );
-                    hit_cycle = true;
+            while let Some(claim_result) = cycle_heads.next() {
+                match claim_result {
+                    TryClaimHeadsResult::Cycle => {}
+                    TryClaimHeadsResult::Finalized => {
+                        all_cycles = false;
+                    }
+                    TryClaimHeadsResult::Available => {
+                        all_cycles = false;
+                    }
+                    TryClaimHeadsResult::Running(running) => {
+                        all_cycles = false;
+                        running.block_on(&mut cycle_heads);
+                    }
                 }
             }
 
-            // If `retry` is `true`, all our cycle heads (barring ourself) are complete; re-fetch
-            // and we should get a non-provisional memo. If we get here and `retry` is still
-            // `false`, we have no cycle heads other than ourself, so we are a provisional value of
-            // the cycle head (either initial value, or from a later iteration) and should be
-            // returned to caller to allow fixpoint iteration to proceed. (All cases in the loop
-            // above other than "cycle head is self" are either terminal or set `retry`.)
-            if hit_cycle {
-                false
-            } else if retry {
-                tracing::debug!("Retrying {database_key_index:?}");
-                true
-            } else {
-                false
+            all_cycles
+        }
+    }
+
+    /// Tries to claim all cycle heads to see if they're finalized or available.
+    ///
+    /// Unlike `block_on_heads`, this code does not block on any cycle head. Instead it returns `false` if
+    /// claiming all cycle heads failed because one of them is running on another thread.
+    pub(super) fn try_claim_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
+        let _entered = tracing::debug_span!("try_claim_heads").entered();
+        if self.all_cycles_on_stack(zalsa_local) {
+            return true;
+        }
+
+        let cycle_heads = TryClaimCycleHeadsIter::new(zalsa, self.revisions.cycle_heads());
+
+        for claim_result in cycle_heads {
+            match claim_result {
+                TryClaimHeadsResult::Cycle
+                | TryClaimHeadsResult::Finalized
+                | TryClaimHeadsResult::Available => {}
+                TryClaimHeadsResult::Running(_) => {
+                    return false;
+                }
             }
         }
+
+        true
+    }
+
+    fn all_cycles_on_stack(&self, zalsa_local: &ZalsaLocal) -> bool {
+        let cycle_heads = self.revisions.cycle_heads();
+        if cycle_heads.is_empty() {
+            return true;
+        }
+
+        zalsa_local.with_query_stack(|stack| {
+            cycle_heads.iter().all(|cycle_head| {
+                stack
+                    .iter()
+                    .rev()
+                    .any(|query| query.database_key_index == cycle_head.database_key_index)
+            })
+        })
     }
 
     /// Cycle heads that should be propagated to dependent queries.
@@ -252,7 +303,7 @@ impl<V> Memo<V> {
                         },
                     )
                     .field("verified_at", &self.memo.verified_at)
-                    // .field("revisions", &self.memo.revisions)
+                    .field("revisions", &self.memo.revisions)
                     .finish()
             }
         }
@@ -264,5 +315,121 @@ impl<V> Memo<V> {
 impl<V: Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
     fn origin(&self) -> QueryOriginRef<'_> {
         self.revisions.origin.as_ref()
+    }
+}
+
+pub(super) enum TryClaimHeadsResult<'me> {
+    /// Claiming every cycle head results in a cycle head.
+    Cycle,
+
+    /// The cycle head has been finalized.
+    Finalized,
+
+    /// The cycle head is not finalized, but it can be claimed.
+    Available,
+
+    /// The cycle head is currently executed on another thread.
+    Running(RunningCycleHead<'me>),
+}
+
+pub(super) struct RunningCycleHead<'me> {
+    inner: Running<'me>,
+    ingredient: &'me dyn Ingredient,
+}
+
+impl<'a> RunningCycleHead<'a> {
+    fn block_on(self, cycle_heads: &mut TryClaimCycleHeadsIter<'a>) {
+        let key_index = self.inner.database_key().key_index();
+        self.inner.block_on(cycle_heads.zalsa);
+
+        cycle_heads.queue_ingredient_heads(self.ingredient, key_index);
+    }
+}
+
+/// Iterator to try claiming the transitive cycle heads of a memo.
+struct TryClaimCycleHeadsIter<'a> {
+    zalsa: &'a Zalsa,
+    queue: Vec<CycleHead>,
+    queued: FxHashSet<CycleHead>,
+}
+
+impl<'a> TryClaimCycleHeadsIter<'a> {
+    fn new(zalsa: &'a Zalsa, heads: &CycleHeads) -> Self {
+        let queue: Vec<_> = heads.iter().copied().collect();
+        let queued: FxHashSet<_> = queue.iter().copied().collect();
+
+        Self {
+            zalsa,
+            queue,
+            queued,
+        }
+    }
+
+    fn queue_ingredient_heads(&mut self, ingredient: &dyn Ingredient, key: Id) {
+        // Recursively wait for all cycle heads that this head depends on. It's important
+        // that we fetch those from the updated memo because the cycle heads can change
+        // between iterations and new cycle heads can be added if a query depeonds on
+        // some cycle heads depending on a specific condition being met
+        // (`a` calls `b` and `c` in iteration 0 but `c` and `d` in iteration 1 or later).
+        // IMPORTANT: It's critical that we get the cycle head from the latest memo
+        // here, in case the memo has become part of another cycle (we need to block on that too!).
+        self.queue.extend(
+            ingredient
+                .cycle_heads(self.zalsa, key)
+                .iter()
+                .copied()
+                .filter(|head| self.queued.insert(*head)),
+        )
+    }
+}
+
+impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
+    type Item = TryClaimHeadsResult<'me>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let head = self.queue.pop()?;
+
+        let head_database_key = head.database_key_index;
+        let head_key_index = head_database_key.key_index();
+        let ingredient = self
+            .zalsa
+            .lookup_ingredient(head_database_key.ingredient_index());
+
+        let cycle_head_kind = ingredient
+            .provisional_status(self.zalsa, head_key_index)
+            .unwrap_or(ProvisionalStatus::Provisional {
+                iteration: IterationCount::initial(),
+            });
+
+        match cycle_head_kind {
+            ProvisionalStatus::Final { .. } | ProvisionalStatus::FallbackImmediate => {
+                // This cycle is already finalized, so we don't need to wait on it;
+                // keep looping through cycle heads.
+                tracing::trace!("Dependent cycle head {head:?} has been finalized.");
+                Some(TryClaimHeadsResult::Finalized)
+            }
+            ProvisionalStatus::Provisional { .. } => {
+                match ingredient.wait_for(self.zalsa, head_key_index) {
+                    WaitForResult::Cycle { .. } => {
+                        // We hit a cycle blocking on the cycle head; this means this query actively
+                        // participates in the cycle and some other query is blocked on this thread.
+                        tracing::debug!("Waiting for {head:?} results in a cycle");
+                        Some(TryClaimHeadsResult::Cycle)
+                    }
+                    WaitForResult::Running(running) => {
+                        tracing::debug!("Ingredient {head:?} is running: {running:?}");
+
+                        Some(TryClaimHeadsResult::Running(RunningCycleHead {
+                            inner: running,
+                            ingredient,
+                        }))
+                    }
+                    WaitForResult::Available => {
+                        self.queue_ingredient_heads(ingredient, head_key_index);
+                        Some(TryClaimHeadsResult::Available)
+                    }
+                }
+            }
+        }
     }
 }

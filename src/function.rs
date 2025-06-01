@@ -1,14 +1,17 @@
+pub(crate) use maybe_changed_after::VerifyResult;
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
-
-pub(crate) use maybe_changed_after::VerifyResult;
+use std::sync::atomic::Ordering;
+pub(crate) use sync::SyncGuard;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy};
+use crate::cycle::{
+    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
+};
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
-use crate::ingredient::Ingredient;
+use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::MemoIngredientMap;
 use crate::salsa_struct::SalsaStructInDb;
@@ -244,30 +247,46 @@ where
         self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
-    /// True if the input `input` contains a memo that cites itself as a cycle head.
-    /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
-    fn cycle_head_kind(&self, zalsa: &Zalsa, input: Id) -> CycleHeadKind {
-        let is_provisional = self
-            .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .is_some_and(|memo| {
-                memo.cycle_heads()
-                    .into_iter()
-                    .any(|head| head.database_key_index == self.database_key_index(input))
-            });
-        if is_provisional {
-            CycleHeadKind::Provisional
-        } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-            CycleHeadKind::FallbackImmediate
+    /// Returns `final` only if the memo has the `verified_final` flag set and the cycle recovery strategy is not `FallbackImmediate`.
+    ///
+    /// Otherwise, the value is still provisional. For both final and provisional, it also
+    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
+    fn provisional_status(&self, zalsa: &Zalsa, input: Id) -> Option<ProvisionalStatus> {
+        let memo =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
+
+        let iteration = memo.revisions.iteration();
+        let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
+
+        Some(if verified_final {
+            if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                ProvisionalStatus::FallbackImmediate
+            } else {
+                ProvisionalStatus::Final { iteration }
+            }
         } else {
-            CycleHeadKind::NotProvisional
-        }
+            ProvisionalStatus::Provisional { iteration }
+        })
     }
 
-    /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
-    fn wait_for(&self, zalsa: &Zalsa, key_index: Id) -> bool {
+    fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
+        self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+            .map(|memo| memo.cycle_heads())
+            .unwrap_or(empty_cycle_heads())
+    }
+
+    /// Attempts to claim `key_index` without blocking.
+    ///
+    /// * [`WaitForResult::Running`] if the `key_index` is running on another thread. It's up to the caller to block on the other thread
+    ///   to wait until the result becomes available.
+    /// * [`WaitForResult::Available`] It is (or at least was) possible to claim the `key_index`
+    /// * [`WaitResult::Cycle`] Claiming the `key_index` results in a cycle because it's on the current's thread query stack or
+    ///   running on another thread that is blocked on this thread.
+    fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim(zalsa, key_index) {
-            ClaimResult::Retry | ClaimResult::Claimed(_) => true,
-            ClaimResult::Cycle => false,
+            ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
+            ClaimResult::Cycle { same_thread } => WaitForResult::Cycle { same_thread },
+            ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }
 

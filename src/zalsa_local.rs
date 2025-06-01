@@ -7,7 +7,7 @@ use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
 use crate::active_query::QueryStack;
-use crate::cycle::{empty_cycle_heads, CycleHeads};
+use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -99,7 +99,7 @@ impl ZalsaLocal {
     pub(crate) fn push_query(
         &self,
         database_key_index: DatabaseKeyIndex,
-        iteration_count: u32,
+        iteration_count: IterationCount,
     ) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
         query_stack.push_new_query(database_key_index, iteration_count);
@@ -359,17 +359,22 @@ impl QueryRevisionsExtra {
         accumulated: AccumulatedMap,
         tracked_struct_ids: IdentityMap,
         cycle_heads: CycleHeads,
+        iteration: IterationCount,
     ) -> Self {
-        let inner =
-            if tracked_struct_ids.is_empty() && cycle_heads.is_empty() && accumulated.is_empty() {
-                None
-            } else {
-                Some(Box::new(QueryRevisionsExtraInner {
-                    accumulated,
-                    cycle_heads,
-                    tracked_struct_ids,
-                }))
-            };
+        let inner = if tracked_struct_ids.is_empty()
+            && cycle_heads.is_empty()
+            && accumulated.is_empty()
+            && iteration.is_initial()
+        {
+            None
+        } else {
+            Some(Box::new(QueryRevisionsExtraInner {
+                accumulated,
+                cycle_heads,
+                tracked_struct_ids,
+                iteration,
+            }))
+        };
 
         Self(inner)
     }
@@ -407,6 +412,8 @@ struct QueryRevisionsExtraInner {
     /// after each iteration, whether the cycle has converged or must
     /// iterate again.
     cycle_heads: CycleHeads,
+
+    iteration: IterationCount,
 }
 
 #[cfg(not(feature = "shuttle"))]
@@ -416,7 +423,7 @@ const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
-    [(); std::mem::size_of::<[usize; 9]>()];
+    [(); std::mem::size_of::<[usize; 10]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -430,6 +437,7 @@ impl QueryRevisions {
                 AccumulatedMap::default(),
                 IdentityMap::default(),
                 CycleHeads::initial(query),
+                IterationCount::initial(),
             ),
         }
     }
@@ -469,9 +477,24 @@ impl QueryRevisions {
                     AccumulatedMap::default(),
                     IdentityMap::default(),
                     cycle_heads,
+                    IterationCount::default(),
                 );
             }
         };
+    }
+
+    pub(crate) const fn iteration(&self) -> IterationCount {
+        match &self.extra.0 {
+            Some(extra) => extra.iteration,
+            None => IterationCount::initial(),
+        }
+    }
+
+    /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
+    pub(crate) fn update_iteration_count(&mut self, iteration_count: IterationCount) {
+        if let Some(extra) = &mut self.extra.0 {
+            extra.iteration = iteration_count
+        }
     }
 
     /// Returns a reference to the `IdentityMap` for this query, or `None` if the map is empty.

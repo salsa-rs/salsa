@@ -123,7 +123,7 @@ impl DependencyGraph {
             .unwrap_or_default();
 
         for from_id in dependents {
-            self.unblock_runtime(from_id, wait_result.clone());
+            self.unblock_runtime(from_id, wait_result);
         }
     }
 

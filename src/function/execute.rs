@@ -1,4 +1,4 @@
-use crate::cycle::{CycleRecoveryStrategy, MAX_ITERATIONS};
+use crate::cycle::{CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::sync::atomic::{AtomicBool, Ordering};
@@ -74,7 +74,9 @@ where
                     // Cycle participants that don't have a fallback will be discarded in
                     // `validate_provisional()`.
                     let cycle_heads = std::mem::take(cycle_heads);
-                    let active_query = db.zalsa_local().push_query(database_key_index, 0);
+                    let active_query = db
+                        .zalsa_local()
+                        .push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, C::id_to_input(db, id));
                     revisions = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
@@ -125,7 +127,7 @@ where
         memo_ingredient_index: MemoIngredientIndex,
     ) -> (C::Output<'db>, QueryRevisions) {
         let database_key_index = active_query.database_key_index;
-        let mut iteration_count: u32 = 0;
+        let mut iteration_count = IterationCount::initial();
         let mut fell_back = false;
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
@@ -189,12 +191,10 @@ where
                     match C::recover_from_cycle(
                         db,
                         &new_value,
-                        iteration_count,
+                        iteration_count.as_u32(),
                         C::id_to_input(db, id),
                     ) {
-                        crate::CycleRecoveryAction::Iterate => {
-                            tracing::debug!("{database_key_index:?}: execute: iterate again");
-                        }
+                        crate::CycleRecoveryAction::Iterate => {}
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
                             tracing::debug!(
                                 "{database_key_index:?}: execute: user cycle_fn says to fall back"
@@ -208,10 +208,9 @@ where
                     }
                     // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
                     // which is less than `u32::MAX`.
-                    iteration_count += 1;
-                    if iteration_count > MAX_ITERATIONS {
-                        panic!("{database_key_index:?}: execute: too many cycle iterations");
-                    }
+                    iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                        panic!("{database_key_index:?}: execute: too many cycle iterations")
+                    });
                     zalsa.event(&|| {
                         Event::new(EventKind::WillIterateCycle {
                             database_key: database_key_index,
@@ -220,6 +219,10 @@ where
                         })
                     });
                     cycle_heads.update_iteration_count(database_key_index, iteration_count);
+                    revisions.update_iteration_count(iteration_count);
+                    tracing::debug!(
+                        "{database_key_index:?}: execute: iterate again, revisions: {revisions:#?}"
+                    );
                     opt_last_provisional = Some(self.insert_memo(
                         zalsa,
                         id,
