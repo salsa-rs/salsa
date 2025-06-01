@@ -88,9 +88,13 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     }
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
+    /// This call doesn't block the current thread. Instead, it's up to the caller to block
+    /// in case `key_index` is [running](`WaitForResult::Running`) on another thread.
     ///
-    /// A return value of `true` indicates that a result is now available. A return value of
-    /// `false` means that a cycle was encountered; the waited-on query is either already claimed
+    /// A return value of [`WaitForResult::Available`] indicates that a result is now available.
+    /// A return value of [`WaitForResult::Running`] indicates that `key_index` is currently running
+    /// on an other thread, it's up to caller to block until the result becomes available if desired.
+    /// A return value of [`WaitForResult::Cycle`] means that a cycle was encountered; the waited-on query is either already claimed
     /// by the current thread, or by a thread waiting on the current thread.
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         _ = (zalsa, key_index);

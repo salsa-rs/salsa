@@ -366,14 +366,11 @@ impl<'a> TryClaimCycleHeadsIter<'a> {
     }
 
     fn queue_ingredient_heads(&mut self, ingredient: &dyn Ingredient, key: Id) {
-        // Recursively wait for all cycle heads that this head depends on.
-        // This is normally not necessary, because cycle heads are transitively added
-        // as query dependencies (they aggregate). The exception to this are queries
-        // that depend on a fixpoint initial value. They only depend on the fixpoint initial
-        // value but not on its dependencies because they aren't known yet. They're only known
-        // once the cycle completes but the cycle heads of the queries don't get updated.
-        // Because of that, recurse here to collect all cycle heads.
-        // This also ensures that if a query added new cycle heads, that they are awaited too.
+        // Recursively wait for all cycle heads that this head depends on. It's important
+        // that we fetch those from the updated memo because the cycle heads can change
+        // between iterations and new cycle heads can be added if a query depeonds on
+        // some cycle heads depending on a specific condition being met
+        // (`a` calls `b` and `c` in iteration 0 but `c` and `d` in iteration 1 or later).
         // IMPORTANT: It's critical that we get the cycle head from the latest memo
         // here, in case the memo has become part of another cycle (we need to block on that too!).
         self.queue.extend(

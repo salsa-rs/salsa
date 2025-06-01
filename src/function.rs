@@ -275,7 +275,13 @@ where
             .unwrap_or(empty_cycle_heads())
     }
 
-    /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
+    /// Attempts to claim `key_index` without blocking.
+    ///
+    /// * [`WaitForResult::Running`] if the `key_index` is running on another thread. It's up to the caller to block on the other thread
+    ///   to wait until the result becomes available.
+    /// * [`WaitForResult::Available`] It is (or at least was) possible to claim the `key_index`
+    /// * [`WaitResult::Cycle`] Claiming the `key_index` results in a cycle because it's on the current's thread query stack or
+    ///   running on another thread that is blocked on this thread.
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim(zalsa, key_index) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
