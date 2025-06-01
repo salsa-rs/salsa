@@ -129,7 +129,7 @@ where
                 if let Some(memo) = memo {
                     // This isn't strictly necessary, but if this is a provisional memo for an inner cycle,
                     // await all outer cycle heads to give the thread driving it a chance to complete
-                    // (we don't want multiple threads compute for the queries participating in the same cycle).
+                    // (we don't want multiple threads competing for the queries participating in the same cycle).
                     if memo.value.is_some() && memo.may_be_provisional() {
                         memo.block_on_heads(zalsa, zalsa_local);
                     }
