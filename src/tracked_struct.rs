@@ -7,7 +7,6 @@ use std::ops::Index;
 use std::{fmt, mem};
 
 use crossbeam_queue::SegQueue;
-use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
 use crate::cycle::CycleHeads;
@@ -221,18 +220,12 @@ impl Clone for IdentityMap {
             table: self.table.clone(),
         }
     }
+    fn clone_from(&mut self, source: &Self) {
+        self.table.clone_from(&source.table);
+    }
 }
 
 impl IdentityMap {
-    pub(crate) fn clone_from_slice(&mut self, source: &[(Identity, Id)]) {
-        self.table.clear();
-        self.table.reserve(source.len(), |(k, _)| k.hash);
-
-        for (key, id) in source {
-            self.insert(*key, *id);
-        }
-    }
-
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
         let entry = self.table.find_mut(key.hash, |&(k, _)| k == key);
         match entry {
@@ -255,12 +248,16 @@ impl IdentityMap {
         self.table.is_empty()
     }
 
+    pub(crate) fn retain(&mut self, mut f: impl FnMut(&Identity, &mut Id) -> bool) {
+        self.table.retain(|(k, v)| f(k, v));
+    }
+
     pub(crate) fn clear(&mut self) {
         self.table.clear()
     }
 
-    pub(crate) fn into_thin_vec(self) -> ThinVec<(Identity, Id)> {
-        self.table.into_iter().collect()
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.table.shrink_to_fit(|(k, _)| k.hash);
     }
 }
 
