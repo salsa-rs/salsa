@@ -151,6 +151,19 @@ struct ValueShared {
     durability: Durability,
 }
 
+impl ValueShared {
+    /// Returns `true` if this value slot can be reused when interning, and should be added to the LRU.
+    fn is_reusable(&self) -> bool {
+        // Collecting higher durability values requires invalidating the revision for their
+        // durability (see `Database::synthetic_write`, which requires a mutable reference to
+        // the database) to avoid short-circuiting calls to `maybe_changed_after`. This is
+        // necessary because `maybe_changed_after` for interned values is not "pure"; it updates
+        // the `last_interned_at` field before validating a given value to ensure that it is not
+        // reused after read in the current revision.
+        self.durability == Durability::LOW
+    }
+}
+
 impl<C> Value<C>
 where
     C: Configuration,
@@ -322,15 +335,17 @@ where
                     })
                 });
 
-                // Move the value to the front of the LRU list.
-                //
-                // SAFETY: We hold the lock for the shard containing the value, and `value` was
-                // previously interned, so is in the list.
-                unsafe { shard.lru.cursor_mut_from_ptr(value).remove() };
+                if value_shared.is_reusable() {
+                    // Move the value to the front of the LRU list.
+                    //
+                    // SAFETY: We hold the lock for the shard containing the value, and `value` is
+                    // a reusable value that was previously interned, so is in the list.
+                    unsafe { shard.lru.cursor_mut_from_ptr(value).remove() };
 
-                // SAFETY: The value pointer is valid for the lifetime of the database
-                // and never accessed mutably directly.
-                unsafe { shard.lru.push_front(UnsafeRef::from_raw(value)) };
+                    // SAFETY: The value pointer is valid for the lifetime of the database
+                    // and never accessed mutably directly.
+                    unsafe { shard.lru.push_front(UnsafeRef::from_raw(value)) };
+                }
             }
 
             // Record the maximum durability across all queries that intern this value.
@@ -379,12 +394,6 @@ where
             // will not find any stale slots.
             if !self.revision_queue.is_stale(value_shared.last_interned_at) {
                 break;
-            }
-
-            // We can't collect higher durability values until we have a mutable reference to the database.
-            if value_shared.durability != Durability::LOW {
-                cursor.move_prev();
-                continue;
             }
 
             // We should never reuse a value that was accessed in the current revision.
@@ -484,11 +493,13 @@ where
             // correct type.
             unsafe { self.clear_memos(zalsa, &mut memo_table, new_id) };
 
-            // Move the value to the front of the LRU list.
-            //
-            // SAFETY: The value pointer is valid for the lifetime of the database.
-            // and never accessed mutably directly.
-            shard.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
+            if value_shared.is_reusable() {
+                // Move the value to the front of the LRU list.
+                //
+                // SAFETY: The value pointer is valid for the lifetime of the database.
+                // and never accessed mutably directly.
+                shard.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
+            }
 
             return new_id;
         }
@@ -550,12 +561,16 @@ where
         });
 
         let value = zalsa.table().get::<Value<C>>(id);
+        // SAFETY: We hold the lock for the shard containing the value.
+        let value_shared = unsafe { &mut *value.shared.get() };
 
-        // Add the value to the front of the LRU list.
-        //
-        // SAFETY: The value pointer is valid for the lifetime of the database
-        // and never accessed mutably directly.
-        shard.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
+        if value_shared.is_reusable() {
+            // Add the value to the front of the LRU list.
+            //
+            // SAFETY: The value pointer is valid for the lifetime of the database
+            // and never accessed mutably directly.
+            shard.lru.push_front(unsafe { UnsafeRef::from_raw(value) });
+        }
 
         // SAFETY: We hold the lock for the shard containing the value.
         let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
@@ -808,7 +823,6 @@ where
 
     #[inline(always)]
     fn memos_mut(&mut self) -> &mut MemoTable {
-        // SAFETY: We have `&mut self`.
         self.memos.get_mut()
     }
 }
