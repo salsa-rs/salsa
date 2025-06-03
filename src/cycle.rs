@@ -63,8 +63,8 @@ use crate::sync::OnceLock;
 pub const MAX_ITERATIONS: IterationCount = IterationCount(200);
 
 pub struct UnexpectedCycle {
-    backtrace: std::backtrace::Backtrace,
-    query_trace: Option<crate::Backtrace>,
+    pub backtrace: std::backtrace::Backtrace,
+    pub query_trace: Option<crate::Backtrace>,
 }
 
 impl fmt::Display for UnexpectedCycle {
