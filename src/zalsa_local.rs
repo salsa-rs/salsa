@@ -3,6 +3,7 @@ use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 
 use rustc_hash::FxHashMap;
+use thin_vec::ThinVec;
 use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
@@ -371,7 +372,7 @@ impl QueryRevisionsExtra {
             Some(Box::new(QueryRevisionsExtraInner {
                 accumulated,
                 cycle_heads,
-                tracked_struct_ids,
+                tracked_struct_ids: tracked_struct_ids.into_thin_vec(),
                 iteration,
             }))
         };
@@ -401,7 +402,7 @@ struct QueryRevisionsExtraInner {
     ///   previous revision. To handle this, `diff_outputs` compares
     ///   the structs from the old/new revision and retains
     ///   only entries that appeared in the new revision.
-    tracked_struct_ids: IdentityMap,
+    tracked_struct_ids: ThinVec<(Identity, Id)>,
 
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
@@ -423,7 +424,7 @@ const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
-    [(); std::mem::size_of::<[usize; 10]>()];
+    [(); std::mem::size_of::<[usize; 7]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -498,16 +499,16 @@ impl QueryRevisions {
     }
 
     /// Returns a reference to the `IdentityMap` for this query, or `None` if the map is empty.
-    pub fn tracked_struct_ids(&self) -> Option<&IdentityMap> {
+    pub fn tracked_struct_ids(&self) -> Option<&[(Identity, Id)]> {
         self.extra
             .0
             .as_ref()
-            .map(|extra| &extra.tracked_struct_ids)
+            .map(|extra| &*extra.tracked_struct_ids)
             .filter(|tracked_struct_ids| !tracked_struct_ids.is_empty())
     }
 
     /// Returns a mutable reference to the `IdentityMap` for this query, or `None` if the map is empty.
-    pub fn tracked_struct_ids_mut(&mut self) -> Option<&mut IdentityMap> {
+    pub fn tracked_struct_ids_mut(&mut self) -> Option<&mut ThinVec<(Identity, Id)>> {
         self.extra
             .0
             .as_mut()
@@ -859,7 +860,7 @@ pub(crate) struct ActiveQueryGuard<'me> {
 
 impl ActiveQueryGuard<'_> {
     /// Initialize the tracked struct ids with the values from the prior execution.
-    pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &IdentityMap) {
+    pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &[(Identity, Id)]) {
         self.local_state.with_query_stack_mut(|stack| {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
@@ -867,7 +868,7 @@ impl ActiveQueryGuard<'_> {
             assert!(frame.tracked_struct_ids().is_empty());
             frame
                 .tracked_struct_ids_mut()
-                .clone_from(tracked_struct_ids);
+                .clone_from_slice(tracked_struct_ids);
         })
     }
 
