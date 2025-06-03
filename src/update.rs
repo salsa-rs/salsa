@@ -494,7 +494,6 @@ fallback_impl! { compact_str::CompactString, }
 
 macro_rules! tuple_impl {
     ($($t:ident),*; $($u:ident),*) => {
-        #[diagnostic::do_not_recommend]
         unsafe impl<$($t),*> Update for ($($t,)*)
         where
             $($t: Update,)*
