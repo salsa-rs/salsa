@@ -29,26 +29,62 @@ warning: elided lifetime has a name
 43 | ) -> ContainsRef<'_> {
    |                  ^^ this elided lifetime gets resolved as `'db`
 
-error: lifetime may not live long enough
+error[E0277]: the trait bound `&'db str: Update` is not satisfied
   --> tests/compile-fail/tracked_fn_return_ref.rs:15:67
    |
 15 | fn tracked_fn_return_ref<'db>(db: &'db dyn Db, input: MyInput) -> &'db str {
-   |                          --- lifetime `'db` defined here          ^ requires that `'db` must outlive `'static`
+   |                                                                   ^^^^^^^^ the trait `Update` is not implemented for `&'db str`
+   |
+   = help: the trait `Update` is implemented for `String`
+note: required by a bound in `<tracked_fn_return_ref::Configuration_ as salsa::function::Configuration>::execute::_assert_return_type_is_update::_assert_is_update`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:14:1
+   |
+14 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^ required by this bound in `_assert_is_update`
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: lifetime may not live long enough
+error[E0277]: the trait bound `ContainsRef<'db>: Update` is not satisfied
   --> tests/compile-fail/tracked_fn_return_ref.rs:23:6
    |
-20 | fn tracked_fn_return_struct_containing_ref<'db>(
-   |                                            --- lifetime `'db` defined here
-...
 23 | ) -> ContainsRef<'db> {
-   |      ^^^^^^^^^^^ requires that `'db` must outlive `'static`
+   |      ^^^^^^^^^^^^^^^^ the trait `Update` is not implemented for `ContainsRef<'db>`
+   |
+   = help: the following other types implement trait `Update`:
+             Arc<T>
+             BTreeMap<K, V>
+             BTreeSet<K>
+             Box<T>
+             Box<[T]>
+             HashMap<K, V, S>
+             HashSet<K, S>
+             Infallible
+           and $N others
+note: required by a bound in `<tracked_fn_return_struct_containing_ref::Configuration_ as salsa::function::Configuration>::execute::_assert_return_type_is_update::_assert_is_update`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:19:1
+   |
+19 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^ required by this bound in `_assert_is_update`
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: lifetime may not live long enough
+error[E0277]: the trait bound `ContainsRef<'db>: Update` is not satisfied
   --> tests/compile-fail/tracked_fn_return_ref.rs:43:6
    |
-40 | fn tracked_fn_return_struct_containing_ref_elided_explicit<'db>(
-   |                                                            --- lifetime `'db` defined here
-...
 43 | ) -> ContainsRef<'_> {
-   |      ^^^^^^^^^^^ requires that `'db` must outlive `'static`
+   |      ^^^^^^^^^^^^^^^ the trait `Update` is not implemented for `ContainsRef<'db>`
+   |
+   = help: the following other types implement trait `Update`:
+             Arc<T>
+             BTreeMap<K, V>
+             BTreeSet<K>
+             Box<T>
+             Box<[T]>
+             HashMap<K, V, S>
+             HashSet<K, S>
+             Infallible
+           and $N others
+note: required by a bound in `<tracked_fn_return_struct_containing_ref_elided_explicit::Configuration_ as salsa::function::Configuration>::execute::_assert_return_type_is_update::_assert_is_update`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:39:1
+   |
+39 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^ required by this bound in `_assert_is_update`
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
