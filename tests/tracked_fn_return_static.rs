@@ -6,16 +6,22 @@ use salsa::Database;
 #[salsa::input]
 struct Input {}
 
+#[derive(Clone, PartialEq)]
+struct NotUpdate<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+
 #[salsa::tracked]
-fn test(_db: &dyn salsa::Database, _: Input) -> &'static str {
-    "test"
+fn test(_db: &dyn salsa::Database, _: Input) -> NotUpdate<'static> {
+    NotUpdate {
+        _marker: std::marker::PhantomData,
+    }
 }
 
 #[test]
 fn invoke() {
     salsa::DatabaseImpl::new().attach(|db| {
         let input = Input::new(db);
-        let x: &str = test(db, input);
-        assert_eq!(x, "test");
+        test(db, input);
     })
 }
