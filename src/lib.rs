@@ -42,7 +42,7 @@ pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Upd
 pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
-pub use self::cycle::{CycleRecoveryAction, UnexpectedCycle};
+pub use self::cycle::CycleRecoveryAction;
 pub use self::database::{AsDynDatabase, Database};
 pub use self::database_impl::DatabaseImpl;
 pub use self::durability::Durability;
