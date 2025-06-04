@@ -281,8 +281,12 @@ where
     C: Configuration,
 {
     #[inline(always)]
-    unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
-        &self.memos
+    unsafe fn memos(
+        this: *const Self,
+        _current_revision: Revision,
+    ) -> *const crate::table::memo::MemoTable {
+        // SAFETY: Caller obligation demands this pointer to be valid.
+        unsafe { &raw const (*this).memos }
     }
 
     #[inline(always)]
