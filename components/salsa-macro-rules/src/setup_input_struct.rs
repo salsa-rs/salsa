@@ -80,14 +80,12 @@ macro_rules! setup_input_struct {
                 const FIELD_DEBUG_NAMES: &'static [&'static str] = &[$(stringify!($field_id)),*];
                 type Singleton = $zalsa::macro_if! {if $is_singleton {$zalsa::input::Singleton} else {$zalsa::input::NotSingleton}};
 
-                /// The input struct (which wraps an `Id`)
                 type Struct = $Struct;
 
-                /// A (possibly empty) tuple of the fields for this struct.
                 type Fields = ($($field_ty,)*);
 
-                /// A array of [`StampedValue<()>`](`StampedValue`) tuples, one per each of the value fields.
-                type Stamps = [$zalsa::Stamp; $N];
+                type Revisions = [$zalsa::Revision; $N];
+                type Durabilities = [$zalsa::Durability; $N];
             }
 
             impl $Configuration {
@@ -274,8 +272,8 @@ macro_rules! setup_input_struct {
                     let zalsa = db.zalsa();
                     let current_revision = zalsa.current_revision();
                     let ingredient = $Configuration::ingredient_(zalsa);
-                    let (fields, stamps) = builder::builder_into_inner(self, current_revision);
-                    ingredient.new_input(db.as_dyn_database(), fields, stamps)
+                    let (fields, revision, durabilities) = builder::builder_into_inner(self, current_revision);
+                    ingredient.new_input(db.as_dyn_database(), fields, revision, durabilities)
                 }
             }
 
@@ -294,10 +292,8 @@ macro_rules! setup_input_struct {
                     }
                 }
 
-                pub(super) fn builder_into_inner(builder: $Builder, revision: $zalsa::Revision) -> (($($field_ty,)*), [$zalsa::Stamp; $N]) {
-                    let stamps = [$($zalsa::stamp(revision, builder.durabilities[$field_index])),*];
-
-                    (builder.fields, stamps)
+                pub(super) fn builder_into_inner(builder: $Builder, revision: $zalsa::Revision) -> (($($field_ty,)*), [$zalsa::Revision; $N], [$zalsa::Durability; $N]) {
+                    (builder.fields, [revision; $N], [$(builder.durabilities[$field_index]),*])
                 }
 
                 #[must_use]

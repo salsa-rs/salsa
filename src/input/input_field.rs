@@ -59,7 +59,7 @@ where
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let value = <IngredientImpl<C>>::data(zalsa, input);
-        VerifyResult::changed_if(value.stamps[self.field_index].changed_at > revision)
+        VerifyResult::changed_if(value.revisions[self.field_index] > revision)
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

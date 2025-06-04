@@ -84,6 +84,7 @@ pub mod plumbing {
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
     pub use crate::database::{current_revision, Database};
+    pub use crate::durability::Durability;
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
     pub use crate::ingredient::{Ingredient, Jar, Location};
     pub use crate::key::DatabaseKeyIndex;
@@ -92,7 +93,7 @@ pub mod plumbing {
         NewMemoIngredientIndices,
     };
     pub use crate::revision::Revision;
-    pub use crate::runtime::{stamp, Runtime, Stamp, StampedValue};
+    pub use crate::runtime::{stamp, Runtime, Stamp};
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::tracked_struct::TrackedStructInDb;

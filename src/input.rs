@@ -14,7 +14,7 @@ use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::{Jar, Stamp};
+use crate::plumbing::Jar;
 use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::{Slot, Table};
@@ -35,8 +35,11 @@ pub trait Configuration: Any {
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields: Send + Sync;
 
-    /// A array of [`StampedValue<()>`](`StampedValue`) tuples, one per each of the value fields.
-    type Stamps: Send + Sync + fmt::Debug + IndexMut<usize, Output = Stamp>;
+    /// A array of [`Revision`], one per each of the value fields.
+    type Revisions: Send + Sync + fmt::Debug + IndexMut<usize, Output = Revision>;
+
+    /// A array of [`Durability`], one per each of the value fields.
+    type Durabilities: Send + Sync + fmt::Debug + IndexMut<usize, Output = Durability>;
 }
 
 pub struct JarImpl<C: Configuration> {
@@ -100,13 +103,20 @@ impl<C: Configuration> IngredientImpl<C> {
         DatabaseKeyIndex::new(self.ingredient_index, id.as_id())
     }
 
-    pub fn new_input(&self, db: &dyn Database, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
+    pub fn new_input(
+        &self,
+        db: &dyn Database,
+        fields: C::Fields,
+        revisions: C::Revisions,
+        durabilities: C::Durabilities,
+    ) -> C::Struct {
         let (zalsa, zalsa_local) = db.zalsas();
 
         let id = self.singleton.with_scope(|| {
             zalsa_local.allocate(zalsa, self.ingredient_index, |_| Value::<C> {
                 fields,
-                stamps,
+                revisions,
+                durabilities,
                 memos: Default::default(),
             })
         });
@@ -139,14 +149,14 @@ impl<C: Configuration> IngredientImpl<C> {
         // Also, we don't access any other data from the table while `r` is active.
         let data = unsafe { &mut *data_raw };
 
-        let stamp = &mut data.stamps[field_index];
+        data.revisions[field_index] = runtime.current_revision();
 
-        if stamp.durability != Durability::MIN {
-            runtime.report_tracked_write(stamp.durability);
+        let field_durability = &mut data.durabilities[field_index];
+        if *field_durability != Durability::MIN {
+            runtime.report_tracked_write(*field_durability);
         }
+        *field_durability = durability.unwrap_or(*field_durability);
 
-        stamp.durability = durability.unwrap_or(stamp.durability);
-        stamp.changed_at = runtime.current_revision();
         setter(&mut data.fields)
     }
 
@@ -174,11 +184,12 @@ impl<C: Configuration> IngredientImpl<C> {
         let field_ingredient_index = self.ingredient_index.successor(field_index);
         let id = id.as_id();
         let value = Self::data(zalsa, id);
-        let stamp = &value.stamps[field_index];
+        let durability = value.durabilities[field_index];
+        let revision = value.revisions[field_index];
         zalsa_local.report_tracked_read_simple(
             DatabaseKeyIndex::new(field_ingredient_index, id),
-            stamp.durability,
-            stamp.changed_at,
+            durability,
+            revision,
         );
         &value.fields
     }
@@ -251,8 +262,11 @@ where
     /// a particular revision.
     fields: C::Fields,
 
-    /// The revision and durability information for each field: when did this field last change.
-    stamps: C::Stamps,
+    /// Revisions of the fields.
+    revisions: C::Revisions,
+
+    /// Durabilities of the fields.
+    durabilities: C::Durabilities,
 
     /// Memos
     memos: MemoTable,
