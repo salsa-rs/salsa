@@ -1,4 +1,4 @@
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, UnexpectedCycle};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
@@ -161,7 +161,13 @@ where
                 }
                 // no provisional value; create/insert/return initial provisional value
                 return match C::CYCLE_STRATEGY {
-                    CycleRecoveryStrategy::Panic => UnexpectedCycle::throw(),
+                    CycleRecoveryStrategy::Panic => zalsa_local.with_query_stack(|stack| {
+                        panic!(
+                            "dependency graph cycle when querying {database_key_index:#?}, \
+                            set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                            Query stack:\n{stack:#?}",
+                        );
+                    }),
                     CycleRecoveryStrategy::Fixpoint => {
                         tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \

@@ -1,7 +1,5 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{
-    CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus, UnexpectedCycle,
-};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -108,7 +106,13 @@ where
                 return None;
             }
             ClaimResult::Cycle { .. } => match C::CYCLE_STRATEGY {
-                CycleRecoveryStrategy::Panic => UnexpectedCycle::throw(),
+                CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
+                    panic!(
+                        "dependency graph cycle when validating {database_key_index:#?}, \
+                        set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                        Query stack:\n{stack:#?}",
+                    );
+                }),
                 CycleRecoveryStrategy::FallbackImmediate => {
                     return Some(VerifyResult::unchanged());
                 }
