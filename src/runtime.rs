@@ -116,28 +116,15 @@ impl std::fmt::Debug for Running<'_> {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct StampedValue<V> {
-    pub value: V,
+pub struct Stamp {
     pub durability: Durability,
     pub changed_at: Revision,
 }
 
-pub type Stamp = StampedValue<()>;
-
 pub fn stamp(revision: Revision, durability: Durability) -> Stamp {
-    StampedValue {
-        value: (),
+    Stamp {
         durability,
         changed_at: revision,
-    }
-}
-
-impl<V> StampedValue<V> {
-    // FIXME: Use or remove this.
-    #[allow(dead_code)]
-    pub(crate) fn merge_revision_info<U>(&mut self, other: &StampedValue<U>) {
-        self.durability = self.durability.min(other.durability);
-        self.changed_at = self.changed_at.max(other.changed_at);
     }
 }
 

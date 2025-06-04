@@ -17,7 +17,7 @@ use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::ZalsaLocal;
 use crate::revision::OptionalAtomicRevision;
-use crate::runtime::StampedValue;
+use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
@@ -435,7 +435,7 @@ where
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         current_revision: Revision,
-        current_deps: &StampedValue<()>,
+        current_deps: &Stamp,
         fields: C::Fields<'db>,
     ) -> Id {
         let value = |_| Value {
@@ -496,7 +496,7 @@ where
         zalsa: &'db Zalsa,
         current_revision: Revision,
         mut id: Id,
-        current_deps: &StampedValue<()>,
+        current_deps: &Stamp,
         fields: C::Fields<'db>,
     ) -> Result<Id, C::Fields<'db>> {
         let data_raw = Self::data_raw(zalsa.table(), id);

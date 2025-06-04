@@ -141,7 +141,6 @@ impl ActiveQuery {
 
     pub(super) fn stamp(&self) -> Stamp {
         Stamp {
-            value: (),
             durability: self.durability,
             changed_at: self.changed_at,
         }
