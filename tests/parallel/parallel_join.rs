@@ -2,9 +2,14 @@
 
 // test for rayon-like join interactions.
 
-use salsa::{Cancelled, Setter};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
-use crate::setup::{Knobs, KnobsDatabase};
+use salsa::{Cancelled, Database, Setter, Storage};
+
+use crate::signal::Signal;
 
 #[salsa::input]
 struct ParallelInput {
@@ -101,4 +106,71 @@ fn execute_cancellation() {
         PendingWrite
     "#]]
     .assert_debug_eq(&cancelled);
+}
+
+#[salsa::db]
+trait KnobsDatabase: Database {
+    fn signal(&self, stage: usize);
+    fn wait_for(&self, stage: usize);
+}
+
+/// A copy of `tests\parallel\setup.rs` that does not assert, as the assert is incorrect for the
+/// purposes of this test.
+#[salsa::db]
+struct Knobs {
+    storage: salsa::Storage<Self>,
+    signal: Arc<Signal>,
+    signal_on_did_cancel: Arc<AtomicUsize>,
+}
+
+impl Knobs {
+    pub fn signal_on_did_cancel(&self, stage: usize) {
+        self.signal_on_did_cancel.store(stage, Ordering::Release);
+    }
+}
+
+impl Clone for Knobs {
+    #[track_caller]
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            signal: self.signal.clone(),
+            signal_on_did_cancel: self.signal_on_did_cancel.clone(),
+        }
+    }
+}
+
+impl Default for Knobs {
+    fn default() -> Self {
+        let signal = <Arc<Signal>>::default();
+        let signal_on_did_cancel = Arc::new(AtomicUsize::new(0));
+
+        Self {
+            storage: Storage::new(Some(Box::new({
+                let signal = signal.clone();
+                let signal_on_did_cancel = signal_on_did_cancel.clone();
+                move |event| {
+                    if let salsa::EventKind::DidSetCancellationFlag = event.kind {
+                        signal.signal(signal_on_did_cancel.load(Ordering::Acquire));
+                    }
+                }
+            }))),
+            signal,
+            signal_on_did_cancel,
+        }
+    }
+}
+
+#[salsa::db]
+impl salsa::Database for Knobs {}
+
+#[salsa::db]
+impl KnobsDatabase for Knobs {
+    fn signal(&self, stage: usize) {
+        self.signal.signal(stage);
+    }
+
+    fn wait_for(&self, stage: usize) {
+        self.signal.wait_for(stage);
+    }
 }
