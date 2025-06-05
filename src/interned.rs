@@ -125,6 +125,7 @@ where
 }
 
 /// Shared value data can only be read through the lock.
+#[repr(Rust, packed)] // Allow `durability` to be stored in the padding of the outer `Value` struct.
 struct ValueShared {
     /// The interned ID for this value.
     ///
@@ -325,7 +326,7 @@ where
             let value_shared = unsafe { &mut *value.shared.get() };
 
             // Validate the value in this revision to avoid reuse.
-            if value_shared.last_interned_at < current_revision {
+            if { value_shared.last_interned_at } < current_revision {
                 value_shared.last_interned_at = current_revision;
 
                 zalsa.event(&|| {
@@ -397,7 +398,7 @@ where
             }
 
             // We should never reuse a value that was accessed in the current revision.
-            debug_assert!(value_shared.last_interned_at < current_revision);
+            debug_assert!({ value_shared.last_interned_at } < current_revision);
 
             // Record the durability of the current query on the interned value.
             let (durability, last_interned_at) = zalsa_local
@@ -699,7 +700,7 @@ where
                 let value_shared = unsafe { &mut *value.shared.get() };
 
                 let last_changed_revision = zalsa.last_changed_revision(value_shared.durability);
-                value_shared.last_interned_at >= last_changed_revision
+                ({ value_shared.last_interned_at }) >= last_changed_revision
             },
             "Data was not interned in the latest revision for its durability."
         );
