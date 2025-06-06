@@ -167,7 +167,7 @@ impl Table {
     #[inline]
     pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
         let (page_idx, _) = split_id(id);
-        self.pages[page_idx.0].ingredient
+        unsafe { self.pages.get_unchecked(page_idx.0).ingredient }
     }
 
     /// Get a reference to the data for `id`, which must have been allocated from this table with type `T`.
@@ -178,7 +178,7 @@ impl Table {
     pub(crate) fn get<T: Slot>(&self, id: Id) -> &T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
-        &page_ref.data()[slot.0]
+        unsafe { page_ref.data().get_unchecked(slot.0) }
     }
 
     /// Get a raw pointer to the data for `id`, which must have been allocated from this table.
@@ -193,7 +193,7 @@ impl Table {
     pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
-        page_ref.page_data()[slot.0].get().cast::<T>()
+        unsafe { page_ref.page_data().get_unchecked(slot.0).get().cast::<T>() }
     }
 
     /// Gets a reference to the page which has slots of type `T`
@@ -203,7 +203,7 @@ impl Table {
     /// If `page` is out of bounds or the type `T` is incorrect.
     #[inline]
     pub(crate) fn page<T: Slot>(&self, page: PageIndex) -> PageView<'_, T> {
-        self.pages[page.0].assert_type::<T>()
+        unsafe { self.pages.get_unchecked(page.0).assert_type::<T>() }
     }
 
     /// Allocate a new page for the given ingredient and with slots of type `T`
@@ -228,7 +228,7 @@ impl Table {
         current_revision: Revision,
     ) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
-        let page = &self.pages[page.0];
+        let page = unsafe { self.pages.get_unchecked(page.0) };
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
         let memos = unsafe { &*(page.slot_vtable.memos)(page.get(slot), current_revision) };
         // SAFETY: The `Page` keeps the correct memo types.
@@ -239,10 +239,7 @@ impl Table {
     pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypesMut<'_> {
         let (page, slot) = split_id(id);
         let page_index = page.0;
-        let page = self
-            .pages
-            .get_mut(page_index)
-            .unwrap_or_else(|| panic!("index `{page_index}` is uninitialized"));
+        let page = unsafe { self.pages.get_unchecked_mut(page_index) };
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
         let memos = unsafe { &mut *(page.slot_vtable.memos_mut)(page.get(slot)) };
         // SAFETY: The `Page` keeps the correct memo types.
