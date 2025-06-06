@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.22.0...salsa-macros-v0.23.0) - 2025-06-06
+
+### Other
+
+- Update dependencies, remove unused `heck` dependency ([#894](https://github.com/salsa-rs/salsa/pull/894))
+- Allow lifetimes in arguments in tracked fns with >1 parameters ([#880](https://github.com/salsa-rs/salsa/pull/880))
+
 ## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.21.1...salsa-macros-v0.22.0) - 2025-05-23
 
 ### Other
