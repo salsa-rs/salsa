@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.22.0...salsa-v0.23.0) - 2025-06-06
+
+### Fixed
+
+- multithreaded nested fixpoint iteration ([#882](https://github.com/salsa-rs/salsa/pull/882))
+
+### Other
+
+- Assert size for interned `Value` ([#901](https://github.com/salsa-rs/salsa/pull/901))
+- reduce size of interned value metadata ([#903](https://github.com/salsa-rs/salsa/pull/903))
+- panic with string message again for cycle panics ([#898](https://github.com/salsa-rs/salsa/pull/898))
+- Use `Revision` and `Durability` directly in input `Value` ([#902](https://github.com/salsa-rs/salsa/pull/902))
+- Fix flaky parallel_join test ([#900](https://github.com/salsa-rs/salsa/pull/900))
+- Bump MSRV to 1.85 ([#899](https://github.com/salsa-rs/salsa/pull/899))
+- Simple LRU garbage collection for interned values ([#839](https://github.com/salsa-rs/salsa/pull/839))
+- Capture execution backtrace when throwing `UnexpectedCycle` ([#883](https://github.com/salsa-rs/salsa/pull/883))
+- Store tracked struct ids as ThinVec on Revisions ([#892](https://github.com/salsa-rs/salsa/pull/892))
+- Update dependencies, remove unused `heck` dependency ([#894](https://github.com/salsa-rs/salsa/pull/894))
+- Set `validate_final` in `execute` after removing the last cycle head ([#890](https://github.com/salsa-rs/salsa/pull/890))
+- Pack `QueryEdge` memory layout ([#886](https://github.com/salsa-rs/salsa/pull/886))
+- Lazily allocate extra memo state ([#888](https://github.com/salsa-rs/salsa/pull/888))
+- Pack `QueryOrigin` memory layout ([#885](https://github.com/salsa-rs/salsa/pull/885))
+- Restrict memo size assertion to 64bit platforms ([#884](https://github.com/salsa-rs/salsa/pull/884))
+- Don't report stale outputs if there is newer generation in new_outputs ([#879](https://github.com/salsa-rs/salsa/pull/879))
+- Fix hang in nested fixpoint iteration ([#871](https://github.com/salsa-rs/salsa/pull/871))
+- Add debug spans for `new_revision` and `evict_lru` ([#881](https://github.com/salsa-rs/salsa/pull/881))
+- Add fetch span ([#875](https://github.com/salsa-rs/salsa/pull/875))
+- shrink_to_fit `IdentityMap` before storing it ([#816](https://github.com/salsa-rs/salsa/pull/816))
+- Allow lifetimes in arguments in tracked fns with >1 parameters ([#880](https://github.com/salsa-rs/salsa/pull/880))
+- Replace loom with shuttle ([#876](https://github.com/salsa-rs/salsa/pull/876))
+- Use generational identifiers for tracked structs ([#864](https://github.com/salsa-rs/salsa/pull/864))
+
 ## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.21.1...salsa-v0.22.0) - 2025-05-23
 
 ### Fixed
