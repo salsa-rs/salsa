@@ -91,6 +91,12 @@ impl Macro {
             ty
         });
         let output_ty = self.output_ty(&db_lt, &item)?;
+        let mut has_lifetime_visitor = HasLifetimeVisitor {
+            has_lifetime: false,
+        };
+        syn::visit::visit_type(&mut has_lifetime_visitor, &output_ty);
+        let has_lifetime = has_lifetime_visitor.has_lifetime;
+
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
@@ -184,11 +190,23 @@ impl Macro {
             UpdateDispatch::<#output_ty>::maybe_update
         };
         let assert_return_type_is_update = if requires_update {
-            quote! {
-                #[allow(clippy::all, warnings)]
-                fn _assert_return_type_is_update<#db_lt>()  {
-                    use #zalsa::{UpdateFallback, UpdateDispatch};
-                    #maybe_update_path;
+            if has_lifetime {
+                // don't import the `UpdateFallback` if we have non-static
+                // lifetimes to avoid confusing errors
+                quote! {
+                    #[allow(clippy::all, warnings)]
+                    fn _assert_return_type_is_update<#db_lt>()  {
+                        fn _assert_is_update<T: #zalsa::Update>() { }
+                        _assert_is_update::<#output_ty>();
+                    }
+                }
+            } else {
+                quote! {
+                    #[allow(clippy::all, warnings)]
+                    fn _assert_return_type_is_update<#db_lt>()  {
+                        use #zalsa::{UpdateFallback, UpdateDispatch};
+                        #maybe_update_path;
+                    }
                 }
             }
         } else {
@@ -304,6 +322,19 @@ struct ToDbLifetimeVisitor {
 impl syn::visit_mut::VisitMut for ToDbLifetimeVisitor {
     fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
         i.clone_from(&self.db_lifetime);
+    }
+}
+
+struct HasLifetimeVisitor {
+    has_lifetime: bool,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for HasLifetimeVisitor {
+    fn visit_lifetime(&mut self, l: &'ast syn::Lifetime) {
+        // We don't consider `'static` to be a lifetime in this context.
+        if l.ident != "static" {
+            self.has_lifetime = true;
+        }
     }
 }
 
