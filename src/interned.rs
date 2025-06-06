@@ -92,15 +92,19 @@ impl<C: Configuration> Default for IngredientShard<C> {
 
 // SAFETY: `LinkedListLink` is `!Sync`, however, the linked list is only accessed through the
 // ingredient lock, and values are only ever linked to a single list on the ingredient.
-unsafe impl<C: Configuration> Sync for Value<C> {}
+unsafe impl<Fields: Sync> Sync for Value<Fields> {}
 
-intrusive_adapter!(ValueAdapter<C> = UnsafeRef<Value<C>>: Value<C> { link: LinkedListLink } where C: Configuration);
+intrusive_adapter!(ValueAdapter<C> = UnsafeRef<ValueForConfiguration<C>>: ValueForConfiguration<C> { link: LinkedListLink } where C: Configuration);
+
+#[cfg(not(feature = "shuttle"))]
+#[cfg(target_pointer_width = "64")]
+const _: [(); std::mem::size_of::<Value<()>>()] = [(); std::mem::size_of::<[usize; 7]>()];
+
+#[allow(type_alias_bounds)]
+type ValueForConfiguration<C: Configuration> = Value<C::Fields<'static>>;
 
 /// Struct storing the interned fields.
-pub struct Value<C>
-where
-    C: Configuration,
-{
+pub struct Value<Fields> {
     /// The index of the shard containing this value.
     shard: u16,
 
@@ -111,7 +115,7 @@ where
     ///
     /// These are valid for read-only access as long as the lock is held
     /// or the value has been validated in the current revision.
-    fields: UnsafeCell<C::Fields<'static>>,
+    fields: UnsafeCell<Fields>,
 
     /// Memos attached to this interned value.
     ///
@@ -165,13 +169,10 @@ impl ValueShared {
     }
 }
 
-impl<C> Value<C>
-where
-    C: Configuration,
-{
+impl<Fields> Value<Fields> {
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
-    pub fn fields(&self) -> &C::Fields<'static> {
+    pub fn fields(&self) -> &Fields {
         // SAFETY: The fact that this function is safe is technically unsound. However, interned
         // values are only exposed if they have been validated in the current revision, which
         // ensures that they are not reused while being accessed.
@@ -548,7 +549,9 @@ where
             .unwrap_or((Durability::MAX, Revision::max()));
 
         // Allocate the value slot.
-        let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
+        let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| ValueForConfiguration::<
+            C,
+        > {
             shard: shard_index as u16,
             link: LinkedListLink::new(),
             memos: UnsafeCell::new(MemoTable::default()),
@@ -561,7 +564,7 @@ where
             }),
         });
 
-        let value = zalsa.table().get::<Value<C>>(id);
+        let value = Self::table_get(zalsa, id);
         // SAFETY: We hold the lock for the shard containing the value.
         let value_shared = unsafe { &mut *value.shared.get() };
 
@@ -580,7 +583,7 @@ where
         shard.key_map.insert_unique(hash, id, hasher);
 
         debug_assert_eq!(hash, {
-            let value = zalsa.table().get::<Value<C>>(id);
+            let value = Self::table_get(zalsa, id);
 
             // SAFETY: We hold the lock for the shard containing the value.
             unsafe { self.hasher.hash_one(&*value.fields.get()) }
@@ -652,7 +655,7 @@ where
     unsafe fn value_hash<'db>(&'db self, id: Id, zalsa: &'db Zalsa) -> u64 {
         // This closure is only called if the table is resized. So while it's expensive
         // to lookup all values, it will only happen rarely.
-        let value = zalsa.table().get::<Value<C>>(id);
+        let value = Self::table_get(zalsa, id);
 
         // SAFETY: We hold the lock for the shard containing the value.
         unsafe { self.hasher.hash_one(&*value.fields.get()) }
@@ -667,12 +670,12 @@ where
         id: Id,
         key: &Key,
         zalsa: &'db Zalsa,
-        found_value: &Cell<Option<&'db Value<C>>>,
+        found_value: &Cell<Option<&'db ValueForConfiguration<C>>>,
     ) -> bool
     where
         C::Fields<'db>: HashEqLike<Key>,
     {
-        let value = zalsa.table().get::<Value<C>>(id);
+        let value = Self::table_get(zalsa, id);
         found_value.set(Some(value));
 
         // SAFETY: We hold the lock for the shard containing the value.
@@ -690,7 +693,7 @@ where
     /// Lookup the data for an interned value based on its ID.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
         let zalsa = db.zalsa();
-        let value = zalsa.table().get::<Value<C>>(id);
+        let value = Self::table_get(zalsa, id);
 
         debug_assert!(
             {
@@ -732,8 +735,16 @@ where
     pub fn entries<'db>(
         &'db self,
         db: &'db dyn crate::Database,
-    ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa().table().slots_of::<Value<C>>()
+    ) -> impl Iterator<Item = &'db ValueForConfiguration<C>> {
+        db.zalsa().table().slots_of::<ValueForConfiguration<C>>()
+    }
+
+    #[inline]
+    fn table_get(zalsa: &Zalsa, id: Id) -> &ValueForConfiguration<C>
+    where
+        C: Configuration,
+    {
+        zalsa.table().get::<ValueForConfiguration<C>>(id)
     }
 }
 
@@ -762,7 +773,7 @@ where
         let current_revision = zalsa.current_revision();
         self.revision_queue.record(current_revision);
 
-        let value = zalsa.table().get::<Value<C>>(input);
+        let value = zalsa.table().get::<ValueForConfiguration<C>>(input);
 
         // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
         let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
@@ -811,10 +822,7 @@ where
     }
 }
 
-impl<C> Slot for Value<C>
-where
-    C: Configuration,
-{
+impl<Fields: Send + Sync + 'static> Slot for Value<Fields> {
     #[inline(always)]
     unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
         // SAFETY: The fact that we have a reference to the `Value` means it must
