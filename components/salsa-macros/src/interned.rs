@@ -101,6 +101,7 @@ impl Macro {
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
         let field_indexed_tys = salsa_struct.field_indexed_tys();
+        let field_unused_attrs = salsa_struct.field_attrs();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let has_lifetime = salsa_struct.generate_lifetime();
         let id = salsa_struct.id();
@@ -147,6 +148,7 @@ impl Macro {
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
                     field_indexed_tys: [#(#field_indexed_tys),*],
+                    field_attrs: [#([#(#field_unused_attrs),*]),*],
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,
                     unused_names: [

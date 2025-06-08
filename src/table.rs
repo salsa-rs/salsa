@@ -377,7 +377,7 @@ impl Page {
     }
 
     #[inline]
-    fn assert_type<T: Slot>(&self) -> PageView<T> {
+    fn assert_type<T: Slot>(&self) -> PageView<'_, T> {
         assert_eq!(
             self.slot_type_id,
             TypeId::of::<T>(),
@@ -388,7 +388,7 @@ impl Page {
         PageView(self, PhantomData)
     }
 
-    fn cast_type<T: Slot>(&self) -> Option<PageView<T>> {
+    fn cast_type<T: Slot>(&self) -> Option<PageView<'_, T>> {
         if self.slot_type_id == TypeId::of::<T>() {
             Some(PageView(self, PhantomData))
         } else {

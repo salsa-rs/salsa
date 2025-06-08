@@ -72,6 +72,10 @@ macro_rules! setup_tracked_struct {
         // (see e.g. @return_mode below).
         untracked_options: [$($untracked_option:tt),*],
 
+        // Attrs for each field.
+        tracked_field_attrs: [$([$(#[$tracked_field_attr:meta]),*]),*],
+        untracked_field_attrs: [$([$(#[$untracked_field_attr:meta]),*]),*],
+
         // Number of tracked fields.
         num_tracked_fields: $N:literal,
 
@@ -256,6 +260,7 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
+                    $(#[$tracked_field_attr])*
                     $tracked_getter_vis fn $tracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
@@ -272,6 +277,7 @@ macro_rules! setup_tracked_struct {
                 )*
 
                 $(
+                    $(#[$untracked_field_attr])*
                     $untracked_getter_vis fn $untracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($untracked_option, $db_lt, $untracked_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`

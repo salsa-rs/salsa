@@ -54,6 +54,9 @@ macro_rules! setup_interned_struct {
         // Indexed types for each field (T0, T1, ...)
         field_indexed_tys: [$($indexed_ty:ident),*],
 
+        // Attrs for each field.
+        field_attrs: [$([$(#[$field_attr:meta]),*]),*],
+
         // Number of fields
         num_fields: $N:literal,
 
@@ -211,6 +214,7 @@ macro_rules! setup_interned_struct {
                 }
 
                 $(
+                    $(#[$field_attr])*
                     $field_getter_vis fn $field_getter_id<$Db>(self, db: &'db $Db) -> $zalsa::return_mode_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
