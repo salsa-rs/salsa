@@ -101,6 +101,7 @@ impl Macro {
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
         let field_durability_ids = salsa_struct.field_durability_ids();
+        let field_attrs = salsa_struct.field_attrs();
         let is_singleton = self.args.singleton.is_some();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
@@ -125,6 +126,7 @@ impl Macro {
                     field_setters: [#(#field_vis #field_setter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
+                    field_attrs: [#([#(#field_attrs),*]),*],
                     required_fields: [#(#required_fields),*],
                     field_durability_ids: [#(#field_durability_ids),*],
                     num_fields: #num_fields,

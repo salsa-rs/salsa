@@ -32,6 +32,9 @@ macro_rules! setup_input_struct {
         // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
         field_indices: [$($field_index:tt),*],
 
+        // Attributes for each field
+        field_attrs: [$([$(#[$field_attr:meta]),*]),*],
+
         // Fields that are required (have no default value). Each item is the fields name and type.
         required_fields: [$($required_field_id:ident $required_field_ty:ty),*],
 
@@ -176,6 +179,7 @@ macro_rules! setup_input_struct {
                 }
 
                 $(
+                    $(#[$field_attr])*
                     $field_getter_vis fn $field_getter_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::return_mode_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
