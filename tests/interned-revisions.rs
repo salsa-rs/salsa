@@ -4,7 +4,7 @@
 mod common;
 use common::LogDatabase;
 use expect_test::expect;
-use salsa::{Database, Setter};
+use salsa::{Database, Durability, Setter};
 use test_log::test;
 
 #[salsa::input]
@@ -231,6 +231,51 @@ fn test_reuse() {
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(9)) }",
         ]"#]]);
+}
+
+#[test]
+fn test_reuse_indirect() {
+    #[salsa::tracked]
+    fn intern<'db>(db: &'db dyn Database, input: Input, value: usize) -> Interned<'db> {
+        intern_inner(db, input, value)
+    }
+
+    #[salsa::tracked]
+    fn intern_inner<'db>(db: &'db dyn Database, input: Input, value: usize) -> Interned<'db> {
+        let _i = input.field1(db);
+        Interned::new(db, BadHash(value))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+    let input = Input::builder(0).durability(Durability::LOW).new(&db);
+
+    // Intern `i0`.
+    let i0 = intern(&db, input, 0);
+    let i0_id = salsa::plumbing::AsId::as_id(&i0);
+    assert_eq!(i0.field1(&db).0, 0);
+
+    // Get the garbage collector to consider `i0` stale.
+    for x in 1.. {
+        db.synthetic_write(Durability::LOW);
+
+        let ix = intern(&db, input, x);
+        let ix_id = salsa::plumbing::AsId::as_id(&ix);
+
+        // We reused the slot of `i0`.
+        if ix_id.index() == i0_id.index() {
+            assert_eq!(ix.field1(&db).0, x);
+
+            // Re-intern and read `i0` from a new slot.
+            //
+            // Note that the only writes have been synthetic, so none of the query dependencies
+            // have changed directly. The interned value dependency should be enough to force
+            // the inner query to update.
+            let i0 = intern(&db, input, 0);
+            assert_eq!(i0.field1(&db).0, 0);
+
+            break;
+        }
+    }
 }
 
 #[test]
