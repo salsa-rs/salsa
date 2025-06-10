@@ -63,6 +63,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) has_no_eq_attr: bool,
     get_name: syn::Ident,
     set_name: syn::Ident,
+    unknown_attrs: Vec<&'s syn::Attribute>,
 }
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
@@ -316,6 +317,22 @@ where
             .collect()
     }
 
+    pub(crate) fn field_attrs(&self) -> Vec<&[&syn::Attribute]> {
+        self.fields.iter().map(|f| &*f.unknown_attrs).collect()
+    }
+
+    pub(crate) fn tracked_field_attrs(&self) -> Vec<&[&syn::Attribute]> {
+        self.tracked_fields_iter()
+            .map(|f| &*f.1.unknown_attrs)
+            .collect()
+    }
+
+    pub(crate) fn untracked_field_attrs(&self) -> Vec<&[&syn::Attribute]> {
+        self.untracked_fields_iter()
+            .map(|f| &*f.1.unknown_attrs)
+            .collect()
+    }
+
     pub(crate) fn field_options(&self) -> Vec<TokenStream> {
         self.fields.iter().map(SalsaField::options).collect()
     }
@@ -377,14 +394,21 @@ impl<'s> SalsaField<'s> {
             has_no_eq_attr: false,
             get_name,
             set_name,
+            unknown_attrs: Default::default(),
         };
 
         // Scan the attributes and look for the salsa attributes:
         for attr in &field.attrs {
+            let mut handled = false;
             for (fa, func) in FIELD_OPTION_ATTRIBUTES {
                 if attr.path().is_ident(fa) {
                     func(attr, &mut result);
+                    handled = true;
+                    break;
                 }
+            }
+            if !handled {
+                result.unknown_attrs.push(attr);
             }
         }
 

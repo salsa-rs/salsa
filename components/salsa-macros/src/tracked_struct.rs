@@ -111,6 +111,9 @@ impl Macro {
         let tracked_tys = salsa_struct.tracked_tys();
         let untracked_tys = salsa_struct.untracked_tys();
 
+        let tracked_field_unused_attrs = salsa_struct.tracked_field_attrs();
+        let untracked_field_unused_attrs = salsa_struct.untracked_field_attrs();
+
         let num_tracked_fields = salsa_struct.num_tracked_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
@@ -150,6 +153,9 @@ impl Macro {
 
                     tracked_options: [#(#tracked_options),*],
                     untracked_options: [#(#untracked_options),*],
+
+                    tracked_field_attrs: [#([#(#tracked_field_unused_attrs),*]),*],
+                    untracked_field_attrs: [#([#(#untracked_field_unused_attrs),*]),*],
 
                     num_tracked_fields: #num_tracked_fields,
                     generate_debug_impl: #generate_debug_impl,
