@@ -350,9 +350,19 @@ where
                 }
             }
 
-            // Record the maximum durability across all queries that intern this value.
             if let Some((_, stamp)) = zalsa_local.active_query() {
+                let was_reusable = value_shared.is_reusable();
+
+                // Record the maximum durability across all queries that intern this value.
                 value_shared.durability = std::cmp::max(value_shared.durability, stamp.durability);
+
+                // If the value is no longer reusable, i.e. the durability increased, remove it
+                // from the LRU.
+                if was_reusable && !value_shared.is_reusable() {
+                    // SAFETY: We hold the lock for the shard containing the value, and `value`
+                    // was previously reusable, so is in the list.
+                    unsafe { shard.lru.cursor_mut_from_ptr(value).remove() };
+                }
             }
 
             // Record a dependency on the value.
@@ -415,7 +425,8 @@ where
             //
             // If the ID is at its maximum generation, we are forced to leak the slot.
             let Some(new_id) = value_shared.id.next_generation() else {
-                // Remove the value from the LRU list.
+                // Remove the value from the LRU list as we will never be able to
+                // collect it.
                 cursor.remove().unwrap();
 
                 // Retry with the previous element.
