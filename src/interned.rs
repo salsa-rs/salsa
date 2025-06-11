@@ -367,12 +367,13 @@ where
 
             // Record a dependency on the value.
             //
-            // Note that we can use `Revision::start()` here as the ID with the given generation
-            // is unique to this use of the interned slot.
+            // See `intern_id_cold` for why we need to use `current_revision` here. Note that just
+            // because this value was previously interned does not mean it was previously interned
+            // by *our query*, so the same considerations apply.
             zalsa_local.report_tracked_read_simple(
                 index,
                 value_shared.durability,
-                Revision::start(),
+                current_revision,
             );
 
             return value_shared.id;
@@ -442,15 +443,15 @@ where
                 last_interned_at,
             };
 
+            let index = self.database_key_index(value_shared.id);
+
             // Record a dependency on the new value.
             //
-            // Note that we can use `Revision::start()` here as we just incremented the ID generation,
-            // so it as if a new input has been created.
-            let index = self.database_key_index(value_shared.id);
+            // See `intern_id_cold` for why we need to use `current_revision` here.
             zalsa_local.report_tracked_read_simple(
                 index,
                 value_shared.durability,
-                Revision::start(),
+                current_revision,
             );
 
             zalsa.event(&|| {
@@ -603,7 +604,14 @@ where
         let index = self.database_key_index(id);
 
         // Record a dependency on the newly interned value.
-        zalsa_local.report_tracked_read_simple(index, durability, Revision::start());
+        //
+        // Note that the ID is unique to this use of the interned slot, so it seems logical to use
+        // `Revision::start()` here. However, it is possible that the ID we read is different from
+        // the previous execution of this query if the previous slot has been reused. In that case,
+        // the query has changed without a corresponding input changing. Using `current_revision`
+        // for dependencies on interned values encodes the fact that interned IDs are not stable
+        // across revisions.
+        zalsa_local.report_tracked_read_simple(index, durability, current_revision);
 
         zalsa.event(&|| {
             Event::new(EventKind::DidInternValue {
