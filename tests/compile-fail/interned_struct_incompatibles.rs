@@ -34,4 +34,9 @@ struct InternedWithTrackedField {
     field: u32,
 }
 
+#[salsa::interned(revisions = 0)]
+struct InternedWithZeroRevisions {
+    field: u32,
+}
+
 fn main() {}

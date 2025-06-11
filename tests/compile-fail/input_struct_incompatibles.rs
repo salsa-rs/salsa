@@ -16,6 +16,9 @@ struct InputWithRecover(u32);
 #[salsa::input(lru =12)]
 struct InputWithLru(u32);
 
+#[salsa::input(revisions = 12)]
+struct InputWithRevisions(u32);
+
 #[salsa::input]
 struct InputWithTrackedField {
     #[tracked]

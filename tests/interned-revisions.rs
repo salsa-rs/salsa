@@ -12,12 +12,11 @@ struct Input {
     field1: usize,
 }
 
-#[salsa::interned]
+#[salsa::interned(revisions = 3)]
 #[derive(Debug)]
 struct Interned<'db> {
     field1: BadHash,
 }
-
 // Use a consistent hash value to ensure that interned value sharding
 // does not interefere with garbage collection.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -131,6 +130,36 @@ fn test_durability() {
             "WillCheckCancellation",
             "DidValidateMemoizedValue { database_key: function(Id(0)) }",
         ]"#]]);
+}
+
+#[salsa::interned(revisions = usize::MAX)]
+#[derive(Debug)]
+struct Immortal<'db> {
+    field1: BadHash,
+}
+
+#[test]
+fn test_immortal() {
+    #[salsa::tracked]
+    fn function<'db>(db: &'db dyn Database, input: Input) -> Immortal<'db> {
+        Immortal::new(db, BadHash(input.field1(db)))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    let result = function(&db, input);
+    assert_eq!(result.field1(&db).0, 0);
+
+    // Modify the input to bump the revision and intern a new value.
+    //
+    // No values should ever be reused with `durability = usize::MAX`.
+    for i in 1..100 {
+        input.set_field1(&mut db).to(i);
+        let result = function(&db, input);
+        assert_eq!(result.field1(&db).0, i);
+        assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);
+    }
 }
 
 #[test]

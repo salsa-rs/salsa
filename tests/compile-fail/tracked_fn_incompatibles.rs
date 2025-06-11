@@ -15,6 +15,11 @@ fn tracked_fn_with_db(db: &dyn Db, input: MyInput) -> u32 {
     input.field(db) * 2
 }
 
+#[salsa::tracked(revisions = 12)]
+fn tracked_fn_with_revisions(db: &dyn Db, input: MyInput) -> u32 {
+    input.field(db) * 2
+}
+
 #[salsa::tracked(constructor = TrackedFn3)]
 fn tracked_fn_with_constructor(db: &dyn Db, input: MyInput) -> u32 {
     input.field(db) * 2

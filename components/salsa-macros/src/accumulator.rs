@@ -44,6 +44,7 @@ impl AllowedOptions for Accumulator {
     const LRU: bool = false;
     const CONSTRUCTOR_NAME: bool = false;
     const ID: bool = false;
+    const REVISIONS: bool = false;
 }
 
 struct StructMacro {

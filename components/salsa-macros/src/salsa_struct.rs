@@ -133,6 +133,11 @@ where
         }
     }
 
+    /// Returns the `revisions` in `Options` as an optional iterator.
+    pub(crate) fn revisions(&self) -> impl Iterator<Item = &syn::Expr> + '_ {
+        self.args.revisions.iter()
+    }
+
     /// Disallow `#[tracked]` attributes on the fields of this struct.
     ///
     /// If an `#[tracked]` field is found, return an error.
