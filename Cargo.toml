@@ -12,7 +12,7 @@ description = "A generic framework for on-demand, incrementalized computation (e
 salsa-macro-rules = { version = "0.22.0", path = "components/salsa-macro-rules" }
 salsa-macros = { version = "0.22.0", path = "components/salsa-macros", optional = true }
 
-boxcar = { version = "0.2.12" }
+boxcar = "0.2.13"
 crossbeam-queue = "0.3.11"
 crossbeam-utils = "0.8.21"
 hashbrown = "0.15"
