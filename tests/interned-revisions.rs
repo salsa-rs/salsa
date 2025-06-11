@@ -4,7 +4,7 @@
 mod common;
 use common::LogDatabase;
 use expect_test::expect;
-use salsa::{Database, Setter};
+use salsa::{Database, Durability, Setter};
 use test_log::test;
 
 #[salsa::input]
@@ -341,4 +341,48 @@ fn test_reuse_multiple_interned_input() {
     // despite I2 and I0 sharing the same ID.
     let result = use_nested_interned(&db, nested_interned);
     assert_eq!(result, 2);
+}
+
+#[test]
+fn test_durability_increase() {
+    #[salsa::tracked]
+    fn intern<'db>(db: &'db dyn Database, input: Input, value: usize) -> Interned<'db> {
+        let _f = input.field1(db);
+        Interned::new(db, BadHash(value))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+
+    let high_durability = Input::builder(0).durability(Durability::HIGH).new(&db);
+    let low_durability = Input::builder(1).durability(Durability::LOW).new(&db);
+
+    // Intern `i0`.
+    let _i0 = intern(&db, low_durability, 0);
+    // Re-intern `i0`, this time using a high-durability.
+    let _i0 = intern(&db, high_durability, 0);
+
+    // Get the garbage collector to consider `i0` stale.
+    for _ in 0..100 {
+        let _dummy = intern(&db, low_durability, 1000).field1(&db);
+        db.synthetic_write(Durability::LOW);
+    }
+
+    // Intern `i1`.
+    //
+    // The slot of `i0` should not be reused as it is high-durability, and there
+    // were no high-durability writes.
+    let _i1 = intern(&db, low_durability, 1);
+
+    // Re-intern and read `i0`.
+    //
+    // If the slot was reused, the memo would be shallow-verified and we would
+    // read `i1` incorrectly.
+    let value = intern(&db, high_durability, 0);
+    assert_eq!(value.field1(&db).0, 0);
+
+    db.synthetic_write(Durability::LOW);
+
+    // We should have the same issue even after a low-durability write.
+    let value = intern(&db, high_durability, 0);
+    assert_eq!(value.field1(&db).0, 0);
 }
