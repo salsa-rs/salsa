@@ -66,6 +66,12 @@ pub mod shim {
     /// A polyfill for `std::sync::OnceLock`.
     pub struct OnceLock<T>(Mutex<bool>, UnsafeCell<MaybeUninit<T>>);
 
+    impl<T> Default for OnceLock<T> {
+        fn default() -> Self {
+            OnceLock::new()
+        }
+    }
+
     impl<T> OnceLock<T> {
         pub const fn new() -> OnceLock<T> {
             OnceLock(Mutex::new(false), UnsafeCell::new(MaybeUninit::uninit()))
