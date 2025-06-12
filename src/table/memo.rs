@@ -5,6 +5,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
+use portable_atomic::hint::spin_loop;
 use thin_vec::ThinVec;
 
 use crate::sync::atomic::{AtomicPtr, Ordering};
@@ -47,6 +48,7 @@ struct MemoEntry {
     atomic_memo: AtomicPtr<DummyMemo>,
 }
 
+#[derive(Default)]
 pub struct MemoEntryType {
     data: OnceLock<MemoEntryTypeData>,
 }
@@ -120,22 +122,34 @@ impl MemoTableTypes {
         memo_type: &MemoEntryType,
     ) {
         let memo_ingredient_index = memo_ingredient_index.as_usize();
-        while memo_ingredient_index >= self.types.count() {
-            self.types.push(MemoEntryType {
-                data: OnceLock::new(),
-            });
+
+        // Try to create our entry if it has not already been created.
+        if memo_ingredient_index >= self.types.count() {
+            while self.types.push(MemoEntryType::default()) < memo_ingredient_index {}
         }
-        let memo_entry_type = self.types.get(memo_ingredient_index).unwrap();
-        memo_entry_type
-            .data
-            .set(
-                *memo_type
-                    .data
-                    .get()
-                    .expect("cannot provide an empty `MemoEntryType` for `MemoEntryType::set()`"),
-            )
-            .ok()
-            .expect("memo type should only be set once");
+
+        loop {
+            let Some(memo_entry_type) = self.types.get(memo_ingredient_index) else {
+                // It's possible that someone else began pushing to our index but has not
+                // completed the entry's initialization yet, as `boxcar` is lock-free. This
+                // is extremely unlikely given initialization is just a handful of instructions.
+                // Additionally, this function is generally only called on startup, so we can
+                // just spin here.
+                spin_loop();
+                continue;
+            };
+
+            memo_entry_type
+                .data
+                .set(
+                    *memo_type.data.get().expect(
+                        "cannot provide an empty `MemoEntryType` for `MemoEntryType::set()`",
+                    ),
+                )
+                .ok()
+                .expect("memo type should only be set once");
+            break;
+        }
     }
 
     /// # Safety
