@@ -2,7 +2,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
-use crate::zalsa_local::QueryRevisions;
+use crate::zalsa_local::{output_edges, QueryOriginRef, QueryRevisions};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -21,15 +21,16 @@ where
         old_memo: &Memo<C::Output<'_>>,
         revisions: &mut QueryRevisions,
     ) {
+        let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
+            old_memo.revisions.origin.as_ref()
+        else {
+            return;
+        };
         // Iterate over the outputs of the `old_memo` and put them into a hashset
         //
         // Ignore key_generation here, because we use the same tracked struct allocation for
         // all generations with the same key_index and can't report it as stale
-        let mut old_outputs: FxIndexSet<_> = old_memo
-            .revisions
-            .origin
-            .as_ref()
-            .outputs()
+        let mut old_outputs: FxIndexSet<_> = output_edges(edges)
             .map(|a| (a.ingredient_index(), a.key_index().index()))
             .collect();
 

@@ -520,75 +520,82 @@ impl QueryRevisions {
 /// Tracks the way that a memoized value for a query was created.
 ///
 /// This is a read-only reference to a `PackedQueryOrigin`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 pub enum QueryOriginRef<'a> {
     /// The value was assigned as the output of another query (e.g., using `specify`).
     /// The `DatabaseKeyIndex` is the identity of the assigning query.
-    Assigned(DatabaseKeyIndex),
+    Assigned(DatabaseKeyIndex) = QueryOriginKind::Assigned as u8,
 
     /// The value was derived by executing a function
     /// and we were able to track ALL of that function's inputs.
     /// Those inputs are described in [`QueryEdges`].
-    Derived(&'a [QueryEdge]),
+    Derived(&'a [QueryEdge]) = QueryOriginKind::Derived as u8,
 
     /// The value was derived by executing a function
     /// but that function also reported that it read untracked inputs.
     /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
     /// (but we know there were more).
-    DerivedUntracked(&'a [QueryEdge]),
+    DerivedUntracked(&'a [QueryEdge]) = QueryOriginKind::DerivedUntracked as u8,
 
     /// The value is an initial provisional value for a query that supports fixpoint iteration.
-    FixpointInitial,
+    FixpointInitial = QueryOriginKind::FixpointInitial as u8,
 }
 
 impl<'a> QueryOriginRef<'a> {
     /// Indices for queries *read* by this query
-    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
+    #[inline]
+    pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
             QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
         };
-        opt_edges.into_iter().flat_map(|edges| input_edges(edges))
+        opt_edges.into_iter().flat_map(input_edges)
     }
 
     /// Indices for queries *written* by this query (if any)
-    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
+    pub(crate) fn outputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
             QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
         };
-        opt_edges.into_iter().flat_map(|edges| output_edges(edges))
+        opt_edges.into_iter().flat_map(output_edges)
     }
 
-    pub(crate) fn edges(&self) -> &'a [QueryEdge] {
+    #[inline]
+    pub(crate) fn edges(self) -> &'a [QueryEdge] {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
             QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
         };
 
-        opt_edges.copied().unwrap_or_default()
+        opt_edges.unwrap_or_default()
     }
 }
 
+// Note: The discriminant assignment is intentional,
+// we want to group `Derived` and `DerivedUntracked` together on a same bit (the second LSB)
+// as we tend to match against both of them in the same branch.
 #[derive(Clone, Copy)]
+#[repr(u8)]
 enum QueryOriginKind {
-    /// The value was assigned as the output of another query.
-    ///
-    /// This can, for example, can occur when `specify` is used.
-    Assigned,
-
-    /// The value was derived by executing a function
-    /// _and_ Salsa was able to track all of said function's inputs.
-    Derived,
-
-    /// The value was derived by executing a function
-    /// but that function also reported that it read untracked inputs.
-    DerivedUntracked,
-
     /// An initial provisional value.
     ///
     /// This will occur occur in queries that support fixpoint iteration.
-    FixpointInitial,
+    FixpointInitial = 0b00,
+
+    /// The value was assigned as the output of another query.
+    ///
+    /// This can, for example, can occur when `specify` is used.
+    Assigned = 0b01,
+
+    /// The value was derived by executing a function
+    /// _and_ Salsa was able to track all of said function's inputs.
+    Derived = 0b11,
+
+    /// The value was derived by executing a function
+    /// but that function also reported that it read untracked inputs.
+    DerivedUntracked = 0b10,
 }
 
 /// Tracks how a memoized value for a given query was created.
@@ -828,7 +835,7 @@ pub enum QueryEdgeKind {
 /// These will always be in execution order.
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
-) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
+) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
     input_outputs.iter().filter_map(|&edge| match edge.kind() {
         QueryEdgeKind::Input(dependency_index) => Some(dependency_index),
         QueryEdgeKind::Output(_) => None,
@@ -840,7 +847,7 @@ pub(crate) fn input_edges(
 /// These will always be in execution order.
 pub(crate) fn output_edges(
     input_outputs: &[QueryEdge],
-) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
+) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
     input_outputs.iter().filter_map(|&edge| match edge.kind() {
         QueryEdgeKind::Output(dependency_index) => Some(dependency_index),
         QueryEdgeKind::Input(_) => None,
