@@ -41,36 +41,40 @@ fn push_logs(db: &dyn Database) {
 fn push_a_logs(db: &dyn Database, input: MyInput) {
     Log("log a".to_string()).accumulate(db);
     if input.n(db) == 1 {
-        push_b_logs(db);
-        push_b_logs(db);
-        push_c_logs(db);
-        push_b_logs(db);
+        push_b_logs(db, input);
+        push_b_logs(db, input);
+        push_c_logs(db, input);
+        push_b_logs(db, input);
     } else {
-        push_b_logs(db);
+        push_b_logs(db, input);
     }
 }
 
 #[salsa::tracked]
-fn push_b_logs(db: &dyn Database) {
+fn push_b_logs(db: &dyn Database, input: MyInput) {
+    _ = input.n(db);
     Log("log b".to_string()).accumulate(db);
 }
 
 #[salsa::tracked]
-fn push_c_logs(db: &dyn Database) {
+fn push_c_logs(db: &dyn Database, input: MyInput) {
+    _ = input.n(db);
     Log("log c".to_string()).accumulate(db);
-    push_d_logs(db);
-    push_e_logs(db);
+    push_d_logs(db, input);
+    push_e_logs(db, input);
 }
 
 // Note this isn't tracked
-fn push_d_logs(db: &dyn Database) {
+fn push_d_logs(db: &dyn Database, input: MyInput) {
+    _ = input.n(db);
     Log("log d".to_string()).accumulate(db);
     push_a_logs(db, MyInput::new(db, 2));
-    push_b_logs(db);
+    push_b_logs(db, input);
 }
 
 #[salsa::tracked]
-fn push_e_logs(db: &dyn Database) {
+fn push_e_logs(db: &dyn Database, input: MyInput) {
+    _ = input.n(db);
     Log("log e".to_string()).accumulate(db);
 }
 
@@ -97,6 +101,9 @@ fn accumulate_no_duplicates() {
                 ),
                 Log(
                     "log a",
+                ),
+                Log(
+                    "log b",
                 ),
                 Log(
                     "log e",

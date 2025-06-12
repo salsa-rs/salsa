@@ -46,6 +46,7 @@ impl std::fmt::Debug for Durability {
                 DurabilityVal::Low => f.write_str("Durability::LOW"),
                 DurabilityVal::Medium => f.write_str("Durability::MEDIUM"),
                 DurabilityVal::High => f.write_str("Durability::HIGH"),
+                DurabilityVal::NeverChange => f.write_str("Durability::NEVER_CHANGE"),
             }
         } else {
             f.debug_tuple("Durability")
@@ -61,14 +62,17 @@ enum DurabilityVal {
     Low = 0,
     Medium = 1,
     High = 2,
+    NeverChange = 3,
 }
 
 impl From<u8> for DurabilityVal {
+    #[inline]
     fn from(value: u8) -> Self {
         match value {
             0 => DurabilityVal::Low,
             1 => DurabilityVal::Medium,
             2 => DurabilityVal::High,
+            3 => DurabilityVal::NeverChange,
             _ => panic!("invalid durability"),
         }
     }
@@ -87,23 +91,28 @@ impl Durability {
 
     /// High durability: things that are not expected to change under
     /// common usage.
-    ///
-    /// Example: the standard library or something from crates.io
     pub const HIGH: Durability = Durability(DurabilityVal::High);
+
+    /// The input is guaranteed to never change. Queries calling it won't have
+    /// it as a dependency.
+    ///
+    /// Example: the standard library or something from crates.io.
+    pub const NEVER_CHANGE: Durability = Durability(DurabilityVal::NeverChange);
 
     /// The minimum possible durability; equivalent to LOW but
     /// "conceptually" distinct (i.e., if we add more durability
     /// levels, this could change).
-    pub(crate) const MIN: Durability = Self::LOW;
+    pub const MIN: Durability = Self::LOW;
 
-    /// The maximum possible durability; equivalent to HIGH but
+    /// The maximum possible durability; equivalent to NEVER_CHANGE but
     /// "conceptually" distinct (i.e., if we add more durability
     /// levels, this could change).
-    pub(crate) const MAX: Durability = Self::HIGH;
+    pub(crate) const MAX: Durability = Self::NEVER_CHANGE;
 
     /// Number of durability levels.
-    pub(crate) const LEN: usize = Self::HIGH.0 as usize + 1;
+    pub(crate) const LEN: usize = Self::MAX.0 as usize + 1;
 
+    #[inline]
     pub(crate) fn index(self) -> usize {
         self.0 as usize
     }

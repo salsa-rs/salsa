@@ -9,6 +9,7 @@ use crate::function::{Configuration, IngredientImpl, Reentrancy};
 
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
+use crate::table::memo::Either;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
 use crate::{Id, Revision};
@@ -94,6 +95,13 @@ where
                 // No memo? Assume has changed.
                 return VerifyResult::changed();
             };
+            let memo = match memo {
+                Either::Left(memo) => memo,
+                Either::Right(_) => {
+                    // A `NEVER_CHANGE` memo. Consider it verified.
+                    return VerifyResult::unchanged();
+                }
+            };
 
             let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
             if can_shallow_update.yes() && !memo.may_be_provisional() {
@@ -163,6 +171,10 @@ where
         else {
             return Some(VerifyResult::changed());
         };
+        let Either::Left(old_memo) = old_memo else {
+            // A never-change memo? Consider it verified.
+            return Some(VerifyResult::unchanged());
+        };
 
         crate::tracing::debug!(
             "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
@@ -229,23 +241,33 @@ where
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && !cycle_heads.has_any() {
             let memo = self.execute(db, claim_guard, zalsa_local, Some(old_memo))?;
-            let changed_at = memo.revisions.changed_at;
+            match memo {
+                Either::Left(memo) => {
+                    let changed_at = memo.revisions.changed_at;
 
-            // Always assume that a provisional value has changed.
-            //
-            // We don't know if a provisional value has actually changed. To determine whether a provisional
-            // value has changed, we need to iterate the outer cycle, which cannot be done here.
-            return Some(if changed_at > revision || memo.may_be_provisional() {
-                VerifyResult::changed()
-            } else {
-                VerifyResult::unchanged_with_accumulated(
-                    #[cfg(feature = "accumulator")]
-                    match memo.revisions.accumulated() {
-                        Some(_) => InputAccumulatedValues::Any,
-                        None => memo.revisions.accumulated_inputs.load(),
-                    },
-                )
-            });
+                    // Always assume that a provisional value has changed.
+                    //
+                    // We don't know if a provisional value has actually changed. To determine whether a provisional
+                    // value has changed, we need to iterate the outer cycle, which cannot be done here.
+                    return Some(if changed_at > revision || memo.may_be_provisional() {
+                        VerifyResult::changed()
+                    } else {
+                        VerifyResult::unchanged_with_accumulated(
+                            #[cfg(feature = "accumulator")]
+                            match memo.revisions.accumulated() {
+                                Some(_) => InputAccumulatedValues::Any,
+                                None => memo.revisions.accumulated_inputs.load(),
+                            },
+                        )
+                    });
+                }
+                Either::Right(_) => {
+                    // Don't backdate never-change memos. We have no way to backdate them (they don't store `changed_at`)
+                    // and changing a memo from non-never-change to never-change is likely rare enough (or even impossible)
+                    // that this is not a problem.
+                    return Some(VerifyResult::Changed);
+                }
+            }
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
@@ -442,6 +464,7 @@ where
                         panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
                     }
                 }
+                ProvisionalStatus::FinalNeverChange => {}
                 ProvisionalStatus::FallbackImmediate => match C::CYCLE_STRATEGY {
                     CycleRecoveryStrategy::Panic => {
                         // Queries without fallback are not considered when inside a cycle.

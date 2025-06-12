@@ -391,7 +391,7 @@ macro_rules! setup_tracked_fn {
                             zalsa,
                             struct_index,
                             first_index,
-                            $zalsa::function::MemoEntryType::of::<$zalsa::function::Memo<$Configuration>>(),
+                            $zalsa::function::MemoEntryType::of::<$zalsa::function::AmbiguousMemo<$Configuration>>(),
                             intern_ingredient_memo_types,
                         )
                     };

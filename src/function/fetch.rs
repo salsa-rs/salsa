@@ -4,7 +4,8 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::maybe_changed_after::VerifyCycleHeads;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::function::{Configuration, EitherMemoRef, IngredientImpl, Reentrancy};
+use crate::table::memo::Either;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
@@ -30,33 +31,41 @@ where
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
 
-        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
-        let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
-
         self.lru.record_use(id);
 
-        zalsa_local.report_tracked_read(
-            database_key_index,
-            memo.revisions.durability,
-            memo.revisions.changed_at,
-            memo.cycle_heads(),
-            #[cfg(feature = "accumulator")]
-            memo.revisions.accumulated().is_some(),
-            #[cfg(feature = "accumulator")]
-            &memo.revisions.accumulated_inputs,
-        );
+        let memo_value = match memo {
+            Either::Left(memo) => {
+                zalsa_local.report_tracked_read(
+                    database_key_index,
+                    memo.revisions.durability,
+                    memo.revisions.changed_at,
+                    memo.cycle_heads(),
+                    #[cfg(feature = "accumulator")]
+                    memo.revisions.accumulated().is_some(),
+                    #[cfg(feature = "accumulator")]
+                    &memo.revisions.accumulated_inputs,
+                );
+
+                // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
+                unsafe { memo.value.as_ref().unwrap_unchecked() }
+            }
+            Either::Right(memo) => {
+                // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
+                unsafe { memo.value.as_ref().unwrap_unchecked() }
+            }
+        };
 
         memo_value
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn refresh_memo<'db>(
         &'db self,
         db: &'db C::DbView,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         id: Id,
-    ) -> &'db Memo<'db, C> {
+    ) -> EitherMemoRef<'db, 'db, C> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         loop {
@@ -75,10 +84,11 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
-        let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
-
-        memo.value.as_ref()?;
+    ) -> Option<EitherMemoRef<'db, 'db, C>> {
+        let memo = match self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)? {
+            Either::Left(memo) => memo,
+            memo @ Either::Right(_) => return Some(memo),
+        };
 
         let database_key_index = self.database_key_index(id);
 
@@ -89,12 +99,13 @@ where
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.
-            unsafe { Some(self.extend_memo_lifetime(memo)) }
+            unsafe { Some(Either::Left(self.extend_memo_lifetime(memo))) }
         } else {
             None
         }
     }
 
+    #[inline]
     fn fetch_cold<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -102,7 +113,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
+    ) -> Option<EitherMemoRef<'db, 'db, C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let claim_guard = match self.sync_table.try_claim(zalsa, id, Reentrancy::Allow) {
@@ -113,7 +124,7 @@ where
                 if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                     let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
-                    if let Some(memo) = memo {
+                    if let Some(Either::Left(memo)) = memo {
                         if memo.value.is_some() {
                             memo.block_on_heads(zalsa);
                         }
@@ -123,19 +134,23 @@ where
                 return None;
             }
             ClaimResult::Cycle { .. } => {
-                return Some(self.fetch_cold_cycle(
+                return Some(Either::Left(self.fetch_cold_cycle(
                     zalsa,
                     zalsa_local,
                     db,
                     id,
                     database_key_index,
                     memo_ingredient_index,
-                ));
+                )));
             }
         };
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+        let opt_old_memo = match self.get_memo_from_table_for(zalsa, id, memo_ingredient_index) {
+            Some(Either::Left(it)) => Some(it),
+            memo @ Some(Either::Right(_)) => return memo,
+            None => None,
+        };
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
@@ -153,7 +168,7 @@ where
 
                     // SAFETY: memo is present in memo_map and we have verified that it is
                     // still valid for the current revision.
-                    return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+                    return unsafe { Some(Either::Left(self.extend_memo_lifetime(old_memo))) };
                 }
 
                 let mut cycle_heads = Vec::new();
@@ -171,7 +186,7 @@ where
                 if verify_result.is_unchanged() && cycle_heads.is_empty() {
                     // SAFETY: memo is present in memo_map and we have verified that it is
                     // still valid for the current revision.
-                    return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+                    return unsafe { Some(Either::Left(self.extend_memo_lifetime(old_memo))) };
                 }
             }
         }
@@ -193,7 +208,11 @@ where
         // check if there's a provisional value for this query
         // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
         // existing provisional memo if it exists
-        let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+        let memo_guard = match self.get_memo_from_table_for(zalsa, id, memo_ingredient_index) {
+            Some(Either::Left(it)) => Some(it),
+            Some(Either::Right(_)) => panic!("a never-change memo cannot participate in cycles"),
+            None => None,
+        };
         if let Some(memo) = memo_guard {
             // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
             // but that would require inserting itself as a cycle head, which either requires clone

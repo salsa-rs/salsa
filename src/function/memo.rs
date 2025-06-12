@@ -1,23 +1,57 @@
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::fmt::{Debug, Formatter};
-use std::mem::transmute;
+use std::marker::PhantomData;
+use std::mem;
 use std::ptr::NonNull;
 
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleHeadsIterator, IterationCount, ProvisionalStatus,
 };
-use crate::function::{Configuration, IngredientImpl};
+use crate::function::{Configuration, EitherMemoNonNull, EitherMemoRef, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::runtime::Running;
 use crate::sync::atomic::Ordering;
-use crate::table::memo::MemoTableWithTypesMut;
+use crate::table::memo::{Either, MemoTableWithTypesMut};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
+    /// Memos have to be stored internally using `'static` as the database lifetime.
+    /// This (unsafe) function call converts from something tied to self to static.
+    /// Values transmuted this way have to be transmuted back to being tied to self
+    /// when they are returned to the user.
+    unsafe fn to_static<'db>(&self, memo: NonNull<Memo<'db, C>>) -> NonNull<Memo<'static, C>> {
+        memo.cast()
+    }
+    pub(super) unsafe fn to_static_never_change<'db>(
+        &self,
+        memo: NonNull<NeverChangeMemo<'db, C>>,
+    ) -> NonNull<NeverChangeMemo<'static, C>> {
+        memo.cast()
+    }
+
+    /// Convert from an internal memo (which uses `'static`) to one tied to self
+    /// so it can be publicly released.
+    unsafe fn to_self<'db>(
+        &self,
+        memo: EitherMemoNonNull<'static, C>,
+    ) -> EitherMemoNonNull<'db, C> {
+        // SAFETY: We're only transmuting lifetimes, so layout didn't change.
+        unsafe { mem::transmute(memo) }
+    }
+
+    /// Convert from an internal memo (which uses `'static`) to one tied to self
+    /// so it can be publicly released.
+    unsafe fn to_self_ref<'db>(
+        &self,
+        memo: EitherMemoRef<'db, 'static, C>,
+    ) -> EitherMemoRef<'db, 'db, C> {
+        unsafe { std::mem::transmute(memo) }
+    }
+
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
     pub(super) fn insert_memo_into_table_for<'db>(
         &self,
@@ -25,19 +59,36 @@ impl<C: Configuration> IngredientImpl<C> {
         id: Id,
         memo: NonNull<Memo<'db, C>>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<NonNull<Memo<'db, C>>> {
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        let static_memo =
-            unsafe { transmute::<NonNull<Memo<'db, C>>, NonNull<Memo<'static, C>>>(memo) };
-        let old_static_memo = zalsa
-            .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .insert(memo_ingredient_index, static_memo)?;
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        Some(unsafe {
-            transmute::<NonNull<Memo<'static, C>>, NonNull<Memo<'db, C>>>(old_static_memo)
-        })
+    ) -> Option<EitherMemoNonNull<'db, C>> {
+        let static_memo = unsafe { self.to_static(memo) };
+        let old_static_memo = unsafe {
+            zalsa
+                .memo_table_for::<C::SalsaStruct<'_>>(id)
+                .insert_false::<AmbiguousMemo<C>>(memo_ingredient_index, static_memo)
+        }?;
+        Some(unsafe { self.to_self(old_static_memo) })
+    }
+
+    /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
+    ///
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the memo contents.
+    pub(super) unsafe fn insert_never_change_memo_into_table_for<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        id: Id,
+        memo: NonNull<NeverChangeMemo<C>>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<EitherMemoNonNull<'db, C>> {
+        let static_memo = unsafe { self.to_static_never_change(memo) };
+        let old_static_memo = unsafe {
+            zalsa
+                .memo_table_for::<C::SalsaStruct<'_>>(id)
+                .insert_true::<AmbiguousMemo<C>>(memo_ingredient_index, static_memo)
+        }?;
+        Some(unsafe { self.to_self(old_static_memo) })
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
@@ -48,13 +99,12 @@ impl<C: Configuration> IngredientImpl<C> {
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
+    ) -> Option<EitherMemoRef<'db, 'db, C>> {
         let static_memo = zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .get(memo_ingredient_index)?;
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
+            .get::<AmbiguousMemo<C>>(memo_ingredient_index)?;
+
+        unsafe { Some(self.to_self_ref(static_memo)) }
     }
 
     /// Evicts the existing memo for the given key, replacing it
@@ -81,11 +131,65 @@ impl<C: Configuration> IngredientImpl<C> {
             }
         };
 
-        table.map_memo(memo_ingredient_index, map)
+        table.map_memo::<AmbiguousMemo<C>>(memo_ingredient_index, |memo| match memo {
+            Either::Left(memo) => map(memo),
+            Either::Right(memo) => memo.value = None,
+        })
+    }
+}
+
+pub struct AmbiguousMemo<C>(PhantomData<C>);
+
+// SAFETY: The `value_type_id()` and the disambiguator are enough to uniquely identify a memo.
+unsafe impl<C: Configuration> crate::table::memo::AmbiguousMemo for AmbiguousMemo<C> {
+    fn value_type_id() -> std::any::TypeId
+    where
+        Self: Sized,
+    {
+        TypeId::of::<C::Output<'static>>()
+    }
+    type MFalse = Memo<'static, C>;
+    type MTrue = NeverChangeMemo<'static, C>;
+}
+
+#[derive(Debug)]
+#[repr(align(2))] // Needed for table/memo.rs
+pub struct NeverChangeMemo<'db, C: Configuration> {
+    /// The result of the query, if we decide to memoize it.
+    pub(super) value: Option<C::Output<'db>>,
+    // What we *don't* store for never-changing memos:
+    //  - verified_at, changed_at - they're always valid.
+    //  - durability - we know it, it's `NEVER_CHANGE`.
+    //  - origin - dependencies aren't important.
+    //  - tracked_struct_ids - we never diff tracked structs,
+    //    because we won't execute it the second time.
+    //  - accumulated, accumulated_inputs - accumulations are
+    //    mainly for errors, and `NEVER_CHANGE` things are mostly
+    //    for libraries, and we may assume libraries have no
+    //    errors. This is a finicky assumption, I know, I
+    //    mostly do that because I dislike accumulators and
+    //    rust-analyzer does not use them.
+    //    verified_final, cycle_heads - cycle handling for
+    //    never-changing memos is a bit complicated. We depend
+    //    on the query dependencies to track cycles, so we
+    //    cannot use a `NEVER_CHANGE` memo for that. Instead,
+    //    during the cycle we only use normal memos for participants,
+    //    and when exiting the cycle we replace the cycle head
+    //    with a `NeverChangeMemo`. When participants get validated,
+    //    they also get replaced with `NeverChangeMemo`s.
+}
+
+impl<'db, C: Configuration> NeverChangeMemo<'db, C> {
+    /// Returns `true` if this memo should be serialized.
+    pub(super) fn should_serialize(&self) -> bool {
+        // TODO: Serialization is a good opportunity to prune old query results based on
+        // the `verified_at` revision.
+        self.value.is_some()
     }
 }
 
 #[derive(Debug)]
+#[repr(align(2))] // Needed for table/memo.rs
 pub struct Memo<'db, C: Configuration> {
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<C::Output<'db>>,
@@ -268,6 +372,34 @@ where
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
         let size_of = std::mem::size_of::<Memo<C>>() + self.revisions.allocation_size();
+        let heap_size = if let Some(value) = self.value.as_ref() {
+            C::heap_size(value)
+        } else {
+            Some(0)
+        };
+
+        crate::database::MemoInfo {
+            debug_name: C::DEBUG_NAME,
+            output: crate::database::SlotInfo {
+                size_of_metadata: size_of - std::mem::size_of::<C::Output<'static>>(),
+                debug_name: std::any::type_name::<C::Output<'static>>(),
+                size_of_fields: std::mem::size_of::<C::Output<'static>>(),
+                heap_size_of_fields: heap_size,
+                memos: Vec::new(),
+            },
+        }
+    }
+}
+
+impl<C: Configuration> crate::table::memo::Memo for NeverChangeMemo<'static, C>
+where
+    C::Output<'static>: Send + Sync + Any,
+{
+    fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
+
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self) -> crate::database::MemoInfo {
+        let size_of = std::mem::size_of::<NeverChangeMemo<C>>();
         let heap_size = if let Some(value) = self.value.as_ref() {
             C::heap_size(value)
         } else {
@@ -471,6 +603,9 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                     ProvisionalStatus::FallbackImmediate => {
                         (IterationCount::initial(), self.zalsa.current_revision())
                     }
+                    ProvisionalStatus::FinalNeverChange => {
+                        panic!("Never-changing memos cannot participate in cycles")
+                    }
                 };
 
                 Some(TryClaimHeadsResult::Cycle {
@@ -504,6 +639,8 @@ mod _memory_usage {
     // Memo's are stored a lot, make sure their size is doesn't randomly increase.
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 6]>()];
+    const _: [(); std::mem::size_of::<super::NeverChangeMemo<DummyConfiguration>>()] =
+        [(); std::mem::size_of::<[usize; 1]>()];
 
     struct DummyStruct;
 

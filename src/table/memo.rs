@@ -40,6 +40,32 @@ impl MemoTable {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Either<A, B> {
+    Left(A),
+    Right(B),
+}
+
+/// Represents a `Memo` that has one of two possible types.
+///
+/// # Safety
+///
+/// If the `value_type_id()` and the disambiguator match, the value must have the type of
+/// the corresponding associated type.
+pub unsafe trait AmbiguousMemo {
+    /// The `TypeId` of the contained value.
+    ///
+    /// This can be shared to at most two `Memo` types, distinguished by `MFalse` and `MTrue`.
+    /// The important property is that *both* can be stored in a slot. That is, the `MemoEntryType`
+    /// only holds the `value_type_id()`, and the disambiguator (true or false) is stored
+    /// in the `MemoEntry`.
+    fn value_type_id() -> TypeId
+    where
+        Self: Sized;
+    type MFalse: Memo;
+    type MTrue: Memo;
+}
+
 pub trait Memo: Any + Send + Sync {
     /// Removes the outputs that were created when this query ran. This includes
     /// tracked structs and specified queries.
@@ -73,25 +99,62 @@ struct MemoEntry {
     atomic_memo: AtomicPtr<DummyMemo>,
 }
 
+const DISAMBIGUATOR_MASK: usize = 0b1;
+
+/// # Safety
+///
+/// `ptr` must stay non-null after removing the 0th bit.
+#[inline]
+unsafe fn unpack_memo_ptr(ptr: NonNull<DummyMemo>) -> (NonNull<DummyMemo>, bool) {
+    let ptr = ptr.as_ptr();
+    // SAFETY: Our precondition.
+    let new_ptr =
+        unsafe { NonNull::new_unchecked(ptr.map_addr(|addr| addr & !DISAMBIGUATOR_MASK)) };
+    (new_ptr, ptr.addr() & DISAMBIGUATOR_MASK != 0)
+}
+
+#[inline]
+fn pack_memo_ptr(ptr: NonNull<DummyMemo>, disambiguator: bool) -> NonNull<DummyMemo> {
+    // SAFETY: We're ORing bits, it cannot make it null.
+    unsafe {
+        NonNull::new_unchecked(
+            ptr.as_ptr()
+                .map_addr(|addr| addr | usize::from(disambiguator)),
+        )
+    }
+}
+
+/// # Safety
+///
+/// `ptr` must stay non-null after removing the 0th bit. `value_type_id()` must be correct.
+#[inline]
+unsafe fn unpack_memo_ptr_typed<M: AmbiguousMemo>(
+    ptr: NonNull<DummyMemo>,
+) -> Either<NonNull<M::MFalse>, NonNull<M::MTrue>> {
+    // SAFETY: Our precondition.
+    let (new_ptr, disambiguator) = unsafe { unpack_memo_ptr(ptr) };
+    match disambiguator {
+        false => Either::Left(new_ptr.cast::<M::MFalse>()),
+        true => Either::Right(new_ptr.cast::<M::MTrue>()),
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct MemoEntryType {
     /// The `type_id` of the erased memo type `M`
     type_id: TypeId,
 
-    /// A type-coercion function for the erased memo type `M`
-    to_dyn_fn: fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
+    /// A type-coercion function for the erased memo type `M`, indexed by `type_id_disambiguator()`.
+    to_dyn_fns: [fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>; 2],
 }
 
 impl MemoEntryType {
-    fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<DummyMemo> {
-        memo.cast()
+    #[inline]
+    fn to_dyn_fn(&self, disambiguator: bool) -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
+        self.to_dyn_fns[usize::from(disambiguator)]
     }
 
-    unsafe fn from_dummy<M: Memo>(memo: NonNull<DummyMemo>) -> NonNull<M> {
-        memo.cast()
-    }
-
-    const fn to_dyn_fn<M: Memo>() -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
+    const fn create_to_dyn_fn<M: Memo>() -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
         let f: fn(NonNull<M>) -> NonNull<dyn Memo> = |x| x;
 
         // SAFETY: `M: Sized` and `DummyMemo: Sized`, as such they are ABI compatible behind a
@@ -105,10 +168,23 @@ impl MemoEntryType {
     }
 
     #[inline]
-    pub fn of<M: Memo>() -> Self {
+    pub fn of<M: AmbiguousMemo>() -> Self {
+        const {
+            assert!(
+                align_of::<M::MFalse>() >= 2,
+                "need enough space to encode the disambiguator"
+            );
+            assert!(
+                align_of::<M::MTrue>() >= 2,
+                "need enough space to encode the disambiguator"
+            );
+        };
         Self {
-            type_id: TypeId::of::<M>(),
-            to_dyn_fn: Self::to_dyn_fn::<M>(),
+            type_id: M::value_type_id(),
+            to_dyn_fns: [
+                Self::create_to_dyn_fn::<M::MFalse>(),
+                Self::create_to_dyn_fn::<M::MTrue>(),
+            ],
         }
     }
 }
@@ -182,12 +258,46 @@ pub struct MemoTableWithTypes<'a> {
     memos: &'a MemoTable,
 }
 
-impl MemoTableWithTypes<'_> {
-    pub(crate) fn insert<M: Memo>(
+impl<'a> MemoTableWithTypes<'a> {
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the memo contents.
+    #[inline]
+    pub(crate) unsafe fn insert_false<M: AmbiguousMemo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
-        memo: NonNull<M>,
-    ) -> Option<NonNull<M>> {
+        memo: NonNull<M::MFalse>,
+    ) -> Option<Either<NonNull<M::MFalse>, NonNull<M::MTrue>>> {
+        let memo = pack_memo_ptr(memo.cast::<DummyMemo>(), false);
+        // SAFETY: Our preconditions.
+        unsafe { self.insert_impl::<M>(memo_ingredient_index, memo) }
+    }
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the memo contents.
+    #[inline]
+    pub(crate) unsafe fn insert_true<M: AmbiguousMemo>(
+        self,
+        memo_ingredient_index: MemoIngredientIndex,
+        memo: NonNull<M::MTrue>,
+    ) -> Option<Either<NonNull<M::MFalse>, NonNull<M::MTrue>>> {
+        let memo = pack_memo_ptr(memo.cast::<DummyMemo>(), true);
+        // SAFETY: Our preconditions.
+        unsafe { self.insert_impl::<M>(memo_ingredient_index, memo) }
+    }
+
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the memo contents.
+    #[inline]
+    unsafe fn insert_impl<M: AmbiguousMemo>(
+        self,
+        memo_ingredient_index: MemoIngredientIndex,
+        memo: NonNull<DummyMemo>,
+    ) -> Option<Either<NonNull<M::MFalse>, NonNull<M::MTrue>>> {
         let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
 
         // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
@@ -199,22 +309,25 @@ impl MemoTableWithTypes<'_> {
         };
 
         // Verify that the we are casting to the correct type.
-        if type_.type_id != TypeId::of::<M>() {
+        if type_.type_id != M::value_type_id() {
             type_assert_failed(memo_ingredient_index);
         }
 
-        let old_memo = atomic_memo.swap(MemoEntryType::to_dummy(memo).as_ptr(), Ordering::AcqRel);
+        let old_memo = atomic_memo.swap(memo.as_ptr(), Ordering::AcqRel);
 
-        // SAFETY: We asserted that the type is correct above.
-        NonNull::new(old_memo).map(|old_memo| unsafe { MemoEntryType::from_dummy(old_memo) })
+        let old_memo = NonNull::new(old_memo);
+
+        // SAFETY: `value_type_id()` check asserted above. The pointer points to a valid memo (otherwise
+        // it'd be null) so not null.
+        old_memo.map(|old_memo| unsafe { unpack_memo_ptr_typed::<M>(old_memo) })
     }
 
     /// Returns a pointer to the memo at the given index, if one has been inserted.
     #[inline]
-    pub(crate) fn get<M: Memo>(
+    pub(crate) fn get<M: AmbiguousMemo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<NonNull<M>> {
+    ) -> Option<Either<&'a M::MFalse, &'a M::MTrue>> {
         let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
 
         // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
@@ -226,13 +339,19 @@ impl MemoTableWithTypes<'_> {
         };
 
         // Verify that the we are casting to the correct type.
-        if type_.type_id != TypeId::of::<M>() {
+        if type_.type_id != M::value_type_id() {
             type_assert_failed(memo_ingredient_index);
         }
 
-        NonNull::new(atomic_memo.load(Ordering::Acquire))
-            // SAFETY: We asserted that the type is correct above.
-            .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
+        let memo = NonNull::new(atomic_memo.load(Ordering::Acquire));
+        // SAFETY: `value_type_id()` check asserted above. The pointer points to a valid memo (otherwise
+        // it'd be null) so not null.
+        memo.map(|old_memo| unsafe {
+            match unpack_memo_ptr_typed::<M>(old_memo) {
+                Either::Left(it) => Either::Left(it.as_ref()),
+                Either::Right(it) => Either::Right(it.as_ref()),
+            }
+        })
     }
 
     #[cfg(feature = "salsa_unstable")]
@@ -242,13 +361,15 @@ impl MemoTableWithTypes<'_> {
             let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
                 continue;
             };
+            // SAFETY: There exists a memo so it's not null.
+            let (memo, disambiguator) = unsafe { unpack_memo_ptr(memo) };
 
             let Some(type_) = self.types.types.get(index) else {
                 continue;
             };
 
             // SAFETY: The `TypeId` is asserted in `insert()`.
-            let dyn_memo: &dyn Memo = unsafe { (type_.to_dyn_fn)(memo).as_ref() };
+            let dyn_memo: &dyn Memo = unsafe { type_.to_dyn_fn(disambiguator)(memo).as_ref() };
             memory_usage.push(dyn_memo.memory_usage());
         }
 
@@ -265,10 +386,10 @@ impl MemoTableWithTypesMut<'_> {
     /// Calls `f` on the memo at `memo_ingredient_index`.
     ///
     /// If the memo is not present, `f` is not called.
-    pub(crate) fn map_memo<M: Memo>(
+    pub(crate) fn map_memo<M: AmbiguousMemo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
-        f: impl FnOnce(&mut M),
+        f: impl FnOnce(Either<&mut M::MFalse, &mut M::MTrue>),
     ) {
         let Some(MemoEntry { atomic_memo }) =
             self.memos.memos.get_mut(memo_ingredient_index.as_usize())
@@ -285,7 +406,7 @@ impl MemoTableWithTypesMut<'_> {
         };
 
         // Verify that the we are casting to the correct type.
-        if type_.type_id != TypeId::of::<M>() {
+        if type_.type_id != M::value_type_id() {
             type_assert_failed(memo_ingredient_index);
         }
 
@@ -293,8 +414,14 @@ impl MemoTableWithTypesMut<'_> {
             return;
         };
 
-        // SAFETY: We asserted that the type is correct above.
-        f(unsafe { MemoEntryType::from_dummy(memo).as_mut() });
+        // SAFETY: `value_type_id()` check asserted above. The pointer points to a valid memo (otherwise
+        // it'd be null) so not null.
+        f(unsafe {
+            match unpack_memo_ptr_typed::<M>(memo) {
+                Either::Left(mut it) => Either::Left(it.as_mut()),
+                Either::Right(mut it) => Either::Right(it.as_mut()),
+            }
+        });
     }
 
     /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.
@@ -349,10 +476,11 @@ impl MemoEntry {
     /// The type must match.
     #[inline]
     unsafe fn take(&mut self, type_: &MemoEntryType) -> Option<Box<dyn Memo>> {
-        let memo = mem::replace(self.atomic_memo.get_mut(), ptr::null_mut());
-        let memo = NonNull::new(memo)?;
+        let memo = NonNull::new(mem::replace(self.atomic_memo.get_mut(), ptr::null_mut()))?;
+        // SAFETY: We store an actual memo (otherwise `self.atomic_memo` would be null) of this type (our precondition).
+        let (memo, disambiguator) = unsafe { unpack_memo_ptr(memo) };
         // SAFETY: Our preconditions.
-        Some(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) })
+        Some(unsafe { Box::from_raw(type_.to_dyn_fn(disambiguator)(memo).as_ptr()) })
     }
 }
 

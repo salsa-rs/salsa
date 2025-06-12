@@ -21,6 +21,10 @@ impl std::fmt::Debug for AccumulatedMap {
 }
 
 impl AccumulatedMap {
+    pub(crate) const EMPTY: AccumulatedMap = AccumulatedMap {
+        map: hashbrown::HashMap::with_hasher(FxBuildHasher),
+    };
+
     pub fn accumulate<A: Accumulator>(&mut self, index: IngredientIndex, value: A) {
         self.map
             .entry(index)

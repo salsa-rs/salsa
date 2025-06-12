@@ -157,9 +157,9 @@ pub mod plumbing {
     }
 
     pub mod function {
+        pub use crate::function::AmbiguousMemo;
         pub use crate::function::Configuration;
         pub use crate::function::IngredientImpl;
-        pub use crate::function::Memo;
         pub use crate::table::memo::MemoEntryType;
     }
 

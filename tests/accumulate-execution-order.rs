@@ -13,39 +13,53 @@ use test_log::test;
 #[derive(Debug)]
 struct Log(#[allow(dead_code)] String);
 
-#[salsa::tracked]
-fn push_logs(db: &dyn Database) {
-    push_a_logs(db);
+// We need a dummy input, otherwise our query will have a `NEVER_CHANGE` durability,
+// and queries with this durability don't accumulate.
+#[salsa::input]
+struct Input {
+    dummy: (),
 }
 
 #[salsa::tracked]
-fn push_a_logs(db: &dyn Database) {
+fn push_logs(db: &dyn Database, input: Input) {
+    // We need a dummy input, otherwise our query will have a `NEVER_CHANGE` durability,
+    // and queries with this durability don't accumulate.
+    _ = input.dummy(db);
+    push_a_logs(db, input);
+}
+
+#[salsa::tracked]
+fn push_a_logs(db: &dyn Database, input: Input) {
+    _ = input.dummy(db);
     Log("log a".to_string()).accumulate(db);
-    push_b_logs(db);
-    push_c_logs(db);
-    push_d_logs(db);
+    push_b_logs(db, input);
+    push_c_logs(db, input);
+    push_d_logs(db, input);
 }
 
 #[salsa::tracked]
-fn push_b_logs(db: &dyn Database) {
+fn push_b_logs(db: &dyn Database, input: Input) {
+    _ = input.dummy(db);
     Log("log b".to_string()).accumulate(db);
-    push_d_logs(db);
+    push_d_logs(db, input);
 }
 
 #[salsa::tracked]
-fn push_c_logs(db: &dyn Database) {
+fn push_c_logs(db: &dyn Database, input: Input) {
+    _ = input.dummy(db);
     Log("log c".to_string()).accumulate(db);
 }
 
 #[salsa::tracked]
-fn push_d_logs(db: &dyn Database) {
+fn push_d_logs(db: &dyn Database, input: Input) {
+    _ = input.dummy(db);
     Log("log d".to_string()).accumulate(db);
 }
 
 #[test]
 fn accumulate_execution_order() {
     salsa::DatabaseImpl::new().attach(|db| {
-        let logs = push_logs::accumulated::<Log>(db);
+        let logs = push_logs::accumulated::<Log>(db, Input::new(db, ()));
         // Check that we get logs in execution order
         expect![[r#"
             [
