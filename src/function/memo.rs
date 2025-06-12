@@ -286,7 +286,7 @@ impl<V> Memo<V> {
         }
     }
 
-    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + '_ {
+    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, V> {
         struct TracingDebug<'a, T> {
             memo: &'a Memo<T>,
         }

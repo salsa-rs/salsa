@@ -200,7 +200,7 @@ macro_rules! setup_input_struct {
 
                 $(
                     #[must_use]
-                    $field_setter_vis fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty> + 'db
+                    $field_setter_vis fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty> + use<'db, $Db>
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,

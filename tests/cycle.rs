@@ -37,7 +37,7 @@ struct Inputs {
 }
 
 impl Inputs {
-    fn values(self, db: &dyn Db) -> impl Iterator<Item = Value> + '_ {
+    fn values(self, db: &dyn Db) -> impl Iterator<Item = Value> + use<'_> {
         self.inputs(db).iter().map(|input| input.eval(db))
     }
 }
