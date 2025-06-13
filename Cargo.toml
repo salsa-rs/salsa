@@ -12,10 +12,13 @@ description = "A generic framework for on-demand, incrementalized computation (e
 salsa-macro-rules = { version = "0.22.0", path = "components/salsa-macro-rules" }
 salsa-macros = { version = "0.22.0", path = "components/salsa-macros", optional = true }
 
-boxcar = "0.2.13"
+boxcar = { git = "https://github.com/ibraheemdev/boxcar", rev = "574c893f0a6d8b2cde17dd9933fd9e3d74ea8e0f" }
 crossbeam-queue = "0.3.11"
 crossbeam-utils = "0.8.21"
+dashmap = { version = "6", features = ["raw-api"] }
 hashbrown = "0.15"
+# The version of hashbrown used by dashmap.
+hashbrown_14 = { package = "hashbrown", version = "0.14" }
 hashlink = "0.10"
 indexmap = "2"
 intrusive-collections = "0.9.7"
@@ -51,7 +54,6 @@ salsa-macros = { version = "=0.22.0", path = "components/salsa-macros" }
 [dev-dependencies]
 # examples
 crossbeam-channel = "0.5.14"
-dashmap = { version = "6", features = ["raw-api"] }
 eyre = "0.6.8"
 notify-debouncer-mini = "0.4.1"
 ordered-float = "4.2.1"

@@ -43,6 +43,10 @@ impl<A: Accumulator> Default for JarImpl<A> {
 }
 
 impl<A: Accumulator> Jar for JarImpl<A> {
+    fn ingredients_count() -> usize {
+        1
+    }
+
     fn create_ingredients(
         _zalsa: &Zalsa,
         first_index: IngredientIndex,

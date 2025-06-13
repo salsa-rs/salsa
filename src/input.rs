@@ -55,6 +55,10 @@ impl<C: Configuration> Default for JarImpl<C> {
 }
 
 impl<C: Configuration> Jar for JarImpl<C> {
+    fn ingredients_count() -> usize {
+        1 + C::FIELD_DEBUG_NAMES.len()
+    }
+
     fn create_ingredients(
         _zalsa: &Zalsa,
         struct_index: crate::zalsa::IngredientIndex,

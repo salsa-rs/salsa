@@ -1,17 +1,18 @@
 use std::any::{Any, TypeId};
-use std::collections::hash_map;
+use std::hash::BuildHasher;
 use std::marker::PhantomData;
 use std::mem;
 use std::num::NonZeroU32;
 use std::panic::RefUnwindSafe;
 
+use dashmap::SharedValue;
 use rustc_hash::FxHashMap;
 
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
 use crate::sync::atomic::{AtomicU64, Ordering};
-use crate::sync::{Mutex, RwLock};
+use crate::sync::{FxDashMap, RwLock};
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
@@ -141,12 +142,7 @@ pub struct Zalsa {
     memo_ingredient_indices: RwLock<Vec<Vec<IngredientIndex>>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
-    /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
-    /// so that we can protect `ingredients_vec` as well and predict what the
-    /// first ingredient index will be. This allows ingredients to store their own indices.
-    /// This may be worth refactoring in the future because it naturally adds more overhead to
-    /// adding new kinds of ingredients.
-    jar_map: Mutex<FxHashMap<TypeId, IngredientIndex>>,
+    jar_map: FxDashMap<TypeId, IngredientIndex>,
 
     /// A map from the `IngredientIndex` to the `TypeId` of its ID struct.
     ///
@@ -294,44 +290,83 @@ impl Zalsa {
     #[inline]
     pub fn add_or_lookup_jar_by_type<J: Jar>(&self) -> IngredientIndex {
         let jar_type_id = TypeId::of::<J>();
-        if let Some(index) = self.jar_map.lock().get(&jar_type_id) {
-            return *index;
-        };
-        self.add_or_lookup_jar_by_type_slow::<J>(jar_type_id)
-    }
 
-    #[inline(never)]
-    fn add_or_lookup_jar_by_type_slow<J: Jar>(&self, jar_type_id: TypeId) -> IngredientIndex {
-        let dependencies = J::create_dependencies(self);
-        let mut jar_map = self.jar_map.lock();
-        let index = IngredientIndex::from(self.ingredients_vec.count());
-        match jar_map.entry(jar_type_id) {
-            hash_map::Entry::Occupied(entry) => {
-                // Someone made it earlier than us.
-                return *entry.get();
-            }
-            hash_map::Entry::Vacant(entry) => entry.insert(index),
-        };
-        let ingredients = J::create_ingredients(self, index, dependencies);
-        for ingredient in ingredients {
-            let expected_index = ingredient.ingredient_index();
+        let jar_hash = self.jar_map.hasher().hash_one(jar_type_id);
+        let shard = self.jar_map.determine_shard(jar_hash as usize);
 
-            if ingredient.requires_reset_for_new_revision() {
-                self.ingredients_requiring_reset.push(expected_index);
-            }
-
-            let actual_index = self.ingredients_vec.push(ingredient);
-            assert_eq!(
-                expected_index.as_u32() as usize,
-                actual_index,
-                "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
-                self.ingredients_vec[actual_index],
-                expected_index.as_u32(),
-                actual_index,
-            );
+        {
+            let jar_map = self.jar_map.shards()[shard].read();
+            if let Some((_, index)) = jar_map.get(jar_hash, |&(key, _)| key == jar_type_id) {
+                return *index.get();
+            };
         }
 
+        self.add_or_lookup_jar_by_type_slow::<J>(jar_type_id, jar_hash, shard)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn add_or_lookup_jar_by_type_slow<J: Jar>(
+        &self,
+        jar_type_id: TypeId,
+        jar_hash: u64,
+        shard: usize,
+    ) -> IngredientIndex {
+        let mut dependencies = J::create_dependencies(self);
+
+        let mut jar_map = self.jar_map.shards()[shard].write();
+
+        // Someone made it earlier than us.
+        if let Some((_, index)) = jar_map.get(jar_hash, |&(key, _)| key == jar_type_id) {
+            return *index.get();
+        };
+
+        let mut ingredients = None;
+        let index = self.ingredients_vec
+            // Claim the ingredient slots eagerly, which guarantees that the indices will be sequential.
+            .push_many(J::ingredients_count(), |index| {
+                let ingredients = ingredients.get_or_insert_with(|| {
+                    // Create the ingredients list with the first index.
+                    let ingredient_index = IngredientIndex::from(index);
+                    let ingredients = J::create_ingredients(self, ingredient_index, mem::take(&mut dependencies));
+
+                    // Create the jar.
+                    let value = (jar_type_id, SharedValue::new(ingredient_index));
+                    jar_map.insert(jar_hash, value, |(key, _)| {
+                        self.jar_map.hasher().hash_one(key)
+                    });
+
+                    ingredients.into_iter()
+                });
+
+                // Get the next ingredient from the list.
+                let ingredient = ingredients.next().expect(
+                    "`Jar::ingredients` returned less ingredients than specified by `Jar::ingredients_count`",
+                );
+
+                let expected_index = ingredient.ingredient_index();
+                if ingredient.requires_reset_for_new_revision() {
+                    self.ingredients_requiring_reset.push(expected_index);
+                }
+
+                // Ensure we are assigning the ingredient to the correct index in the vector.
+                assert_eq!(
+                    expected_index.as_u32() as usize,
+                    index,
+                    "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
+                    ingredient,
+                    expected_index.as_u32(),
+                    index,
+                );
+
+                ingredient
+            });
+
+        // We need to hold the shard lock until all ingredients have been initialized, to avoid
+        // returning partially-initialized jars.
         drop(jar_map);
+
+        let index = IngredientIndex::from(index);
         self.ingredient_to_id_struct_type_id_map
             .write()
             .insert(index, J::id_struct_type_id());

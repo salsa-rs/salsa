@@ -30,8 +30,15 @@ pub trait Jar: Any {
         IngredientIndices::empty()
     }
 
+    /// Returns the number of ingredients that `create_ingredients` will return.
+    fn ingredients_count() -> usize
+    where
+        Self: Sized;
+
     /// Create the ingredients given the index of the first one.
     /// All subsequent ingredients will be assigned contiguous indices.
+    ///
+    /// Note that the vector returned must be of length `ingredients_count`.
     fn create_ingredients(
         zalsa: &Zalsa,
         first_index: IngredientIndex,

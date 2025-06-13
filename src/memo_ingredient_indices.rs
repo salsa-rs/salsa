@@ -9,7 +9,7 @@ use crate::{Id, IngredientIndex};
 /// be viewed as a *set* of [`IngredientIndex`], where each instance of the enum can belong
 /// to one, potentially different, index. This is what this type represents: a set of
 /// `IngredientIndex`.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct IngredientIndices {
     indices: Box<[IngredientIndex]>,
 }

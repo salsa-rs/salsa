@@ -242,6 +242,16 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
+                fn ingredients_count() -> usize {
+                    $zalsa::macro_if! {
+                        if $needs_interner {
+                            2
+                        } else {
+                            1
+                        }
+                    }
+                }
+
                 fn create_ingredients(
                     zalsa: &$zalsa::Zalsa,
                     first_index: $zalsa::IngredientIndex,
