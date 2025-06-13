@@ -86,9 +86,6 @@ macro_rules! setup_tracked_fn {
 
             struct $Configuration;
 
-            static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =
-                $zalsa::IngredientCache::new();
-
             $zalsa::macro_if! {
                 if $needs_interner {
                     #[derive(Copy, Clone)]
@@ -96,9 +93,6 @@ macro_rules! setup_tracked_fn {
                         salsa::Id,
                         std::marker::PhantomData<&$db_lt $zalsa::interned::Value<$Configuration>>,
                     );
-
-                    static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
-                        $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
@@ -150,10 +144,15 @@ macro_rules! setup_tracked_fn {
             impl $Configuration {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     let zalsa = db.zalsa();
-                    $FN_CACHE.get_or_create(zalsa, || {
-                        <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                        zalsa.add_or_lookup_jar_by_type::<$Configuration>()
-                    })
+                    <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                    let index = zalsa.add_or_lookup_jar_by_type::<$Configuration>();
+                    zalsa.lookup_ingredient(index).assert_type()
+                }
+
+                fn fn_ingredient_no_register(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
+                    let zalsa = db.zalsa();
+                    let index = zalsa.add_or_lookup_jar_by_type::<$Configuration>();
+                    zalsa.lookup_ingredient(index).assert_type()
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
@@ -169,10 +168,9 @@ macro_rules! setup_tracked_fn {
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
-                        $INTERN_CACHE.get_or_create(zalsa, || {
-                            <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                            zalsa.add_or_lookup_jar_by_type::<$Configuration>().successor(0)
-                        })
+                        <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                        let index = zalsa.add_or_lookup_jar_by_type::<$Configuration>().successor(0);
+                        zalsa.lookup_ingredient(index).assert_type()
                     }
                 }
             }
@@ -356,7 +354,7 @@ macro_rules! setup_tracked_fn {
                     if $needs_interner {
                         {
                             let key = $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*), |_, data| data);
-                            $Configuration::fn_ingredient($db).fetch($db, key)
+                            $Configuration::fn_ingredient_no_register($db).fetch($db, key)
                         }
                     } else {
                         $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))

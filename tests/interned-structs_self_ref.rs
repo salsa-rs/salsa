@@ -82,13 +82,9 @@ const _: () = {
         where
             Db: ?Sized + zalsa_::Database,
         {
-            static CACHE: zalsa_::IngredientCache<zalsa_struct_::IngredientImpl<Configuration_>> =
-                zalsa_::IngredientCache::new();
-
             let zalsa = db.zalsa();
-            CACHE.get_or_create(zalsa, || {
-                zalsa.add_or_lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
-            })
+            let index = zalsa.add_or_lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>();
+            zalsa.lookup_ingredient(index).assert_type()
         }
     }
     impl zalsa_::AsId for InternedString<'_> {

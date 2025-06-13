@@ -22,12 +22,8 @@ macro_rules! setup_accumulator_impl {
             use salsa::plumbing::accumulator as $zalsa_struct;
 
             fn $ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<$Struct> {
-                static $CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Struct>> =
-                    $zalsa::IngredientCache::new();
-
-                $CACHE.get_or_create(zalsa, || {
-                    zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
-                })
+                let index = zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>();
+                zalsa.lookup_ingredient(index).assert_type()
             }
 
             impl $zalsa::Accumulator for $Struct {
