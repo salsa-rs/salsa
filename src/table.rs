@@ -9,7 +9,7 @@ use std::slice;
 use memo::MemoTable;
 use rustc_hash::FxHashMap;
 
-use crate::sync::atomic::{AtomicUsize, Ordering};
+use crate::sync::atomic::{AtomicU16, Ordering};
 use crate::sync::{Arc, Mutex};
 use crate::table::memo::{MemoTableTypes, MemoTableWithTypes, MemoTableWithTypesMut};
 use crate::{Id, IngredientIndex, Revision};
@@ -20,6 +20,13 @@ const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
 const MAX_PAGES: usize = 1 << (u32::BITS as usize - PAGE_LEN_BITS);
+
+const _: () = {
+    assert!(
+        PAGE_LEN_BITS < u16::BITS as usize,
+        "`Page::allocated` only stores a u16"
+    )
+};
 
 /// A typed [`Page`] view.
 pub(crate) struct PageView<'p, T: Slot>(&'p Page, PhantomData<&'p T>);
@@ -59,7 +66,7 @@ struct SlotVTable {
     /// A drop impl to call when the own page drops
     /// SAFETY: The caller is required to supply a correct data pointer to a `Box<PageDataEntry<T>>` and initialized length,
     /// and correct memo types.
-    drop_impl: unsafe fn(data: *mut (), initialized: usize, memo_types: &MemoTableTypes),
+    drop_impl: unsafe fn(data: *mut (), initialized: u16, memo_types: &MemoTableTypes),
 }
 
 impl SlotVTable {
@@ -70,7 +77,7 @@ impl SlotVTable {
                 // SAFETY: The caller is required to supply a correct data pointer and initialized length
                 unsafe {
                     let data = Box::from_raw(data.cast::<PageData<T>>());
-                    for i in 0..initialized {
+                    for i in 0..(initialized as usize) {
                         let item = data[i].get().cast::<T>();
                         memo_types.attach_memos_mut((*item).memos_mut()).drop();
                         ptr::drop_in_place(item);
@@ -96,7 +103,7 @@ struct Page {
     ingredient: IngredientIndex,
 
     /// Number of elements of `data` that are initialized.
-    allocated: AtomicUsize,
+    allocated: AtomicU16,
 
     /// The "allocation lock" is held when we allocate a new entry.
     ///
@@ -320,7 +327,9 @@ impl<'p, T: Slot> PageView<'p, T> {
         // Update the length (this must be done after initialization as otherwise an uninitialized
         // read could occur!)
         // Ordering: Relaxed is fine as the `allocation_lock` establishes a happens-before relationship
-        self.0.allocated.store(index + 1, Ordering::Relaxed);
+        self.0
+            .allocated
+            .store((index + 1) as u16, Ordering::Relaxed);
 
         Ok(id)
     }
@@ -362,7 +371,7 @@ impl Page {
     fn allocated(&self) -> usize {
         // Ordering: Relaxed is fine as the `allocation_lock` establishes a happens-before
         // relationship
-        self.allocated.load(Ordering::Relaxed)
+        self.allocated.load(Ordering::Relaxed) as usize
     }
 
     /// Retrieves the pointer for the given slot.
