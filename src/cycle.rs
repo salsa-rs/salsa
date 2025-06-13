@@ -49,6 +49,8 @@
 //! cycle head may then iterate, which may result in a new set of iterations on the inner cycle,
 //! for each iteration of the outer cycle.
 
+use std::mem;
+
 use thin_vec::{thin_vec, ThinVec};
 
 use crate::key::DatabaseKeyIndex;
@@ -209,6 +211,10 @@ impl CycleHeads {
                 self.0.push(*head);
             }
         }
+    }
+
+    pub(crate) fn allocation_size(&self) -> usize {
+        mem::size_of_val(self.0.as_slice())
     }
 }
 

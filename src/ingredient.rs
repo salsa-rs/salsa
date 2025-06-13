@@ -5,6 +5,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
+use crate::database::SlotInfo;
 use crate::function::VerifyResult;
 use crate::plumbing::IngredientIndices;
 use crate::runtime::Running;
@@ -180,6 +181,12 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let _ = (db, key_index);
         (None, InputAccumulatedValues::Empty)
+    }
+
+    /// Returns memory usage information about any instances of the ingredient,
+    /// if applicable.
+    fn memory_usage(&self, _db: &dyn Database) -> Option<Vec<SlotInfo>> {
+        None
     }
 }
 

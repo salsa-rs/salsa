@@ -23,7 +23,7 @@ use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{Database, Durability, Event, EventKind, Id, Revision};
+use crate::{Database, Durability, Event, EventKind, Id, Revision, SlotInfo};
 
 pub mod tracked_field;
 
@@ -852,6 +852,17 @@ where
     fn memo_table_types(&self) -> Arc<MemoTableTypes> {
         self.memo_table_types.clone()
     }
+
+    /// Returns memory usage information about any tracked structs.
+    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<SlotInfo>> {
+        let memory_usage = self
+            .entries(db)
+            // SAFETY: The memo table belongs to a value that we allocated, so it
+            // has the correct type.
+            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
+            .collect();
+        Some(memory_usage)
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -908,6 +919,23 @@ where
                     }
                 }
             }
+        }
+    }
+
+    /// Returns memory usage information about the tracked struct.
+    ///
+    /// # Safety
+    ///
+    /// The `MemoTable` must belong to a `Value` of the correct type.
+    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> SlotInfo {
+        // SAFETY: The caller guarantees this is the correct types table.
+        let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
+
+        SlotInfo {
+            debug_name: C::DEBUG_NAME,
+            size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::Fields<'_>>(),
+            size_of_fields: mem::size_of::<C::Fields<'_>>(),
+            memos: memos.memory_usage(),
         }
     }
 }

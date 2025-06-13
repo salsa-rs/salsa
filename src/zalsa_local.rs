@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::mem;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 
@@ -347,6 +348,34 @@ pub(crate) struct QueryRevisions {
     pub(super) extra: QueryRevisionsExtra,
 }
 
+impl QueryRevisions {
+    pub(crate) fn allocation_size(&self) -> usize {
+        let QueryRevisions {
+            changed_at: _,
+            durability: _,
+            accumulated_inputs: _,
+            verified_final: _,
+            origin,
+            extra,
+        } = self;
+
+        let mut memory = 0;
+
+        if let QueryOriginRef::Derived(query_edges)
+        | QueryOriginRef::DerivedUntracked(query_edges) = origin.as_ref()
+        {
+            memory += mem::size_of_val(query_edges);
+        }
+
+        if let Some(extra) = extra.0.as_ref() {
+            memory += std::mem::size_of::<QueryRevisionsExtra>();
+            memory += extra.allocation_size();
+        }
+
+        memory
+    }
+}
+
 /// Data on `QueryRevisions` that is lazily allocated to save memory
 /// in the common case.
 ///
@@ -415,6 +444,21 @@ struct QueryRevisionsExtraInner {
     cycle_heads: CycleHeads,
 
     iteration: IterationCount,
+}
+
+impl QueryRevisionsExtraInner {
+    fn allocation_size(&self) -> usize {
+        let QueryRevisionsExtraInner {
+            accumulated,
+            tracked_struct_ids,
+            cycle_heads,
+            iteration: _,
+        } = self;
+
+        accumulated.allocation_size()
+            + cycle_heads.allocation_size()
+            + mem::size_of_val(tracked_struct_ids.as_slice())
+    }
 }
 
 #[cfg(not(feature = "shuttle"))]
