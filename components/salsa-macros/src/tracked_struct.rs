@@ -1,4 +1,5 @@
 use proc_macro2::TokenStream;
+use syn::spanned::Spanned;
 
 use crate::db_lifetime;
 use crate::hygiene::Hygiene;
@@ -64,6 +65,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
 impl SalsaStructAllowedOptions for TrackedStruct {
     const KIND: &'static str = "tracked";
 
+    const ALLOW_MAYBE_UPDATE: bool = true;
+
     const ALLOW_TRACKED: bool = true;
 
     const HAS_LIFETIME: bool = true;
@@ -83,6 +86,7 @@ impl Macro {
     #[allow(non_snake_case)]
     fn try_macro(&self) -> syn::Result<TokenStream> {
         let salsa_struct = SalsaStruct::new(&self.struct_item, &self.args)?;
+        let zalsa = self.hygiene.ident("zalsa");
 
         let attrs = &self.struct_item.attrs;
         let vis = &self.struct_item.vis;
@@ -116,10 +120,26 @@ impl Macro {
         let tracked_field_unused_attrs = salsa_struct.tracked_field_attrs();
         let untracked_field_unused_attrs = salsa_struct.untracked_field_attrs();
 
+        let tracked_maybe_update = salsa_struct.tracked_fields_iter().map(|(_, field)| {
+            let field_ty = &field.field.ty;
+            if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
+                quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #maybe_update; maybe_update }) }
+            } else {
+                quote! {(#zalsa::UpdateDispatch::<#field_ty>::maybe_update)}
+            }
+        });
+        let untracked_maybe_update = salsa_struct.untracked_fields_iter().map(|(_, field)| {
+            let field_ty = &field.field.ty;
+            if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
+                quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #maybe_update; maybe_update }) }
+            } else {
+                quote! {(#zalsa::UpdateDispatch::<#field_ty>::maybe_update)}
+            }
+        });
+
         let num_tracked_fields = salsa_struct.num_tracked_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
-        let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
         let CACHE = self.hygiene.ident("CACHE");
@@ -152,6 +172,9 @@ impl Macro {
                     relative_tracked_indices: [#(#relative_tracked_indices),*],
 
                     absolute_untracked_indices: [#(#absolute_untracked_indices),*],
+
+                    tracked_maybe_updates: [#(#tracked_maybe_update),*],
+                    untracked_maybe_updates: [#(#untracked_maybe_update),*],
 
                     tracked_options: [#(#tracked_options),*],
                     untracked_options: [#(#untracked_options),*],

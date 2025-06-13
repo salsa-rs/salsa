@@ -69,6 +69,8 @@ impl crate::options::AllowedOptions for InputStruct {
 impl SalsaStructAllowedOptions for InputStruct {
     const KIND: &'static str = "input";
 
+    const ALLOW_MAYBE_UPDATE: bool = false;
+
     const ALLOW_TRACKED: bool = false;
 
     const HAS_LIFETIME: bool = false;

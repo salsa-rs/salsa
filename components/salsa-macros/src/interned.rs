@@ -69,6 +69,8 @@ impl crate::options::AllowedOptions for InternedStruct {
 impl SalsaStructAllowedOptions for InternedStruct {
     const KIND: &'static str = "interned";
 
+    const ALLOW_MAYBE_UPDATE: bool = false;
+
     const ALLOW_TRACKED: bool = false;
 
     const HAS_LIFETIME: bool = true;
