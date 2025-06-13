@@ -10,88 +10,94 @@ error: `db` option not allowed here
 13 | #[salsa::tracked(db = Db)]
    |                  ^^
 
-error: `constructor` option not allowed here
+error: `revisions` option not allowed here
   --> tests/compile-fail/tracked_fn_incompatibles.rs:18:18
    |
-18 | #[salsa::tracked(constructor = TrackedFn3)]
+18 | #[salsa::tracked(revisions = 12)]
+   |                  ^^^^^^^^^
+
+error: `constructor` option not allowed here
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:23:18
+   |
+23 | #[salsa::tracked(constructor = TrackedFn3)]
    |                  ^^^^^^^^^^^
 
 error: #[salsa::tracked] must also be applied to the impl block for tracked methods
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:27:55
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:32:55
    |
-27 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
+32 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
    |                                                       ^^^^^
 
 error: only functions with a single salsa struct as their input can be specified
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:29:18
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:34:18
    |
-29 | #[salsa::tracked(specify)]
+34 | #[salsa::tracked(specify)]
    |                  ^^^^^^^
 
 error: must have a `'db` lifetime
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:44:9
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:49:9
    |
-44 |     db: &dyn Db,
+49 |     db: &dyn Db,
    |         ^
 
 error: must have a `'db_lifetime` lifetime
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:52:9
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:57:9
    |
-52 |     db: &dyn Db,
+57 |     db: &dyn Db,
    |         ^
 
 error: only a single lifetime parameter is accepted
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:67:39
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:72:39
    |
-67 | fn tracked_fn_with_multiple_lts<'db1, 'db2>(db: &'db1 dyn Db, interned: MyInterned<'db2>) -> u32 {
+72 | fn tracked_fn_with_multiple_lts<'db1, 'db2>(db: &'db1 dyn Db, interned: MyInterned<'db2>) -> u32 {
    |                                       ^^^^
 
 error: `self` parameter is only allowed in associated functions
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:27:55
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:32:55
    |
-27 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
+32 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
    |                                                       ^^^^^ not semantically valid as function parameter
    |
    = note: associated functions are those in `impl` or `trait` definitions
 
 error[E0415]: identifier `input` is bound more than once in this parameter list
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:33:5
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:38:5
    |
-33 |     input: MyInput,
+38 |     input: MyInput,
    |     ^^^^^ used as parameter more than once
 
 error[E0106]: missing lifetime specifier
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:61:15
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:66:15
    |
-61 |     interned: MyInterned,
+66 |     interned: MyInterned,
    |               ^^^^^^^^^^ expected named lifetime parameter
    |
 help: consider using the `'db` lifetime
    |
-61 |     interned: MyInterned<'db>,
+66 |     interned: MyInterned<'db>,
    |                         +++++
 
 error[E0308]: mismatched types
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:24:46
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:29:46
    |
-23 | #[salsa::tracked]
+28 | #[salsa::tracked]
    | ----------------- implicitly returns `()` as its body has no tail or `return` expression
-24 | fn tracked_fn_with_one_input(db: &dyn Db) -> u32 {}
+29 | fn tracked_fn_with_one_input(db: &dyn Db) -> u32 {}
    |                                              ^^^ expected `u32`, found `()`
 
 error[E0308]: mismatched types
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:27:78
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:32:78
    |
-27 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
+32 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
    |    --------------------------------------------------                        ^^^ expected `u32`, found `()`
    |    |
    |    implicitly returns `()` as its body has no tail or `return` expression
 
 error[E0308]: mismatched types
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:34:6
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:39:6
    |
-30 | fn tracked_fn_with_too_many_arguments_for_specify(
+35 | fn tracked_fn_with_too_many_arguments_for_specify(
    |    ---------------------------------------------- implicitly returns `()` as its body has no tail or `return` expression
 ...
-34 | ) -> u32 {
+39 | ) -> u32 {
    |      ^^^ expected `u32`, found `()`

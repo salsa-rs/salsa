@@ -19,6 +19,9 @@ struct AccWithRecover(u32);
 #[salsa::accumulator(lru = 12)]
 struct AccWithLru(u32);
 
+#[salsa::accumulator(revisions = 12)]
+struct AccWithRevisions(u32);
+
 #[salsa::accumulator(constructor = Constructor)]
 struct AccWithConstructor(u32);
 

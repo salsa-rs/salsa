@@ -28,6 +28,9 @@ macro_rules! setup_interned_struct {
         // the salsa ID
         id: $Id:path,
 
+        // The minimum number of revisions to keep the value interned.
+        revisions: $($revisions:expr)?,
+
         // the lifetime used in the desugared interned struct.
         // if the `db_lt_arg`, is present, this is `db_lt_arg`, but otherwise,
         // it is `'static`.
@@ -129,6 +132,9 @@ macro_rules! setup_interned_struct {
                     line: line!(),
                 };
                 const DEBUG_NAME: &'static str = stringify!($Struct);
+                $(
+                    const REVISIONS: ::core::num::NonZeroUsize = ::core::num::NonZeroUsize::new($revisions).unwrap();
+                )?
                 type Fields<'a> = $StructDataIdent<'a>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
             }

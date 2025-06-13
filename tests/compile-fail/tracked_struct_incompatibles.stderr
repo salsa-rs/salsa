@@ -33,3 +33,9 @@ error: `lru` option not allowed here
    |
 26 | #[salsa::tracked(lru = 12)]
    |                  ^^^
+
+error: `revisions` option not allowed here
+  --> tests/compile-fail/tracked_struct_incompatibles.rs:31:18
+   |
+31 | #[salsa::tracked(revisions = 12)]
+   |                  ^^^^^^^^^

@@ -62,6 +62,8 @@ impl crate::options::AllowedOptions for InternedStruct {
     const CONSTRUCTOR_NAME: bool = true;
 
     const ID: bool = true;
+
+    const REVISIONS: bool = true;
 }
 
 impl SalsaStructAllowedOptions for InternedStruct {
@@ -105,6 +107,7 @@ impl Macro {
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let has_lifetime = salsa_struct.generate_lifetime();
         let id = salsa_struct.id();
+        let revisions = salsa_struct.revisions();
 
         let (db_lt_arg, cfg, interior_lt) = if has_lifetime {
             (
@@ -140,6 +143,7 @@ impl Macro {
                     db_lt: #db_lt,
                     db_lt_arg: #db_lt_arg,
                     id: #id,
+                    revisions: #(#revisions)*,
                     interior_lt: #interior_lt,
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],

@@ -28,4 +28,9 @@ struct TrackedStructWithLru {
     field: u32,
 }
 
+#[salsa::tracked(revisions = 12)]
+struct TrackedStructWithRevisions {
+    field: u32,
+}
+
 fn main() {}

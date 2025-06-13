@@ -38,6 +38,11 @@ impl<'db> std::default::Default for MyTracked<'db> {
     fn default() -> Self {}
 }
 
+#[salsa::tracked(revisions = 32)]
+impl<'db> std::default::Default for MyTracked<'db> {
+    fn default() -> Self {}
+}
+
 #[salsa::tracked(constructor = Constructor)]
 impl<'db> std::default::Default for MyTracked<'db> {
     fn default() -> Self {}

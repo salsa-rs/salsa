@@ -40,8 +40,14 @@ error: `lru` option not allowed here
 19 | #[salsa::accumulator(lru = 12)]
    |                      ^^^
 
-error: `constructor` option not allowed here
+error: `revisions` option not allowed here
   --> tests/compile-fail/accumulator_incompatibles.rs:22:22
    |
-22 | #[salsa::accumulator(constructor = Constructor)]
+22 | #[salsa::accumulator(revisions = 12)]
+   |                      ^^^^^^^^^
+
+error: `constructor` option not allowed here
+  --> tests/compile-fail/accumulator_incompatibles.rs:25:22
+   |
+25 | #[salsa::accumulator(constructor = Constructor)]
    |                      ^^^^^^^^^^^

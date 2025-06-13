@@ -3,6 +3,7 @@ use std::cell::{Cell, UnsafeCell};
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use crossbeam_utils::CachePadded;
@@ -30,6 +31,13 @@ pub trait Configuration: Sized + 'static {
     const LOCATION: crate::ingredient::Location;
 
     const DEBUG_NAME: &'static str;
+
+    // The minimum number of revisions that must pass before a stale value is garbage collected.
+    #[cfg(test)]
+    const REVISIONS: NonZeroUsize = NonZeroUsize::new(3).unwrap();
+
+    #[cfg(not(test))] // More aggressive garbage collection by default when testing.
+    const REVISIONS: NonZeroUsize = NonZeroUsize::new(1).unwrap();
 
     /// The fields of the struct being interned.
     type Fields<'db>: InternedData;
@@ -63,7 +71,7 @@ pub struct IngredientImpl<C: Configuration> {
     shards: Box<[CachePadded<Mutex<IngredientShard<C>>>]>,
 
     /// A queue of recent revisions in which values were interned.
-    revision_queue: RevisionQueue,
+    revision_queue: RevisionQueue<C>,
 
     memo_table_types: Arc<MemoTableTypes>,
 
@@ -158,7 +166,12 @@ struct ValueShared {
 
 impl ValueShared {
     /// Returns `true` if this value slot can be reused when interning, and should be added to the LRU.
-    fn is_reusable(&self) -> bool {
+    fn is_reusable<C: Configuration>(&self) -> bool {
+        // Garbage collection is disabled.
+        if C::REVISIONS == IMMORTAL {
+            return false;
+        }
+
         // Collecting higher durability values requires invalidating the revision for their
         // durability (see `Database::synthetic_write`, which requires a mutable reference to
         // the database) to avoid short-circuiting calls to `maybe_changed_after`. This is
@@ -337,7 +350,7 @@ where
                     })
                 });
 
-                if value_shared.is_reusable() {
+                if value_shared.is_reusable::<C>() {
                     // Move the value to the front of the LRU list.
                     //
                     // SAFETY: We hold the lock for the shard containing the value, and `value` is
@@ -351,14 +364,14 @@ where
             }
 
             if let Some((_, stamp)) = zalsa_local.active_query() {
-                let was_reusable = value_shared.is_reusable();
+                let was_reusable = value_shared.is_reusable::<C>();
 
                 // Record the maximum durability across all queries that intern this value.
                 value_shared.durability = std::cmp::max(value_shared.durability, stamp.durability);
 
                 // If the value is no longer reusable, i.e. the durability increased, remove it
                 // from the LRU.
-                if was_reusable && !value_shared.is_reusable() {
+                if was_reusable && !value_shared.is_reusable::<C>() {
                     // SAFETY: We hold the lock for the shard containing the value, and `value`
                     // was previously reusable, so is in the list.
                     unsafe { shard.lru.cursor_mut_from_ptr(value).remove() };
@@ -507,7 +520,7 @@ where
             // correct type.
             unsafe { self.clear_memos(zalsa, &mut memo_table, new_id) };
 
-            if value_shared.is_reusable() {
+            if value_shared.is_reusable::<C>() {
                 // Move the value to the front of the LRU list.
                 //
                 // SAFETY: The value pointer is valid for the lifetime of the database.
@@ -580,7 +593,7 @@ where
         // SAFETY: We hold the lock for the shard containing the value.
         let value_shared = unsafe { &mut *value.shared.get() };
 
-        if value_shared.is_reusable() {
+        if value_shared.is_reusable::<C>() {
             // Add the value to the front of the LRU list.
             //
             // SAFETY: The value pointer is valid for the lifetime of the database
@@ -855,35 +868,48 @@ impl<Fields: Send + Sync + 'static> Slot for Value<Fields> {
     }
 }
 
-#[cfg(not(test))]
-const REVS: usize = 3;
-
-#[cfg(test)] // Aggressively reuse slots in tests.
-const REVS: usize = 1;
-
 /// Keep track of revisions in which interned values were read, to determine staleness.
 ///
 /// An interned value is considered stale if it has not been read in the past `REVS`
 /// revisions. However, we only consider revisions in which interned values were actually
 /// read, as revisions may be created in bursts.
-struct RevisionQueue {
+struct RevisionQueue<C> {
     lock: Mutex<()>,
-    revisions: [AtomicRevision; REVS],
+    // Once `feature(generic_const_exprs)` is stable this can just be an array.
+    revisions: Box<[AtomicRevision]>,
+    _configuration: PhantomData<fn() -> C>,
 }
 
-impl Default for RevisionQueue {
-    fn default() -> RevisionQueue {
+// `#[salsa::interned(revisions = usize::MAX)]` disables garbage collection.
+const IMMORTAL: NonZeroUsize = NonZeroUsize::MAX;
+
+impl<C: Configuration> Default for RevisionQueue<C> {
+    fn default() -> RevisionQueue<C> {
+        let revisions = if C::REVISIONS == IMMORTAL {
+            Box::default()
+        } else {
+            (0..C::REVISIONS.get())
+                .map(|_| AtomicRevision::start())
+                .collect()
+        };
+
         RevisionQueue {
             lock: Mutex::new(()),
-            revisions: [const { AtomicRevision::start() }; REVS],
+            revisions,
+            _configuration: PhantomData,
         }
     }
 }
 
-impl RevisionQueue {
+impl<C: Configuration> RevisionQueue<C> {
     /// Record the given revision as active.
     #[inline]
     fn record(&self, revision: Revision) {
+        // Garbage collection is disabled.
+        if C::REVISIONS == IMMORTAL {
+            return;
+        }
+
         // Fast-path: We already recorded this revision.
         if self.revisions[0].load() >= revision {
             return;
@@ -899,7 +925,7 @@ impl RevisionQueue {
         // Otherwise, update the queue, maintaining sorted order.
         //
         // Note that this should only happen once per revision.
-        for i in (1..REVS).rev() {
+        for i in (1..C::REVISIONS.get()).rev() {
             self.revisions[i].store(self.revisions[i - 1].load());
         }
 
@@ -909,7 +935,12 @@ impl RevisionQueue {
     /// Returns `true` if the given revision is old enough to be considered stale.
     #[inline]
     fn is_stale(&self, revision: Revision) -> bool {
-        let oldest = self.revisions[REVS - 1].load();
+        // Garbage collection is disabled.
+        if C::REVISIONS == IMMORTAL {
+            return false;
+        }
+
+        let oldest = self.revisions[C::REVISIONS.get() - 1].load();
 
         // If we have not recorded `REVS` revisions yet, nothing can be stale.
         if oldest == Revision::start() {
@@ -919,10 +950,16 @@ impl RevisionQueue {
         revision < oldest
     }
 
-    /// Returns `true` if `REVS` revisions have been recorded as active.
+    /// Returns `true` if `C::REVISIONS` revisions have been recorded as active,
+    /// i.e. enough data has been recorded to start garbage collection.
     #[inline]
     fn is_primed(&self) -> bool {
-        self.revisions[REVS - 1].load() > Revision::start()
+        // Garbage collection is disabled.
+        if C::REVISIONS == IMMORTAL {
+            return false;
+        }
+
+        self.revisions[C::REVISIONS.get() - 1].load() > Revision::start()
     }
 }
 

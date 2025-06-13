@@ -93,6 +93,12 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub id: Option<syn::Path>,
 
+    /// The `revisions = <usize>` option is used to set the minimum number of revisions
+    /// to keep a value interned.
+    ///
+    /// This is stored as a `syn::Expr` to support `usize::MAX`.
+    pub revisions: Option<syn::Expr>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -116,6 +122,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             lru: Default::default(),
             singleton: Default::default(),
             id: Default::default(),
+            revisions: Default::default(),
         }
     }
 }
@@ -137,6 +144,7 @@ pub(crate) trait AllowedOptions {
     const LRU: bool;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
+    const REVISIONS: bool;
 }
 
 type Equals = syn::Token![=];
@@ -366,6 +374,22 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`id` option not allowed here",
+                    ));
+                }
+            } else if ident == "revisions" {
+                if A::REVISIONS {
+                    let _eq = Equals::parse(input)?;
+                    let expr = syn::Expr::parse(input)?;
+                    if let Some(old) = options.revisions.replace(expr) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `revisions` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`revisions` option not allowed here",
                     ));
                 }
             } else {

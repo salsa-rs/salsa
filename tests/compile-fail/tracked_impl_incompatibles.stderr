@@ -43,7 +43,13 @@ error: unexpected token
 error: unexpected token
   --> tests/compile-fail/tracked_impl_incompatibles.rs:41:18
    |
-41 | #[salsa::tracked(constructor = Constructor)]
+41 | #[salsa::tracked(revisions = 32)]
+   |                  ^^^^^^^^^
+
+error: unexpected token
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:46:18
+   |
+46 | #[salsa::tracked(constructor = Constructor)]
    |                  ^^^^^^^^^^^
 
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
@@ -109,10 +115,19 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 42 | impl<'db> std::default::Default for MyTracked<'db> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `MyTracked<'_>`
 
-error[E0117]: only traits defined in the current crate can be implemented for arbitrary types
+error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:47:1
    |
-47 | impl<'db> std::default::Default for [MyTracked<'db>; 12] {
+7  | impl<'db> std::default::Default for MyTracked<'db> {
+   | -------------------------------------------------- first implementation here
+...
+47 | impl<'db> std::default::Default for MyTracked<'db> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `MyTracked<'_>`
+
+error[E0117]: only traits defined in the current crate can be implemented for arbitrary types
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:52:1
+   |
+52 | impl<'db> std::default::Default for [MyTracked<'db>; 12] {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^--------------------
    |                                     |
    |                                     this is not defined in the current crate because arrays are always foreign
@@ -189,6 +204,14 @@ error[E0308]: mismatched types
   --> tests/compile-fail/tracked_impl_incompatibles.rs:48:21
    |
 48 |     fn default() -> Self {}
+   |        -------      ^^^^ expected `MyTracked<'_>`, found `()`
+   |        |
+   |        implicitly returns `()` as its body has no tail or `return` expression
+
+error[E0308]: mismatched types
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:53:21
+   |
+53 |     fn default() -> Self {}
    |        -------      ^^^^ expected `[MyTracked<'_>; 12]`, found `()`
    |        |
    |        implicitly returns `()` as its body has no tail or `return` expression

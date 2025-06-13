@@ -62,6 +62,8 @@ impl crate::options::AllowedOptions for InputStruct {
     const CONSTRUCTOR_NAME: bool = true;
 
     const ID: bool = false;
+
+    const REVISIONS: bool = false;
 }
 
 impl SalsaStructAllowedOptions for InputStruct {
