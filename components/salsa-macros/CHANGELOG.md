@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.22.0...salsa-macros-v0.23.0) - 2025-06-13
+
+### Added
+
+- `Update` derive field overwrite support ([#747](https://github.com/salsa-rs/salsa/pull/747))
+
+### Other
+
+- add an option to tune interned garbage collection ([#911](https://github.com/salsa-rs/salsa/pull/911))
+- Preserve attributes on interned/tracked struct fields ([#905](https://github.com/salsa-rs/salsa/pull/905))
+- Update dependencies, remove unused `heck` dependency ([#894](https://github.com/salsa-rs/salsa/pull/894))
+- Allow lifetimes in arguments in tracked fns with >1 parameters ([#880](https://github.com/salsa-rs/salsa/pull/880))
+
 ## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.21.1...salsa-macros-v0.22.0) - 2025-05-23
 
 ### Other

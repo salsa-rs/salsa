@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.22.0...salsa-macro-rules-v0.23.0) - 2025-06-13
+
+### Added
+
+- `Update` derive field overwrite support ([#747](https://github.com/salsa-rs/salsa/pull/747))
+
+### Other
+
+- add an option to tune interned garbage collection ([#911](https://github.com/salsa-rs/salsa/pull/911))
+- Use explicit discriminants for `QueryOriginKind` for better comparisons ([#913](https://github.com/salsa-rs/salsa/pull/913))
+- Preserve attributes on interned/tracked struct fields ([#905](https://github.com/salsa-rs/salsa/pull/905))
+- Use `Revision` and `Durability` directly in input `Value` ([#902](https://github.com/salsa-rs/salsa/pull/902))
+- Allow lifetimes in arguments in tracked fns with >1 parameters ([#880](https://github.com/salsa-rs/salsa/pull/880))
+- Replace loom with shuttle ([#876](https://github.com/salsa-rs/salsa/pull/876))
+
 ## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.21.1...salsa-macro-rules-v0.22.0) - 2025-05-23
 
 ### Other
