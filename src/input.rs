@@ -290,7 +290,8 @@ pub trait HasBuilder {
     type Builder;
 }
 
-impl<C> Slot for Value<C>
+// SAFETY: `Value<C>` is our private type branded over the unique configuration `C`.
+unsafe impl<C> Slot for Value<C>
 where
     C: Configuration,
 {

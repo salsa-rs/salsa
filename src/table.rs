@@ -30,7 +30,11 @@ pub struct Table {
     non_full_pages: Mutex<FxHashMap<IngredientIndex, Vec<PageIndex>>>,
 }
 
-pub(crate) trait Slot: Any + Send + Sync {
+/// # Safety
+///
+/// Implementors of this trait need to make sure that their type is unique with respect to
+/// their owning ingredient as the allocation strategy relies on this.
+pub(crate) unsafe trait Slot: Any + Send + Sync {
     /// Access the [`MemoTable`][] for this slot.
     ///
     /// # Safety condition
