@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `#[doc(hidden)]` auto-generated tracked-fn structs ([#917](https://github.com/salsa-rs/salsa/pull/917))
+
 ## [0.22.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.21.1...salsa-v0.22.0) - 2025-05-23
 
 ### Fixed
