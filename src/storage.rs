@@ -36,14 +36,17 @@ impl<Db> Clone for StorageHandle<Db> {
 
 impl<Db: Database> Default for StorageHandle<Db> {
     fn default() -> Self {
-        Self::new(None)
+        Self::new(false, None)
     }
 }
 
 impl<Db: Database> StorageHandle<Db> {
-    pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
+    pub fn new(
+        drop_in_thread: bool,
+        event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+    ) -> Self {
         Self {
-            zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback)),
+            zalsa_impl: Arc::new(Zalsa::new::<Db>(drop_in_thread, event_callback)),
             coordinate: CoordinateDrop(Arc::new(Coordinate {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
@@ -100,7 +103,7 @@ impl RefUnwindSafe for Coordinate {}
 
 impl<Db: Database> Default for Storage<Db> {
     fn default() -> Self {
-        Self::new(None)
+        Self::new(false, None)
     }
 }
 
@@ -108,9 +111,12 @@ impl<Db: Database> Storage<Db> {
     /// Create a new database storage.
     ///
     /// The `event_callback` function is invoked by the salsa runtime at various points during execution.
-    pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
+    pub fn new(
+        drop_in_thread: bool,
+        event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+    ) -> Self {
         Self {
-            handle: StorageHandle::new(event_callback),
+            handle: StorageHandle::new(drop_in_thread, event_callback),
             zalsa_local: ZalsaLocal::new(),
         }
     }

@@ -14,13 +14,16 @@ impl Default for DatabaseImpl {
     fn default() -> Self {
         Self {
             // Default behavior: tracing debug log the event.
-            storage: Storage::new(if tracing::enabled!(Level::DEBUG) {
-                Some(Box::new(|event| {
-                    tracing::debug!("salsa_event({:?})", event)
-                }))
-            } else {
-                None
-            }),
+            storage: Storage::new(
+                false,
+                if tracing::enabled!(Level::DEBUG) {
+                    Some(Box::new(|event| {
+                        tracing::debug!("salsa_event({:?})", event)
+                    }))
+                } else {
+                    None
+                },
+            ),
         }
     }
 }
