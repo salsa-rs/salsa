@@ -110,18 +110,14 @@ impl DbMacro {
         let trait_name = &input.ident;
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            fn zalsa_register_downcaster(&self);
+            fn zalsa_register_upcaster(&self);
         });
 
-        let comment = format!(" Downcast a [`dyn Database`] to a [`dyn {trait_name}`]");
+        let comment = format!(" upcast `Self` to a [`dyn {trait_name}`]");
         input.items.push(parse_quote! {
             #[doc = #comment]
-            ///
-            /// # Safety
-            ///
-            /// The input database must be of type `Self`.
             #[doc(hidden)]
-            unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #trait_name where Self: Sized;
+            fn upcast(&self) -> &dyn #trait_name where Self: Sized;
         });
         Ok(())
     }
@@ -137,17 +133,15 @@ impl DbMacro {
         input.items.push(parse_quote! {
             #[doc(hidden)]
             #[inline(always)]
-            fn zalsa_register_downcaster(&self)  {
-                salsa::plumbing::views(self).add(<Self as #TraitPath>::downcast);
+            fn zalsa_register_upcaster(&self)  {
+                salsa::plumbing::views(self).add(<Self as #TraitPath>::upcast);
             }
         });
         input.items.push(parse_quote! {
             #[doc(hidden)]
             #[inline(always)]
-            unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #TraitPath where Self: Sized {
-                debug_assert_eq!(db.type_id(), ::core::any::TypeId::of::<Self>());
-                // SAFETY: The input database must be of type `Self`.
-                unsafe { &*salsa::plumbing::transmute_data_ptr::<dyn salsa::plumbing::Database, Self>(db) }
+            fn upcast(&self) -> &dyn #TraitPath where Self: Sized {
+                self
             }
         });
         Ok(())

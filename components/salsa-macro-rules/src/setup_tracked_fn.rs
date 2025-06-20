@@ -150,14 +150,18 @@ macro_rules! setup_tracked_fn {
             impl $Configuration {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     let zalsa = db.zalsa();
+                    Self::fn_ingredient_(db, zalsa)
+                }
+
+                fn fn_ingredient_<'z>(db: &dyn $Db, zalsa: &'z $zalsa::Zalsa) -> &'z $zalsa::function::IngredientImpl<$Configuration> {
                     $FN_CACHE.get_or_create(zalsa, || {
-                        <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                        <dyn $Db as $Db>::zalsa_register_upcaster(db);
                         zalsa.add_or_lookup_jar_by_type::<$Configuration>()
                     })
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
-                    <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                    <dyn $Db as $Db>::zalsa_register_upcaster(db);
                     let zalsa_mut = db.zalsa_mut();
                     let index = zalsa_mut.add_or_lookup_jar_by_type::<$Configuration>();
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
@@ -169,8 +173,14 @@ macro_rules! setup_tracked_fn {
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
+                        Self::intern_ingredient_(db, zalsa)
+                    }
+                    fn intern_ingredient_<'z>(
+                        db: &dyn $Db,
+                        zalsa: &'z $zalsa::Zalsa
+                    ) -> &'z $zalsa::interned::IngredientImpl<$Configuration> {
                         $INTERN_CACHE.get_or_create(zalsa, || {
-                            <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                            <dyn $Db as $Db>::zalsa_register_upcaster(db);
                             zalsa.add_or_lookup_jar_by_type::<$Configuration>().successor(0)
                         })
                     }
@@ -218,11 +228,12 @@ macro_rules! setup_tracked_fn {
                 }
 
                 fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {
+                    let zalsa = db.zalsa();
                     $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient(db).data(db.as_dyn_database(), key).clone()
+                            $Configuration::intern_ingredient_(db, zalsa).data(zalsa, key).clone()
                         } else {
-                            $zalsa::FromIdWithDb::from_id(key, db.zalsa())
+                            $zalsa::FromIdWithDb::from_id(key, zalsa)
                         }
                     }
                 }
@@ -280,10 +291,10 @@ macro_rules! setup_tracked_fn {
                     };
 
                     let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
+                        zalsa,
                         first_index,
                         memo_ingredient_indices,
                         $lru,
-                        zalsa.views().downcaster_for::<dyn $Db>(),
                     );
                     $zalsa::macro_if! {
                         if $needs_interner {
@@ -312,9 +323,10 @@ macro_rules! setup_tracked_fn {
                 ) -> Vec<&$db_lt A> {
                     use salsa::plumbing as $zalsa;
                     let key = $zalsa::macro_if! {
-                        if $needs_interner {
-                            $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*), |_, data| data)
-                        } else {
+                        if $needs_interner {{
+                            let (zalsa, zalsa_local) = $db.zalsas();
+                            $Configuration::intern_ingredient($db).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
+                        }} else {
                             $zalsa::AsId::as_id(&($($input_id),*))
                         }
                     };
@@ -355,11 +367,15 @@ macro_rules! setup_tracked_fn {
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
                         {
-                            let key = $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*), |_, data| data);
-                            $Configuration::fn_ingredient($db).fetch($db, key)
+                            let (zalsa, zalsa_local) = $db.zalsas();
+                            let key = $Configuration::intern_ingredient_($db, zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
+                            $Configuration::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
                         }
                     } else {
-                        $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))
+                        {
+                            let (zalsa, zalsa_local) = $db.zalsas();
+                            $Configuration::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
+                        }
                     }
                 };
 

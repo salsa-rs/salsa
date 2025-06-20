@@ -259,8 +259,9 @@ macro_rules! setup_tracked_struct {
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + $zalsa::Database,
                 {
-                    $Configuration::ingredient(db.as_dyn_database()).new_struct(
-                        db.as_dyn_database(),
+                    let (zalsa, zalsa_local) = db.zalsas();
+                    $Configuration::ingredient_(zalsa).new_struct(
+                        zalsa,zalsa_local,
                         ($($field_id,)*)
                     )
                 }
@@ -272,8 +273,8 @@ macro_rules! setup_tracked_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let db = db.as_dyn_database();
-                        let fields = $Configuration::ingredient(db).tracked_field(db, self, $relative_tracked_index);
+                        let (zalsa, zalsa_local) = db.zalsas();
+                        let fields = $Configuration::ingredient_(zalsa).tracked_field(zalsa, zalsa_local, self, $relative_tracked_index);
                         $crate::return_mode_expression!(
                             $tracked_option,
                             $tracked_ty,
@@ -289,8 +290,8 @@ macro_rules! setup_tracked_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let db = db.as_dyn_database();
-                        let fields = $Configuration::ingredient(db).untracked_field(db, self);
+                        let zalsa = db.zalsa();
+                        let fields = $Configuration::ingredient_(zalsa).untracked_field(zalsa, self);
                         $crate::return_mode_expression!(
                             $untracked_option,
                             $untracked_ty,
@@ -312,7 +313,8 @@ macro_rules! setup_tracked_struct {
                     $(for<$db_lt> $field_ty: std::fmt::Debug),*
                 {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).leak_fields(db, this);
+                        let zalsa = db.zalsa();
+                        let fields = $Configuration::ingredient_(zalsa).leak_fields(zalsa, this);
                         let mut f = f.debug_struct(stringify!($Struct));
                         let f = f.field("[salsa id]", &$zalsa::AsId::as_id(&this));
                         $(

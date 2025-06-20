@@ -7,6 +7,7 @@ use std::panic::RefUnwindSafe;
 
 use rustc_hash::FxHashMap;
 
+use crate::database::RawDatabasePointer;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
@@ -55,7 +56,7 @@ pub unsafe trait ZalsaDatabase: Any {
 
     /// Clone the database.
     #[doc(hidden)]
-    fn fork_db(&self) -> Box<dyn Database>;
+    fn fork_db(&self) -> RawDatabasePointer<'static>;
 }
 
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {

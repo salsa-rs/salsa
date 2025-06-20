@@ -3,7 +3,7 @@ use core::fmt;
 use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{Database, Id};
+use crate::Id;
 
 // ANCHOR: DatabaseKeyIndex
 /// An integer that uniquely identifies a particular query instance within the
@@ -36,16 +36,27 @@ impl DatabaseKeyIndex {
 
     pub(crate) fn maybe_changed_after(
         &self,
-        db: &dyn Database,
+        db: crate::database::RawDatabasePointer<'_>,
         zalsa: &Zalsa,
         last_verified_at: crate::Revision,
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {
+            // heer, `db` has to be either the correct type already, or a subtype (as far as trait
+            // hierarchy is concerned)
             zalsa
                 .lookup_ingredient(self.ingredient_index())
-                .maybe_changed_after(db, self.key_index(), last_verified_at, cycle_heads)
+                .maybe_changed_after(
+                    zalsa,
+                    // lets say we do turn this into an opaque pair of data and vtable pointer
+                    // then we also need an upcast function, from our dbview to the ingredients
+                    // dbview
+                    db,
+                    self.key_index(),
+                    last_verified_at,
+                    cycle_heads,
+                )
         }
     }
 
