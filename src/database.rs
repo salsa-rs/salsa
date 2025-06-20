@@ -1,8 +1,6 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use hashbrown::HashMap;
-
 use crate::zalsa::{IngredientIndex, ZalsaDatabase};
 use crate::{Durability, Revision};
 
@@ -134,99 +132,110 @@ impl dyn Database {
         let views = self.zalsa().views();
         views.downcaster_for().downcast(self)
     }
+}
 
-    /// Returns information about any Salsa structs.
-    pub fn structs_info(&self) -> Vec<IngredientInfo> {
-        self.zalsa()
-            .ingredients()
-            .filter_map(|ingredient| {
-                let mut size_of_fields = 0;
-                let mut size_of_metadata = 0;
-                let mut instances = 0;
+#[cfg(feature = "salsa_unstable")]
+pub use memory_usage::{IngredientInfo, SlotInfo};
 
-                for slot in ingredient.memory_usage(self)? {
-                    instances += 1;
-                    size_of_fields += slot.size_of_fields;
-                    size_of_metadata += slot.size_of_metadata;
-                }
+#[cfg(feature = "salsa_unstable")]
+mod memory_usage {
+    use crate::Database;
+    use hashbrown::HashMap;
 
-                Some(IngredientInfo {
-                    count: instances,
-                    size_of_fields,
-                    size_of_metadata,
-                    debug_name: ingredient.debug_name(),
+    impl dyn Database {
+        /// Returns information about any Salsa structs.
+        pub fn structs_info(&self) -> Vec<IngredientInfo> {
+            self.zalsa()
+                .ingredients()
+                .filter_map(|ingredient| {
+                    let mut size_of_fields = 0;
+                    let mut size_of_metadata = 0;
+                    let mut instances = 0;
+
+                    for slot in ingredient.memory_usage(self)? {
+                        instances += 1;
+                        size_of_fields += slot.size_of_fields;
+                        size_of_metadata += slot.size_of_metadata;
+                    }
+
+                    Some(IngredientInfo {
+                        count: instances,
+                        size_of_fields,
+                        size_of_metadata,
+                        debug_name: ingredient.debug_name(),
+                    })
                 })
-            })
-            .collect()
-    }
-
-    /// Returns information about any memoized Salsa queries.
-    ///
-    /// The returned map holds memory usage information for memoized values of a given query, keyed
-    /// by its `(input, output)` type names.
-    pub fn queries_info(&self) -> HashMap<(&'static str, &'static str), IngredientInfo> {
-        let mut queries = HashMap::new();
-
-        for input_ingredient in self.zalsa().ingredients() {
-            let Some(input_info) = input_ingredient.memory_usage(self) else {
-                continue;
-            };
-
-            for input in input_info {
-                for output in input.memos {
-                    let info = queries
-                        .entry((input.debug_name, output.debug_name))
-                        .or_insert(IngredientInfo {
-                            debug_name: output.debug_name,
-                            ..Default::default()
-                        });
-
-                    info.count += 1;
-                    info.size_of_fields += output.size_of_fields;
-                    info.size_of_metadata += output.size_of_metadata;
-                }
-            }
+                .collect()
         }
 
-        queries
+        /// Returns information about any memoized Salsa queries.
+        ///
+        /// The returned map holds memory usage information for memoized values of a given query, keyed
+        /// by its `(input, output)` type names.
+        pub fn queries_info(&self) -> HashMap<(&'static str, &'static str), IngredientInfo> {
+            let mut queries = HashMap::new();
+
+            for input_ingredient in self.zalsa().ingredients() {
+                let Some(input_info) = input_ingredient.memory_usage(self) else {
+                    continue;
+                };
+
+                for input in input_info {
+                    for output in input.memos {
+                        let info = queries
+                            .entry((input.debug_name, output.debug_name))
+                            .or_insert(IngredientInfo {
+                                debug_name: output.debug_name,
+                                ..Default::default()
+                            });
+
+                        info.count += 1;
+                        info.size_of_fields += output.size_of_fields;
+                        info.size_of_metadata += output.size_of_metadata;
+                    }
+                }
+            }
+
+            queries
+        }
     }
-}
 
-/// Information about instances of a particular Salsa ingredient.
-#[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct IngredientInfo {
-    debug_name: &'static str,
-    count: usize,
-    size_of_metadata: usize,
-    size_of_fields: usize,
-}
-
-impl IngredientInfo {
-    /// Returns the debug name of the ingredient.
-    pub fn debug_name(&self) -> &'static str {
-        self.debug_name
+    /// Information about instances of a particular Salsa ingredient.
+    #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct IngredientInfo {
+        debug_name: &'static str,
+        count: usize,
+        size_of_metadata: usize,
+        size_of_fields: usize,
     }
 
-    /// Returns the total size of the fields of any instances of this ingredient, in bytes.
-    pub fn size_of_fields(&self) -> usize {
-        self.size_of_fields
+    impl IngredientInfo {
+        /// Returns the debug name of the ingredient.
+        pub fn debug_name(&self) -> &'static str {
+            self.debug_name
+        }
+
+        /// Returns the total size of the fields of any instances of this ingredient, in bytes.
+        pub fn size_of_fields(&self) -> usize {
+            self.size_of_fields
+        }
+
+        /// Returns the total size of Salsa metadata of any instances of this ingredient, in bytes.
+        pub fn size_of_metadata(&self) -> usize {
+            self.size_of_metadata
+        }
+
+        /// Returns the number of instances of this ingredient.
+        pub fn count(&self) -> usize {
+            self.count
+        }
     }
 
-    /// Returns the total size of Salsa metadata of any instances of this ingredient, in bytes.
-    pub fn size_of_metadata(&self) -> usize {
-        self.size_of_metadata
+    /// Memory usage information about a particular instance of struct, input or output.
+    pub struct SlotInfo {
+        pub(crate) debug_name: &'static str,
+        pub(crate) size_of_metadata: usize,
+        pub(crate) size_of_fields: usize,
+        pub(crate) memos: Vec<SlotInfo>,
     }
-
-    /// Returns the number of instances of this ingredient.
-    pub fn count(&self) -> usize {
-        self.count
-    }
-}
-
-/// Memory usage information about a particular instance of struct, input or output.
-pub struct SlotInfo {
-    pub(crate) debug_name: &'static str,
-    pub(crate) size_of_metadata: usize,
-    pub(crate) size_of_fields: usize,
-    pub(crate) memos: Vec<SlotInfo>,
 }

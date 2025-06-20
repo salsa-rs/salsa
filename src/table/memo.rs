@@ -6,7 +6,6 @@ use std::ptr::{self, NonNull};
 use portable_atomic::hint::spin_loop;
 use thin_vec::ThinVec;
 
-use crate::database::SlotInfo;
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::sync::{OnceLock, RwLock};
 use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOriginRef};
@@ -24,7 +23,8 @@ pub trait Memo: Any + Send + Sync {
     fn origin(&self) -> QueryOriginRef<'_>;
 
     /// Returns memory usage information about the memoized value.
-    fn memory_usage(&self) -> SlotInfo;
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self) -> crate::SlotInfo;
 }
 
 /// Data for a memoized entry.
@@ -111,8 +111,9 @@ impl Memo for DummyMemo {
         unreachable!("should not get here")
     }
 
-    fn memory_usage(&self) -> SlotInfo {
-        SlotInfo {
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self) -> crate::SlotInfo {
+        crate::SlotInfo {
             debug_name: "dummy",
             size_of_metadata: 0,
             size_of_fields: 0,
@@ -277,7 +278,8 @@ impl MemoTableWithTypes<'_> {
         Some(unsafe { MemoEntryType::from_dummy(memo) })
     }
 
-    pub(crate) fn memory_usage(&self) -> Vec<SlotInfo> {
+    #[cfg(feature = "salsa_unstable")]
+    pub(crate) fn memory_usage(&self) -> Vec<crate::SlotInfo> {
         let mut memory_usage = Vec::new();
         let memos = self.memos.memos.read();
         for (index, memo) in memos.iter().enumerate() {

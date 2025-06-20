@@ -1,10 +1,10 @@
 use std::any::TypeId;
 use std::cell::{Cell, UnsafeCell};
+use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::{fmt, mem};
 
 use crossbeam_utils::CachePadded;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
@@ -21,7 +21,7 @@ use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{Database, DatabaseKeyIndex, Event, EventKind, Id, Revision, SlotInfo};
+use crate::{Database, DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 /// Trait that defines the key properties of an interned struct.
 ///
@@ -197,18 +197,18 @@ where
     ///
     /// The `MemoTable` must belong to a `Value` of the correct type. Additionally, the
     /// lock must be held for the shard containing the value.
-    #[cfg(not(feature = "shuttle"))]
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> SlotInfo {
+    #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
+    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::SlotInfo {
         // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
         // have at-least read-only access to the value's memos.
         let memos = unsafe { &*self.memos.get() };
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(memos) };
 
-        SlotInfo {
+        crate::SlotInfo {
             debug_name: C::DEBUG_NAME,
-            size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::Fields<'_>>(),
-            size_of_fields: mem::size_of::<C::Fields<'_>>(),
+            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
+            size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
             memos: memos.memory_usage(),
         }
     }
@@ -854,8 +854,8 @@ where
     }
 
     /// Returns memory usage information about any interned values.
-    #[cfg(not(feature = "shuttle"))]
-    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<SlotInfo>> {
+    #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
+    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::SlotInfo>> {
         use parking_lot::lock_api::RawMutex;
 
         for shard in self.shards.iter() {

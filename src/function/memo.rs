@@ -1,10 +1,9 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::mem::{self, transmute};
+use std::mem::transmute;
 use std::ptr::NonNull;
 
 use crate::cycle::{empty_cycle_heads, CycleHead, CycleHeads, IterationCount, ProvisionalStatus};
-use crate::database::SlotInfo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
 use crate::ingredient::{Ingredient, WaitForResult};
@@ -318,13 +317,14 @@ impl<V: Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
         self.revisions.origin.as_ref()
     }
 
-    fn memory_usage(&self) -> SlotInfo {
-        let size_of = mem::size_of::<Memo<V>>() + self.revisions.allocation_size();
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self) -> crate::SlotInfo {
+        let size_of = std::mem::size_of::<Memo<V>>() + self.revisions.allocation_size();
 
-        SlotInfo {
-            size_of_metadata: size_of - mem::size_of::<V>(),
+        crate::SlotInfo {
+            size_of_metadata: size_of - std::mem::size_of::<V>(),
             debug_name: std::any::type_name::<V>(),
-            size_of_fields: mem::size_of::<V>(),
+            size_of_fields: std::mem::size_of::<V>(),
             memos: Vec::new(),
         }
     }

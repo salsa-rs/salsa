@@ -39,11 +39,14 @@ pub use parallel::{join, par_map};
 #[cfg(feature = "macros")]
 pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 
+#[cfg(feature = "salsa_unstable")]
+pub use self::database::{IngredientInfo, SlotInfo};
+
 pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::CycleRecoveryAction;
-pub use self::database::{AsDynDatabase, Database, SlotInfo};
+pub use self::database::{AsDynDatabase, Database};
 pub use self::database_impl::DatabaseImpl;
 pub use self::durability::Durability;
 pub use self::event::{Event, EventKind};

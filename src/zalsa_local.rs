@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::mem;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 
@@ -349,6 +348,7 @@ pub(crate) struct QueryRevisions {
 }
 
 impl QueryRevisions {
+    #[cfg(feature = "salsa_unstable")]
     pub(crate) fn allocation_size(&self) -> usize {
         let QueryRevisions {
             changed_at: _,
@@ -364,7 +364,7 @@ impl QueryRevisions {
         if let QueryOriginRef::Derived(query_edges)
         | QueryOriginRef::DerivedUntracked(query_edges) = origin.as_ref()
         {
-            memory += mem::size_of_val(query_edges);
+            memory += std::mem::size_of_val(query_edges);
         }
 
         if let Some(extra) = extra.0.as_ref() {
@@ -447,6 +447,7 @@ struct QueryRevisionsExtraInner {
 }
 
 impl QueryRevisionsExtraInner {
+    #[cfg(feature = "salsa_unstable")]
     fn allocation_size(&self) -> usize {
         let QueryRevisionsExtraInner {
             accumulated,
@@ -457,7 +458,7 @@ impl QueryRevisionsExtraInner {
 
         accumulated.allocation_size()
             + cycle_heads.allocation_size()
-            + mem::size_of_val(tracked_struct_ids.as_slice())
+            + std::mem::size_of_val(tracked_struct_ids.as_slice())
     }
 }
 

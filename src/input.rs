@@ -1,6 +1,6 @@
 use std::any::{Any, TypeId};
+use std::fmt;
 use std::ops::IndexMut;
-use std::{fmt, mem};
 
 pub mod input_field;
 pub mod setter;
@@ -9,7 +9,6 @@ pub mod singleton;
 use input_field::FieldIngredientImpl;
 
 use crate::cycle::CycleHeads;
-use crate::database::SlotInfo;
 use crate::function::VerifyResult;
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
@@ -244,7 +243,8 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     }
 
     /// Returns memory usage information about any inputs.
-    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<SlotInfo>> {
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::SlotInfo>> {
         let memory_usage = self
             .entries(db)
             // SAFETY: The memo table belongs to a value that we allocated, so it
@@ -302,14 +302,15 @@ where
     /// # Safety
     ///
     /// The `MemoTable` must belong to a `Value` of the correct type.
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> SlotInfo {
+    #[cfg(feature = "salsa_unstable")]
+    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::SlotInfo {
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
-        SlotInfo {
+        crate::SlotInfo {
             debug_name: C::DEBUG_NAME,
-            size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::Fields>(),
-            size_of_fields: mem::size_of::<C::Fields>(),
+            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields>(),
+            size_of_fields: std::mem::size_of::<C::Fields>(),
             memos: memos.memory_usage(),
         }
     }
