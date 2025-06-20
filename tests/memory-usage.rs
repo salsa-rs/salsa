@@ -1,3 +1,5 @@
+use expect_test::expect;
+
 #[salsa::input]
 struct MyInput {
     field: u32,
@@ -53,74 +55,74 @@ fn test() {
 
     let structs_info = <dyn salsa::Database>::structs_info(&db);
 
-    assert_eq!(
-        format!("{structs_info:#?}"),
-        r#"[
-    IngredientInfo {
-        debug_name: "MyInput",
-        count: 3,
-        size_of_metadata: 84,
-        size_of_fields: 12,
-    },
-    IngredientInfo {
-        debug_name: "MyTracked",
-        count: 4,
-        size_of_metadata: 112,
-        size_of_fields: 16,
-    },
-    IngredientInfo {
-        debug_name: "MyInterned",
-        count: 3,
-        size_of_metadata: 156,
-        size_of_fields: 12,
-    },
-]"#
-    );
+    let expected = expect![[r#"
+        [
+            IngredientInfo {
+                debug_name: "MyInput",
+                count: 3,
+                size_of_metadata: 84,
+                size_of_fields: 12,
+            },
+            IngredientInfo {
+                debug_name: "MyTracked",
+                count: 4,
+                size_of_metadata: 112,
+                size_of_fields: 16,
+            },
+            IngredientInfo {
+                debug_name: "MyInterned",
+                count: 3,
+                size_of_metadata: 156,
+                size_of_fields: 12,
+            },
+        ]"#]];
+
+    expected.assert_eq(&format!("{structs_info:#?}"));
 
     let mut queries_info = <dyn salsa::Database>::queries_info(&db)
         .into_iter()
         .collect::<Vec<_>>();
     queries_info.sort();
 
-    assert_eq!(
-        format!("{queries_info:#?}"),
-        r#"[
-    (
-        (
-            "MyInput",
-            "(memory_usage::MyTracked, memory_usage::MyTracked)",
-        ),
-        IngredientInfo {
-            debug_name: "(memory_usage::MyTracked, memory_usage::MyTracked)",
-            count: 1,
-            size_of_metadata: 132,
-            size_of_fields: 16,
-        },
-    ),
-    (
-        (
-            "MyInput",
-            "memory_usage::MyInterned",
-        ),
-        IngredientInfo {
-            debug_name: "memory_usage::MyInterned",
-            count: 3,
-            size_of_metadata: 192,
-            size_of_fields: 24,
-        },
-    ),
-    (
-        (
-            "MyInput",
-            "memory_usage::MyTracked",
-        ),
-        IngredientInfo {
-            debug_name: "memory_usage::MyTracked",
-            count: 2,
-            size_of_metadata: 192,
-            size_of_fields: 16,
-        },
-    ),
-]"#
-    )
+    let expected = expect![[r#"
+        [
+            (
+                (
+                    "MyInput",
+                    "(memory_usage::MyTracked, memory_usage::MyTracked)",
+                ),
+                IngredientInfo {
+                    debug_name: "(memory_usage::MyTracked, memory_usage::MyTracked)",
+                    count: 1,
+                    size_of_metadata: 132,
+                    size_of_fields: 16,
+                },
+            ),
+            (
+                (
+                    "MyInput",
+                    "memory_usage::MyInterned",
+                ),
+                IngredientInfo {
+                    debug_name: "memory_usage::MyInterned",
+                    count: 3,
+                    size_of_metadata: 192,
+                    size_of_fields: 24,
+                },
+            ),
+            (
+                (
+                    "MyInput",
+                    "memory_usage::MyTracked",
+                ),
+                IngredientInfo {
+                    debug_name: "memory_usage::MyTracked",
+                    count: 2,
+                    size_of_metadata: 192,
+                    size_of_fields: 16,
+                },
+            ),
+        ]"#]];
+
+    expected.assert_eq(&format!("{queries_info:#?}"));
 }
