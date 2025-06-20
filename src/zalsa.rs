@@ -1,5 +1,5 @@
 use std::any::{Any, TypeId};
-use std::hash::BuildHasher;
+use std::hash::{BuildHasher, BuildHasherDefault};
 use std::marker::PhantomData;
 use std::mem;
 use std::num::NonZeroU32;
@@ -8,11 +8,12 @@ use std::panic::RefUnwindSafe;
 use dashmap::SharedValue;
 use rustc_hash::FxHashMap;
 
+use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
 use crate::sync::atomic::{AtomicU64, Ordering};
-use crate::sync::{FxDashMap, RwLock};
+use crate::sync::{DashMap, RwLock};
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
@@ -142,7 +143,7 @@ pub struct Zalsa {
     memo_ingredient_indices: RwLock<Vec<Vec<IngredientIndex>>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
-    jar_map: FxDashMap<TypeId, IngredientIndex>,
+    jar_map: DashMap<TypeId, IngredientIndex, BuildHasherDefault<TypeIdHasher>>,
 
     /// A map from the `IngredientIndex` to the `TypeId` of its ID struct.
     ///

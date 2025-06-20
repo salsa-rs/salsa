@@ -6,17 +6,20 @@ pub mod shim {
     pub use shuttle::{thread, thread_local};
 
     /// A polyfill for `dashmap::DashMap`.
-    pub struct FxDashMap<K, V>(RwLock<HashTable<K, V>>, crate::hash::FxHasher);
+    pub struct DashMap<K, V, H>(RwLock<HashTable<K, V>>, H);
 
     type HashTable<K, V> = hashbrown_14::raw::RawTable<(K, dashmap::SharedValue<V>)>;
 
-    impl<K, V> Default for FxDashMap<K, V> {
-        fn default() -> FxDashMap<K, V> {
-            FxDashMap(RwLock::default(), crate::hash::FxHasher::default())
+    impl<K, V, H> Default for DashMap<K, V, H>
+    where
+        H: Default,
+    {
+        fn default() -> DashMap<K, V, H> {
+            DashMap(RwLock::default(), H::default())
         }
     }
 
-    impl<K, V> FxDashMap<K, V> {
+    impl<K, V, H> DashMap<K, V, H> {
         pub fn shards(&self) -> &[RwLock<HashTable<K, V>>] {
             std::slice::from_ref(&self.0)
         }
@@ -25,7 +28,7 @@ pub mod shim {
             0
         }
 
-        pub fn hasher(&self) -> &crate::hash::FxHasher {
+        pub fn hasher(&self) -> &H {
             &self.1
         }
 
@@ -159,6 +162,7 @@ pub mod shim {
 
 #[cfg(not(feature = "shuttle"))]
 pub mod shim {
+    pub use dashmap::DashMap;
     pub use parking_lot::{Mutex, MutexGuard, RwLock};
     pub use std::sync::*;
     pub use std::{thread, thread_local};
@@ -167,8 +171,6 @@ pub mod shim {
         pub use portable_atomic::AtomicU64;
         pub use std::sync::atomic::*;
     }
-
-    pub(crate) type FxDashMap<K, V> = dashmap::DashMap<K, V, crate::hash::FxHasher>;
 
     /// A wrapper around parking-lot's `Condvar` to mirror shuttle's API.
     pub struct Condvar(parking_lot::Condvar);
