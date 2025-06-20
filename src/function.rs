@@ -10,6 +10,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
 };
+use crate::database::RawDatabasePointer;
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::{Ingredient, WaitForResult};
@@ -19,10 +20,10 @@ use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
-use crate::views::DatabaseDownCaster;
+use crate::views::DatabaseUpCaster;
 use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
-use crate::{Database, Id, Revision};
+use crate::{Id, Revision};
 
 mod accumulated;
 mod backdate;
@@ -124,13 +125,14 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
 
-    /// A downcaster from `dyn Database` to `C::DbView`.
+    /// An upcaster to `C::DbView`.
     ///
     /// # Safety
     ///
     /// The supplied database must be be the same as the database used to construct the [`Views`]
+    /// instances that this upcaster was derived from.
     /// instances that this downcaster was derived from.
-    view_caster: OnceLock<DatabaseDownCaster<C::DbView>>,
+    view_caster: OnceLock<DatabaseUpCaster<C::DbView>>,
 
     sync_table: SyncTable,
 
@@ -154,6 +156,7 @@ where
     C: Configuration,
 {
     pub fn new(
+        _zalsa: &Zalsa,
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
@@ -171,10 +174,7 @@ where
     /// Set the view-caster for this tracked function ingredient, if it has
     /// not already been initialized.
     #[inline]
-    pub fn get_or_init(
-        &self,
-        view_caster: impl FnOnce() -> DatabaseDownCaster<C::DbView>,
-    ) -> &Self {
+    pub fn get_or_init(&self, view_caster: impl FnOnce() -> DatabaseUpCaster<C::DbView>) -> &Self {
         // Note that we must set this lazily as we don't have access to the database
         // type when ingredients are registered into the `Zalsa`.
         self.view_caster.get_or_init(view_caster);
@@ -240,7 +240,7 @@ where
         self.memo_ingredient_indices.get_zalsa_id(zalsa, id)
     }
 
-    fn view_caster(&self) -> &DatabaseDownCaster<C::DbView> {
+    fn view_caster(&self) -> &DatabaseUpCaster<C::DbView> {
         self.view_caster
             .get()
             .expect("tracked function ingredients cannot be accessed before calling `init`")
@@ -261,13 +261,14 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        db: &dyn Database,
+        _zalsa: &crate::zalsa::Zalsa,
+        db: RawDatabasePointer<'_>,
         input: Id,
         revision: Revision,
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
-        let db = unsafe { self.view_caster().downcast_unchecked(db) };
+        let db = unsafe { self.view_caster().upcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
@@ -370,12 +371,13 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn accumulated<'db>(
+    unsafe fn accumulated<'db>(
         &'db self,
-        db: &'db dyn Database,
+        db: RawDatabasePointer<'db>,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        let db = self.view_caster().downcast(db);
+        // SAFETY: The `db` belongs to the ingredient as per caller invariant
+        let db = unsafe { self.view_caster().upcast_unchecked(db) };
         self.accumulated_map(db, key_index)
     }
 }

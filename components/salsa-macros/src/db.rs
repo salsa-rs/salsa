@@ -110,18 +110,14 @@ impl DbMacro {
         let trait_name = &input.ident;
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            fn zalsa_register_downcaster(&self) -> salsa::plumbing::DatabaseDownCaster<dyn #trait_name>;
+            fn zalsa_register_upcaster(&self) -> &salsa::plumbing::DatabaseUpCaster<dyn #trait_name>;
         });
 
-        let comment = format!(" Downcast a [`dyn Database`] to a [`dyn {trait_name}`]");
+        let comment = format!(" upcast `Self` to a [`dyn {trait_name}`]");
         input.items.push(parse_quote! {
             #[doc = #comment]
-            ///
-            /// # Safety
-            ///
-            /// The input database must be of type `Self`.
             #[doc(hidden)]
-            unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #trait_name where Self: Sized;
+            fn upcast(&self) -> &dyn #trait_name where Self: Sized;
         });
         Ok(())
     }
@@ -138,17 +134,15 @@ impl DbMacro {
             #[cold]
             #[inline(never)]
             #[doc(hidden)]
-            fn zalsa_register_downcaster(&self) -> salsa::plumbing::DatabaseDownCaster<dyn #TraitPath> {
-                salsa::plumbing::views(self).add(<Self as #TraitPath>::downcast)
+            fn zalsa_register_upcaster(&self) -> &salsa::plumbing::DatabaseUpCaster<dyn #TraitPath> {
+                salsa::plumbing::views(self).add(<Self as #TraitPath>::upcast)
             }
         });
         input.items.push(parse_quote! {
             #[doc(hidden)]
             #[inline(always)]
-            unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #TraitPath where Self: Sized {
-                debug_assert_eq!(db.type_id(), ::core::any::TypeId::of::<Self>());
-                // SAFETY: The input database must be of type `Self`.
-                unsafe { &*salsa::plumbing::transmute_data_ptr::<dyn salsa::plumbing::Database, Self>(db) }
+            fn upcast(&self) -> &dyn #TraitPath where Self: Sized {
+                self
             }
         });
         Ok(())

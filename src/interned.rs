@@ -21,7 +21,7 @@ use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{Database, DatabaseKeyIndex, Event, EventKind, Id, Revision};
+use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 /// Trait that defines the key properties of an interned struct.
 ///
@@ -296,7 +296,8 @@ where
     /// the database ends up trying to intern or allocate a new value.
     pub fn intern<'db, Key>(
         &'db self,
-        db: &'db dyn crate::Database,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         key: Key,
         assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
     ) -> C::Struct<'db>
@@ -304,7 +305,7 @@ where
         Key: Hash,
         C::Fields<'db>: HashEqLike<Key>,
     {
-        FromId::from_id(self.intern_id(db, key, assemble))
+        FromId::from_id(self.intern_id(zalsa, zalsa_local, key, assemble))
     }
 
     /// Intern data to a unique reference.
@@ -319,7 +320,8 @@ where
     /// the database ends up trying to intern or allocate a new value.
     pub fn intern_id<'db, Key>(
         &'db self,
-        db: &'db dyn crate::Database,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         key: Key,
         assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
     ) -> crate::Id
@@ -331,8 +333,6 @@ where
         // so instead we go with this and transmute the lifetime in the `eq` closure
         C::Fields<'db>: HashEqLike<Key>,
     {
-        let (zalsa, zalsa_local) = db.zalsas();
-
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();
         self.revision_queue.record(current_revision);
@@ -735,8 +735,7 @@ where
     }
 
     /// Lookup the data for an interned value based on its ID.
-    pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
-        let zalsa = db.zalsa();
+    pub fn data<'db>(&'db self, zalsa: &'db Zalsa, id: Id) -> &'db C::Fields<'db> {
         let value = zalsa.table().get::<Value<C>>(id);
 
         debug_assert!(
@@ -761,12 +760,12 @@ where
     /// Lookup the fields from an interned struct.
     ///
     /// Note that this is not "leaking" since no dependency edge is required.
-    pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Fields<'db> {
-        self.data(db, AsId::as_id(&s))
+    pub fn fields<'db>(&'db self, zalsa: &'db Zalsa, s: C::Struct<'db>) -> &'db C::Fields<'db> {
+        self.data(zalsa, AsId::as_id(&s))
     }
 
-    pub fn reset(&mut self, db: &mut dyn Database) {
-        _ = db.zalsa_mut();
+    pub fn reset(&mut self, zalsa_mut: &mut Zalsa) {
+        _ = zalsa_mut;
 
         for shard in self.shards.iter() {
             // We can clear the key maps now that we have cancelled all other handles.
@@ -776,11 +775,8 @@ where
 
     #[cfg(feature = "salsa_unstable")]
     /// Returns all data corresponding to the interned struct.
-    pub fn entries<'db>(
-        &'db self,
-        db: &'db dyn crate::Database,
-    ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa().table().slots_of::<Value<C>>()
+    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = &'db Value<C>> {
+        zalsa.table().slots_of::<Value<C>>()
     }
 }
 
@@ -798,13 +794,12 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        db: &dyn Database,
+        zalsa: &crate::zalsa::Zalsa,
+        _db: crate::database::RawDatabasePointer<'_>,
         input: Id,
         _revision: Revision,
         _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
-        let zalsa = db.zalsa();
-
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();
         self.revision_queue.record(current_revision);
@@ -852,7 +847,7 @@ where
 
     /// Returns memory usage information about any interned values.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::database::SlotInfo>> {
+    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
         use parking_lot::lock_api::RawMutex;
 
         for shard in self.shards.iter() {
@@ -861,7 +856,7 @@ where
         }
 
         let memory_usage = self
-            .entries(db)
+            .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type. Additionally, we are holding the locks for all shards.
             .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })

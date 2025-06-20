@@ -132,13 +132,13 @@ fn interning_boxed() {
 
 #[test]
 fn interned_structs_have_public_ingredients() {
-    use salsa::plumbing::AsId;
+    use salsa::plumbing::{AsId, ZalsaDatabase};
 
     let db = salsa::DatabaseImpl::new();
     let s = InternedString::new(&db, String::from("Hello, world!"));
     let underlying_id = s.0;
 
-    let data = InternedString::ingredient(&db).data(&db, underlying_id.as_id());
+    let data = InternedString::ingredient(db.zalsa()).data(db.zalsa(), underlying_id.as_id());
     assert_eq!(data, &(String::from("Hello, world!"),));
 }
 

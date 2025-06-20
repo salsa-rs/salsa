@@ -1,13 +1,39 @@
-use std::any::Any;
 use std::borrow::Cow;
+use std::ptr::NonNull;
 
-use crate::views::DatabaseDownCaster;
+use crate::views::DatabaseUpCaster;
 use crate::zalsa::{IngredientIndex, ZalsaDatabase};
 use crate::{Durability, Revision};
 
+#[derive(Copy, Clone)]
+pub struct RawDatabasePointer<'db> {
+    pub(crate) ptr: NonNull<()>,
+    _marker: std::marker::PhantomData<&'db dyn Database>,
+}
+
+impl<'db, Db: Database + ?Sized> From<&'db Db> for RawDatabasePointer<'db> {
+    #[inline]
+    fn from(db: &'db Db) -> Self {
+        RawDatabasePointer {
+            ptr: NonNull::from(db).cast(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'db, Db: Database + ?Sized> From<&'db mut Db> for RawDatabasePointer<'db> {
+    #[inline]
+    fn from(db: &'db mut Db) -> Self {
+        RawDatabasePointer {
+            ptr: NonNull::from(db).cast(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]`(`crate::db`) procedural macro.
-pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
+pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
     /// Enforces current LRU limits, evicting entries if necessary.
     ///
     /// **WARNING:** Just like an ordinary write, this method triggers
@@ -84,28 +110,27 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     #[cold]
     #[inline(never)]
     #[doc(hidden)]
-    fn zalsa_register_downcaster(&self) -> DatabaseDownCaster<dyn Database> {
-        self.zalsa().views().downcaster_for::<dyn Database>()
+    fn zalsa_register_upcaster(&self) -> &DatabaseUpCaster<dyn Database> {
+        self.zalsa().views().upcaster_for::<dyn Database>()
         // The no-op downcaster is special cased in view caster construction.
     }
 
     #[doc(hidden)]
     #[inline(always)]
-    unsafe fn downcast(db: &dyn Database) -> &dyn Database
+    fn upcast(&self) -> &dyn Database
     where
         Self: Sized,
     {
         // No-op
-        db
+        self
     }
 }
 
 /// Upcast to a `dyn Database`.
 ///
-/// Only required because upcasts not yet stabilized (*grr*).
+/// Only required because upcasting does not work for unsized generic parameters.
 pub trait AsDynDatabase {
     fn as_dyn_database(&self) -> &dyn Database;
-    fn as_dyn_database_mut(&mut self) -> &mut dyn Database;
 }
 
 impl<T: Database> AsDynDatabase for T {
@@ -113,28 +138,10 @@ impl<T: Database> AsDynDatabase for T {
     fn as_dyn_database(&self) -> &dyn Database {
         self
     }
-
-    #[inline(always)]
-    fn as_dyn_database_mut(&mut self) -> &mut dyn Database {
-        self
-    }
 }
 
 pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
     db.zalsa().current_revision()
-}
-
-impl dyn Database {
-    /// Upcasts `self` to the given view.
-    ///
-    /// # Panics
-    ///
-    /// If the view has not been added to the database (see [`crate::views::Views`]).
-    #[track_caller]
-    pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
-        let views = self.zalsa().views();
-        views.downcaster_for().downcast(self)
-    }
 }
 
 #[cfg(feature = "salsa_unstable")]

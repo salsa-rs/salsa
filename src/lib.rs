@@ -51,7 +51,7 @@ pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::CycleRecoveryAction;
-pub use self::database::{AsDynDatabase, Database};
+pub use self::database::Database;
 pub use self::database_impl::DatabaseImpl;
 pub use self::durability::Durability;
 pub use self::event::{Event, EventKind};
@@ -109,7 +109,7 @@ pub mod plumbing {
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::helper::{Dispatch as UpdateDispatch, Fallback as UpdateFallback};
     pub use crate::update::{always_update, Update};
-    pub use crate::views::DatabaseDownCaster;
+    pub use crate::views::DatabaseUpCaster;
     pub use crate::zalsa::{
         register_jar, transmute_data_ptr, views, ErasedJar, HasJar, IngredientIndex, JarKind,
         Zalsa, ZalsaDatabase,
