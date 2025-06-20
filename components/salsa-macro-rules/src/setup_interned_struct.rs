@@ -140,14 +140,11 @@ macro_rules! setup_interned_struct {
             }
 
             impl $Configuration {
-                pub fn ingredient<Db>(db: &Db) -> &$zalsa_struct::IngredientImpl<Self>
-                where
-                    Db: ?Sized + $zalsa::Database,
+                pub fn ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self>
                 {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
 
-                    let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
                         zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
@@ -215,7 +212,8 @@ macro_rules! setup_interned_struct {
                         $field_ty: $zalsa::interned::HashEqLike<$indexed_ty>,
                     )*
                 {
-                    $Configuration::ingredient(db).intern(db.as_dyn_database(),
+                    let (zalsa, zalsa_local) = db.zalsas();
+                    $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
                         StructKey::<$db_lt>($($field_id,)* std::marker::PhantomData::default()), |_, data| ($($zalsa::interned::Lookup::into_owned(data.$field_index),)*))
                 }
 
@@ -226,7 +224,8 @@ macro_rules! setup_interned_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), self);
+                        let zalsa = db.zalsa();
+                        let fields = $Configuration::ingredient(zalsa).fields(zalsa, self);
                         $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,
@@ -238,7 +237,8 @@ macro_rules! setup_interned_struct {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), this);
+                        let zalsa = db.zalsa();
+                        let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
                         let mut f = f.debug_struct(stringify!($Struct));
                         $(
                             let f = f.field(stringify!($field_id), &fields.$field_index);

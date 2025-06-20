@@ -7,7 +7,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
-use crate::{AsDynDatabase as _, Id, Revision};
+use crate::{Id, Revision};
 
 /// Result of memo validation.
 pub enum VerifyResult {
@@ -432,8 +432,6 @@ where
                     return VerifyResult::Changed;
                 }
 
-                let dyn_db = db.as_dyn_database();
-
                 let mut inputs = InputAccumulatedValues::Empty;
                 // Fully tracked inputs? Iterate over the inputs and check them, one by one.
                 //
@@ -445,7 +443,7 @@ where
                     match edge.kind() {
                         QueryEdgeKind::Input(dependency_index) => {
                             match dependency_index.maybe_changed_after(
-                                dyn_db,
+                                db.into(),
                                 zalsa,
                                 old_memo.verified_at.load(),
                                 cycle_heads,

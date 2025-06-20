@@ -8,7 +8,7 @@ use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::IngredientIndex;
-use crate::{Database, Id, Revision};
+use crate::{Id, Revision};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///
@@ -52,12 +52,12 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        db: &dyn Database,
+        zalsa: &crate::zalsa::Zalsa,
+        _db: crate::database::RawDatabasePointer<'_>,
         input: Id,
         revision: Revision,
         _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
-        let zalsa = db.zalsa();
         let value = <IngredientImpl<C>>::data(zalsa, input);
         VerifyResult::changed_if(value.revisions[self.field_index] > revision)
     }

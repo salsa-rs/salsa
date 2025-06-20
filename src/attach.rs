@@ -45,7 +45,7 @@ impl Attached {
 
         impl<'s> DbGuard<'s> {
             #[inline]
-            fn new(attached: &'s Attached, db: &dyn Database) -> Self {
+            fn new<Db: ?Sized + Database>(attached: &'s Attached, db: &Db) -> Self {
                 match attached.database.get() {
                     Some(current_db) => {
                         let new_db = NonNull::from(db);
@@ -56,7 +56,9 @@ impl Attached {
                     }
                     None => {
                         // Otherwise, set the database.
-                        attached.database.set(Some(NonNull::from(db)));
+                        attached
+                            .database
+                            .set(Some(NonNull::from(db.dyn_database())));
                         Self {
                             state: Some(attached),
                         }
@@ -75,7 +77,7 @@ impl Attached {
             }
         }
 
-        let _guard = DbGuard::new(self, db.as_dyn_database());
+        let _guard = DbGuard::new(self, db);
         op()
     }
 

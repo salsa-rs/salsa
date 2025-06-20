@@ -4,7 +4,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
 use crate::zalsa::ZalsaDatabase;
 use crate::zalsa_local::QueryOriginRef;
-use crate::{AsDynDatabase, DatabaseKeyIndex, Id};
+use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -37,9 +37,8 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch(db, key);
+        self.fetch(db, zalsa, zalsa_local, key);
 
-        let db = db.as_dyn_database();
         let db_key = self.database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
         let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
@@ -54,7 +53,9 @@ where
 
             let ingredient = zalsa.lookup_ingredient(k.ingredient_index());
             // Extend `output` with any values accumulated by `k`.
-            let (accumulated_map, input) = ingredient.accumulated(db, k.key_index());
+            // SAFETY: `db` owns the `ingredient`
+            let (accumulated_map, input) =
+                unsafe { ingredient.accumulated(db.into(), k.key_index()) };
             if let Some(accumulated_map) = accumulated_map {
                 accumulated_map.extend_with_accumulated(accumulator.index(), &mut output);
             }

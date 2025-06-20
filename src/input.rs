@@ -19,7 +19,7 @@ use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{Database, Durability, Id, Revision, Runtime};
+use crate::{zalsa_local, Durability, Id, Revision, Runtime};
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -105,13 +105,12 @@ impl<C: Configuration> IngredientImpl<C> {
 
     pub fn new_input(
         &self,
-        db: &dyn Database,
+        zalsa: &Zalsa,
+        zalsa_local: &zalsa_local::ZalsaLocal,
         fields: C::Fields,
         revisions: C::Revisions,
         durabilities: C::Durabilities,
     ) -> C::Struct {
-        let (zalsa, zalsa_local) = db.zalsas();
-
         let id = self.singleton.with_scope(|| {
             zalsa_local.allocate(zalsa, self.ingredient_index, |_| Value::<C> {
                 fields,
@@ -176,11 +175,11 @@ impl<C: Configuration> IngredientImpl<C> {
     /// The caller is responsible for selecting the appropriate element.
     pub fn field<'db>(
         &'db self,
-        db: &'db dyn crate::Database,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db zalsa_local::ZalsaLocal,
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
-        let (zalsa, zalsa_local) = db.zalsas();
         let field_ingredient_index = self.ingredient_index.successor(field_index);
         let id = id.as_id();
         let value = Self::data(zalsa, id);
@@ -196,17 +195,13 @@ impl<C: Configuration> IngredientImpl<C> {
 
     #[cfg(feature = "salsa_unstable")]
     /// Returns all data corresponding to the input struct.
-    pub fn entries<'db>(
-        &'db self,
-        db: &'db dyn crate::Database,
-    ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa().table().slots_of::<Value<C>>()
+    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = &'db Value<C>> {
+        zalsa.table().slots_of::<Value<C>>()
     }
 
     /// Peek at the field values without recording any read dependency.
     /// Used for debug printouts.
-    pub fn leak_fields<'db>(&'db self, db: &'db dyn Database, id: C::Struct) -> &'db C::Fields {
-        let zalsa = db.zalsa();
+    pub fn leak_fields<'db>(&'db self, zalsa: &'db Zalsa, id: C::Struct) -> &'db C::Fields {
         let id = id.as_id();
         let value = Self::data(zalsa, id);
         &value.fields
@@ -224,7 +219,8 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     unsafe fn maybe_changed_after(
         &self,
-        _db: &dyn Database,
+        _zalsa: &crate::zalsa::Zalsa,
+        _db: crate::database::RawDatabasePointer<'_>,
         _input: Id,
         _revision: Revision,
         _cycle_heads: &mut CycleHeads,

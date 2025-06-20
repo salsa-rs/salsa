@@ -9,6 +9,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
 };
+use crate::database::RawDatabasePointer;
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::{Ingredient, WaitForResult};
@@ -18,10 +19,10 @@ use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
-use crate::views::DatabaseDownCaster;
+use crate::views::DatabaseUpCaster;
 use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
-use crate::{Database, Id, Revision};
+use crate::{Id, Revision};
 
 mod accumulated;
 mod backdate;
@@ -118,13 +119,13 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
 
-    /// A downcaster from `dyn Database` to `C::DbView`.
+    /// An upcaster to `C::DbView`.
     ///
     /// # Safety
     ///
     /// The supplied database must be be the same as the database used to construct the [`Views`]
-    /// instances that this downcaster was derived from.
-    view_caster: DatabaseDownCaster<C::DbView>,
+    /// instances that this upcaster was derived from.
+    view_caster: DatabaseUpCaster<C::DbView>,
 
     sync_table: SyncTable,
 
@@ -148,17 +149,17 @@ where
     C: Configuration,
 {
     pub fn new(
+        zalsa: &Zalsa,
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
-        view_caster: DatabaseDownCaster<C::DbView>,
     ) -> Self {
         Self {
             index,
             memo_ingredient_indices,
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
-            view_caster,
+            view_caster: zalsa.views().upcaster_for::<C::DbView>().clone(),
             sync_table: SyncTable::new(index),
         }
     }
@@ -237,13 +238,14 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        db: &dyn Database,
+        _zalsa: &crate::zalsa::Zalsa,
+        db: RawDatabasePointer<'_>,
         input: Id,
         revision: Revision,
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
-        let db = unsafe { self.view_caster.downcast_unchecked(db) };
+        let db = unsafe { self.view_caster.upcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
@@ -342,12 +344,13 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn accumulated<'db>(
+    unsafe fn accumulated<'db>(
         &'db self,
-        db: &'db dyn Database,
+        db: RawDatabasePointer<'db>,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        let db = self.view_caster.downcast(db);
+        // SAFETY: The `db` belongs to the ingredient as per caller invariant
+        let db = unsafe { self.view_caster.upcast_unchecked(db) };
         self.accumulated_map(db, key_index)
     }
 }
