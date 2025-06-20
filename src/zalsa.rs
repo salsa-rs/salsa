@@ -1,17 +1,15 @@
 use std::any::{Any, TypeId};
-use std::collections::hash_map;
-use std::marker::PhantomData;
-use std::mem;
-use std::num::NonZeroU32;
+use std::hash::BuildHasherDefault;
 use std::panic::RefUnwindSafe;
 
+use papaya::Guard;
+use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
+use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
-use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::sync::atomic::{AtomicU64, Ordering};
-use crate::sync::{Mutex, RwLock};
+use crate::sync::RwLock;
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
@@ -61,13 +59,6 @@ pub unsafe trait ZalsaDatabase: Any {
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
     db.zalsa().views()
 }
-
-/// Nonce type representing the underlying database storage.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StorageNonce;
-
-// Generator for storage nonces.
-static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
 
 /// An ingredient index identifies a particular [`Ingredient`] in the database.
 ///
@@ -133,20 +124,16 @@ impl MemoIngredientIndex {
 pub struct Zalsa {
     views_of: Views,
 
-    nonce: Nonce<StorageNonce>,
-
     /// Map from the [`IngredientIndex::as_usize`][] of a salsa struct to a list of
     /// [ingredient-indices](`IngredientIndex`) for tracked functions that have this salsa struct
     /// as input.
     memo_ingredient_indices: RwLock<Vec<Vec<IngredientIndex>>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
-    /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
-    /// so that we can protect `ingredients_vec` as well and predict what the
-    /// first ingredient index will be. This allows ingredients to store their own indices.
-    /// This may be worth refactoring in the future because it naturally adds more overhead to
-    /// adding new kinds of ingredients.
-    jar_map: Mutex<FxHashMap<TypeId, IngredientIndex>>,
+    jar_map: papaya::HashMap<TypeId, IngredientIndex, BuildHasherDefault<TypeIdHasher>>,
+
+    /// The write-lock for `jar_map`.
+    jar_map_lock: Mutex<()>,
 
     /// A map from the `IngredientIndex` to the `TypeId` of its ID struct.
     ///
@@ -181,8 +168,11 @@ impl Zalsa {
     ) -> Self {
         Self {
             views_of: Views::new::<Db>(),
-            nonce: NONCE.nonce(),
-            jar_map: Default::default(),
+            jar_map: papaya::HashMap::builder()
+                .hasher(BuildHasherDefault::new())
+                .resize_mode(papaya::ResizeMode::Blocking)
+                .build(),
+            jar_map_lock: Mutex::default(),
             ingredient_to_id_struct_type_id_map: Default::default(),
             ingredients_vec: boxcar::Vec::new(),
             ingredients_requiring_reset: boxcar::Vec::new(),
@@ -190,10 +180,6 @@ impl Zalsa {
             memo_ingredient_indices: Default::default(),
             event_callback,
         }
-    }
-
-    pub(crate) fn nonce(&self) -> Nonce<StorageNonce> {
-        self.nonce
     }
 
     pub(crate) fn runtime(&self) -> &Runtime {
@@ -218,7 +204,7 @@ impl Zalsa {
     }
 
     #[inline]
-    pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
+    pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
         let index = index.as_u32() as usize;
         self.ingredients_vec
             .get(index)
@@ -301,24 +287,33 @@ impl Zalsa {
     #[inline]
     pub fn add_or_lookup_jar_by_type<J: Jar>(&self) -> IngredientIndex {
         let jar_type_id = TypeId::of::<J>();
-        if let Some(index) = self.jar_map.lock().get(&jar_type_id) {
-            return *index;
+
+        let guard = self.jar_map.guard();
+        if let Some(&index) = self.jar_map.get(&jar_type_id, &guard) {
+            return index;
         };
-        self.add_or_lookup_jar_by_type_slow::<J>(jar_type_id)
+
+        self.add_or_lookup_jar_by_type_slow::<J>(jar_type_id, guard)
     }
 
+    #[cold]
     #[inline(never)]
-    fn add_or_lookup_jar_by_type_slow<J: Jar>(&self, jar_type_id: TypeId) -> IngredientIndex {
+    fn add_or_lookup_jar_by_type_slow<J: Jar>(
+        &self,
+        jar_type_id: TypeId,
+        guard: impl Guard,
+    ) -> IngredientIndex {
         let dependencies = J::create_dependencies(self);
-        let mut jar_map = self.jar_map.lock();
+
+        let jar_map_lock = self.jar_map_lock.lock();
+
         let index = IngredientIndex::from(self.ingredients_vec.count());
-        match jar_map.entry(jar_type_id) {
-            hash_map::Entry::Occupied(entry) => {
-                // Someone made it earlier than us.
-                return *entry.get();
-            }
-            hash_map::Entry::Vacant(entry) => entry.insert(index),
+
+        // Someone made it earlier than us.
+        if let Some(&index) = self.jar_map.get(&jar_type_id, &guard) {
+            return index;
         };
+
         let ingredients = J::create_ingredients(self, index, dependencies);
         for ingredient in ingredients {
             let expected_index = ingredient.ingredient_index();
@@ -338,7 +333,12 @@ impl Zalsa {
             );
         }
 
-        drop(jar_map);
+        // Insert the index after all ingredients are inserted to avoid exposing
+        // partially initialized jars to readers.
+        self.jar_map.insert(jar_type_id, index, &guard);
+
+        drop(jar_map_lock);
+
         self.ingredient_to_id_struct_type_id_map
             .write()
             .insert(index, J::id_struct_type_id());
@@ -417,108 +417,6 @@ impl Zalsa {
         if let Some(event_callback) = &self.event_callback {
             event_callback(event());
         }
-    }
-}
-
-/// Caches a pointer to an ingredient in a database.
-/// Optimized for the case of a single database.
-pub struct IngredientCache<I>
-where
-    I: Ingredient,
-{
-    // A packed representation of `Option<(Nonce<StorageNonce>, IngredientIndex)>`.
-    //
-    // This allows us to replace a lock in favor of an atomic load. This works thanks to `Nonce`
-    // having a niche, which means the entire type can fit into an `AtomicU64`.
-    cached_data: AtomicU64,
-    phantom: PhantomData<fn() -> I>,
-}
-
-impl<I> Default for IngredientCache<I>
-where
-    I: Ingredient,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<I> IngredientCache<I>
-where
-    I: Ingredient,
-{
-    const UNINITIALIZED: u64 = 0;
-
-    /// Create a new cache
-    pub const fn new() -> Self {
-        Self {
-            cached_data: AtomicU64::new(Self::UNINITIALIZED),
-            phantom: PhantomData,
-        }
-    }
-
-    /// Get a reference to the ingredient in the database.
-    /// If the ingredient is not already in the cache, it will be created.
-    #[inline(always)]
-    pub fn get_or_create<'db>(
-        &self,
-        zalsa: &'db Zalsa,
-        create_index: impl Fn() -> IngredientIndex,
-    ) -> &'db I {
-        let index = self.get_or_create_index(zalsa, create_index);
-        zalsa.lookup_ingredient(index).assert_type::<I>()
-    }
-
-    /// Get a reference to the ingredient in the database.
-    /// If the ingredient is not already in the cache, it will be created.
-    #[inline(always)]
-    pub fn get_or_create_index(
-        &self,
-        zalsa: &Zalsa,
-        create_index: impl Fn() -> IngredientIndex,
-    ) -> IngredientIndex {
-        const _: () = assert!(
-            mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
-        );
-        let cached_data = self.cached_data.load(Ordering::Acquire);
-        if cached_data == Self::UNINITIALIZED {
-            #[inline(never)]
-            fn get_or_create_index_slow<I: Ingredient>(
-                this: &IngredientCache<I>,
-                zalsa: &Zalsa,
-                create_index: impl Fn() -> IngredientIndex,
-            ) -> IngredientIndex {
-                let index = create_index();
-                let nonce = zalsa.nonce().into_u32().get() as u64;
-                let packed = (nonce << u32::BITS) | (index.as_u32() as u64);
-                debug_assert_ne!(packed, IngredientCache::<I>::UNINITIALIZED);
-
-                // Discard the result, whether we won over the cache or not does not matter
-                // we know that something has been cached now
-                _ = this.cached_data.compare_exchange(
-                    IngredientCache::<I>::UNINITIALIZED,
-                    packed,
-                    Ordering::Release,
-                    Ordering::Acquire,
-                );
-                // and we already have our index computed so we can just use that
-                index
-            }
-
-            return get_or_create_index_slow(self, zalsa, create_index);
-        };
-
-        // unpack our u64
-        // SAFETY: We've checked against `UNINITIALIZED` (0) above and so the upper bits must be non-zero
-        let nonce = Nonce::<StorageNonce>::from_u32(unsafe {
-            NonZeroU32::new_unchecked((cached_data >> u32::BITS) as u32)
-        });
-        let mut index = IngredientIndex(cached_data as u32);
-
-        if zalsa.nonce() != nonce {
-            index = create_index();
-        }
-        index
     }
 }
 

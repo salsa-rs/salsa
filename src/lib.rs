@@ -18,7 +18,6 @@ mod input;
 mod interned;
 mod key;
 mod memo_ingredient_indices;
-mod nonce;
 #[cfg(feature = "rayon")]
 mod parallel;
 mod return_mode;
@@ -102,9 +101,7 @@ pub mod plumbing {
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::helper::{Dispatch as UpdateDispatch, Fallback as UpdateFallback};
     pub use crate::update::{always_update, Update};
-    pub use crate::zalsa::{
-        transmute_data_ptr, views, IngredientCache, IngredientIndex, Zalsa, ZalsaDatabase,
-    };
+    pub use crate::zalsa::{transmute_data_ptr, views, IngredientIndex, Zalsa, ZalsaDatabase};
     pub use crate::zalsa_local::ZalsaLocal;
 
     pub mod accumulator {

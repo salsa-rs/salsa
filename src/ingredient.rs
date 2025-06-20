@@ -31,6 +31,7 @@ pub trait Jar: Any {
     }
 
     /// Create the ingredients given the index of the first one.
+    ///
     /// All subsequent ingredients will be assigned contiguous indices.
     fn create_ingredients(
         zalsa: &Zalsa,

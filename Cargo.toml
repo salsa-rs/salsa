@@ -19,6 +19,7 @@ hashbrown = "0.15"
 hashlink = "0.10"
 indexmap = "2"
 intrusive-collections = "0.9.7"
+papaya = "0.2.1"
 parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
@@ -51,7 +52,7 @@ salsa-macros = { version = "=0.22.0", path = "components/salsa-macros" }
 [dev-dependencies]
 # examples
 crossbeam-channel = "0.5.14"
-dashmap = { version = "6", features = ["raw-api"] }
+dashmap = "6"
 eyre = "0.6.8"
 notify-debouncer-mini = "0.4.1"
 ordered-float = "4.2.1"
