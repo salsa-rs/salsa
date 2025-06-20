@@ -190,6 +190,28 @@ where
         // ensures that they are not reused while being accessed.
         unsafe { &*self.fields.get() }
     }
+
+    /// Returns memory usage information about the interned value.
+    ///
+    /// # Safety
+    ///
+    /// The `MemoTable` must belong to a `Value` of the correct type. Additionally, the
+    /// lock must be held for the shard containing the value.
+    #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
+    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::SlotInfo {
+        // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
+        // have at-least read-only access to the value's memos.
+        let memos = unsafe { &*self.memos.get() };
+        // SAFETY: The caller guarantees this is the correct types table.
+        let memos = unsafe { memo_table_types.attach_memos(memos) };
+
+        crate::SlotInfo {
+            debug_name: C::DEBUG_NAME,
+            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
+            size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
+            memos: memos.memory_usage(),
+        }
+    }
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -680,7 +702,7 @@ where
     //
     // # Safety
     //
-    // The lock must be held.
+    // The lock must be held for the shard containing the value.
     unsafe fn value_hash<'db>(&'db self, id: Id, zalsa: &'db Zalsa) -> u64 {
         // This closure is only called if the table is resized. So while it's expensive
         // to lookup all values, it will only happen rarely.
@@ -694,7 +716,7 @@ where
     //
     // # Safety
     //
-    // The lock must be held.
+    // The lock must be held for the shard containing the value.
     unsafe fn value_eq<'db, Key>(
         id: Id,
         key: &Key,
@@ -829,6 +851,31 @@ where
 
     fn memo_table_types(&self) -> Arc<MemoTableTypes> {
         self.memo_table_types.clone()
+    }
+
+    /// Returns memory usage information about any interned values.
+    #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
+    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::SlotInfo>> {
+        use parking_lot::lock_api::RawMutex;
+
+        for shard in self.shards.iter() {
+            // SAFETY: We do not hold any active mutex guards.
+            unsafe { shard.raw().lock() };
+        }
+
+        let memory_usage = self
+            .entries(db)
+            // SAFETY: The memo table belongs to a value that we allocated, so it
+            // has the correct type. Additionally, we are holding the locks for all shards.
+            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
+            .collect();
+
+        for shard in self.shards.iter() {
+            // SAFETY: We acquired the locks for all shards.
+            unsafe { shard.raw().unlock() };
+        }
+
+        Some(memory_usage)
     }
 }
 

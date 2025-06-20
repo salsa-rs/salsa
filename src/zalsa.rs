@@ -235,6 +235,13 @@ impl Zalsa {
             [memo_ingredient_index.as_usize()]
     }
 
+    #[cfg(feature = "salsa_unstable")]
+    pub(crate) fn ingredients(&self) -> impl Iterator<Item = &dyn Ingredient> {
+        self.ingredients_vec
+            .iter()
+            .map(|(_, ingredient)| ingredient.as_ref())
+    }
+
     /// Starts unwinding the stack if the current revision is cancelled.
     ///
     /// This method can be called by query implementations that perform

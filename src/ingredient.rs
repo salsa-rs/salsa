@@ -181,6 +181,13 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         let _ = (db, key_index);
         (None, InputAccumulatedValues::Empty)
     }
+
+    /// Returns memory usage information about any instances of the ingredient,
+    /// if applicable.
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self, _db: &dyn Database) -> Option<Vec<crate::SlotInfo>> {
+        None
+    }
 }
 
 impl dyn Ingredient {

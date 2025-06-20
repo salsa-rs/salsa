@@ -210,6 +210,11 @@ impl CycleHeads {
             }
         }
     }
+
+    #[cfg(feature = "salsa_unstable")]
+    pub(crate) fn allocation_size(&self) -> usize {
+        std::mem::size_of_val(self.0.as_slice())
+    }
 }
 
 impl IntoIterator for CycleHeads {

@@ -1,6 +1,6 @@
 use std::ops;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::FxBuildHasher;
 
 use crate::accumulator::accumulated::Accumulated;
 use crate::accumulator::{Accumulator, AnyAccumulated};
@@ -9,7 +9,7 @@ use crate::IngredientIndex;
 
 #[derive(Default)]
 pub struct AccumulatedMap {
-    map: FxHashMap<IngredientIndex, Box<dyn AnyAccumulated>>,
+    map: hashbrown::HashMap<IngredientIndex, Box<dyn AnyAccumulated>, FxBuildHasher>,
 }
 
 impl std::fmt::Debug for AccumulatedMap {
@@ -49,6 +49,10 @@ impl AccumulatedMap {
 
     pub fn clear(&mut self) {
         self.map.clear()
+    }
+
+    pub fn allocation_size(&self) -> usize {
+        self.map.allocation_size()
     }
 }
 

@@ -253,6 +253,7 @@ impl Table {
         unsafe { page.memo_types.attach_memos_mut(memos) }
     }
 
+    #[cfg(feature = "salsa_unstable")]
     pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = &T> + '_ {
         self.pages
             .iter()
@@ -392,6 +393,7 @@ impl Page {
         PageView(self, PhantomData)
     }
 
+    #[cfg(feature = "salsa_unstable")]
     fn cast_type<T: Slot>(&self) -> Option<PageView<'_, T>> {
         if self.slot_type_id == TypeId::of::<T>() {
             Some(PageView(self, PhantomData))
