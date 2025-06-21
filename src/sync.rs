@@ -5,6 +5,38 @@ pub mod shim {
     pub use shuttle::sync::*;
     pub use shuttle::{thread, thread_local};
 
+    /// A polyfill for `dashmap::DashMap`.
+    pub struct DashMap<K, V, H>(RwLock<HashTable<K, V>>, H);
+
+    type HashTable<K, V> = hashbrown_14::raw::RawTable<(K, dashmap::SharedValue<V>)>;
+
+    impl<K, V, H> Default for DashMap<K, V, H>
+    where
+        H: Default,
+    {
+        fn default() -> DashMap<K, V, H> {
+            DashMap(RwLock::default(), H::default())
+        }
+    }
+
+    impl<K, V, H> DashMap<K, V, H> {
+        pub fn shards(&self) -> &[RwLock<HashTable<K, V>>] {
+            std::slice::from_ref(&self.0)
+        }
+
+        pub fn determine_shard(&self, _hash: usize) -> usize {
+            0
+        }
+
+        pub fn hasher(&self) -> &H {
+            &self.1
+        }
+
+        pub fn clear(&self) {
+            self.0.write().clear();
+        }
+    }
+
     /// A wrapper around shuttle's `Mutex` to mirror parking-lot's API.
     #[derive(Default, Debug)]
     pub struct Mutex<T>(shuttle::sync::Mutex<T>);
@@ -130,6 +162,7 @@ pub mod shim {
 
 #[cfg(not(feature = "shuttle"))]
 pub mod shim {
+    pub use dashmap::DashMap;
     pub use parking_lot::{Mutex, MutexGuard, RwLock};
     pub use std::sync::*;
     pub use std::{thread, thread_local};

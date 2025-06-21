@@ -223,6 +223,10 @@ impl<C: Configuration> Default for JarImpl<C> {
 }
 
 impl<C: Configuration> Jar for JarImpl<C> {
+    fn ingredients_count() -> usize {
+        1
+    }
+
     fn create_ingredients(
         _zalsa: &Zalsa,
         first_index: IngredientIndex,
