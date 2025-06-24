@@ -55,6 +55,9 @@ macro_rules! setup_tracked_fn {
         // If true, the input needs an interner (because it has >1 argument).
         needs_interner: $needs_interner:tt,
 
+        // The function used to implement `C::heap_size`.
+        heap_size_fn: $($heap_size_fn:path)?,
+
         // LRU capacity (a literal, maybe 0)
         lru: $lru:tt,
 
@@ -195,6 +198,12 @@ macro_rules! setup_tracked_fn {
                 const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
 
                 $($values_equal)+
+
+                $(
+                    fn heap_size(value: &Self::Output<'_>) -> usize {
+                        $heap_size_fn(value)
+                    }
+                )?
 
                 fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
                     $($assert_return_type_is_update)*

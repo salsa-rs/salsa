@@ -99,6 +99,12 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// This is stored as a `syn::Expr` to support `usize::MAX`.
     pub revisions: Option<syn::Expr>,
 
+    /// The `heap_size = <path>` option can be used to track heap memory usage of memoized
+    /// values.
+    ///
+    /// If this is `Some`, the value is the provided `heap_size` function.
+    pub heap_size_fn: Option<syn::Path>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -123,6 +129,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             singleton: Default::default(),
             id: Default::default(),
             revisions: Default::default(),
+            heap_size_fn: Default::default(),
         }
     }
 }
@@ -145,6 +152,7 @@ pub(crate) trait AllowedOptions {
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
     const REVISIONS: bool;
+    const HEAP_SIZE: bool;
 }
 
 type Equals = syn::Token![=];
@@ -390,6 +398,22 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`revisions` option not allowed here",
+                    ));
+                }
+            } else if ident == "heap_size" {
+                if A::HEAP_SIZE {
+                    let _eq = Equals::parse(input)?;
+                    let path = syn::Path::parse(input)?;
+                    if let Some(old) = options.heap_size_fn.replace(path) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `heap_size` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`heap_size` option not allowed here",
                     ));
                 }
             } else {

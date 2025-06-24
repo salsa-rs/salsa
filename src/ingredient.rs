@@ -185,7 +185,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Returns memory usage information about any instances of the ingredient,
     /// if applicable.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, _db: &dyn Database) -> Option<Vec<crate::SlotInfo>> {
+    fn memory_usage(&self, _db: &dyn Database) -> Option<Vec<crate::database::SlotInfo>> {
         None
     }
 }

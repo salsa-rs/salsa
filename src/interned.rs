@@ -198,14 +198,14 @@ where
     /// The `MemoTable` must belong to a `Value` of the correct type. Additionally, the
     /// lock must be held for the shard containing the value.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::SlotInfo {
+    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
         // have at-least read-only access to the value's memos.
         let memos = unsafe { &*self.memos.get() };
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(memos) };
 
-        crate::SlotInfo {
+        crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
             size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
@@ -855,7 +855,7 @@ where
 
     /// Returns memory usage information about any interned values.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::SlotInfo>> {
+    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::database::SlotInfo>> {
         use parking_lot::lock_api::RawMutex;
 
         for shard in self.shards.iter() {

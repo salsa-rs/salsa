@@ -7,7 +7,7 @@ use crate::function::Configuration;
 /// once the next revision starts. See the comment on the field
 /// `deleted_entries` of [`FunctionIngredient`][] for more details.
 pub(super) struct DeletedEntries<C: Configuration> {
-    memos: boxcar::Vec<SharedBox<Memo<C::Output<'static>>>>,
+    memos: boxcar::Vec<SharedBox<Memo<'static, C>>>,
 }
 
 #[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
@@ -27,13 +27,10 @@ impl<C: Configuration> DeletedEntries<C> {
     /// # Safety
     ///
     /// The memo must be valid and safe to free when the `DeletedEntries` list is cleared or dropped.
-    pub(super) unsafe fn push(&self, memo: NonNull<Memo<C::Output<'_>>>) {
+    pub(super) unsafe fn push(&self, memo: NonNull<Memo<'_, C>>) {
         // Safety: The memo must be valid and safe to free when the `DeletedEntries` list is cleared or dropped.
-        let memo = unsafe {
-            std::mem::transmute::<NonNull<Memo<C::Output<'_>>>, NonNull<Memo<C::Output<'static>>>>(
-                memo,
-            )
-        };
+        let memo =
+            unsafe { std::mem::transmute::<NonNull<Memo<'_, C>>, NonNull<Memo<'static, C>>>(memo) };
 
         self.memos.push(SharedBox(memo));
     }

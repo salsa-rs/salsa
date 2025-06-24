@@ -22,23 +22,20 @@ impl<C: Configuration> IngredientImpl<C> {
         &self,
         zalsa: &'db Zalsa,
         id: Id,
-        memo: NonNull<Memo<C::Output<'db>>>,
+        memo: NonNull<Memo<'db, C>>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<NonNull<Memo<C::Output<'db>>>> {
+    ) -> Option<NonNull<Memo<'db, C>>> {
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
-        let static_memo = unsafe {
-            transmute::<NonNull<Memo<C::Output<'db>>>, NonNull<Memo<C::Output<'static>>>>(memo)
-        };
+        let static_memo =
+            unsafe { transmute::<NonNull<Memo<'db, C>>, NonNull<Memo<'static, C>>>(memo) };
         let old_static_memo = zalsa
             .memo_table_for(id)
             .insert(memo_ingredient_index, static_memo)?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe {
-            transmute::<NonNull<Memo<C::Output<'static>>>, NonNull<Memo<C::Output<'db>>>>(
-                old_static_memo,
-            )
+            transmute::<NonNull<Memo<'static, C>>, NonNull<Memo<'db, C>>>(old_static_memo)
         })
     }
 
@@ -50,13 +47,11 @@ impl<C: Configuration> IngredientImpl<C> {
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<C::Output<'db>>> {
+    ) -> Option<&'db Memo<'db, C>> {
         let static_memo = zalsa.memo_table_for(id).get(memo_ingredient_index)?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
-        Some(unsafe {
-            transmute::<&Memo<C::Output<'static>>, &'db Memo<C::Output<'db>>>(static_memo.as_ref())
-        })
+        Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
     }
 
     /// Evicts the existing memo for the given key, replacing it
@@ -66,7 +61,7 @@ impl<C: Configuration> IngredientImpl<C> {
         table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,
     ) {
-        let map = |memo: &mut Memo<C::Output<'static>>| {
+        let map = |memo: &mut Memo<'static, C>| {
             match memo.revisions.origin.as_ref() {
                 QueryOriginRef::Assigned(_)
                 | QueryOriginRef::DerivedUntracked(_)
@@ -88,9 +83,9 @@ impl<C: Configuration> IngredientImpl<C> {
 }
 
 #[derive(Debug)]
-pub struct Memo<V> {
+pub struct Memo<'db, C: Configuration> {
     /// The result of the query, if we decide to memoize it.
-    pub(super) value: Option<V>,
+    pub(super) value: Option<C::Output<'db>>,
 
     /// Last revision when this memo was verified; this begins
     /// as the current revision.
@@ -100,14 +95,12 @@ pub struct Memo<V> {
     pub(super) revisions: QueryRevisions,
 }
 
-// Memo's are stored a lot, make sure their size is doesn't randomly increase.
-#[cfg(not(feature = "shuttle"))]
-#[cfg(target_pointer_width = "64")]
-const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 6]>()];
-
-impl<V> Memo<V> {
-    pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
+impl<'db, C: Configuration> Memo<'db, C> {
+    pub(super) fn new(
+        value: Option<C::Output<'db>>,
+        revision_now: Revision,
+        revisions: QueryRevisions,
+    ) -> Self {
         debug_assert!(
             !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_empty(),
             "Memo must be finalized if it has no cycle heads"
@@ -286,12 +279,12 @@ impl<V> Memo<V> {
         }
     }
 
-    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, V> {
-        struct TracingDebug<'a, T> {
-            memo: &'a Memo<T>,
+    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, 'db, C> {
+        struct TracingDebug<'memo, 'db, C: Configuration> {
+            memo: &'memo Memo<'db, C>,
         }
 
-        impl<T> std::fmt::Debug for TracingDebug<'_, T> {
+        impl<C: Configuration> std::fmt::Debug for TracingDebug<'_, '_, C> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct("Memo")
                     .field(
@@ -312,20 +305,27 @@ impl<V> Memo<V> {
     }
 }
 
-impl<V: Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
+impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
+where
+    C::Output<'static>: Send + Sync + Any,
+{
     fn origin(&self) -> QueryOriginRef<'_> {
         self.revisions.origin.as_ref()
     }
 
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::SlotInfo {
-        let size_of = std::mem::size_of::<Memo<V>>() + self.revisions.allocation_size();
+    fn memory_usage(&self) -> crate::database::MemoInfo {
+        let size_of = std::mem::size_of::<Memo<C>>() + self.revisions.allocation_size();
+        let heap_size = self.value.as_ref().map(C::heap_size).unwrap_or(0);
 
-        crate::SlotInfo {
-            size_of_metadata: size_of - std::mem::size_of::<V>(),
-            debug_name: std::any::type_name::<V>(),
-            size_of_fields: std::mem::size_of::<V>(),
-            memos: Vec::new(),
+        crate::database::MemoInfo {
+            debug_name: C::DEBUG_NAME,
+            output: crate::database::SlotInfo {
+                size_of_metadata: size_of - std::mem::size_of::<C::Output<'static>>(),
+                debug_name: std::any::type_name::<C::Output<'static>>(),
+                size_of_fields: std::mem::size_of::<C::Output<'static>>() + heap_size,
+                memos: Vec::new(),
+            },
         }
     }
 }
@@ -442,6 +442,73 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
+mod _memory_usage {
+    use crate::cycle::CycleRecoveryStrategy;
+    use crate::ingredient::Location;
+    use crate::plumbing::{IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
+    use crate::zalsa::Zalsa;
+    use crate::{CycleRecoveryAction, Database, Id};
+
+    use std::any::TypeId;
+    use std::num::NonZeroUsize;
+
+    // Memo's are stored a lot, make sure their size is doesn't randomly increase.
+    const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
+        [(); std::mem::size_of::<[usize; 6]>()];
+
+    struct DummyStruct;
+
+    impl SalsaStructInDb for DummyStruct {
+        type MemoIngredientMap = MemoIngredientSingletonIndex;
+
+        fn lookup_or_create_ingredient_index(_: &Zalsa) -> IngredientIndices {
+            unimplemented!()
+        }
+
+        fn cast(_: Id, _: TypeId) -> Option<Self> {
+            unimplemented!()
+        }
+    }
+
+    struct DummyConfiguration;
+
+    impl super::Configuration for DummyConfiguration {
+        const DEBUG_NAME: &'static str = "";
+        const LOCATION: Location = Location { file: "", line: 0 };
+        type DbView = dyn Database;
+        type SalsaStruct<'db> = DummyStruct;
+        type Input<'db> = ();
+        type Output<'db> = NonZeroUsize;
+        const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
+        fn values_equal<'db>(_: &Self::Output<'db>, _: &Self::Output<'db>) -> bool {
+            unimplemented!()
+        }
+
+        fn id_to_input(_: &Self::DbView, _: Id) -> Self::Input<'_> {
+            unimplemented!()
+        }
+
+        fn execute<'db>(_: &'db Self::DbView, _: Self::Input<'db>) -> Self::Output<'db> {
+            unimplemented!()
+        }
+
+        fn cycle_initial<'db>(_: &'db Self::DbView, _: Self::Input<'db>) -> Self::Output<'db> {
+            unimplemented!()
+        }
+
+        fn recover_from_cycle<'db>(
+            _: &'db Self::DbView,
+            _: &Self::Output<'db>,
+            _: u32,
+            _: Self::Input<'db>,
+        ) -> CycleRecoveryAction<Self::Output<'db>> {
+            unimplemented!()
         }
     }
 }

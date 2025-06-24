@@ -33,4 +33,9 @@ struct TrackedStructWithRevisions {
     field: u32,
 }
 
+#[salsa::tracked(heap_size = size)]
+struct TrackedStructWithHeapSize {
+    field: u32,
+}
+
 fn main() {}

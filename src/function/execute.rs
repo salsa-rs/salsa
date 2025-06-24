@@ -24,8 +24,8 @@ where
         &'db self,
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'db>,
-        opt_old_memo: Option<&Memo<C::Output<'db>>>,
-    ) -> &'db Memo<C::Output<'db>> {
+        opt_old_memo: Option<&Memo<'db, C>>,
+    ) -> &'db Memo<'db, C> {
         let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index();
 
@@ -121,7 +121,7 @@ where
         &'db self,
         db: &'db C::DbView,
         mut active_query: ActiveQueryGuard<'db>,
-        opt_old_memo: Option<&Memo<C::Output<'db>>>,
+        opt_old_memo: Option<&Memo<'db, C>>,
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
@@ -133,7 +133,7 @@ where
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // Initially it's set to None, because the initial provisional value is created lazily,
         // only when a cycle is actually encountered.
-        let mut opt_last_provisional: Option<&Memo<<C as Configuration>::Output<'db>>> = None;
+        let mut opt_last_provisional: Option<&Memo<'db, C>> = None;
         loop {
             let previous_memo = opt_last_provisional.or(opt_old_memo);
             let (mut new_value, mut revisions) = Self::execute_query(
@@ -257,7 +257,7 @@ where
     fn execute_query<'db>(
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'db>,
-        opt_old_memo: Option<&Memo<C::Output<'db>>>,
+        opt_old_memo: Option<&Memo<'db, C>>,
         current_revision: Revision,
         id: Id,
     ) -> (C::Output<'db>, QueryRevisions) {

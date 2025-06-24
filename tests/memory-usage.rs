@@ -26,6 +26,20 @@ fn input_to_tracked<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTrac
 }
 
 #[salsa::tracked]
+fn input_to_string<'db>(_db: &'db dyn salsa::Database) -> String {
+    "a".repeat(1000)
+}
+
+#[salsa::tracked(heap_size = string_heap_size)]
+fn input_to_string_get_size<'db>(_db: &'db dyn salsa::Database) -> String {
+    "a".repeat(1000)
+}
+
+fn string_heap_size(x: &String) -> usize {
+    x.capacity()
+}
+
+#[salsa::tracked]
 fn input_to_tracked_tuple<'db>(
     db: &'db dyn salsa::Database,
     input: MyInput,
@@ -53,6 +67,9 @@ fn test() {
     let _interned2 = input_to_interned(&db, input2);
     let _interned3 = input_to_interned(&db, input3);
 
+    let _string1 = input_to_string(&db);
+    let _string2 = input_to_string_get_size(&db);
+
     let structs_info = <dyn salsa::Database>::structs_info(&db);
 
     let expected = expect![[r#"
@@ -75,6 +92,18 @@ fn test() {
                 size_of_metadata: 156,
                 size_of_fields: 12,
             },
+            IngredientInfo {
+                debug_name: "input_to_string::interned_arguments",
+                count: 1,
+                size_of_metadata: 56,
+                size_of_fields: 0,
+            },
+            IngredientInfo {
+                debug_name: "input_to_string_get_size::interned_arguments",
+                count: 1,
+                size_of_metadata: 56,
+                size_of_fields: 0,
+            },
         ]"#]];
 
     expected.assert_eq(&format!("{structs_info:#?}"));
@@ -87,22 +116,7 @@ fn test() {
     let expected = expect![[r#"
         [
             (
-                (
-                    "MyInput",
-                    "(memory_usage::MyTracked, memory_usage::MyTracked)",
-                ),
-                IngredientInfo {
-                    debug_name: "(memory_usage::MyTracked, memory_usage::MyTracked)",
-                    count: 1,
-                    size_of_metadata: 132,
-                    size_of_fields: 16,
-                },
-            ),
-            (
-                (
-                    "MyInput",
-                    "memory_usage::MyInterned",
-                ),
+                "input_to_interned",
                 IngredientInfo {
                     debug_name: "memory_usage::MyInterned",
                     count: 3,
@@ -111,14 +125,38 @@ fn test() {
                 },
             ),
             (
-                (
-                    "MyInput",
-                    "memory_usage::MyTracked",
-                ),
+                "input_to_string",
+                IngredientInfo {
+                    debug_name: "alloc::string::String",
+                    count: 1,
+                    size_of_metadata: 40,
+                    size_of_fields: 24,
+                },
+            ),
+            (
+                "input_to_string_get_size",
+                IngredientInfo {
+                    debug_name: "alloc::string::String",
+                    count: 1,
+                    size_of_metadata: 40,
+                    size_of_fields: 1024,
+                },
+            ),
+            (
+                "input_to_tracked",
                 IngredientInfo {
                     debug_name: "memory_usage::MyTracked",
                     count: 2,
                     size_of_metadata: 192,
+                    size_of_fields: 16,
+                },
+            ),
+            (
+                "input_to_tracked_tuple",
+                IngredientInfo {
+                    debug_name: "(memory_usage::MyTracked, memory_usage::MyTracked)",
+                    count: 1,
+                    size_of_metadata: 132,
                     size_of_fields: 16,
                 },
             ),

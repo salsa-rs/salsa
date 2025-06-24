@@ -24,7 +24,7 @@ pub trait Memo: Any + Send + Sync {
 
     /// Returns memory usage information about the memoized value.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::SlotInfo;
+    fn memory_usage(&self) -> crate::database::MemoInfo;
 }
 
 /// Data for a memoized entry.
@@ -112,12 +112,15 @@ impl Memo for DummyMemo {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::SlotInfo {
-        crate::SlotInfo {
+    fn memory_usage(&self) -> crate::database::MemoInfo {
+        crate::database::MemoInfo {
             debug_name: "dummy",
-            size_of_metadata: 0,
-            size_of_fields: 0,
-            memos: Vec::new(),
+            output: crate::database::SlotInfo {
+                debug_name: "dummy",
+                size_of_metadata: 0,
+                size_of_fields: 0,
+                memos: Vec::new(),
+            },
         }
     }
 }
@@ -279,7 +282,7 @@ impl MemoTableWithTypes<'_> {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn memory_usage(&self) -> Vec<crate::SlotInfo> {
+    pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
         let mut memory_usage = Vec::new();
         let memos = self.memos.memos.read();
         for (index, memo) in memos.iter().enumerate() {

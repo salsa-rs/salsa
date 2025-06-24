@@ -36,7 +36,7 @@ mod memo;
 mod specify;
 mod sync;
 
-pub type Memo<C> = memo::Memo<<C as Configuration>::Output<'static>>;
+pub type Memo<C> = memo::Memo<'static, C>;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -71,6 +71,11 @@ pub trait Configuration: Any {
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
     fn id_to_input(db: &Self::DbView, key: Id) -> Self::Input<'_>;
+
+    /// Returns the size of any heap allocations in the output value, in bytes.
+    fn heap_size(_value: &Self::Output<'_>) -> usize {
+        0
+    }
 
     /// Invoked when we need to compute the value for the given key, either because we've never
     /// computed it before or because the old one relied on inputs that have changed.
@@ -181,8 +186,8 @@ where
     /// only cleared with `&mut self`.
     unsafe fn extend_memo_lifetime<'this>(
         &'this self,
-        memo: &memo::Memo<C::Output<'this>>,
-    ) -> &'this memo::Memo<C::Output<'this>> {
+        memo: &memo::Memo<'this, C>,
+    ) -> &'this memo::Memo<'this, C> {
         // SAFETY: the caller must guarantee that the memo will not be released before `&self`
         unsafe { std::mem::transmute(memo) }
     }
@@ -191,9 +196,9 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
-        mut memo: memo::Memo<C::Output<'db>>,
+        mut memo: memo::Memo<'db, C>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> &'db memo::Memo<C::Output<'db>> {
+    ) -> &'db memo::Memo<'db, C> {
         if let Some(tracked_struct_ids) = memo.revisions.tracked_struct_ids_mut() {
             tracked_struct_ids.shrink_to_fit();
         }

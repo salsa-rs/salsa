@@ -43,7 +43,7 @@ where
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         id: Id,
-    ) -> &'db Memo<C::Output<'db>> {
+    ) -> &'db Memo<'db, C> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         loop {
             if let Some(memo) = self
@@ -63,7 +63,7 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<C::Output<'db>>> {
+    ) -> Option<&'db Memo<'db, C>> {
         let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
 
         memo.value.as_ref()?;
@@ -91,7 +91,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<C::Output<'db>>> {
+    ) -> Option<&'db Memo<'db, C>> {
         let memo = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)?;
 
         // If we get back a provisional cycle memo, and it's provisional on any cycle heads
@@ -117,7 +117,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<C::Output<'db>>> {
+    ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let claim_guard = match self.sync_table.try_claim(zalsa, id) {
