@@ -299,6 +299,14 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     #[inline]
+    pub fn lookup_jar_by_type<J: Jar>(&self) -> Option<IngredientIndex> {
+        let jar_type_id = TypeId::of::<J>();
+        self.jar_map.get(&jar_type_id, &self.jar_map.guard())
+    }
+
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    #[inline]
     pub fn add_or_lookup_jar_by_type<J: Jar>(&self) -> IngredientIndex {
         let jar_type_id = TypeId::of::<J>();
 

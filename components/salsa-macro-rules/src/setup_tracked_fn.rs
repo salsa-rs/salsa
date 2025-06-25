@@ -151,8 +151,14 @@ macro_rules! setup_tracked_fn {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     let zalsa = db.zalsa();
                     $FN_CACHE.get_or_create(zalsa, || {
-                        <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                        zalsa.add_or_lookup_jar_by_type::<$Configuration>()
+                        // If the ingredient has already been inserted, we know that the downcaster
+                        // has also been registered. This is a fast-path for multi-database use cases
+                        // that bypass the ingredient cache and will always execute this closure.
+                        zalsa.lookup_jar_by_type::<$Configuration>()
+                            .unwrap_or_else(|| {
+                                <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                                zalsa.add_or_lookup_jar_by_type::<$Configuration>()
+                            })
                     })
                 }
 
