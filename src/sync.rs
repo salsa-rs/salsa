@@ -184,6 +184,7 @@ pub mod shim {
             fn default() -> Self {
                 Self(
                     papaya::HashMap::builder()
+                        .capacity(256) // A relatively large capacity to hopefully avoid resizing.
                         .resize_mode(papaya::ResizeMode::Blocking)
                         .hasher(S::default())
                         .build(),
