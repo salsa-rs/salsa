@@ -57,6 +57,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const ID: bool = false;
 
     const REVISIONS: bool = false;
+
+    const HEAP_SIZE: bool = true;
 }
 
 struct Macro {
@@ -97,6 +99,7 @@ impl Macro {
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
         let requires_update = self.args.non_update_return_type.is_none();
+        let heap_size_fn = self.args.heap_size_fn.iter();
         let eq = if let Some(token) = &self.args.no_eq {
             if self.args.cycle_fn.is_some() {
                 return Err(syn::Error::new_spanned(
@@ -217,6 +220,7 @@ impl Macro {
                 is_specifiable: #is_specifiable,
                 values_equal: {#eq},
                 needs_interner: #needs_interner,
+                heap_size_fn: #(#heap_size_fn)*,
                 lru: #lru,
                 return_mode: #return_mode,
                 assert_return_type_is_update: { #assert_return_type_is_update },

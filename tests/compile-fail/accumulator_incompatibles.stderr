@@ -51,3 +51,9 @@ error: `constructor` option not allowed here
    |
 25 | #[salsa::accumulator(constructor = Constructor)]
    |                      ^^^^^^^^^^^
+
+error: `heap_size` option not allowed here
+  --> tests/compile-fail/accumulator_incompatibles.rs:28:22
+   |
+28 | #[salsa::accumulator(heap_size = size)]
+   |                      ^^^^^^^^^

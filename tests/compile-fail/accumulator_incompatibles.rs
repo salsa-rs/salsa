@@ -25,4 +25,7 @@ struct AccWithRevisions(u32);
 #[salsa::accumulator(constructor = Constructor)]
 struct AccWithConstructor(u32);
 
+#[salsa::accumulator(heap_size = size)]
+struct AccWithHeapSize(u32);
+
 fn main() {}

@@ -18,7 +18,7 @@ where
         &self,
         zalsa: &Zalsa,
         key: DatabaseKeyIndex,
-        old_memo: &Memo<C::Output<'_>>,
+        old_memo: &Memo<'_, C>,
         revisions: &mut QueryRevisions,
     ) {
         let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =

@@ -135,7 +135,10 @@ impl dyn Database {
 }
 
 #[cfg(feature = "salsa_unstable")]
-pub use memory_usage::{IngredientInfo, SlotInfo};
+pub use memory_usage::IngredientInfo;
+
+#[cfg(feature = "salsa_unstable")]
+pub(crate) use memory_usage::{MemoInfo, SlotInfo};
 
 #[cfg(feature = "salsa_unstable")]
 mod memory_usage {
@@ -171,8 +174,8 @@ mod memory_usage {
         /// Returns information about any memoized Salsa queries.
         ///
         /// The returned map holds memory usage information for memoized values of a given query, keyed
-        /// by its `(input, output)` type names.
-        pub fn queries_info(&self) -> HashMap<(&'static str, &'static str), IngredientInfo> {
+        /// by the query function name.
+        pub fn queries_info(&self) -> HashMap<&'static str, IngredientInfo> {
             let mut queries = HashMap::new();
 
             for input_ingredient in self.zalsa().ingredients() {
@@ -181,17 +184,15 @@ mod memory_usage {
                 };
 
                 for input in input_info {
-                    for output in input.memos {
-                        let info = queries
-                            .entry((input.debug_name, output.debug_name))
-                            .or_insert(IngredientInfo {
-                                debug_name: output.debug_name,
-                                ..Default::default()
-                            });
+                    for memo in input.memos {
+                        let info = queries.entry(memo.debug_name).or_insert(IngredientInfo {
+                            debug_name: memo.output.debug_name,
+                            ..Default::default()
+                        });
 
                         info.count += 1;
-                        info.size_of_fields += output.size_of_fields;
-                        info.size_of_metadata += output.size_of_metadata;
+                        info.size_of_fields += memo.output.size_of_fields;
+                        info.size_of_metadata += memo.output.size_of_metadata;
                     }
                 }
             }
@@ -236,6 +237,12 @@ mod memory_usage {
         pub(crate) debug_name: &'static str,
         pub(crate) size_of_metadata: usize,
         pub(crate) size_of_fields: usize,
-        pub(crate) memos: Vec<SlotInfo>,
+        pub(crate) memos: Vec<MemoInfo>,
+    }
+
+    /// Memory usage information about a particular memo.
+    pub struct MemoInfo {
+        pub(crate) debug_name: &'static str,
+        pub(crate) output: SlotInfo,
     }
 }

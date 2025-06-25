@@ -64,6 +64,8 @@ impl crate::options::AllowedOptions for InternedStruct {
     const ID: bool = true;
 
     const REVISIONS: bool = true;
+
+    const HEAP_SIZE: bool = false;
 }
 
 impl SalsaStructAllowedOptions for InternedStruct {

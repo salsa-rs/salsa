@@ -192,7 +192,7 @@ where
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<'_, C>,
     ) -> ShallowUpdate {
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
@@ -227,7 +227,7 @@ where
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<'_, C>,
         update: ShallowUpdate,
     ) {
         if let ShallowUpdate::HigherDurability = update {
@@ -247,7 +247,7 @@ where
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<'_, C>,
     ) -> bool {
         !memo.may_be_provisional()
             || self.validate_provisional(zalsa, database_key_index, memo)
@@ -261,7 +261,7 @@ where
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<'_, C>,
     ) -> bool {
         tracing::trace!(
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
@@ -322,7 +322,7 @@ where
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<'_, C>,
     ) -> bool {
         tracing::trace!(
             "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
@@ -373,7 +373,7 @@ where
         &self,
         db: &C::DbView,
         zalsa: &Zalsa,
-        old_memo: &Memo<C::Output<'_>>,
+        old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {

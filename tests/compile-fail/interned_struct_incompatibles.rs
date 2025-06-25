@@ -39,4 +39,9 @@ struct InternedWithZeroRevisions {
     field: u32,
 }
 
+#[salsa::interned(heap_size = size)]
+struct AccWithHeapSize {
+    field: u32,
+}
+
 fn main() {}

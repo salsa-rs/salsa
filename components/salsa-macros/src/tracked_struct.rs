@@ -60,6 +60,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
     const ID: bool = false;
 
     const REVISIONS: bool = false;
+
+    const HEAP_SIZE: bool = false;
 }
 
 impl SalsaStructAllowedOptions for TrackedStruct {

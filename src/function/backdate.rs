@@ -12,7 +12,7 @@ where
     /// on an old memo when a new memo has been produced to check whether there have been changed.
     pub(super) fn backdate_if_appropriate<'db>(
         &self,
-        old_memo: &Memo<C::Output<'db>>,
+        old_memo: &Memo<'db, C>,
         index: DatabaseKeyIndex,
         revisions: &mut QueryRevisions,
         value: &C::Output<'db>,

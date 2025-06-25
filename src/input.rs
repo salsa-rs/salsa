@@ -244,7 +244,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     /// Returns memory usage information about any inputs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::SlotInfo>> {
+    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db)
             // SAFETY: The memo table belongs to a value that we allocated, so it
@@ -303,11 +303,11 @@ where
     ///
     /// The `MemoTable` must belong to a `Value` of the correct type.
     #[cfg(feature = "salsa_unstable")]
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::SlotInfo {
+    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
-        crate::SlotInfo {
+        crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields>(),
             size_of_fields: std::mem::size_of::<C::Fields>(),
