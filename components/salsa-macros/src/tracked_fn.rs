@@ -59,6 +59,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const REVISIONS: bool = false;
 
     const HEAP_SIZE: bool = true;
+
+    const SELF_TY: bool = true;
 }
 
 struct Macro {
@@ -199,6 +201,10 @@ impl Macro {
         } else {
             quote! {}
         };
+        let self_ty = match &self.args.self_ty {
+            Some(ty) => quote! { self_ty: #ty, },
+            None => quote! {},
+        };
 
         Ok(crate::debug::dump_tokens(
             fn_name,
@@ -224,6 +230,7 @@ impl Macro {
                 lru: #lru,
                 return_mode: #return_mode,
                 assert_return_type_is_update: { #assert_return_type_is_update },
+                #self_ty
                 unused_names: [
                     #zalsa,
                     #Configuration,

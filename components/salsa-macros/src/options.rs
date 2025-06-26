@@ -105,6 +105,10 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the provided `heap_size` function.
     pub heap_size_fn: Option<syn::Path>,
 
+    /// The `self_ty = <Ty>` option is used to set the the self type of the tracked impl for tracked
+    /// functions. This is merely used to refine the query name.
+    pub self_ty: Option<syn::Type>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -130,6 +134,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             id: Default::default(),
             revisions: Default::default(),
             heap_size_fn: Default::default(),
+            self_ty: Default::default(),
         }
     }
 }
@@ -153,6 +158,7 @@ pub(crate) trait AllowedOptions {
     const ID: bool;
     const REVISIONS: bool;
     const HEAP_SIZE: bool;
+    const SELF_TY: bool;
 }
 
 type Equals = syn::Token![=];
@@ -416,6 +422,22 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`heap_size` option not allowed here",
                     ));
                 }
+            } else if ident == "self_ty" {
+                if A::SELF_TY {
+                    let _eq = Equals::parse(input)?;
+                    let ty = syn::Type::parse(input)?;
+                    if let Some(old) = options.self_ty.replace(ty) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `self_ty` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`self_ty` option not allowed here",
+                    ));
+                }
             } else {
                 return Err(syn::Error::new(
                     ident.span(),
@@ -431,5 +453,84 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
         }
 
         Ok(options)
+    }
+}
+impl<A: AllowedOptions> quote::ToTokens for Options<A> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let Self {
+            returns,
+            no_eq,
+            debug,
+            no_lifetime,
+            singleton,
+            specify,
+            non_update_return_type,
+            db_path,
+            cycle_fn,
+            cycle_initial,
+            cycle_result,
+            data,
+            lru,
+            constructor_name,
+            id,
+            revisions,
+            heap_size_fn,
+            self_ty,
+            phantom: _,
+        } = self;
+        if let Some(returns) = returns {
+            tokens.extend(quote::quote! { returns(#returns), });
+        };
+        if no_eq.is_some() {
+            tokens.extend(quote::quote! { no_eq, });
+        }
+        if debug.is_some() {
+            tokens.extend(quote::quote! { debug, });
+        }
+        if no_lifetime.is_some() {
+            tokens.extend(quote::quote! { no_lifetime, });
+        }
+        if singleton.is_some() {
+            tokens.extend(quote::quote! { singleton, });
+        }
+        if specify.is_some() {
+            tokens.extend(quote::quote! { specify, });
+        }
+        if non_update_return_type.is_some() {
+            tokens.extend(quote::quote! { unsafe(non_update_return_type), });
+        }
+        if let Some(db_path) = db_path {
+            tokens.extend(quote::quote! { db = #db_path, });
+        }
+        if let Some(cycle_fn) = cycle_fn {
+            tokens.extend(quote::quote! { cycle_fn = #cycle_fn, });
+        }
+        if let Some(cycle_initial) = cycle_initial {
+            tokens.extend(quote::quote! { cycle_initial = #cycle_initial, });
+        }
+        if let Some(cycle_result) = cycle_result {
+            tokens.extend(quote::quote! { cycle_result = #cycle_result, });
+        }
+        if let Some(data) = data {
+            tokens.extend(quote::quote! { data = #data, });
+        }
+        if let Some(lru) = lru {
+            tokens.extend(quote::quote! { lru = #lru, });
+        }
+        if let Some(constructor_name) = constructor_name {
+            tokens.extend(quote::quote! { constructor = #constructor_name, });
+        }
+        if let Some(id) = id {
+            tokens.extend(quote::quote! { id = #id, });
+        }
+        if let Some(revisions) = revisions {
+            tokens.extend(quote::quote! { revisions = #revisions, });
+        }
+        if let Some(heap_size_fn) = heap_size_fn {
+            tokens.extend(quote::quote! { heap_size_fn = #heap_size_fn, });
+        }
+        if let Some(self_ty) = self_ty {
+            tokens.extend(quote::quote! { self_ty = #self_ty, });
+        }
     }
 }

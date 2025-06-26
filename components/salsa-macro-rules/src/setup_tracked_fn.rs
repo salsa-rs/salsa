@@ -66,6 +66,8 @@ macro_rules! setup_tracked_fn {
 
         assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
 
+        $(self_ty: $self_ty:ty,)?
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -139,7 +141,7 @@ macro_rules! setup_tracked_fn {
                             file: file!(),
                             line: line!(),
                         };
-                        const DEBUG_NAME: &'static str = concat!(stringify!($fn_name), "::interned_arguments");
+                        const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::",)? stringify!($fn_name), "::interned_arguments");
 
                         type Fields<$db_lt> = ($($interned_input_ty),*);
 
@@ -185,7 +187,7 @@ macro_rules! setup_tracked_fn {
                     file: file!(),
                     line: line!(),
                 };
-                const DEBUG_NAME: &'static str = stringify!($fn_name);
+                const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::", )? stringify!($fn_name));
 
                 type DbView = dyn $Db;
 

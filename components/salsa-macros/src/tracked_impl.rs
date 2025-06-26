@@ -69,7 +69,7 @@ impl Macro {
             return Ok(());
         };
 
-        let self_ty = &impl_item.self_ty;
+        let self_ty = &*impl_item.self_ty;
 
         let Some(tracked_attr_index) = fn_item.attrs.iter().position(|a| self.is_tracked_attr(a))
         else {
@@ -83,11 +83,20 @@ impl Macro {
         let mut change = ChangeSelfPath::new(self_ty, trait_);
         change.visit_impl_item_fn_mut(fn_item);
 
-        let salsa_tracked_attr = fn_item.attrs.remove(tracked_attr_index);
-        let args: FnArgs = match &salsa_tracked_attr.meta {
+        let mut salsa_tracked_attr = fn_item.attrs.remove(tracked_attr_index);
+        let mut args: FnArgs = match &salsa_tracked_attr.meta {
             syn::Meta::Path(..) => Default::default(),
             _ => salsa_tracked_attr.parse_args()?,
         };
+        if args.self_ty.is_none() {
+            // If the user did not specify a self_ty, we use the impl's self_ty
+            args.self_ty = Some(self_ty.clone());
+        }
+        salsa_tracked_attr.meta = syn::Meta::List(syn::MetaList {
+            path: salsa_tracked_attr.path().clone(),
+            delimiter: syn::MacroDelimiter::Paren(syn::token::Paren::default()),
+            tokens: quote! {#args},
+        });
 
         let InnerTrait = self.hygiene.ident("InnerTrait");
         let inner_fn_name = self.hygiene.ident(&fn_item.sig.ident.to_string());
