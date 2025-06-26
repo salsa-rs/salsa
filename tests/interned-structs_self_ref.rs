@@ -87,7 +87,9 @@ const _: () = {
 
             let zalsa = db.zalsa();
             CACHE.get_or_create(zalsa, || {
-                zalsa.add_or_lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
+                zalsa
+                    .lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
+                    .get_or_create()
             })
         }
     }
@@ -114,7 +116,8 @@ const _: () = {
         type MemoIngredientMap = zalsa_::MemoIngredientSingletonIndex;
 
         fn lookup_or_create_ingredient_index(aux: &Zalsa) -> salsa::plumbing::IngredientIndices {
-            aux.add_or_lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
+            aux.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
+                .get_or_create()
                 .into()
         }
 

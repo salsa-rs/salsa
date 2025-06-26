@@ -26,7 +26,9 @@ macro_rules! setup_accumulator_impl {
                     $zalsa::IngredientCache::new();
 
                 $CACHE.get_or_create(zalsa, || {
-                    zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
+                    zalsa
+                        .lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
+                        .get_or_create()
                 })
             }
 

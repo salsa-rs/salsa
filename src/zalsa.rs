@@ -299,32 +299,24 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     #[inline]
-    pub fn lookup_jar_by_type<J: Jar>(&self) -> Option<IngredientIndex> {
+    pub fn lookup_jar_by_type<J: Jar>(&self) -> JarEntry<'_, J> {
         let jar_type_id = TypeId::of::<J>();
-        self.jar_map.get(&jar_type_id, &self.jar_map.guard())
-    }
-
-    /// **NOT SEMVER STABLE**
-    #[doc(hidden)]
-    #[inline]
-    pub fn add_or_lookup_jar_by_type<J: Jar>(&self) -> IngredientIndex {
-        let jar_type_id = TypeId::of::<J>();
-
         let guard = self.jar_map.guard();
-        if let Some(index) = self.jar_map.get(&jar_type_id, &guard) {
-            return index;
-        };
 
-        self.add_or_lookup_jar_by_type_slow::<J>(jar_type_id, guard)
+        match self.jar_map.get(&jar_type_id, &guard) {
+            Some(index) => JarEntry::Occupied(index),
+            None => JarEntry::Vacant {
+                guard,
+                zalsa: self,
+                _jar: PhantomData,
+            },
+        }
     }
 
     #[cold]
     #[inline(never)]
-    fn add_or_lookup_jar_by_type_slow<J: Jar>(
-        &self,
-        jar_type_id: TypeId,
-        guard: papaya::LocalGuard<'_>,
-    ) -> IngredientIndex {
+    fn add_or_lookup_jar_by_type<J: Jar>(&self, guard: &papaya::LocalGuard<'_>) -> IngredientIndex {
+        let jar_type_id = TypeId::of::<J>();
         let dependencies = J::create_dependencies(self);
 
         let jar_map_lock = self.jar_map_lock.lock();
@@ -332,7 +324,7 @@ impl Zalsa {
         let index = IngredientIndex::from(self.ingredients_vec.count());
 
         // Someone made it earlier than us.
-        if let Some(index) = self.jar_map.get(&jar_type_id, &guard) {
+        if let Some(index) = self.jar_map.get(&jar_type_id, guard) {
             return index;
         };
 
@@ -357,7 +349,7 @@ impl Zalsa {
 
         // Insert the index after all ingredients are inserted to avoid exposing
         // partially initialized jars to readers.
-        self.jar_map.insert(jar_type_id, index, &guard);
+        self.jar_map.insert(jar_type_id, index, guard);
 
         drop(jar_map_lock);
 
@@ -442,6 +434,36 @@ impl Zalsa {
     }
 }
 
+pub enum JarEntry<'a, J> {
+    Occupied(IngredientIndex),
+    Vacant {
+        zalsa: &'a Zalsa,
+        guard: papaya::LocalGuard<'a>,
+        _jar: PhantomData<J>,
+    },
+}
+
+impl<J> JarEntry<'_, J>
+where
+    J: Jar,
+{
+    #[inline]
+    pub fn get(&self) -> Option<IngredientIndex> {
+        match *self {
+            JarEntry::Occupied(index) => Some(index),
+            JarEntry::Vacant { .. } => None,
+        }
+    }
+
+    #[inline]
+    pub fn get_or_create(&self) -> IngredientIndex {
+        match self {
+            JarEntry::Occupied(index) => *index,
+            JarEntry::Vacant { zalsa, guard, _jar } => zalsa.add_or_lookup_jar_by_type::<J>(guard),
+        }
+    }
+}
+
 /// Caches a pointer to an ingredient in a database.
 /// Optimized for the case of a single database.
 pub struct IngredientCache<I>
@@ -504,6 +526,7 @@ where
         );
         let cached_data = self.cached_data.load(Ordering::Acquire);
         if cached_data == Self::UNINITIALIZED {
+            #[cold]
             #[inline(never)]
             fn get_or_create_index_slow<I: Ingredient>(
                 this: &IngredientCache<I>,

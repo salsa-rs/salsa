@@ -151,21 +151,24 @@ macro_rules! setup_tracked_fn {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     let zalsa = db.zalsa();
                     $FN_CACHE.get_or_create(zalsa, || {
+                        let jar_entry = zalsa.lookup_jar_by_type::<$Configuration>();
+
                         // If the ingredient has already been inserted, we know that the downcaster
                         // has also been registered. This is a fast-path for multi-database use cases
                         // that bypass the ingredient cache and will always execute this closure.
-                        zalsa.lookup_jar_by_type::<$Configuration>()
-                            .unwrap_or_else(|| {
-                                <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                                zalsa.add_or_lookup_jar_by_type::<$Configuration>()
-                            })
+                        if let Some(index) = jar_entry.get() {
+                            return index;
+                        }
+
+                        <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                        jar_entry.get_or_create()
                     })
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
                     <dyn $Db as $Db>::zalsa_register_downcaster(db);
                     let zalsa_mut = db.zalsa_mut();
-                    let index = zalsa_mut.add_or_lookup_jar_by_type::<$Configuration>();
+                    let index = zalsa_mut.lookup_jar_by_type::<$Configuration>().get_or_create();
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
                     ingredient.assert_type_mut::<$zalsa::function::IngredientImpl<Self>>()
                 }
@@ -177,7 +180,7 @@ macro_rules! setup_tracked_fn {
                         let zalsa = db.zalsa();
                         $INTERN_CACHE.get_or_create(zalsa, || {
                             <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                            zalsa.add_or_lookup_jar_by_type::<$Configuration>().successor(0)
+                            zalsa.lookup_jar_by_type::<$Configuration>().get_or_create().successor(0)
                         })
                     }
                 }
