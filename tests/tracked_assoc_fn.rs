@@ -80,6 +80,6 @@ fn debug_name() {
     assert_eq!(output.field(&db), 88);
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(WillExecute { database_key: tracked_trait_fn_(Id(0)) })",
+            "salsa_event(WillExecute { database_key: MyOutput < 'db >::tracked_trait_fn_(Id(0)) })",
         ]"#]]);
 }

@@ -54,6 +54,6 @@ fn debug_name() {
     assert_eq!(object.tracked_trait_fn(&db), 88);
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(WillExecute { database_key: tracked_trait_fn_(Id(0)) })",
+            "salsa_event(WillExecute { database_key: MyInput::tracked_trait_fn_(Id(0)) })",
         ]"#]]);
 }
