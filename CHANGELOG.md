@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.22.0...salsa-v0.23.0) - 2025-06-27
+
+### Added
+
+- `Update` derive field overwrite support ([#747](https://github.com/salsa-rs/salsa/pull/747))
+
+### Fixed
+
+- fix race in `MemoTableTypes` ([#912](https://github.com/salsa-rs/salsa/pull/912))
+- multithreaded nested fixpoint iteration ([#882](https://github.com/salsa-rs/salsa/pull/882))
+
+### Other
+
+- Emit self ty for query debug name of assoc function queries ([#927](https://github.com/salsa-rs/salsa/pull/927))
+- Replace ingredient cache with faster ingredient map ([#921](https://github.com/salsa-rs/salsa/pull/921))
+- add option to track heap memory usage of memos ([#925](https://github.com/salsa-rs/salsa/pull/925))
+- Hide generated structs of tracked functions from docs via `#[doc(hidden)]` ([#917](https://github.com/salsa-rs/salsa/pull/917))
+- Add API to dump memory usage ([#916](https://github.com/salsa-rs/salsa/pull/916))
+- Revert "Assert size for interned Value" & Mark `Slot` trait as unsafe ([#915](https://github.com/salsa-rs/salsa/pull/915))
+- add an option to tune interned garbage collection ([#911](https://github.com/salsa-rs/salsa/pull/911))
+- Use explicit discriminants for `QueryOriginKind` for better comparisons ([#913](https://github.com/salsa-rs/salsa/pull/913))
+- update boxcar ([#910](https://github.com/salsa-rs/salsa/pull/910))
+- use latest revision for dependencies on interned values ([#908](https://github.com/salsa-rs/salsa/pull/908))
+- remove high-durability values from interned LRU ([#907](https://github.com/salsa-rs/salsa/pull/907))
+- Preserve attributes on interned/tracked struct fields ([#905](https://github.com/salsa-rs/salsa/pull/905))
+- Assert size for interned `Value` ([#901](https://github.com/salsa-rs/salsa/pull/901))
+- reduce size of interned value metadata ([#903](https://github.com/salsa-rs/salsa/pull/903))
+- panic with string message again for cycle panics ([#898](https://github.com/salsa-rs/salsa/pull/898))
+- Use `Revision` and `Durability` directly in input `Value` ([#902](https://github.com/salsa-rs/salsa/pull/902))
+- Fix flaky parallel_join test ([#900](https://github.com/salsa-rs/salsa/pull/900))
+- Bump MSRV to 1.85 ([#899](https://github.com/salsa-rs/salsa/pull/899))
+- Simple LRU garbage collection for interned values ([#839](https://github.com/salsa-rs/salsa/pull/839))
+- Capture execution backtrace when throwing `UnexpectedCycle` ([#883](https://github.com/salsa-rs/salsa/pull/883))
+- Store tracked struct ids as ThinVec on Revisions ([#892](https://github.com/salsa-rs/salsa/pull/892))
+- Update dependencies, remove unused `heck` dependency ([#894](https://github.com/salsa-rs/salsa/pull/894))
+- Set `validate_final` in `execute` after removing the last cycle head ([#890](https://github.com/salsa-rs/salsa/pull/890))
+- Pack `QueryEdge` memory layout ([#886](https://github.com/salsa-rs/salsa/pull/886))
+- Lazily allocate extra memo state ([#888](https://github.com/salsa-rs/salsa/pull/888))
+- Pack `QueryOrigin` memory layout ([#885](https://github.com/salsa-rs/salsa/pull/885))
+- Restrict memo size assertion to 64bit platforms ([#884](https://github.com/salsa-rs/salsa/pull/884))
+- Don't report stale outputs if there is newer generation in new_outputs ([#879](https://github.com/salsa-rs/salsa/pull/879))
+- Fix hang in nested fixpoint iteration ([#871](https://github.com/salsa-rs/salsa/pull/871))
+- Add debug spans for `new_revision` and `evict_lru` ([#881](https://github.com/salsa-rs/salsa/pull/881))
+- Add fetch span ([#875](https://github.com/salsa-rs/salsa/pull/875))
+- shrink_to_fit `IdentityMap` before storing it ([#816](https://github.com/salsa-rs/salsa/pull/816))
+- Allow lifetimes in arguments in tracked fns with >1 parameters ([#880](https://github.com/salsa-rs/salsa/pull/880))
+- Replace loom with shuttle ([#876](https://github.com/salsa-rs/salsa/pull/876))
+- Use generational identifiers for tracked structs ([#864](https://github.com/salsa-rs/salsa/pull/864))
+
 ### Fixed
 
 - `#[doc(hidden)]` auto-generated tracked-fn structs ([#917](https://github.com/salsa-rs/salsa/pull/917))
