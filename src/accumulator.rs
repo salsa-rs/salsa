@@ -64,7 +64,7 @@ pub struct IngredientImpl<A: Accumulator> {
 impl<A: Accumulator> IngredientImpl<A> {
     /// Find the accumulator ingredient for `A` in the database, if any.
     pub fn from_zalsa(zalsa: &Zalsa) -> Option<&Self> {
-        let index = zalsa.add_or_lookup_jar_by_type::<JarImpl<A>>();
+        let index = zalsa.lookup_jar_by_type::<JarImpl<A>>().get_or_create();
         let ingredient = zalsa.lookup_ingredient(index).assert_type::<Self>();
         Some(ingredient)
     }

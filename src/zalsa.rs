@@ -1,5 +1,5 @@
 use std::any::{Any, TypeId};
-use std::collections::hash_map;
+use std::hash::BuildHasherDefault;
 use std::marker::PhantomData;
 use std::mem;
 use std::num::NonZeroU32;
@@ -7,11 +7,12 @@ use std::panic::RefUnwindSafe;
 
 use rustc_hash::FxHashMap;
 
+use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
 use crate::sync::atomic::{AtomicU64, Ordering};
-use crate::sync::{Mutex, RwLock};
+use crate::sync::{papaya, Mutex, RwLock};
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
@@ -141,12 +142,10 @@ pub struct Zalsa {
     memo_ingredient_indices: RwLock<Vec<Vec<IngredientIndex>>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
-    /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
-    /// so that we can protect `ingredients_vec` as well and predict what the
-    /// first ingredient index will be. This allows ingredients to store their own indices.
-    /// This may be worth refactoring in the future because it naturally adds more overhead to
-    /// adding new kinds of ingredients.
-    jar_map: Mutex<FxHashMap<TypeId, IngredientIndex>>,
+    jar_map: papaya::HashMap<TypeId, IngredientIndex, BuildHasherDefault<TypeIdHasher>>,
+
+    /// The write-lock for `jar_map`.
+    jar_map_lock: Mutex<()>,
 
     /// A map from the `IngredientIndex` to the `TypeId` of its ID struct.
     ///
@@ -182,7 +181,8 @@ impl Zalsa {
         Self {
             views_of: Views::new::<Db>(),
             nonce: NONCE.nonce(),
-            jar_map: Default::default(),
+            jar_map: papaya::HashMap::default(),
+            jar_map_lock: Mutex::default(),
             ingredient_to_id_struct_type_id_map: Default::default(),
             ingredients_vec: boxcar::Vec::new(),
             ingredients_requiring_reset: boxcar::Vec::new(),
@@ -299,26 +299,35 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     #[inline]
-    pub fn add_or_lookup_jar_by_type<J: Jar>(&self) -> IngredientIndex {
+    pub fn lookup_jar_by_type<J: Jar>(&self) -> JarEntry<'_, J> {
         let jar_type_id = TypeId::of::<J>();
-        if let Some(index) = self.jar_map.lock().get(&jar_type_id) {
-            return *index;
-        };
-        self.add_or_lookup_jar_by_type_slow::<J>(jar_type_id)
+        let guard = self.jar_map.guard();
+
+        match self.jar_map.get(&jar_type_id, &guard) {
+            Some(index) => JarEntry::Occupied(index),
+            None => JarEntry::Vacant {
+                guard,
+                zalsa: self,
+                _jar: PhantomData,
+            },
+        }
     }
 
+    #[cold]
     #[inline(never)]
-    fn add_or_lookup_jar_by_type_slow<J: Jar>(&self, jar_type_id: TypeId) -> IngredientIndex {
+    fn add_or_lookup_jar_by_type<J: Jar>(&self, guard: &papaya::LocalGuard<'_>) -> IngredientIndex {
+        let jar_type_id = TypeId::of::<J>();
         let dependencies = J::create_dependencies(self);
-        let mut jar_map = self.jar_map.lock();
+
+        let jar_map_lock = self.jar_map_lock.lock();
+
         let index = IngredientIndex::from(self.ingredients_vec.count());
-        match jar_map.entry(jar_type_id) {
-            hash_map::Entry::Occupied(entry) => {
-                // Someone made it earlier than us.
-                return *entry.get();
-            }
-            hash_map::Entry::Vacant(entry) => entry.insert(index),
+
+        // Someone made it earlier than us.
+        if let Some(index) = self.jar_map.get(&jar_type_id, guard) {
+            return index;
         };
+
         let ingredients = J::create_ingredients(self, index, dependencies);
         for ingredient in ingredients {
             let expected_index = ingredient.ingredient_index();
@@ -338,7 +347,12 @@ impl Zalsa {
             );
         }
 
-        drop(jar_map);
+        // Insert the index after all ingredients are inserted to avoid exposing
+        // partially initialized jars to readers.
+        self.jar_map.insert(jar_type_id, index, guard);
+
+        drop(jar_map_lock);
+
         self.ingredient_to_id_struct_type_id_map
             .write()
             .insert(index, J::id_struct_type_id());
@@ -420,6 +434,36 @@ impl Zalsa {
     }
 }
 
+pub enum JarEntry<'a, J> {
+    Occupied(IngredientIndex),
+    Vacant {
+        zalsa: &'a Zalsa,
+        guard: papaya::LocalGuard<'a>,
+        _jar: PhantomData<J>,
+    },
+}
+
+impl<J> JarEntry<'_, J>
+where
+    J: Jar,
+{
+    #[inline]
+    pub fn get(&self) -> Option<IngredientIndex> {
+        match *self {
+            JarEntry::Occupied(index) => Some(index),
+            JarEntry::Vacant { .. } => None,
+        }
+    }
+
+    #[inline]
+    pub fn get_or_create(&self) -> IngredientIndex {
+        match self {
+            JarEntry::Occupied(index) => *index,
+            JarEntry::Vacant { zalsa, guard, _jar } => zalsa.add_or_lookup_jar_by_type::<J>(guard),
+        }
+    }
+}
+
 /// Caches a pointer to an ingredient in a database.
 /// Optimized for the case of a single database.
 pub struct IngredientCache<I>
@@ -482,6 +526,7 @@ where
         );
         let cached_data = self.cached_data.load(Ordering::Acquire);
         if cached_data == Self::UNINITIALIZED {
+            #[cold]
             #[inline(never)]
             fn get_or_create_index_slow<I: Ingredient>(
                 this: &IngredientCache<I>,

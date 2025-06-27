@@ -101,14 +101,14 @@ macro_rules! setup_input_struct {
                         $zalsa::IngredientCache::new();
 
                     CACHE.get_or_create(zalsa, || {
-                        zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
+                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create()
                     })
                 }
 
                 pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime) {
                     let zalsa_mut = db.zalsa_mut();
                     zalsa_mut.new_revision();
-                    let index = zalsa_mut.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
+                    let index = zalsa_mut.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create();
                     let (ingredient, runtime) = zalsa_mut.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa_struct::IngredientImpl<Self>>();
                     (ingredient, runtime)
@@ -150,7 +150,7 @@ macro_rules! setup_input_struct {
                 type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
 
                 fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
-                    aux.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
+                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create().into()
                 }
 
                 #[inline]

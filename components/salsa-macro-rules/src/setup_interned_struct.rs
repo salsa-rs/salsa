@@ -149,7 +149,7 @@ macro_rules! setup_interned_struct {
 
                     let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
-                        zalsa.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
+                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create()
                     })
                 }
             }
@@ -182,7 +182,7 @@ macro_rules! setup_interned_struct {
                 type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
 
                 fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
-                    aux.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
+                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create().into()
                 }
 
                 #[inline]

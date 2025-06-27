@@ -10,12 +10,12 @@ pub trait SalsaStructInDb: Sized {
     /// Lookup or create ingredient indices.
     ///
     /// Note that this method does *not* create the ingredients themselves, this is handled by
-    /// [`Zalsa::add_or_lookup_jar_by_type()`]. This method only creates
+    /// [`crate::zalsa::JarEntry::get_or_create`]. This method only creates
     /// or looks up the indices corresponding to the ingredients.
     ///
-    /// While implementors of this trait may call [`Zalsa::add_or_lookup_jar_by_type()`]
+    /// While implementors of this trait may call [`crate::zalsa::JarEntry::get_or_create`]
     /// to create the ingredient, they aren't required to. For example, supertypes recursively
-    /// call [`Zalsa::add_or_lookup_jar_by_type()`] for their variants and combine them.
+    /// call [`crate::zalsa::JarEntry::get_or_create`] for their variants and combine them.
     fn lookup_or_create_ingredient_index(zalsa: &Zalsa) -> IngredientIndices;
 
     /// Plumbing to support nested salsa supertypes.
