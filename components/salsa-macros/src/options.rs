@@ -527,7 +527,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             tokens.extend(quote::quote! { revisions = #revisions, });
         }
         if let Some(heap_size_fn) = heap_size_fn {
-            tokens.extend(quote::quote! { heap_size_fn = #heap_size_fn, });
+            tokens.extend(quote::quote! { heap_size = #heap_size_fn, });
         }
         if let Some(self_ty) = self_ty {
             tokens.extend(quote::quote! { self_ty = #self_ty, });
