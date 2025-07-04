@@ -104,7 +104,7 @@ macro_rules! setup_tracked_struct {
         #[derive(Copy, Clone, PartialEq, Eq, Hash)]
         $vis struct $Struct<$db_lt>(
             salsa::Id,
-            std::marker::PhantomData < & $db_lt salsa::plumbing::tracked_struct::Value < $Struct<'static> > >
+            std::marker::PhantomData<fn() -> &$db_lt ()>
         );
 
         #[allow(clippy::all)]
