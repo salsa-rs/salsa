@@ -81,7 +81,7 @@ macro_rules! setup_interned_struct {
         #[derive(Copy, Clone, PartialEq, Eq, Hash)]
         $vis struct $Struct< $($db_lt_arg)? >(
             $Id,
-            std::marker::PhantomData < & $interior_lt salsa::plumbing::interned::Value <$StructWithStatic> >
+            std::marker::PhantomData<fn() -> &$interior_lt ()>
         );
 
         #[allow(clippy::all)]
