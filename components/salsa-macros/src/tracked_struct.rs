@@ -128,12 +128,11 @@ impl Macro {
 
         let tracked_maybe_update = salsa_struct.tracked_fields_iter().map(|(_, field)| {
             let field_ty = &field.field.ty;
-            let update = if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
+            if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
                 quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #maybe_update; maybe_update }) }
             } else {
                 quote! {(#zalsa::UpdateDispatch::<#field_ty>::maybe_update)}
-            };
-            update
+            }
         });
 
         let untracked_maybe_update = salsa_struct.untracked_fields_iter().map(|(_, field)| {

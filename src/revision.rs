@@ -61,7 +61,7 @@ impl std::fmt::Debug for Revision {
 }
 
 #[derive(Debug)]
-pub struct AtomicRevision {
+pub(crate) struct AtomicRevision {
     data: AtomicUsize,
 }
 
@@ -74,13 +74,13 @@ impl From<Revision> for AtomicRevision {
 }
 
 impl AtomicRevision {
-    pub const fn start() -> Self {
+    pub(crate) const fn start() -> Self {
         Self {
             data: AtomicUsize::new(START),
         }
     }
 
-    pub fn load(&self) -> Revision {
+    pub(crate) fn load(&self) -> Revision {
         Revision {
             // SAFETY: We know that the value is non-zero because we only ever store `START` which 1, or a
             // Revision which is guaranteed to be non-zero.
@@ -88,7 +88,7 @@ impl AtomicRevision {
         }
     }
 
-    pub fn store(&self, r: Revision) {
+    pub(crate) fn store(&self, r: Revision) {
         self.data.store(r.as_usize(), Ordering::Release);
     }
 }
@@ -139,6 +139,47 @@ impl OptionalAtomicRevision {
             .map(Revision::from_opt)
             .map_err(Revision::from_opt)
     }
+}
+
+pub struct MaybeAtomicRevision {
+    data: AtomicUsize,
+}
+
+impl From<Revision> for MaybeAtomicRevision {
+    fn from(value: Revision) -> Self {
+        Self {
+            data: AtomicUsize::new(value.as_usize()),
+        }
+    }
+}
+impl MaybeAtomicRevision {
+    pub fn load(&self) -> Revision {
+        Revision {
+            // SAFETY: we only store Revision.as_usize, so it always valid
+            generation: unsafe { NonZeroUsize::new_unchecked(self.data.load(Ordering::Relaxed)) }
+        }
+    }
+
+    pub fn store(&self, revision: Revision) {
+        self.data.store(revision.as_usize(), Ordering::Relaxed);
+    }
+
+    /// # Safety
+    /// Caller must ensure that there are no unsyncronized writes to this variable.
+    pub unsafe fn non_atomic_load(&self) -> Revision {
+        Revision {
+            // SAFETY: we only store Revision.as_usize, so it always valid
+            generation: unsafe { NonZeroUsize::new_unchecked(std::ptr::read(self.data.as_ptr())) }
+        }
+    }
+
+    pub fn non_atomic_store(&mut self, revision: Revision) {
+        // SAFETY: we have &mut self, so there can't be any other refs
+        unsafe {
+            std::ptr::write(self.data.as_ptr(), revision.as_usize());
+        }
+    }
+
 }
 
 #[cfg(test)]

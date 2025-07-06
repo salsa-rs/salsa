@@ -251,27 +251,6 @@ where
         Ok(())
     }
 
-    /// Disallow `#[default]` attributes on the fields of this struct.
-    ///
-    /// If an `#[default]` field is found, return an error.
-    ///
-    /// # Parameters
-    ///
-    /// * `kind`, the attribute name (e.g., `input` or `interned`)
-    fn disallow_late_id_fields(&self) -> syn::Result<()> {
-        // Check if any field has the `#[default]` attribute.
-        for ef in &self.fields {
-            if ef.has_late_attr && ef.has_tracked_attr {
-                return Err(syn::Error::new_spanned(
-                    ef.field,
-                    format!("`#[late]` cannot be used with `#[tracked]`"),
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
     /// Check that the generic parameters look as expected for this kind of struct.
     fn check_generics(&self) -> syn::Result<()> {
         if A::HAS_LIFETIME {

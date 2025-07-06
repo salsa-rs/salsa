@@ -147,7 +147,7 @@ macro_rules! setup_tracked_struct {
 
                 type Fields<$db_lt> = ($($zalsa::macro_if!(if $field_is_late { $zalsa::LateField<$field_ty> } else { $field_ty }),)*);
 
-                type Revisions = [$zalsa::AtomicRevision; $N];
+                type Revisions = [$zalsa::MaybeAtomicRevision; $N];
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
@@ -156,11 +156,24 @@ macro_rules! setup_tracked_struct {
                 }
 
                 fn new_revisions(current_revision: $Revision) -> Self::Revisions {
-                    std::array::from_fn(|_| $zalsa::AtomicRevision::from(current_revision))
+                    std::array::from_fn(|_| $zalsa::MaybeAtomicRevision::from(current_revision))
+                }
+
+                #[inline(always)]
+                fn field_revision(data: &Self::Revisions, i: usize) -> $Revision {
+                    $(if $tracked_is_late && (i == $relative_tracked_index) {
+                        return data[i].load();
+                    })*;
+                    
+                    // SAFETY: there is no writes to non-late field revision
+                    unsafe {
+                        data[i].non_atomic_load()
+                    }
                 }
 
                 unsafe fn update_fields<$db_lt>(
                     current_revision: $Revision,
+                    deps_changed_at: $Revision,
                     revisions: &mut Self::Revisions,
                     old_fields: *mut Self::Fields<$db_lt>,
                     new_fields: Self::Fields<$db_lt>,
@@ -177,6 +190,7 @@ macro_rules! setup_tracked_struct {
                                         new_fields.$absolute_tracked_index,
                                         revisions[$relative_tracked_index],
                                         current_revision,
+                                        deps_changed_at,
                                         $zalsa,
                                     );
                                 } else {
@@ -186,7 +200,7 @@ macro_rules! setup_tracked_struct {
                                         (*old_fields).$absolute_tracked_index,
                                         new_fields.$absolute_tracked_index,
                                         revisions[$relative_tracked_index],
-                                        current_revision,
+                                        deps_changed_at,
                                         $zalsa,
                                     );
                                 }
@@ -300,7 +314,9 @@ macro_rules! setup_tracked_struct {
                             $crate::return_mode_expression!(
                                 $tracked_option,
                                 $tracked_ty,
-                                &fields.$absolute_tracked_index.get().expect("can't get late field without initialization"),
+                                &fields
+                                    .$absolute_tracked_index
+                                    .get().expect("can't get late field without initialization"),
                             )
                         } else {
                             $crate::return_mode_expression!(
@@ -323,8 +339,10 @@ macro_rules! setup_tracked_struct {
                             let ingredient = $Configuration::ingredient(db);
                             if let Some(old_rev) = ingredient.tracked_field(db, self, $relative_tracked_index)
                                 .$absolute_tracked_index
-                                .set_maybe_backdate(value) {
+                                .set_and_maybe_backdate(value, $tracked_maybe_update) {
                                 ingredient.revisions(db, self)[$relative_tracked_index].store(old_rev);
+                            } else {
+                                // TODO: Backdate to deps.changed_at here
                             }
                         }
                     } else {}

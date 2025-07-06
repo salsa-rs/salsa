@@ -64,7 +64,7 @@ where
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
-        let field_changed_at = data.revisions[self.field_index].load();
+        let field_changed_at = C::field_revision(&data.revisions, self.field_index);
         VerifyResult::changed_if(field_changed_at > revision)
     }
 

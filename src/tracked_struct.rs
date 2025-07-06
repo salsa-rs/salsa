@@ -3,7 +3,6 @@
 use std::any::TypeId;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::ops::Index;
 use std::{fmt, mem};
 
 use crossbeam_queue::SegQueue;
@@ -16,7 +15,7 @@ use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::ZalsaLocal;
-use crate::revision::{AtomicRevision, OptionalAtomicRevision};
+use crate::revision::OptionalAtomicRevision;
 use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
@@ -51,7 +50,7 @@ pub trait Configuration: Sized + 'static {
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
-    type Revisions: Send + Sync + Index<usize, Output = AtomicRevision>;
+    type Revisions: Send + Sync;
 
     type Struct<'db>: Copy + FromId + AsId;
 
@@ -59,6 +58,9 @@ pub trait Configuration: Sized + 'static {
 
     /// Create a new value revision array where each element is set to `current_revision`.
     fn new_revisions(current_revision: Revision) -> Self::Revisions;
+
+    /// Extract field revision by index.
+    fn field_revision(revisions: &Self::Revisions, index: usize) -> Revision;
 
     /// Update the field data and, if the value has changed,
     /// the appropriate entry in the `revisions` array (tracked fields only).
@@ -86,6 +88,7 @@ pub trait Configuration: Sized + 'static {
     /// for any field that changed.
     unsafe fn update_fields<'db>(
         current_revision: Revision,
+        deps_changed_at: Revision,
         revisions: &mut Self::Revisions,
         old_fields: *mut Self::Fields<'db>,
         new_fields: Self::Fields<'db>,
@@ -585,6 +588,7 @@ where
         // to meet its safety invariant.
         let untracked_update = unsafe {
             C::update_fields(
+                current_revision,
                 current_deps.changed_at,
                 &mut data.revisions,
                 mem::transmute::<*mut C::Fields<'static>, *mut C::Fields<'db>>(
@@ -755,7 +759,7 @@ where
 
         data.read_lock(zalsa.current_revision());
 
-        let field_changed_at = data.revisions[relative_tracked_index].load();
+        let field_changed_at = C::field_revision(&data.revisions, relative_tracked_index);
 
         zalsa_local.report_tracked_read_simple(
             DatabaseKeyIndex::new(field_ingredient_index, id),

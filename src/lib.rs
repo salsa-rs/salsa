@@ -95,7 +95,7 @@ pub mod plumbing {
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,
         NewMemoIngredientIndices,
     };
-    pub use crate::revision::{Revision, AtomicRevision};
+    pub use crate::revision::{Revision, MaybeAtomicRevision};
     pub use crate::runtime::{stamp, Runtime, Stamp};
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::{HasStorage, Storage};
@@ -107,6 +107,7 @@ pub mod plumbing {
     };
     pub use crate::zalsa_local::ZalsaLocal;
     pub use crate::tracked_struct::late_field::LateField;
+    pub use crate::tracked_struct::late_field;
 
     pub mod accumulator {
         pub use crate::accumulator::{IngredientImpl, JarImpl};

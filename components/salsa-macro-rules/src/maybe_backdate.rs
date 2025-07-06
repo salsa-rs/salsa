@@ -62,10 +62,19 @@ macro_rules! maybe_backdate_late {
         $new_field_place:expr,
         $revision_place:expr,
         $current_revision:expr,
+        $deps_changed_at:expr,
         $zalsa:ident,
      ) => {
-        if $zalsa::LateField::maybe_update(&mut $old_field_place, $new_field_place, $maybe_update, $revision_place.load()) {
-            $revision_place.store($current_revision);
-        }
+        $revision_place.non_atomic_store(match $zalsa::LateField::maybe_update(&mut $old_field_place, $new_field_place, $maybe_update, $revision_place.load()) {
+            $zalsa::late_field::UpdateResult::Dirty => {
+                $current_revision
+            }
+            $zalsa::late_field::UpdateResult::Update => {
+                $deps_changed_at
+            }
+            $zalsa::late_field::UpdateResult::Backdate(rev) => {
+                rev
+            }
+        })
     };
 }
