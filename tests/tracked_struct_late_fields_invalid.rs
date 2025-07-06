@@ -1,7 +1,5 @@
 mod common;
 
-use salsa::{Database, Setter};
-
 // A tracked struct with mixed tracked and untracked fields to ensure
 // the correct field indices are used when tracking dependencies.
 #[salsa::tracked(debug)]

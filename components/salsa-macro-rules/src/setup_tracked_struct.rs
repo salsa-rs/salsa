@@ -130,12 +130,6 @@ macro_rules! setup_tracked_struct {
 
             type $Configuration = $Struct<'static>;
 
-            fn tracked_is_late(i: usize) -> bool {
-                $(if $tracked_is_late && (i == $relative_tracked_index) {
-                    return true;
-                })*
-                false
-            }
 
 
             impl $zalsa_struct::Configuration for $Configuration {
@@ -176,7 +170,7 @@ macro_rules! setup_tracked_struct {
                 fn field_revision(data: &Self::Revisions, i: usize) -> $Revision {
                     let raw = Self::field_revision_raw(data, i);
 
-                    if tracked_is_late(i) {
+                    if Self::field_is_late(i) {
                         raw.load()
                     } else {
                         // SAFETY: there is no writes to non-late field revision
@@ -187,12 +181,19 @@ macro_rules! setup_tracked_struct {
                 }
 
                 #[inline(always)]
-                fn field_durability(base: $zalsa::Durability, i: usize) -> $zalsa::Durability {
-                    if tracked_is_late(i) {
+                fn field_durability(base: $zalsa::Durability, relative_tracked_index: usize) -> $zalsa::Durability {
+                    if Self::field_is_late(relative_tracked_index) {
                         $zalsa::Durability::LOW
                     } else {
                         base
                     }
+                }
+
+                fn field_is_late(relative_tracked_index: usize) -> bool {
+                    $(if $tracked_is_late && (relative_tracked_index == $relative_tracked_index) {
+                        return true;
+                    })*
+                    false
                 }
 
                 unsafe fn update_fields<$db_lt>(
@@ -375,7 +376,7 @@ macro_rules! setup_tracked_struct {
                             let ingredient = $Configuration::ingredient(db);
                             // Safety: we only update late fields
                             unsafe {
-                                ingredient.update_late_field(db, self,
+                                ingredient.update_late_field(db, $zalsa::AsId::as_id(&self),
                                     &ingredient.tracked_field(db, self, $relative_tracked_index).$absolute_tracked_index,
                                     value,
                                     $tracked_maybe_update,

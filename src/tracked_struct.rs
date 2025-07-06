@@ -67,6 +67,8 @@ pub trait Configuration: Sized + 'static {
 
     fn field_durability(base: crate::Durability, i: usize) -> crate::Durability;
 
+    fn field_is_late(relative_tracked_index: usize) -> bool;
+
     /// Update the field data and, if the value has changed,
     /// the appropriate entry in the `revisions` array (tracked fields only).
     ///
