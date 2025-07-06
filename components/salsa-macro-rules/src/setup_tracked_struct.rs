@@ -296,8 +296,12 @@ macro_rules! setup_tracked_struct {
             }
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn(db: &$db_lt dyn $zalsa::Database, $($non_late_id: $non_late_ty),*) -> Self
+                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($non_late_id: $non_late_ty),*) -> Self
+                where
+                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                    $Db: ?Sized + $zalsa::Database,
                 {
+                    let db = db.as_dyn_database();
                     $Configuration::ingredient(db).new_struct(
                         db,
                         ($($zalsa::macro_if!(if $field_is_late {$zalsa::LateField::new()} else {$field_id}),)*)
@@ -306,7 +310,10 @@ macro_rules! setup_tracked_struct {
 
                 $(
                     $(#[$tracked_field_attr])*
-                    $tracked_getter_vis fn $tracked_getter_id(self, db: &$db_lt dyn $zalsa::Database) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty)
+                    $tracked_getter_vis fn $tracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty)
+                    where
+                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                        $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
                         let fields = $Configuration::ingredient(db).tracked_field(db, self, $relative_tracked_index);
@@ -331,11 +338,16 @@ macro_rules! setup_tracked_struct {
 
                 $(
                     $zalsa::macro_if! { if $tracked_is_late {
-                        pub fn $tracked_setter_id(
+                        pub fn $tracked_setter_id<$Db>(
                             self,
-                            db: &$db_lt dyn $zalsa::Database,
+                            db: &$db_lt $Db,
                             value: $tracked_ty,
-                        ) {
+                        )
+                        where
+                            // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                            $Db: ?Sized + $zalsa::Database,
+                        {
+                            let db = db.as_dyn_database();
                             let ingredient = $Configuration::ingredient(db);
                             if let Some(old_rev) = ingredient.tracked_field(db, self, $relative_tracked_index)
                                 .$absolute_tracked_index
