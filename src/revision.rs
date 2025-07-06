@@ -166,6 +166,7 @@ impl MaybeAtomicRevision {
 
     /// # Safety
     /// Caller must ensure that there are no unsyncronized writes to this variable.
+    #[cfg(not(feature = "shuttle"))]
     pub unsafe fn non_atomic_load(&self) -> Revision {
         Revision {
             // SAFETY: we only store Revision.as_usize, so it always valid
@@ -173,11 +174,22 @@ impl MaybeAtomicRevision {
         }
     }
 
+    #[cfg(feature = "shuttle")]
+    pub unsafe fn non_atomic_load(&self) -> Revision {
+        self.load()
+    }
+
+    #[cfg(not(feature = "shuttle"))]
     pub fn non_atomic_store(&mut self, revision: Revision) {
         // SAFETY: we have &mut self, so there can't be any other refs
         unsafe {
             std::ptr::write(self.data.as_ptr(), revision.as_usize());
         }
+    }
+
+    #[cfg(feature = "shuttle")]
+    pub fn non_atomic_store(&mut self, revision: Revision) {
+        self.store(revision)
     }
 }
 
