@@ -99,7 +99,7 @@ macro_rules! setup_tracked_fn {
                     #[derive(Copy, Clone)]
                     struct $InternedData<$db_lt>(
                         salsa::Id,
-                        std::marker::PhantomData<&$db_lt $zalsa::interned::Value<$Configuration>>,
+                        std::marker::PhantomData<fn() -> &$db_lt ()>,
                     );
 
                     static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
