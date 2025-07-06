@@ -3,7 +3,6 @@
 use std::any::TypeId;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::ops::Index;
 use std::{fmt, mem};
 
 use crossbeam_queue::SegQueue;
@@ -15,8 +14,8 @@ use crate::function::VerifyResult;
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::ZalsaLocal;
-use crate::revision::OptionalAtomicRevision;
+use crate::plumbing::{LateField, ZalsaLocal};
+use crate::revision::{MaybeAtomicRevision, OptionalAtomicRevision};
 use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
@@ -25,8 +24,8 @@ use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, Durability, Event, EventKind, Id, Revision};
 
+pub mod late_field;
 pub mod tracked_field;
-
 // ANCHOR: Configuration
 /// Trait that defines the key properties of a tracked struct.
 ///
@@ -51,7 +50,7 @@ pub trait Configuration: Sized + 'static {
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
-    type Revisions: Send + Sync + Index<usize, Output = Revision>;
+    type Revisions: Send + Sync;
 
     type Struct<'db>: Copy + FromId + AsId;
 
@@ -59,6 +58,16 @@ pub trait Configuration: Sized + 'static {
 
     /// Create a new value revision array where each element is set to `current_revision`.
     fn new_revisions(current_revision: Revision) -> Self::Revisions;
+
+    /// Extract field revision by index.
+    fn field_revision(revisions: &Self::Revisions, index: usize) -> Revision;
+
+    /// Extract raw field revision by index.
+    fn field_revision_raw(data: &Self::Revisions, i: usize) -> &MaybeAtomicRevision;
+
+    fn field_durability(base: crate::Durability, i: usize) -> crate::Durability;
+
+    fn field_is_late(relative_tracked_index: usize) -> bool;
 
     /// Update the field data and, if the value has changed,
     /// the appropriate entry in the `revisions` array (tracked fields only).
@@ -86,6 +95,7 @@ pub trait Configuration: Sized + 'static {
     /// for any field that changed.
     unsafe fn update_fields<'db>(
         current_revision: Revision,
+        deps_changed_at: Revision,
         revisions: &mut Self::Revisions,
         old_fields: *mut Self::Fields<'db>,
         new_fields: Self::Fields<'db>,
@@ -585,6 +595,7 @@ where
         // to meet its safety invariant.
         let untracked_update = unsafe {
             C::update_fields(
+                current_revision,
                 current_deps.changed_at,
                 &mut data.revisions,
                 mem::transmute::<*mut C::Fields<'static>, *mut C::Fields<'db>>(
@@ -620,6 +631,51 @@ where
         assert!(swapped_out.is_none());
 
         Ok(id)
+    }
+
+    /// Update late field value and backdate if necessary
+    ///
+    /// # Safety
+    ///
+    /// The value at the given `id` must be initialized and valid for current revision.
+    ///
+    /// # Panics
+    ///
+    /// * If the stuct is not created during current query.
+    /// * If no queries is currently active.
+    /// * If field already set in current revision.
+    pub unsafe fn update_late_field<'db, T>(
+        &'db self,
+        db: &'db dyn Database,
+        id: Id,
+        field: &LateField<T>,
+        value: T,
+        maybe_update: unsafe fn(*mut T, T) -> bool,
+        index: usize,
+    ) where
+        C::Struct<'db>: TrackedStructInDb,
+    {
+        let (zalsa, zalsa_local) = db.zalsas();
+
+        let (_, current_deps) = match zalsa_local.active_query() {
+            Some(v) => v,
+            None => panic!("can only set late field inside a tracked function"),
+        };
+
+        let database_key_index = <C::Struct<'db>>::database_key_index(zalsa, id);
+        if !zalsa_local.is_output_of_active_query(database_key_index) {
+            panic!("can only set late fields of salsa structs created during the current query");
+        }
+
+        let data = Self::data(zalsa.table(), id);
+
+        C::field_revision_raw(&data.revisions, index).store(
+            if let Some(old_rev) = field.set_and_maybe_backdate(value, maybe_update) {
+                old_rev
+            } else {
+                current_deps.changed_at
+            },
+        )
     }
 
     /// Fetch the data for a given id created by this ingredient from the table,
@@ -755,15 +811,29 @@ where
 
         data.read_lock(zalsa.current_revision());
 
-        let field_changed_at = data.revisions[relative_tracked_index];
+        let field_changed_at = C::field_revision(&data.revisions, relative_tracked_index);
 
         zalsa_local.report_tracked_read_simple(
             DatabaseKeyIndex::new(field_ingredient_index, id),
-            data.durability,
+            C::field_durability(data.durability, relative_tracked_index),
             field_changed_at,
         );
 
         data.fields()
+    }
+
+    pub fn revisions<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        s: C::Struct<'db>,
+    ) -> &'db C::Revisions {
+        let (zalsa, _) = db.zalsas();
+        let id = AsId::as_id(&s);
+        let data = Self::data(zalsa.table(), id);
+
+        data.read_lock(zalsa.current_revision());
+
+        &data.revisions
     }
 
     /// Access to this untracked field.

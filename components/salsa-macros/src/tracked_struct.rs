@@ -107,6 +107,8 @@ impl Macro {
         let tracked_getter_ids = salsa_struct.tracked_getter_ids();
         let untracked_getter_ids = salsa_struct.untracked_getter_ids();
 
+        let tracked_setter_ids = salsa_struct.tracked_setter_ids();
+
         let field_indices = salsa_struct.field_indices();
 
         let absolute_tracked_indices = salsa_struct.tracked_field_indices();
@@ -132,6 +134,7 @@ impl Macro {
                 quote! {(#zalsa::UpdateDispatch::<#field_ty>::maybe_update)}
             }
         });
+
         let untracked_maybe_update = salsa_struct.untracked_fields_iter().map(|(_, field)| {
             let field_ty = &field.field.ty;
             if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
@@ -143,6 +146,11 @@ impl Macro {
 
         let num_tracked_fields = salsa_struct.num_tracked_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
+
+        let field_is_late = salsa_struct.field_is_late();
+        let tracked_is_late = salsa_struct.tracked_is_late();
+        let non_late_ids = salsa_struct.non_late_ids();
+        let non_late_tys = salsa_struct.non_late_tys();
 
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
@@ -162,13 +170,17 @@ impl Macro {
 
                     field_ids: [#(#field_ids),*],
                     tracked_ids: [#(#tracked_ids),*],
+                    non_late_ids: [#(#non_late_ids),*],
 
                     tracked_getters: [#(#tracked_vis #tracked_getter_ids),*],
                     untracked_getters: [#(#untracked_vis #untracked_getter_ids),*],
 
+                    tracked_setters: [#(#tracked_setter_ids),*],
+
                     field_tys: [#(#field_tys),*],
                     tracked_tys: [#(#tracked_tys),*],
                     untracked_tys: [#(#untracked_tys),*],
+                    non_late_tys: [#(#non_late_tys),*],
 
                     field_indices: [#(#field_indices),*],
 
@@ -179,6 +191,9 @@ impl Macro {
 
                     tracked_maybe_updates: [#(#tracked_maybe_update),*],
                     untracked_maybe_updates: [#(#untracked_maybe_update),*],
+
+                    field_is_late: [#(#field_is_late),*],
+                    tracked_is_late: [#(#tracked_is_late),*],
 
                     tracked_options: [#(#tracked_options),*],
                     untracked_options: [#(#untracked_options),*],

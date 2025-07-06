@@ -95,10 +95,12 @@ pub mod plumbing {
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,
         NewMemoIngredientIndices,
     };
-    pub use crate::revision::Revision;
+    pub use crate::revision::{MaybeAtomicRevision, Revision};
     pub use crate::runtime::{stamp, Runtime, Stamp};
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::{HasStorage, Storage};
+    pub use crate::tracked_struct::late_field;
+    pub use crate::tracked_struct::late_field::LateField;
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::helper::{Dispatch as UpdateDispatch, Fallback as UpdateFallback};
     pub use crate::update::{always_update, Update};

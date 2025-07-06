@@ -8,6 +8,7 @@ use std::path::PathBuf;
 #[cfg(feature = "rayon")]
 use rayon::iter::Either;
 
+use crate::revision::MaybeAtomicRevision;
 use crate::sync::Arc;
 use crate::Revision;
 
@@ -104,12 +105,12 @@ where
 /// and updates `*old_revision` with `new_revision.` Used for fields
 /// tagged with `#[no_eq]`
 pub fn always_update<T>(
-    old_revision: &mut Revision,
+    old_revision: &mut MaybeAtomicRevision,
     new_revision: Revision,
     old_pointer: &mut T,
     new_value: T,
 ) {
-    *old_revision = new_revision;
+    old_revision.non_atomic_store(new_revision);
     *old_pointer = new_value;
 }
 
