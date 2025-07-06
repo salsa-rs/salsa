@@ -423,7 +423,6 @@ where
             .collect()
     }
 
-
     pub fn generate_debug_impl(&self) -> bool {
         self.args.debug.is_some()
     }
@@ -454,9 +453,7 @@ where
     }
 
     pub(crate) fn field_is_late(&self) -> Vec<TokenStream> {
-        self.fields.iter()
-            .map(|f| f.is_late())
-            .collect()
+        self.fields.iter().map(|f| f.is_late()).collect()
     }
 
     pub(crate) fn tracked_is_late(&self) -> Vec<TokenStream> {
@@ -472,9 +469,7 @@ where
     }
 
     pub(crate) fn non_late_tys(&self) -> Vec<&syn::Type> {
-        self.non_late_iter()
-            .map(|(_, f)| &f.field.ty)
-            .collect()
+        self.non_late_iter().map(|(_, f)| &f.field.ty).collect()
     }
 }
 

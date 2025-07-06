@@ -164,7 +164,7 @@ macro_rules! setup_tracked_struct {
                     $(if $tracked_is_late && (i == $relative_tracked_index) {
                         return data[i].load();
                     })*;
-                    
+
                     // SAFETY: there is no writes to non-late field revision
                     unsafe {
                         data[i].non_atomic_load()

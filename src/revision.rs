@@ -156,7 +156,7 @@ impl MaybeAtomicRevision {
     pub fn load(&self) -> Revision {
         Revision {
             // SAFETY: we only store Revision.as_usize, so it always valid
-            generation: unsafe { NonZeroUsize::new_unchecked(self.data.load(Ordering::Relaxed)) }
+            generation: unsafe { NonZeroUsize::new_unchecked(self.data.load(Ordering::Relaxed)) },
         }
     }
 
@@ -169,7 +169,7 @@ impl MaybeAtomicRevision {
     pub unsafe fn non_atomic_load(&self) -> Revision {
         Revision {
             // SAFETY: we only store Revision.as_usize, so it always valid
-            generation: unsafe { NonZeroUsize::new_unchecked(std::ptr::read(self.data.as_ptr())) }
+            generation: unsafe { NonZeroUsize::new_unchecked(std::ptr::read(self.data.as_ptr())) },
         }
     }
 
@@ -179,7 +179,6 @@ impl MaybeAtomicRevision {
             std::ptr::write(self.data.as_ptr(), revision.as_usize());
         }
     }
-
 }
 
 #[cfg(test)]

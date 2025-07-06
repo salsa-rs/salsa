@@ -24,8 +24,8 @@ use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, Durability, Event, EventKind, Id, Revision};
 
-pub mod tracked_field;
 pub mod late_field;
+pub mod tracked_field;
 // ANCHOR: Configuration
 /// Trait that defines the key properties of a tracked struct.
 ///
