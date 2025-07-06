@@ -61,7 +61,7 @@ impl std::fmt::Debug for Revision {
 }
 
 #[derive(Debug)]
-pub(crate) struct AtomicRevision {
+pub struct AtomicRevision {
     data: AtomicUsize,
 }
 
@@ -74,13 +74,13 @@ impl From<Revision> for AtomicRevision {
 }
 
 impl AtomicRevision {
-    pub(crate) const fn start() -> Self {
+    pub const fn start() -> Self {
         Self {
             data: AtomicUsize::new(START),
         }
     }
 
-    pub(crate) fn load(&self) -> Revision {
+    pub fn load(&self) -> Revision {
         Revision {
             // SAFETY: We know that the value is non-zero because we only ever store `START` which 1, or a
             // Revision which is guaranteed to be non-zero.
@@ -88,7 +88,7 @@ impl AtomicRevision {
         }
     }
 
-    pub(crate) fn store(&self, r: Revision) {
+    pub fn store(&self, r: Revision) {
         self.data.store(r.as_usize(), Ordering::Release);
     }
 }

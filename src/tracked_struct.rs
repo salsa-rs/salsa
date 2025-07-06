@@ -16,7 +16,7 @@ use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::ZalsaLocal;
-use crate::revision::OptionalAtomicRevision;
+use crate::revision::{AtomicRevision, OptionalAtomicRevision};
 use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
@@ -26,7 +26,7 @@ use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, Durability, Event, EventKind, Id, Revision};
 
 pub mod tracked_field;
-
+pub mod late_field;
 // ANCHOR: Configuration
 /// Trait that defines the key properties of a tracked struct.
 ///
@@ -51,7 +51,7 @@ pub trait Configuration: Sized + 'static {
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
-    type Revisions: Send + Sync + Index<usize, Output = Revision>;
+    type Revisions: Send + Sync + Index<usize, Output = AtomicRevision>;
 
     type Struct<'db>: Copy + FromId + AsId;
 
@@ -755,7 +755,7 @@ where
 
         data.read_lock(zalsa.current_revision());
 
-        let field_changed_at = data.revisions[relative_tracked_index];
+        let field_changed_at = data.revisions[relative_tracked_index].load();
 
         zalsa_local.report_tracked_read_simple(
             DatabaseKeyIndex::new(field_ingredient_index, id),
@@ -764,6 +764,20 @@ where
         );
 
         data.fields()
+    }
+
+    pub fn revisions<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        s: C::Struct<'db>,
+    ) -> &'db C::Revisions {
+        let (zalsa, _) = db.zalsas();
+        let id = AsId::as_id(&s);
+        let data = Self::data(zalsa.table(), id);
+
+        data.read_lock(zalsa.current_revision());
+
+        &data.revisions
     }
 
     /// Access to this untracked field.

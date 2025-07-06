@@ -23,11 +23,17 @@ macro_rules! setup_tracked_struct {
         // Tracked field names.
         tracked_ids: [$($tracked_id:ident),*],
 
+        // Non late field names.
+        non_late_ids: [$($non_late_id:ident),*],
+
         // Visibility and names of tracked fields.
         tracked_getters: [$($tracked_getter_vis:vis $tracked_getter_id:ident),*],
 
         // Visibility and names of untracked fields.
         untracked_getters: [$($untracked_getter_vis:vis $untracked_getter_id:ident),*],
+
+        // Names of setters for late fields.
+        tracked_setters: [$($tracked_setter_id:ident),*],
 
         // Field types, may reference `db_lt`.
         field_tys: [$($field_ty:ty),*],
@@ -37,6 +43,9 @@ macro_rules! setup_tracked_struct {
 
         // Untracked field types.
         untracked_tys: [$($untracked_ty:ty),*],
+
+        // Non late field types.
+        non_late_tys: [$($non_late_ty:ty),*],
 
         // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
         field_indices: [$($field_index:tt),*],
@@ -56,11 +65,16 @@ macro_rules! setup_tracked_struct {
         // Untracked field types.
         untracked_maybe_updates: [$($untracked_maybe_update:tt),*],
 
+        // If tracked field can be set after new.
+        field_is_late: [$($field_is_late:tt),*],
+        tracked_is_late: [$($tracked_is_late:tt),*],
+
         // A set of "field options" for each tracked field.
         //
         // Each field option is a tuple `(return_mode, maybe_backdate)` where:
         //
         // * `return_mode` is an identifier as specified in `salsa_macros::options::Option::returns`
+        // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
@@ -131,9 +145,9 @@ macro_rules! setup_tracked_struct {
                     $($relative_tracked_index,)*
                 ];
 
-                type Fields<$db_lt> = ($($field_ty,)*);
+                type Fields<$db_lt> = ($($zalsa::macro_if!(if $field_is_late { $zalsa::LateField<$field_ty> } else { $field_ty }),)*);
 
-                type Revisions = [$Revision; $N];
+                type Revisions = [$zalsa::AtomicRevision; $N];
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
@@ -142,7 +156,7 @@ macro_rules! setup_tracked_struct {
                 }
 
                 fn new_revisions(current_revision: $Revision) -> Self::Revisions {
-                    [current_revision; $N]
+                    std::array::from_fn(|_| $zalsa::AtomicRevision::from(current_revision))
                 }
 
                 unsafe fn update_fields<$db_lt>(
@@ -154,15 +168,29 @@ macro_rules! setup_tracked_struct {
                     use $zalsa::UpdateFallback as _;
                     unsafe {
                         $(
-                            $crate::maybe_backdate!(
-                                $tracked_option,
-                                $tracked_maybe_update,
-                                (*old_fields).$absolute_tracked_index,
-                                new_fields.$absolute_tracked_index,
-                                revisions[$relative_tracked_index],
-                                current_revision,
-                                $zalsa,
-                            );
+                            $zalsa::macro_if! {
+                                if $tracked_is_late {
+                                    $crate::maybe_backdate_late!(
+                                        $tracked_option,
+                                        $tracked_maybe_update,
+                                        (*old_fields).$absolute_tracked_index,
+                                        new_fields.$absolute_tracked_index,
+                                        revisions[$relative_tracked_index],
+                                        current_revision,
+                                        $zalsa,
+                                    );
+                                } else {
+                                    $crate::maybe_backdate!(
+                                        $tracked_option,
+                                        $tracked_maybe_update,
+                                        (*old_fields).$absolute_tracked_index,
+                                        new_fields.$absolute_tracked_index,
+                                        revisions[$relative_tracked_index],
+                                        current_revision,
+                                        $zalsa,
+                                    );
+                                }
+                            }
                         )*;
 
                         // If any untracked field has changed, return `true`, indicating that the tracked struct
@@ -254,31 +282,52 @@ macro_rules! setup_tracked_struct {
             }
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
-                where
-                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + $zalsa::Database,
+                pub fn $new_fn(db: &$db_lt dyn $zalsa::Database, $($non_late_id: $non_late_ty),*) -> Self
                 {
-                    $Configuration::ingredient(db.as_dyn_database()).new_struct(
-                        db.as_dyn_database(),
-                        ($($field_id,)*)
+                    $Configuration::ingredient(db).new_struct(
+                        db,
+                        ($($zalsa::macro_if!(if $field_is_late {$zalsa::LateField::new()} else {$field_id}),)*)
                     )
                 }
 
                 $(
                     $(#[$tracked_field_attr])*
-                    $tracked_getter_vis fn $tracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty)
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + $zalsa::Database,
+                    $tracked_getter_vis fn $tracked_getter_id(self, db: &$db_lt dyn $zalsa::Database) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty)
                     {
                         let db = db.as_dyn_database();
                         let fields = $Configuration::ingredient(db).tracked_field(db, self, $relative_tracked_index);
-                        $crate::return_mode_expression!(
-                            $tracked_option,
-                            $tracked_ty,
-                            &fields.$absolute_tracked_index,
-                        )
+                        $zalsa::macro_if! { if $tracked_is_late {
+                            $crate::return_mode_expression!(
+                                $tracked_option,
+                                $tracked_ty,
+                                &fields.$absolute_tracked_index.get().expect("can't get late field without initialization"),
+                            )
+                        } else {
+                            $crate::return_mode_expression!(
+                                $tracked_option,
+                                $tracked_ty,
+                                &fields.$absolute_tracked_index,
+                            )
+                        }
+                        }
+                    }
+                )*
+
+                $(
+                    $zalsa::macro_if! { if $tracked_is_late {
+                        pub fn $tracked_setter_id(
+                            self,
+                            db: &$db_lt dyn $zalsa::Database,
+                            value: $tracked_ty,
+                        ) {
+                            let ingredient = $Configuration::ingredient(db);
+                            if let Some(old_rev) = ingredient.tracked_field(db, self, $relative_tracked_index)
+                                .$absolute_tracked_index
+                                .set_maybe_backdate(value) {
+                                ingredient.revisions(db, self)[$relative_tracked_index].store(old_rev);
+                            }
+                        }
+                    } else {}
                     }
                 )*
 

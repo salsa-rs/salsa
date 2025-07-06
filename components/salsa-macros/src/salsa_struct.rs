@@ -66,6 +66,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
     pub(crate) maybe_update_attr: Option<(syn::Path, syn::Expr)>,
+    pub(crate) has_late_attr: bool,
     get_name: syn::Ident,
     set_name: syn::Ident,
     unknown_attrs: Vec<&'s syn::Attribute>,
@@ -81,6 +82,11 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
 )] = &[
     ("tracked", |_, ef| {
         ef.has_tracked_attr = true;
+        Ok(())
+    }),
+    ("late", |_, ef| {
+        ef.has_tracked_attr = true;
+        ef.has_late_attr = true;
         Ok(())
     }),
     ("default", |_, ef| {
@@ -139,6 +145,7 @@ where
         this.maybe_disallow_maybe_update_fields()?;
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
+        // this.disallow_late_id_fields()?;
 
         this.check_generics()?;
 
@@ -244,6 +251,27 @@ where
         Ok(())
     }
 
+    /// Disallow `#[default]` attributes on the fields of this struct.
+    ///
+    /// If an `#[default]` field is found, return an error.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`, the attribute name (e.g., `input` or `interned`)
+    fn disallow_late_id_fields(&self) -> syn::Result<()> {
+        // Check if any field has the `#[default]` attribute.
+        for ef in &self.fields {
+            if ef.has_late_attr && ef.has_tracked_attr {
+                return Err(syn::Error::new_spanned(
+                    ef.field,
+                    format!("`#[late]` cannot be used with `#[tracked]`"),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Check that the generic parameters look as expected for this kind of struct.
     fn check_generics(&self) -> syn::Result<()> {
         if A::HAS_LIFETIME {
@@ -337,6 +365,12 @@ where
             .collect()
     }
 
+    pub(crate) fn tracked_setter_ids(&self) -> Vec<&syn::Ident> {
+        self.tracked_fields_iter()
+            .map(|(_, f)| &f.set_name)
+            .collect()
+    }
+
     pub(crate) fn untracked_getter_ids(&self) -> Vec<&syn::Ident> {
         self.untracked_fields_iter()
             .map(|(_, f)| &f.get_name)
@@ -410,6 +444,7 @@ where
             .collect()
     }
 
+
     pub fn generate_debug_impl(&self) -> bool {
         self.args.debug.is_some()
     }
@@ -430,6 +465,37 @@ where
             .iter()
             .enumerate()
             .filter(|(_, f)| !f.has_tracked_attr)
+    }
+
+    pub fn non_late_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+        self.fields
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| !f.has_late_attr)
+    }
+
+    pub(crate) fn field_is_late(&self) -> Vec<TokenStream> {
+        self.fields.iter()
+            .map(|f| f.is_late())
+            .collect()
+    }
+
+    pub(crate) fn tracked_is_late(&self) -> Vec<TokenStream> {
+        self.tracked_fields_iter()
+            .map(|(_, f)| f.is_late())
+            .collect()
+    }
+
+    pub(crate) fn non_late_ids(&self) -> Vec<&syn::Ident> {
+        self.non_late_iter()
+            .map(|(_, f)| f.field.ident.as_ref().unwrap())
+            .collect()
+    }
+
+    pub(crate) fn non_late_tys(&self) -> Vec<&syn::Type> {
+        self.non_late_iter()
+            .map(|(_, f)| &f.field.ty)
+            .collect()
     }
 }
 
@@ -453,6 +519,7 @@ impl<'s> SalsaField<'s> {
             returns,
             has_default_attr: false,
             has_no_eq_attr: false,
+            has_late_attr: false,
             maybe_update_attr: None,
             get_name,
             set_name,
@@ -486,6 +553,14 @@ impl<'s> SalsaField<'s> {
         }
 
         Ok(result)
+    }
+
+    fn is_late(&self) -> TokenStream {
+        if self.has_late_attr {
+            quote! { true }
+        } else {
+            quote! { false }
+        }
     }
 
     fn options(&self) -> TokenStream {
