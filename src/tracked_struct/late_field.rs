@@ -4,13 +4,14 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::{Revision, Update};
+use crate::Revision;
 
 const EMPTY: usize = 0;
 const ACQUIRED: usize = 1;
 const SET: usize = 2;
 const DIRTY: usize = 3;
 
+#[derive(Debug)]
 pub enum UpdateResult {
     // Was set in some revision, then updated to empty, then set to the same value as before
     Backdate(Revision),
@@ -21,7 +22,7 @@ pub enum UpdateResult {
 }
 
 #[derive(Debug)]
-pub struct LateField<T: Update> {
+pub struct LateField<T> {
     state: AtomicUsize,
     // Last valid revision of DIRTY state
     old_revision: Option<Revision>,
@@ -29,10 +30,10 @@ pub struct LateField<T: Update> {
     data: UnsafeCell<MaybeUninit<T>>,
 }
 
-unsafe impl<T: Update + Send> Send for LateField<T> {}
-unsafe impl<T: Update + Sync> Sync for LateField<T> {}
+unsafe impl<T: Send> Send for LateField<T> {}
+unsafe impl<T: Sync> Sync for LateField<T> {}
 
-impl<T: Update> Default for LateField<T> {
+impl<T> Default for LateField<T> {
     fn default() -> LateField<T> {
         LateField {
             state: AtomicUsize::new(EMPTY),
@@ -43,7 +44,7 @@ impl<T: Update> Default for LateField<T> {
     }
 }
 
-impl<T: Update> LateField<T> {
+impl<T> LateField<T> {
     pub fn new() -> LateField<T> {
         Self::default()
     }

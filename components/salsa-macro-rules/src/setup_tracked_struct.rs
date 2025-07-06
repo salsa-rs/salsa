@@ -130,6 +130,14 @@ macro_rules! setup_tracked_struct {
 
             type $Configuration = $Struct<'static>;
 
+            fn tracked_is_late(i: usize) -> bool {
+                $(if $tracked_is_late && (i == $relative_tracked_index) {
+                    return true;
+                })*
+                false
+            }
+
+
             impl $zalsa_struct::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
@@ -160,14 +168,30 @@ macro_rules! setup_tracked_struct {
                 }
 
                 #[inline(always)]
-                fn field_revision(data: &Self::Revisions, i: usize) -> $Revision {
-                    $(if $tracked_is_late && (i == $relative_tracked_index) {
-                        return data[i].load();
-                    })*;
+                fn field_revision_raw(data: &Self::Revisions, i: usize) -> &$zalsa::MaybeAtomicRevision {
+                    &data[i]
+                }
 
-                    // SAFETY: there is no writes to non-late field revision
-                    unsafe {
-                        data[i].non_atomic_load()
+                #[inline(always)]
+                fn field_revision(data: &Self::Revisions, i: usize) -> $Revision {
+                    let raw = Self::field_revision_raw(data, i);
+
+                    if tracked_is_late(i) {
+                        raw.load()
+                    } else {
+                        // SAFETY: there is no writes to non-late field revision
+                        unsafe {
+                            raw.non_atomic_load()
+                        }
+                    }
+                }
+
+                #[inline(always)]
+                fn field_durability(base: $zalsa::Durability, i: usize) -> $zalsa::Durability {
+                    if tracked_is_late(i) {
+                        $zalsa::Durability::LOW
+                    } else {
+                        base
                     }
                 }
 
@@ -349,12 +373,14 @@ macro_rules! setup_tracked_struct {
                         {
                             let db = db.as_dyn_database();
                             let ingredient = $Configuration::ingredient(db);
-                            if let Some(old_rev) = ingredient.tracked_field(db, self, $relative_tracked_index)
-                                .$absolute_tracked_index
-                                .set_and_maybe_backdate(value, $tracked_maybe_update) {
-                                ingredient.revisions(db, self)[$relative_tracked_index].store(old_rev);
-                            } else {
-                                // TODO: Backdate to deps.changed_at here
+                            // Safety: we only update late fields
+                            unsafe {
+                                ingredient.update_late_field(db, self,
+                                    &ingredient.tracked_field(db, self, $relative_tracked_index).$absolute_tracked_index,
+                                    value,
+                                    $tracked_maybe_update,
+                                    $relative_tracked_index
+                                );
                             }
                         }
                     } else {}
