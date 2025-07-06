@@ -33,7 +33,7 @@ struct MyInput {
 
 #[salsa::tracked]
 fn intermediate(db: &dyn LogDatabase, input: MyInput) -> TrackedWithLateField<'_> {
-    db.push_log(format!("intermediate"));
+    db.push_log("intermediate".to_owned());
     let t = TrackedWithLateField::new(db, 0, 1, 2, 3);
     if input.unused_input(db) != 2 {
         t.set_tracked_1(db, input.field1(db));
@@ -45,7 +45,7 @@ fn intermediate(db: &dyn LogDatabase, input: MyInput) -> TrackedWithLateField<'_
 
 #[salsa::tracked]
 fn accumulate(db: &dyn LogDatabase, input: MyInput) -> (usize, usize) {
-    db.push_log(format!("accumulate"));
+    db.push_log("accumulate".to_owned());
     let tracked = intermediate(db, input);
     let one = read_tracked_1(db, tracked);
     let two = read_tracked_2(db, tracked);
@@ -55,13 +55,13 @@ fn accumulate(db: &dyn LogDatabase, input: MyInput) -> (usize, usize) {
 
 #[salsa::tracked]
 fn read_tracked_1<'db>(db: &'db dyn LogDatabase, tracked: TrackedWithLateField<'db>) -> usize {
-    db.push_log(format!("read_tracked_1"));
+    db.push_log("read_tracked_1".to_owned());
     tracked.tracked_1(db)
 }
 
 #[salsa::tracked]
 fn read_tracked_2<'db>(db: &'db dyn LogDatabase, tracked: TrackedWithLateField<'db>) -> usize {
-    db.push_log(format!("read_tracked_2"));
+    db.push_log("read_tracked_2".to_owned());
     tracked.tracked_2(db)
 }
 
