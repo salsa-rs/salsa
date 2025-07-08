@@ -10,7 +10,7 @@ use accumulated::{Accumulated, AnyAccumulated};
 use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::ingredient::{Ingredient, Jar};
-use crate::plumbing::{IngredientIndices, ZalsaLocal};
+use crate::plumbing::ZalsaLocal;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -44,9 +44,8 @@ impl<A: Accumulator> Default for JarImpl<A> {
 
 impl<A: Accumulator> Jar for JarImpl<A> {
     fn create_ingredients(
-        _zalsa: &Zalsa,
+        _zalsa: &mut Zalsa,
         first_index: IngredientIndex,
-        _dependencies: IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
@@ -64,7 +63,7 @@ pub struct IngredientImpl<A: Accumulator> {
 impl<A: Accumulator> IngredientImpl<A> {
     /// Find the accumulator ingredient for `A` in the database, if any.
     pub fn from_zalsa(zalsa: &Zalsa) -> Option<&Self> {
-        let index = zalsa.lookup_jar_by_type::<JarImpl<A>>().get_or_create();
+        let index = zalsa.lookup_jar_by_type::<JarImpl<A>>();
         let ingredient = zalsa.lookup_ingredient(index).assert_type::<Self>();
         Some(ingredient)
     }

@@ -92,6 +92,10 @@ macro_rules! setup_interned_struct {
 
             type $Configuration = $StructWithStatic;
 
+            $zalsa::submit! {
+                $zalsa::ErasedJar::erase::<$zalsa_struct::JarImpl<$Configuration>>($zalsa::ErasedJarKind::Struct)
+            }
+
             type $StructDataIdent<$db_lt> = ($($field_ty,)*);
 
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
@@ -149,7 +153,9 @@ macro_rules! setup_interned_struct {
 
                     let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
-                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create()
+                        let index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
+                        let ingredient = zalsa.lookup_ingredient(index).assert_type();
+                        (index, ingredient)
                     })
                 }
             }
@@ -181,8 +187,8 @@ macro_rules! setup_interned_struct {
             impl< $($db_lt_arg)? > $zalsa::SalsaStructInDb for $Struct< $($db_lt_arg)? > {
                 type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
 
-                fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
-                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create().into()
+                fn lookup_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
                 }
 
                 #[inline]

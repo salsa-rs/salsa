@@ -5,40 +5,6 @@ pub mod shim {
     pub use shuttle::sync::*;
     pub use shuttle::{thread, thread_local};
 
-    pub mod papaya {
-        use std::hash::{BuildHasher, Hash};
-        use std::marker::PhantomData;
-
-        pub struct HashMap<K, V, S>(super::Mutex<std::collections::HashMap<K, V, S>>);
-
-        impl<K, V, S: Default> Default for HashMap<K, V, S> {
-            fn default() -> Self {
-                Self(super::Mutex::default())
-            }
-        }
-
-        pub struct LocalGuard<'a>(PhantomData<&'a ()>);
-
-        impl<K, V, S> HashMap<K, V, S>
-        where
-            K: Eq + Hash,
-            V: Clone,
-            S: BuildHasher,
-        {
-            pub fn guard(&self) -> LocalGuard<'_> {
-                LocalGuard(PhantomData)
-            }
-
-            pub fn get(&self, key: &K, _guard: &LocalGuard<'_>) -> Option<V> {
-                self.0.lock().get(key).cloned()
-            }
-
-            pub fn insert(&self, key: K, value: V, _guard: &LocalGuard<'_>) {
-                self.0.lock().insert(key, value);
-            }
-        }
-    }
-
     /// A wrapper around shuttle's `Mutex` to mirror parking-lot's API.
     #[derive(Default, Debug)]
     pub struct Mutex<T>(shuttle::sync::Mutex<T>);
@@ -171,48 +137,6 @@ pub mod shim {
     pub mod atomic {
         pub use portable_atomic::AtomicU64;
         pub use std::sync::atomic::*;
-    }
-
-    pub mod papaya {
-        use std::hash::{BuildHasher, Hash};
-
-        pub use papaya::LocalGuard;
-
-        pub struct HashMap<K, V, S>(papaya::HashMap<K, V, S>);
-
-        impl<K, V, S: Default> Default for HashMap<K, V, S> {
-            fn default() -> Self {
-                Self(
-                    papaya::HashMap::builder()
-                        .capacity(256) // A relatively large capacity to hopefully avoid resizing.
-                        .resize_mode(papaya::ResizeMode::Blocking)
-                        .hasher(S::default())
-                        .build(),
-                )
-            }
-        }
-
-        impl<K, V, S> HashMap<K, V, S>
-        where
-            K: Eq + Hash,
-            V: Clone,
-            S: BuildHasher,
-        {
-            #[inline]
-            pub fn guard(&self) -> LocalGuard<'_> {
-                self.0.guard()
-            }
-
-            #[inline]
-            pub fn get(&self, key: &K, guard: &LocalGuard<'_>) -> Option<V> {
-                self.0.get(key, guard).cloned()
-            }
-
-            #[inline]
-            pub fn insert(&self, key: K, value: V, guard: &LocalGuard<'_>) {
-                self.0.insert(key, value, guard);
-            }
-        }
     }
 
     /// A wrapper around parking-lot's `Condvar` to mirror shuttle's API.

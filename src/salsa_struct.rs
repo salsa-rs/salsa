@@ -16,7 +16,7 @@ pub trait SalsaStructInDb: Sized {
     /// While implementors of this trait may call [`crate::zalsa::JarEntry::get_or_create`]
     /// to create the ingredient, they aren't required to. For example, supertypes recursively
     /// call [`crate::zalsa::JarEntry::get_or_create`] for their variants and combine them.
-    fn lookup_or_create_ingredient_index(zalsa: &Zalsa) -> IngredientIndices;
+    fn lookup_ingredient_index(zalsa: &Zalsa) -> IngredientIndices;
 
     /// Plumbing to support nested salsa supertypes.
     ///

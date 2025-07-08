@@ -36,6 +36,11 @@ const _: () = {
     use salsa::plumbing as zalsa_;
     use zalsa_::interned as zalsa_struct_;
     type Configuration_ = InternedString<'static>;
+
+    zalsa_::submit! {
+        zalsa_::ErasedJar::erase::<zalsa_struct_::JarImpl<Configuration_>>(zalsa_::ErasedJarKind::Struct)
+    }
+
     #[derive(Clone)]
     struct StructData<'db>(String, InternedString<'db>);
 
@@ -87,9 +92,9 @@ const _: () = {
 
             let zalsa = db.zalsa();
             CACHE.get_or_create(zalsa, || {
-                zalsa
-                    .lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
-                    .get_or_create()
+                let index = zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>();
+                let ingredient = zalsa.lookup_ingredient(index).assert_type();
+                (index, ingredient)
             })
         }
     }
@@ -115,9 +120,8 @@ const _: () = {
     impl zalsa_::SalsaStructInDb for InternedString<'_> {
         type MemoIngredientMap = zalsa_::MemoIngredientSingletonIndex;
 
-        fn lookup_or_create_ingredient_index(aux: &Zalsa) -> salsa::plumbing::IngredientIndices {
+        fn lookup_ingredient_index(aux: &Zalsa) -> salsa::plumbing::IngredientIndices {
             aux.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
-                .get_or_create()
                 .into()
         }
 

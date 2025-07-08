@@ -116,6 +116,10 @@ macro_rules! setup_tracked_struct {
 
             type $Configuration = $Struct<'static>;
 
+            $zalsa::submit! {
+                $zalsa::ErasedJar::erase::<$zalsa_struct::JarImpl<$Configuration>>($zalsa::ErasedJarKind::Struct)
+            }
+
             impl $zalsa_struct::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
@@ -188,7 +192,9 @@ macro_rules! setup_tracked_struct {
                         $zalsa::IngredientCache::new();
 
                     CACHE.get_or_create(zalsa, || {
-                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create()
+                        let index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
+                        let ingredient = zalsa.lookup_ingredient(index).assert_type();
+                        (index, ingredient)
                     })
                 }
             }
@@ -210,8 +216,8 @@ macro_rules! setup_tracked_struct {
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
                 type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
 
-                fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
-                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create().into()
+                fn lookup_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
                 }
 
                 #[inline]

@@ -49,7 +49,7 @@ pub trait NewMemoIngredientIndices {
     ///
     /// The memo types must be correct.
     unsafe fn create(
-        zalsa: &Zalsa,
+        zalsa: &mut Zalsa,
         struct_indices: IngredientIndices,
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
@@ -62,7 +62,7 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
     ///
     /// The memo types must be correct.
     unsafe fn create(
-        zalsa: &Zalsa,
+        zalsa: &mut Zalsa,
         struct_indices: IngredientIndices,
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
@@ -146,7 +146,7 @@ impl MemoIngredientMap for MemoIngredientSingletonIndex {
 impl NewMemoIngredientIndices for MemoIngredientSingletonIndex {
     #[inline]
     unsafe fn create(
-        zalsa: &Zalsa,
+        zalsa: &mut Zalsa,
         indices: IngredientIndices,
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,

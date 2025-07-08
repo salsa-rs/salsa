@@ -56,9 +56,8 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        _zalsa: &Zalsa,
+        _zalsa: &mut Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
-        _dependencies: crate::memo_ingredient_indices::IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
 

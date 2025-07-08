@@ -72,8 +72,8 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
             type MemoIngredientMap = zalsa::MemoIngredientIndices;
 
             #[inline]
-            fn lookup_or_create_ingredient_index(__zalsa: &zalsa::Zalsa) -> zalsa::IngredientIndices {
-                zalsa::IngredientIndices::merge([ #( <#variant_types as zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(__zalsa) ),* ])
+            fn lookup_ingredient_index(__zalsa: &zalsa::Zalsa) -> zalsa::IngredientIndices {
+                zalsa::IngredientIndices::merge([ #( <#variant_types as zalsa::SalsaStructInDb>::lookup_ingredient_index(__zalsa) ),* ])
             }
 
             #[inline]
