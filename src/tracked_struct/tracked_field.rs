@@ -82,7 +82,11 @@ where
         C::TRACKED_FIELD_NAMES[self.field_index]
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        unreachable!("tracked field does not allocate pages")
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("tracked field does not allocate pages")
     }
 }

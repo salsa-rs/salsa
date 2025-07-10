@@ -56,9 +56,8 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        _zalsa: &Zalsa,
+        _zalsa: &mut Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
-        _dependencies: crate::memo_ingredient_indices::IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
 
@@ -117,7 +116,7 @@ impl<C: Configuration> IngredientImpl<C> {
                 fields,
                 revisions,
                 durabilities,
-                memos: Default::default(),
+                memos: MemoTable::new(self.memo_table_types()),
             })
         });
 
@@ -238,8 +237,12 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         C::DEBUG_NAME
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
-        self.memo_table_types.clone()
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        &self.memo_table_types
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
+        &mut self.memo_table_types
     }
 
     /// Returns memory usage information about any inputs.

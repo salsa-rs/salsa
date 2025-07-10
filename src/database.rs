@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
+use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, ZalsaDatabase};
 use crate::{Durability, Revision};
 
@@ -80,9 +81,11 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
         crate::attach::attach(self, || op(self))
     }
 
+    #[cold]
+    #[inline(never)]
     #[doc(hidden)]
-    #[inline(always)]
-    fn zalsa_register_downcaster(&self) {
+    fn zalsa_register_downcaster(&self) -> DatabaseDownCaster<dyn Database> {
+        self.zalsa().views().downcaster_for::<dyn Database>()
         // The no-op downcaster is special cased in view caster construction.
     }
 

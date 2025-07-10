@@ -466,7 +466,7 @@ mod _memory_usage {
     impl SalsaStructInDb for DummyStruct {
         type MemoIngredientMap = MemoIngredientSingletonIndex;
 
-        fn lookup_or_create_ingredient_index(_: &Zalsa) -> IngredientIndices {
+        fn lookup_ingredient_index(_: &Zalsa) -> IngredientIndices {
             unimplemented!()
         }
 
