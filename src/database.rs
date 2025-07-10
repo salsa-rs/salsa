@@ -140,14 +140,27 @@ pub use memory_usage::IngredientInfo;
 #[cfg(feature = "salsa_unstable")]
 pub(crate) use memory_usage::{MemoInfo, SlotInfo};
 
+/// Whether to panic on the default `heap_size()`, to ensure the user has provided a custom one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanicIfHeapSizeMissing {
+    Yes,
+    No,
+}
+
 #[cfg(feature = "salsa_unstable")]
 mod memory_usage {
-    use crate::Database;
+    use crate::{Database, PanicIfHeapSizeMissing};
     use hashbrown::HashMap;
 
     impl dyn Database {
         /// Returns information about any Salsa structs.
-        pub fn structs_info(&self) -> Vec<IngredientInfo> {
+        ///
+        /// If `panic_is_missing` is [`PanicIfHeapSizeMissing::Yes`], and there is an ingredient with no `heap_size()` function,
+        /// this function will panic. This can be used to ensure coverage.
+        pub fn structs_info(
+            &self,
+            panic_if_missing: PanicIfHeapSizeMissing,
+        ) -> Vec<IngredientInfo> {
             self.zalsa()
                 .ingredients()
                 .filter_map(|ingredient| {
@@ -155,7 +168,7 @@ mod memory_usage {
                     let mut size_of_metadata = 0;
                     let mut instances = 0;
 
-                    for slot in ingredient.memory_usage(self)? {
+                    for slot in ingredient.memory_usage(self, panic_if_missing)? {
                         instances += 1;
                         size_of_fields += slot.size_of_fields;
                         size_of_metadata += slot.size_of_metadata;
@@ -175,11 +188,17 @@ mod memory_usage {
         ///
         /// The returned map holds memory usage information for memoized values of a given query, keyed
         /// by the query function name.
-        pub fn queries_info(&self) -> HashMap<&'static str, IngredientInfo> {
+        ///
+        /// If `panic_is_missing` is [`PanicIfHeapSizeMissing::Yes`], and there is an ingredient with no `heap_size()` function,
+        /// this function will panic. This can be used to ensure coverage.
+        pub fn queries_info(
+            &self,
+            panic_if_missing: PanicIfHeapSizeMissing,
+        ) -> HashMap<&'static str, IngredientInfo> {
             let mut queries = HashMap::new();
 
             for input_ingredient in self.zalsa().ingredients() {
-                let Some(input_info) = input_ingredient.memory_usage(self) else {
+                let Some(input_info) = input_ingredient.memory_usage(self, panic_if_missing) else {
                     continue;
                 };
 

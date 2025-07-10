@@ -24,7 +24,10 @@ pub trait Memo: Any + Send + Sync {
 
     /// Returns memory usage information about the memoized value.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo;
+    fn memory_usage(
+        &self,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> crate::database::MemoInfo;
 }
 
 /// Data for a memoized entry.
@@ -112,7 +115,10 @@ impl Memo for DummyMemo {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo {
+    fn memory_usage(
+        &self,
+        _panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> crate::database::MemoInfo {
         crate::database::MemoInfo {
             debug_name: "dummy",
             output: crate::database::SlotInfo {
@@ -282,7 +288,10 @@ impl MemoTableWithTypes<'_> {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
+    pub(crate) fn memory_usage(
+        &self,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> Vec<crate::database::MemoInfo> {
         let mut memory_usage = Vec::new();
         let memos = self.memos.memos.read();
         for (index, memo) in memos.iter().enumerate() {
@@ -296,7 +305,7 @@ impl MemoTableWithTypes<'_> {
 
             // SAFETY: The `TypeId` is asserted in `insert()`.
             let dyn_memo: &dyn Memo = unsafe { (type_.to_dyn_fn)(memo).as_ref() };
-            memory_usage.push(dyn_memo.memory_usage());
+            memory_usage.push(dyn_memo.memory_usage(panic_if_missing));
         }
 
         memory_usage

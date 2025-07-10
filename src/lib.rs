@@ -46,7 +46,7 @@ pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::CycleRecoveryAction;
-pub use self::database::{AsDynDatabase, Database};
+pub use self::database::{AsDynDatabase, Database, PanicIfHeapSizeMissing};
 pub use self::database_impl::DatabaseImpl;
 pub use self::durability::Durability;
 pub use self::event::{Event, EventKind};
@@ -86,7 +86,7 @@ pub mod plumbing {
     pub use crate::accumulator::Accumulator;
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
-    pub use crate::database::{current_revision, Database};
+    pub use crate::database::{current_revision, Database, PanicIfHeapSizeMissing};
     pub use crate::durability::Durability;
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
     pub use crate::ingredient::{Ingredient, Jar, Location};

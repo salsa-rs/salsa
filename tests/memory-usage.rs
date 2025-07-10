@@ -1,18 +1,18 @@
 use expect_test::expect;
 
-#[salsa::input]
+#[salsa::input(heap_size = string_tuple_size_of)]
 struct MyInput {
-    field: u32,
+    field: String,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(heap_size = string_tuple_size_of)]
 struct MyTracked<'db> {
-    field: u32,
+    field: String,
 }
 
-#[salsa::interned]
+#[salsa::interned(heap_size = string_tuple_size_of)]
 struct MyInterned<'db> {
-    field: u32,
+    field: String,
 }
 
 #[salsa::tracked]
@@ -30,12 +30,16 @@ fn input_to_string<'db>(_db: &'db dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
-#[salsa::tracked(heap_size = string_heap_size)]
+#[salsa::tracked(heap_size = string_size_of)]
 fn input_to_string_get_size<'db>(_db: &'db dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
-fn string_heap_size(x: &String) -> usize {
+fn string_size_of(x: &String) -> usize {
+    x.capacity()
+}
+
+fn string_tuple_size_of((x,): &(String,)) -> usize {
     x.capacity()
 }
 
@@ -54,9 +58,9 @@ fn input_to_tracked_tuple<'db>(
 fn test() {
     let db = salsa::DatabaseImpl::new();
 
-    let input1 = MyInput::new(&db, 1);
-    let input2 = MyInput::new(&db, 2);
-    let input3 = MyInput::new(&db, 3);
+    let input1 = MyInput::new(&db, "a".repeat(50));
+    let input2 = MyInput::new(&db, "a".repeat(150));
+    let input3 = MyInput::new(&db, "a".repeat(250));
 
     let _tracked1 = input_to_tracked(&db, input1);
     let _tracked2 = input_to_tracked(&db, input2);
@@ -70,27 +74,27 @@ fn test() {
     let _string1 = input_to_string(&db);
     let _string2 = input_to_string_get_size(&db);
 
-    let structs_info = <dyn salsa::Database>::structs_info(&db);
+    let structs_info = <dyn salsa::Database>::structs_info(&db, salsa::PanicIfHeapSizeMissing::No);
 
     let expected = expect![[r#"
         [
             IngredientInfo {
                 debug_name: "MyInput",
                 count: 3,
-                size_of_metadata: 84,
-                size_of_fields: 12,
+                size_of_metadata: 96,
+                size_of_fields: 522,
             },
             IngredientInfo {
                 debug_name: "MyTracked",
                 count: 4,
-                size_of_metadata: 112,
-                size_of_fields: 16,
+                size_of_metadata: 128,
+                size_of_fields: 396,
             },
             IngredientInfo {
                 debug_name: "MyInterned",
                 count: 3,
-                size_of_metadata: 156,
-                size_of_fields: 12,
+                size_of_metadata: 168,
+                size_of_fields: 522,
             },
             IngredientInfo {
                 debug_name: "input_to_string::interned_arguments",
@@ -108,9 +112,10 @@ fn test() {
 
     expected.assert_eq(&format!("{structs_info:#?}"));
 
-    let mut queries_info = <dyn salsa::Database>::queries_info(&db)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut queries_info =
+        <dyn salsa::Database>::queries_info(&db, salsa::PanicIfHeapSizeMissing::No)
+            .into_iter()
+            .collect::<Vec<_>>();
     queries_info.sort();
 
     let expected = expect![[r#"
@@ -163,4 +168,16 @@ fn test() {
         ]"#]];
 
     expected.assert_eq(&format!("{queries_info:#?}"));
+}
+
+#[test]
+#[should_panic = "tried to estimate sizes but `heap_size()` was not defined.\ningredient: MyInput"]
+fn missing_coverage() {
+    #[salsa::input]
+    struct MyInput {}
+
+    let db = salsa::DatabaseImpl::default();
+    let _input = MyInput::new(&db);
+
+    <dyn salsa::Database>::structs_info(&db, salsa::PanicIfHeapSizeMissing::Yes);
 }
