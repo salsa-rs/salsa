@@ -69,6 +69,12 @@ macro_rules! setup_interned_struct {
         // The function used to implement `C::heap_size`.
         heap_size_fn: $($heap_size_fn:path)?,
 
+        // If `true`, a `serde_fn` has been provided.
+        serializable: $serializable:tt,
+
+        // The path to the `serialize` and `deserialize` functions for the value's fields.
+        serde_fn: $(($serialize_fn:path, $deserialize_fn:path))?,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -144,9 +150,12 @@ macro_rules! setup_interned_struct {
                     line: line!(),
                 };
                 const DEBUG_NAME: &'static str = stringify!($Struct);
+                const SERIALIZABLE: bool = $serializable;
+
                 $(
                     const REVISIONS: ::core::num::NonZeroUsize = ::core::num::NonZeroUsize::new($revisions).unwrap();
                 )?
+
                 type Fields<'a> = $StructDataIdent<'a>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
 
@@ -155,11 +164,35 @@ macro_rules! setup_interned_struct {
                         Some($heap_size_fn(value))
                     }
                 )?
+
+                fn serialize<S: $zalsa::serde::Serializer>(
+                    fields: &Self::Fields<'_>,
+                    serializer: S,
+                ) -> Result<S::Ok, S::Error> {
+                    $zalsa::macro_if! {
+                        if $serializable {
+                            $($serialize_fn(fields, serializer))?
+                        } else {
+                            panic!("attempted to serialize value not marked with `serialize` attribute")
+                        }
+                    }
+                }
+
+                fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
+                    deserializer: D,
+                ) -> Result<Self::Fields<'static>, D::Error> {
+                    $zalsa::macro_if! {
+                        if $serializable {
+                            $($deserialize_fn(deserializer))?
+                        } else {
+                            panic!("attempted to deserialize value not marked with `serialize` attribute")
+                        }
+                    }
+                }
             }
 
             impl $Configuration {
-                pub fn ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self>
-                {
+                pub fn ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
 
@@ -204,6 +237,13 @@ macro_rules! setup_interned_struct {
                     aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
                 }
 
+                fn instances(
+                    zalsa: &$zalsa::Zalsa
+                ) -> impl Iterator<Item = $zalsa::DatabaseKeyIndex> + '_ {
+                    let ingredient_index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
+                    <$Configuration>::ingredient(zalsa).instances(zalsa)
+                }
+
                 #[inline]
                 fn cast(id: $zalsa::Id, type_id: $zalsa::TypeId) -> $zalsa::Option<Self> {
                     if type_id == $zalsa::TypeId::of::<$Struct>() {
@@ -223,6 +263,28 @@ macro_rules! setup_interned_struct {
                     unsafe { zalsa.table().memos::<$zalsa_struct::Value<$Configuration>>(id, current_revision) }
                 }
             }
+
+            $zalsa::macro_if! { $serializable =>
+                impl<$($db_lt_arg)?> $zalsa::serde::Serialize for $Struct<$($db_lt_arg)?> {
+                    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                    where
+                        S: $zalsa::serde::Serializer,
+                    {
+                        $zalsa::serde::Serialize::serialize(&$zalsa::AsId::as_id(self), serializer)
+                    }
+                }
+
+                impl<'de, $($db_lt_arg)?> $zalsa::serde::Deserialize<'de> for $Struct<$($db_lt_arg)?> {
+                    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                    where
+                        D: $zalsa::serde::Deserializer<'de>,
+                    {
+                        let id = $zalsa::Id::deserialize(deserializer)?;
+                        Ok($zalsa::FromId::from_id(id))
+                    }
+                }
+            }
+
 
             unsafe impl< $($db_lt_arg)? > $zalsa::Update for $Struct< $($db_lt_arg)? > {
                 unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {

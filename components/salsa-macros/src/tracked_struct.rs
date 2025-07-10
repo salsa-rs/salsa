@@ -3,7 +3,7 @@ use syn::spanned::Spanned;
 
 use crate::db_lifetime;
 use crate::hygiene::Hygiene;
-use crate::options::Options;
+use crate::options::{AllowedOptions, AllowedSerializeOptions, Options};
 use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
@@ -28,7 +28,7 @@ type TrackedArgs = Options<TrackedStruct>;
 
 struct TrackedStruct;
 
-impl crate::options::AllowedOptions for TrackedStruct {
+impl AllowedOptions for TrackedStruct {
     const RETURNS: bool = false;
 
     const SPECIFY: bool = false;
@@ -64,6 +64,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
     const HEAP_SIZE: bool = true;
 
     const SELF_TY: bool = false;
+
+    const SERIALIZE: AllowedSerializeOptions = AllowedSerializeOptions::AllowedValue;
 }
 
 impl SalsaStructAllowedOptions for TrackedStruct {
@@ -141,6 +143,9 @@ impl Macro {
             }
         });
 
+        let serializable = salsa_struct.serializable();
+        let serde_fn = salsa_struct.serde_fn()?;
+
         let heap_size_fn = self.args.heap_size_fn.iter();
 
         let num_tracked_fields = salsa_struct.num_tracked_fields();
@@ -192,6 +197,9 @@ impl Macro {
                     generate_debug_impl: #generate_debug_impl,
 
                     heap_size_fn: #(#heap_size_fn)*,
+
+                    serializable: #serializable,
+                    serde_fn: #(#serde_fn)*,
 
                     unused_names: [
                         #zalsa,

@@ -30,7 +30,7 @@ use syn::parse::ParseStream;
 use syn::{ext::IdentExt, spanned::Spanned};
 
 use crate::db_lifetime;
-use crate::options::{AllowedOptions, Options};
+use crate::options::{AllowedOptions, Options, SerializeOptions};
 
 pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
     struct_item: &'s syn::ItemStruct,
@@ -412,6 +412,36 @@ where
 
     pub fn generate_debug_impl(&self) -> bool {
         self.args.debug.is_some()
+    }
+
+    pub fn serializable(&self) -> bool {
+        self.args.serde.is_some()
+    }
+
+    /// Returns the path to the `serialize` and `deserialize` functions as an optional iterator.
+    pub(crate) fn serde_fn(
+        &self,
+    ) -> syn::Result<impl Iterator<Item = proc_macro2::TokenStream> + '_> {
+        let path = match &self.args.serde {
+            None => None,
+            Some(SerializeOptions::Custom {
+                serialize_fn: Some(serialize_fn),
+                deserialize_fn: Some(deserialize_fn),
+            }) => Some(quote! { (#serialize_fn, #deserialize_fn) }),
+            // Fallback to the `{Serialize, Deserialize}` implementations tuples if only one of the
+            // two is provided.
+            Some(SerializeOptions::Custom {
+                serialize_fn: Some(serialize_fn),
+                deserialize_fn: None,
+            }) => Some(quote! { (#serialize_fn, serde::Deserialize::deserialize) }),
+            Some(SerializeOptions::Custom {
+                serialize_fn: None,
+                deserialize_fn: Some(deserialize_fn),
+            }) => Some(quote! { (serde::Serialize::serialize, #deserialize_fn) }),
+            _ => unreachable!(),
+        };
+
+        Ok(path.into_iter())
     }
 
     pub fn generate_lifetime(&self) -> bool {

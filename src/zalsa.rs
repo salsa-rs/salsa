@@ -72,7 +72,9 @@ static NONCE: crate::nonce::NonceGenerator<StorageNonce> = crate::nonce::NonceGe
 ///
 /// The database contains a number of jars, and each jar contains a number of ingredients.
 /// Each ingredient is given a unique index as the database is being created.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, serde::Serialize, serde::Deserialize,
+)]
 pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
@@ -235,6 +237,12 @@ impl Zalsa {
         self.runtime.table()
     }
 
+    /// Returns a mutable reference to the [`Table`] used to store the value of salsa structs
+    #[inline]
+    pub(crate) fn table_mut(&mut self) -> &mut Table {
+        self.runtime.table_mut()
+    }
+
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
     pub(crate) fn memo_table_for<T: SalsaStructInDb>(&self, id: Id) -> MemoTableWithTypes<'_> {
         // SAFETY: We are supplying the correct current revision.
@@ -273,7 +281,6 @@ impl Zalsa {
             [memo_ingredient_index.as_usize()]
     }
 
-    #[cfg(feature = "salsa_unstable")]
     pub(crate) fn ingredients(&self) -> impl Iterator<Item = &dyn Ingredient> {
         self.ingredients_vec
             .iter()
@@ -394,6 +401,19 @@ impl Zalsa {
             .get_mut(index)
             .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
         (ingredient.as_mut(), &mut self.runtime)
+    }
+
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    pub fn take_ingredient(&mut self, index: IngredientIndex) -> Box<dyn Ingredient> {
+        self.ingredients_vec.remove(index.as_u32() as usize)
+    }
+
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    pub fn replace_ingredient(&mut self, index: IngredientIndex, ingredient: Box<dyn Ingredient>) {
+        self.ingredients_vec
+            .insert(index.as_u32() as usize, ingredient);
     }
 
     /// **NOT SEMVER STABLE**

@@ -54,6 +54,26 @@ impl Revision {
     }
 }
 
+impl serde::Serialize for Revision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&self.as_usize(), serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Revision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Revision {
+            generation: NonZeroUsize::deserialize(deserializer)?,
+        })
+    }
+}
+
 impl std::fmt::Debug for Revision {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "R{}", self.generation)
@@ -61,6 +81,7 @@ impl std::fmt::Debug for Revision {
 }
 
 #[derive(Debug)]
+#[cfg_attr(not(feature = "shuttle"), derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct AtomicRevision {
     data: AtomicUsize,
 }
@@ -94,6 +115,7 @@ impl AtomicRevision {
 }
 
 #[derive(Debug)]
+#[cfg_attr(not(feature = "shuttle"), derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct OptionalAtomicRevision {
     data: AtomicUsize,
 }

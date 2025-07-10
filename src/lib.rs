@@ -122,6 +122,7 @@ pub mod plumbing {
         Zalsa, ZalsaDatabase,
     };
     pub use crate::zalsa_local::ZalsaLocal;
+    pub use serde;
 
     #[cfg(feature = "accumulator")]
     pub mod accumulator {

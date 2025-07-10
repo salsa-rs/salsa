@@ -13,17 +13,22 @@ use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::Jar;
+use crate::plumbing::{Jar, ZalsaLocal};
 use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::{Slot, Table};
-use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{zalsa_local, Durability, Id, Revision, Runtime};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::{Durability, Id, Revision, Runtime};
+
+use serde::de::DeserializeSeed;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
     const LOCATION: crate::ingredient::Location;
+
+    /// Whether this struct should be serialized with the database.
+    const SERIALIZABLE: bool;
 
     /// The singleton state for this input if any.
     type Singleton: SingletonChoice + Send + Sync;
@@ -35,15 +40,40 @@ pub trait Configuration: Any {
     type Fields: Send + Sync;
 
     /// A array of [`Revision`], one per each of the value fields.
-    type Revisions: Send + Sync + fmt::Debug + IndexMut<usize, Output = Revision>;
+    type Revisions: Send
+        + Sync
+        + fmt::Debug
+        + IndexMut<usize, Output = Revision>
+        + serde::Serialize
+        + serde::de::DeserializeOwned;
 
     /// A array of [`Durability`], one per each of the value fields.
-    type Durabilities: Send + Sync + fmt::Debug + IndexMut<usize, Output = Durability>;
+    type Durabilities: Send
+        + Sync
+        + fmt::Debug
+        + IndexMut<usize, Output = Durability>
+        + serde::Serialize
+        + serde::de::DeserializeOwned;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
     fn heap_size(_value: &Self::Fields) -> Option<usize> {
         None
     }
+
+    /// Serialize the fields using `serde`.
+    ///
+    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    fn serialize<S: serde::Serializer>(
+        value: &Self::Fields,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>;
+
+    /// Deserialize the fields using `serde`.
+    ///
+    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self::Fields, D::Error>;
 }
 
 pub struct JarImpl<C: Configuration> {
@@ -102,14 +132,14 @@ impl<C: Configuration> IngredientImpl<C> {
         table.get_raw(id)
     }
 
-    pub fn database_key_index(&self, id: C::Struct) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.ingredient_index, id.as_id())
+    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(self.ingredient_index, id)
     }
 
     pub fn new_input(
         &self,
         zalsa: &Zalsa,
-        zalsa_local: &zalsa_local::ZalsaLocal,
+        zalsa_local: &ZalsaLocal,
         fields: C::Fields,
         revisions: C::Revisions,
         durabilities: C::Durabilities,
@@ -183,7 +213,7 @@ impl<C: Configuration> IngredientImpl<C> {
     pub fn field<'db>(
         &'db self,
         zalsa: &'db Zalsa,
-        zalsa_local: &'db zalsa_local::ZalsaLocal,
+        zalsa_local: &'db ZalsaLocal,
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
@@ -200,10 +230,20 @@ impl<C: Configuration> IngredientImpl<C> {
         &value.fields
     }
 
-    #[cfg(feature = "salsa_unstable")]
     /// Returns all data corresponding to the input struct.
     pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = &'db Value<C>> {
         zalsa.table().slots_of::<Value<C>>()
+    }
+
+    /// Returns the IDs of all input structs of this type.
+    pub fn instances<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+    ) -> impl Iterator<Item = DatabaseKeyIndex> + 'db {
+        zalsa
+            .table()
+            .slot_entries_of::<Value<C>>()
+            .map(|(id, _)| self.database_key_index(id))
     }
 
     /// Peek at the field values without recording any read dependency.
@@ -241,6 +281,10 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         C::DEBUG_NAME
     }
 
+    fn jar_kind(&self) -> JarKind {
+        JarKind::Struct
+    }
+
     fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
         &self.memo_table_types
     }
@@ -259,6 +303,39 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
             .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
             .collect();
         Some(memory_usage)
+    }
+
+    fn is_serializable(&self) -> bool {
+        C::SERIALIZABLE
+    }
+
+    fn should_serialize(&self, zalsa: &Zalsa) -> bool {
+        C::SERIALIZABLE && self.entries(zalsa).next().is_some()
+    }
+
+    #[cfg(not(feature = "shuttle"))]
+    unsafe fn serialize<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
+    ) {
+        f(&persistence::SerializeIngredient {
+            zalsa,
+            _ingredient: self,
+        })
+    }
+
+    #[cfg(not(feature = "shuttle"))]
+    fn deserialize(
+        &mut self,
+        zalsa: &mut Zalsa,
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<(), erased_serde::Error> {
+        persistence::DeserializeIngredient {
+            zalsa,
+            ingredient: self,
+        }
+        .deserialize(deserializer)
     }
 }
 
@@ -342,5 +419,182 @@ where
     #[inline(always)]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
+    }
+}
+
+#[cfg(not(feature = "shuttle"))]
+mod persistence {
+    use std::fmt;
+
+    use serde::ser::SerializeMap;
+    use serde::{de, Deserialize};
+
+    use super::{Configuration, IngredientImpl, Value};
+    use crate::plumbing::Ingredient;
+    use crate::table::memo::MemoTable;
+    use crate::zalsa::Zalsa;
+    use crate::Id;
+
+    pub struct SerializeIngredient<'db, C>
+    where
+        C: Configuration,
+    {
+        pub zalsa: &'db Zalsa,
+        pub _ingredient: &'db IngredientImpl<C>,
+    }
+
+    impl<C> serde::Serialize for SerializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let Self { zalsa, .. } = self;
+
+            let mut map = serializer.serialize_map(None)?;
+
+            for (id, value) in zalsa.table().slot_entries_of::<Value<C>>() {
+                map.serialize_entry(&id.as_bits(), value)?;
+            }
+
+            map.end()
+        }
+    }
+
+    impl<C> serde::Serialize for Value<C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let mut map = serializer.serialize_map(None)?;
+
+            struct SerializeFields<'db, C: Configuration>(&'db C::Fields);
+
+            impl<C> serde::Serialize for SerializeFields<'_, C>
+            where
+                C: Configuration,
+            {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    C::serialize(self.0, serializer)
+                }
+            }
+
+            map.serialize_entry(&"durabilities", &self.durabilities)?;
+            map.serialize_entry(&"revisions", &self.revisions)?;
+            map.serialize_entry(&"fields", &SerializeFields::<C>(&self.fields))?;
+
+            map.end()
+        }
+    }
+
+    pub struct DeserializeIngredient<'db, C>
+    where
+        C: Configuration,
+    {
+        pub zalsa: &'db mut Zalsa,
+        pub ingredient: &'db mut IngredientImpl<C>,
+    }
+
+    impl<'de, C> de::DeserializeSeed<'de> for DeserializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        type Value = ();
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_map(self)
+        }
+    }
+
+    impl<'de, C> de::Visitor<'de> for DeserializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map")
+        }
+
+        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let DeserializeIngredient { zalsa, ingredient } = self;
+
+            while let Some((id, value)) = access.next_entry::<u64, DeserializeValue<C>>()? {
+                let id = Id::from_bits(id);
+                let (page_idx, _) = crate::table::split_id(id);
+
+                let value = Value::<C> {
+                    fields: value.fields.0,
+                    revisions: value.revisions,
+                    durabilities: value.durabilities,
+                    // SAFETY: We only ever access the memos of a value that we allocated through
+                    // our `MemoTableTypes`.
+                    memos: unsafe { MemoTable::new(ingredient.memo_table_types()) },
+                };
+
+                // Force initialize the relevant page.
+                zalsa.table_mut().force_page::<Value<C>>(
+                    page_idx,
+                    ingredient.ingredient_index(),
+                    ingredient.memo_table_types(),
+                );
+
+                // Initialize the slot.
+                //
+                // SAFETY: We have a mutable reference to the database.
+                let (allocated_id, _) = unsafe {
+                    zalsa
+                        .table()
+                        .page(page_idx)
+                        .allocate(page_idx, |_| value)
+                        .unwrap_or_else(|_| panic!("serialized an invalid `Id`: {id:?}"))
+                };
+
+                assert_eq!(
+                    allocated_id, id,
+                    "values are serialized in allocation order"
+                );
+            }
+
+            Ok(())
+        }
+    }
+
+    #[derive(Deserialize)]
+    pub struct DeserializeValue<C: Configuration> {
+        durabilities: C::Durabilities,
+        revisions: C::Revisions,
+        #[serde(bound = "C: Configuration")]
+        fields: DeserializeFields<C>,
+    }
+
+    struct DeserializeFields<C: Configuration>(C::Fields);
+
+    impl<'de, C> serde::Deserialize<'de> for DeserializeFields<C>
+    where
+        C: Configuration,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            C::deserialize(deserializer)
+                .map(DeserializeFields)
+                .map_err(de::Error::custom)
+        }
     }
 }

@@ -53,6 +53,12 @@ macro_rules! setup_input_struct {
         // The function used to implement `C::heap_size`.
         heap_size_fn: $($heap_size_fn:path)?,
 
+        // If `true`, a `serde_fn` has been provided.
+        serializable: $serializable:tt,
+
+        // The path to the `serialize` and `deserialize` functions for the value's fields.
+        serde_fn: $(($serialize_fn:path, $deserialize_fn:path))?,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -93,6 +99,9 @@ macro_rules! setup_input_struct {
                 };
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 const FIELD_DEBUG_NAMES: &'static [&'static str] = &[$(stringify!($field_id)),*];
+
+                const SERIALIZABLE: bool = $serializable;
+
                 type Singleton = $zalsa::macro_if! {if $is_singleton {$zalsa::input::Singleton} else {$zalsa::input::NotSingleton}};
 
                 type Struct = $Struct;
@@ -107,6 +116,32 @@ macro_rules! setup_input_struct {
                         Some($heap_size_fn(value))
                     }
                 )?
+
+                fn serialize<S: $zalsa::serde::Serializer>(
+                    fields: &Self::Fields,
+                    serializer: S,
+                ) -> Result<S::Ok, S::Error> {
+                    $zalsa::macro_if! {
+                        if $serializable {
+                            $($serialize_fn(fields, serializer))?
+                        } else {
+                            panic!("attempted to serialize value not marked with `serialize` attribute")
+                        }
+                    }
+                }
+
+                fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
+                    deserializer: D,
+                ) -> Result<Self::Fields, D::Error> {
+                    $zalsa::macro_if! {
+                        if $serializable {
+                            $($deserialize_fn(deserializer))?
+                        } else {
+                            panic!("attempted to deserialize value not marked with `serialize` attribute")
+                        }
+                    }
+                }
+
             }
 
             impl $Configuration {
@@ -174,6 +209,13 @@ macro_rules! setup_input_struct {
                     aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
                 }
 
+                fn instances(
+                    zalsa: &$zalsa::Zalsa
+                ) -> impl Iterator<Item = $zalsa::DatabaseKeyIndex> + '_ {
+                    let ingredient_index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
+                    <$Configuration>::ingredient_(zalsa).instances(zalsa)
+                }
+
                 #[inline]
                 fn cast(id: $zalsa::Id, type_id: $zalsa::TypeId) -> $zalsa::Option<Self> {
                     if type_id == $zalsa::TypeId::of::<$Struct>() {
@@ -194,6 +236,26 @@ macro_rules! setup_input_struct {
                 }
             }
 
+            $zalsa::macro_if! { $serializable =>
+                impl $zalsa::serde::Serialize for $Struct {
+                    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                    where
+                        S: $zalsa::serde::Serializer,
+                    {
+                        $zalsa::serde::Serialize::serialize(&$zalsa::AsId::as_id(self), serializer)
+                    }
+                }
+
+                impl<'de> $zalsa::serde::Deserialize<'de> for $Struct {
+                    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                    where
+                        D: $zalsa::serde::Deserializer<'de>,
+                    {
+                        let id = $zalsa::Id::deserialize(deserializer)?;
+                        Ok($zalsa::FromId::from_id(id))
+                    }
+                }
+            }
             impl $Struct {
                 #[inline]
                 pub fn $new_fn<$Db>(db: &$Db, $($required_field_id: $required_field_ty),*) -> Self

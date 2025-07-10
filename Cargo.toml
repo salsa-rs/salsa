@@ -23,6 +23,7 @@ parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
 smallvec = "1"
+thin-vec = { version = "0.2.14", features = ["serde"] }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # Automatic ingredient registration.
@@ -33,9 +34,12 @@ rayon = { version = "1.10.0", optional = true }
 
 # Stuff we want Update impls for by default
 compact_str = { version = "0.9", optional = true }
-thin-vec = "0.2.14"
 
 shuttle = { version = "0.8.1", optional = true }
+
+# Persistent caching
+erased-serde = "0.4.6"
+serde = { version = "1.0.219", features = ["derive"] }
 
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
@@ -68,6 +72,7 @@ expect-test = "1.5.1"
 rustversion = "1.0"
 test-log = { version = "0.2.18", features = ["trace"] }
 trybuild = "1.0"
+serde_json = "1.0.140"
 
 [target.'cfg(all(not(target_os = "windows"), not(target_os = "openbsd"), any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "powerpc64")))'.dev-dependencies]
 tikv-jemallocator = "0.6.0"

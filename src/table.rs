@@ -127,7 +127,7 @@ unsafe impl Send for Page /* where for<M: Memo> M: Send */ {}
 // requires `Sync`.`
 unsafe impl Sync for Page /* where for<M: Memo> M: Sync */ {}
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PageIndex(usize);
 
 impl PageIndex {
@@ -136,10 +136,14 @@ impl PageIndex {
         debug_assert!(idx < MAX_PAGES);
         Self(idx)
     }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
-struct SlotIndex(usize);
+pub struct SlotIndex(usize);
 
 impl SlotIndex {
     #[inline]
@@ -192,6 +196,11 @@ impl Table {
         page_ref.page_data()[slot.0].get().cast::<T>()
     }
 
+    /// Returns the number of pages that have been allocated.
+    pub fn page_count(&self) -> usize {
+        self.pages.count()
+    }
+
     /// Gets a reference to the page which has slots of type `T`
     ///
     /// # Panics
@@ -202,6 +211,50 @@ impl Table {
         self.pages[page.0].assert_type::<T>()
     }
 
+    /// Force initialize the page at the given index.
+    ///
+    /// If the page at the provided index was created using `push_uninit_page`, it
+    /// will be initialized using the provided ingredient data.
+    ///
+    /// Otherwise, the page will be allocated.
+    ///
+    /// # Panics
+    ///
+    /// If `page` is out of bounds or the type `T` is incorrect.
+    #[inline]
+    pub(crate) fn force_page<T: Slot>(
+        &mut self,
+        page_idx: PageIndex,
+        ingredient: IngredientIndex,
+        memo_types: &Arc<MemoTableTypes>,
+    ) {
+        let page = self.pages.get_mut(page_idx.0);
+
+        match page {
+            Some(page) => {
+                // Initialize the page if was created using `push_uninit_page`.
+                if page.slot_type_id == TypeId::of::<DummySlot>() {
+                    *page = Page::new::<T>(ingredient, memo_types.clone());
+                }
+
+                // Ensure the page has the correct type.
+                page.assert_type::<T>();
+            }
+
+            None => {
+                // Create dummy pages until we reach the page we want.
+                while self.page_count() < page_idx.as_usize() {
+                    // We make sure not to claim any intermediary pages for ourselves, as they may
+                    // be required by a different ingredient when it is deserialized.
+                    self.push_uninit_page();
+                }
+
+                let allocated_idx = self.push_page::<T>(ingredient, memo_types.clone());
+                assert_eq!(allocated_idx, page_idx);
+            }
+        };
+    }
+
     /// Allocate a new page for the given ingredient and with slots of type `T`
     #[inline]
     pub(crate) fn push_page<T: Slot>(
@@ -210,6 +263,17 @@ impl Table {
         memo_types: Arc<MemoTableTypes>,
     ) -> PageIndex {
         PageIndex::new(self.pages.push(Page::new::<T>(ingredient, memo_types)))
+    }
+
+    /// Allocate an uninitialized page.
+    #[inline]
+    pub(crate) fn push_uninit_page(&self) -> PageIndex {
+        // Note that `DummySlot` is a ZST, so the memory wasted by any pages of ingredients
+        // that were not serialized should be negligible.
+        PageIndex::new(self.pages.push(Page::new::<DummySlot>(
+            IngredientIndex::new(0),
+            Arc::new(MemoTableTypes::default()),
+        )))
     }
 
     /// Get the memo table associated with `id` for the concrete type `T`.
@@ -270,12 +334,26 @@ impl Table {
         unsafe { page.memo_types.attach_memos_mut(memos) }
     }
 
-    #[cfg(feature = "salsa_unstable")]
     pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = &T> + '_ {
         self.pages
             .iter()
             .filter_map(|(_, page)| page.cast_type::<T>())
             .flat_map(|view| view.data())
+    }
+
+    pub(crate) fn slot_entries_of<T: Slot>(&self) -> impl Iterator<Item = (Id, &T)> + '_ {
+        self.pages
+            .iter()
+            .filter_map(|(page_index, page)| Some((page_index, page.cast_type::<T>()?)))
+            .flat_map(move |(page_index, view)| {
+                view.data()
+                    .iter()
+                    .enumerate()
+                    .map(move |(slot_index, value)| {
+                        let id = make_id(PageIndex::new(page_index), SlotIndex::new(slot_index));
+                        (id, value)
+                    })
+            })
     }
 
     #[cold]
@@ -296,7 +374,6 @@ impl Table {
 
         self.push_page::<T>(ingredient, memo_types())
     }
-
     pub(crate) fn record_unfilled_page(&self, ingredient: IngredientIndex, page: PageIndex) {
         self.non_full_pages
             .lock()
@@ -417,7 +494,6 @@ impl Page {
         PageView(self, PhantomData)
     }
 
-    #[cfg(feature = "salsa_unstable")]
     fn cast_type<T: Slot>(&self) -> Option<PageView<'_, T>> {
         if self.slot_type_id == TypeId::of::<T>() {
             Some(PageView(self, PhantomData))
@@ -446,6 +522,20 @@ impl Drop for Page {
     }
 }
 
+/// A placeholder type representing the slots of an uninitialized `Page`.
+struct DummySlot;
+
+// SAFETY: The `DummySlot type is private.
+unsafe impl Slot for DummySlot {
+    unsafe fn memos(&self, _: Revision) -> &MemoTable {
+        unreachable!()
+    }
+
+    fn memos_mut(&mut self) -> &mut MemoTable {
+        unreachable!()
+    }
+}
+
 fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
     let page = page.0 as u32;
     let slot = slot.0 as u32;
@@ -454,7 +544,7 @@ fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
 }
 
 #[inline]
-fn split_id(id: Id) -> (PageIndex, SlotIndex) {
+pub fn split_id(id: Id) -> (PageIndex, SlotIndex) {
     let index = id.index() as usize;
     let slot = index & PAGE_LEN_MASK;
     let page = index >> PAGE_LEN_BITS;

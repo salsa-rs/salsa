@@ -17,7 +17,9 @@ use crate::zalsa::Zalsa;
 ///
 /// As an end-user of `Salsa` you will generally not use `Id` directly,
 /// it is wrapped in new types.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Id {
     index: NonZeroU32,
     generation: u32,
@@ -61,9 +63,22 @@ impl Id {
     #[doc(hidden)]
     #[track_caller]
     #[inline]
-    pub const unsafe fn from_bits(bits: u64) -> Self {
+    pub const unsafe fn from_bits_unchecked(bits: u64) -> Self {
         // SAFETY: Caller obligation.
         let index = unsafe { NonZeroU32::new_unchecked(bits as u32) };
+        let generation = (bits >> 32) as u32;
+
+        Id { index, generation }
+    }
+
+    /// Create a `salsa::Id` from a `u64` value.
+    ///
+    /// This should only be used to recreate an `Id` together with `Id::as_u64`,
+    /// and may panic if the `Id` is invalid.
+    #[inline]
+    #[doc(hidden)]
+    pub const fn from_bits(bits: u64) -> Self {
+        let index = NonZeroU32::new(bits as u32).expect("attempted to create invalid `Id`");
         let generation = (bits >> 32) as u32;
 
         Id { index, generation }
