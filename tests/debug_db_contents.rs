@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 #[salsa::interned(debug)]
 struct InternedStruct<'db> {
     name: String,

@@ -1,3 +1,4 @@
+#![cfg(feature = "inventory")]
 #![allow(warnings)]
 
 use common::{EventLoggerDatabase, HasLogger, LogDatabase, Logger};

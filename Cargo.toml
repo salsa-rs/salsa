@@ -25,6 +25,9 @@ rustc-hash = "2"
 smallvec = "1"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
+# Automatic ingredient registration.
+inventory = { version = "0.3.20", optional = true }
+
 # parallel map
 rayon = { version = "1.10.0", optional = true }
 
@@ -33,10 +36,10 @@ compact_str = { version = "0.9", optional = true }
 thin-vec = "0.2.13"
 
 shuttle = { version = "0.8.0", optional = true }
-inventory = "0.3.20"
 
 [features]
-default = ["salsa_unstable", "rayon", "macros"]
+default = ["salsa_unstable", "rayon", "macros", "inventory"]
+inventory = ["dep:inventory"]
 shuttle = ["dep:shuttle"]
 # FIXME: remove `salsa_unstable` before 1.0.
 salsa_unstable = []

@@ -74,8 +74,13 @@ macro_rules! setup_input_struct {
 
             type $Configuration = $Struct;
 
-            $zalsa::submit! {
-                $zalsa::ErasedJar::erase::<$zalsa_struct::JarImpl<$Configuration>>($zalsa::ErasedJarKind::Struct)
+            impl $zalsa::HasJar for $Struct {
+                type Jar = $zalsa_struct::JarImpl<$Configuration>;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+            }
+
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$Struct>()
             }
 
             impl $zalsa_struct::Configuration for $Configuration {

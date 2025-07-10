@@ -7,7 +7,7 @@ use crate::{Database, Storage};
 /// require any custom user data.
 #[derive(Clone)]
 pub struct DatabaseImpl {
-    storage: Storage<Self>,
+    pub storage: Storage<Self>,
 }
 
 impl Default for DatabaseImpl {

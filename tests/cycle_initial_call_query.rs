@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! It's possible to call a Salsa query from within a cycle initial fn.
 
 #[salsa::tracked]

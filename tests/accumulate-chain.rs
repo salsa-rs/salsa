@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that when having nested tracked functions
 //! we don't drop any values when accumulating.
 

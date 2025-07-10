@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Tests that accumulated values are correctly accounted for
 //! when backdating a value.
 

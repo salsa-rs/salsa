@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
 
@@ -35,10 +37,16 @@ struct InternedString<'db>(
 const _: () = {
     use salsa::plumbing as zalsa_;
     use zalsa_::interned as zalsa_struct_;
+
     type Configuration_ = InternedString<'static>;
 
-    zalsa_::submit! {
-        zalsa_::ErasedJar::erase::<zalsa_struct_::JarImpl<Configuration_>>(zalsa_::ErasedJarKind::Struct)
+    impl<'db> zalsa_::HasJar for InternedString<'db> {
+        type Jar = zalsa_struct_::JarImpl<Configuration_>;
+        const KIND: zalsa_::JarKind = zalsa_::JarKind::Struct;
+    }
+
+    zalsa_::register_jar! {
+        zalsa_::ErasedJar::erase::<InternedString<'static>>()
     }
 
     #[derive(Clone)]

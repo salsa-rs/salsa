@@ -91,8 +91,14 @@ macro_rules! setup_tracked_fn {
 
             struct $Configuration;
 
-            $zalsa::submit! {
-                $zalsa::ErasedJar::erase::<$Configuration>($zalsa::ErasedJarKind::TrackedFn)
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$fn_name>()
+            }
+
+            #[allow(non_local_definitions)]
+            impl $zalsa::HasJar for $fn_name {
+                type Jar = $fn_name;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::TrackedFn;
             }
 
             static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =
@@ -160,7 +166,7 @@ macro_rules! setup_tracked_fn {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     let zalsa = db.zalsa();
                     $FN_CACHE.get_or_create(zalsa, || {
-                        let index = zalsa.lookup_jar_by_type::<$Configuration>();
+                        let index = zalsa.lookup_jar_by_type::<$fn_name>();
 
                         let ingredient = zalsa.lookup_ingredient(index)
                             .assert_type::<$zalsa::function::IngredientImpl<$Configuration>>();
@@ -180,7 +186,7 @@ macro_rules! setup_tracked_fn {
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
                     let view = <dyn $Db as $Db>::zalsa_register_downcaster(db);
                     let zalsa_mut = db.zalsa_mut();
-                    let index = zalsa_mut.lookup_jar_by_type::<$Configuration>();
+                    let index = zalsa_mut.lookup_jar_by_type::<$fn_name>();
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa::function::IngredientImpl<Self>>();
                     ingredient.init(view);
@@ -193,7 +199,7 @@ macro_rules! setup_tracked_fn {
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
                         $INTERN_CACHE.get_or_create(zalsa, || {
-                            zalsa.lookup_jar_by_type::<$Configuration>().successor(0)
+                            zalsa.lookup_jar_by_type::<$fn_name>().successor(0)
                         })
                     }
                 }
@@ -256,7 +262,8 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
-            impl $zalsa::Jar for $Configuration {
+            #[allow(non_local_definitions)]
+            impl $zalsa::Jar for $fn_name {
                 fn create_ingredients(
                     zalsa: &mut $zalsa::Zalsa,
                     first_index: $zalsa::IngredientIndex,
@@ -381,6 +388,7 @@ macro_rules! setup_tracked_fn {
                 $zalsa::return_mode_expression!(($return_mode, __, __), $output_ty, result,)
             })
         }
+
         // The struct needs be last in the macro expansion in order to make the tracked
         // function's ident be identified as a function, not a struct, during semantic highlighting.
         // for more details, see https://github.com/salsa-rs/salsa/pull/612.

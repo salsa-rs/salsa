@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test cases for fixpoint iteration cycle resolution.
 //!
 //! These test cases use a generic query setup that allows constructing arbitrary dependency

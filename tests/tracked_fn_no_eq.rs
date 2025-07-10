@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 mod common;
 
 use common::LogDatabase;

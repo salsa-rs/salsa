@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Demonstrates the workaround of wrapping calls to
 //! `accumulated` in a tracked function to get better
 //! reuse.

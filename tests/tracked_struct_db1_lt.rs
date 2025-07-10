@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that tracked structs with lifetimes not named `'db`
 //! compile successfully.
 

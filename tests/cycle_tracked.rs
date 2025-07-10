@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Tests for cycles where the cycle head is stored on a tracked struct
 //! and that tracked struct is freed in a later revision.
 

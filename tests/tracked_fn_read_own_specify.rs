@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use expect_test::expect;
 mod common;
 use common::LogDatabase;

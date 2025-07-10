@@ -55,6 +55,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo nextest run --workspace --all-targets --no-fail-fast
+      - name: Test Manual Registration
+        run: cargo nextest run --workspace --tests --no-fail-fast --no-default-features --features macros
       - name: Test docs
         run: cargo test --workspace --doc
       - name: Check (without default features)

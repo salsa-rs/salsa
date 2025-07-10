@@ -107,8 +107,8 @@ macro_rules! setup_tracked_struct {
             std::marker::PhantomData<fn() -> &$db_lt ()>
         );
 
-        #[allow(clippy::all)]
         #[allow(dead_code)]
+        #[allow(clippy::all)]
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::tracked_struct as $zalsa_struct;
@@ -116,8 +116,13 @@ macro_rules! setup_tracked_struct {
 
             type $Configuration = $Struct<'static>;
 
-            $zalsa::submit! {
-                $zalsa::ErasedJar::erase::<$zalsa_struct::JarImpl<$Configuration>>($zalsa::ErasedJarKind::Struct)
+            impl<$db_lt> $zalsa::HasJar for $Struct<$db_lt> {
+                type Jar = $zalsa_struct::JarImpl<$Configuration>;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+            }
+
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$Struct<'static>>()
             }
 
             impl $zalsa_struct::Configuration for $Configuration {

@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! It is possible to omit the `cycle_fn`, only specifying `cycle_result` in which case
 //! an immediate fallback value is used as the cycle handling opposed to doing a fixpoint resolution.
 

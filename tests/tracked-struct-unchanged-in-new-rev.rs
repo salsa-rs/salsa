@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use salsa::{Database as Db, Setter};
 use test_log::test;
 

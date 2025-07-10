@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that `DeriveWithDb` is correctly derived.
 
 use expect_test::expect;

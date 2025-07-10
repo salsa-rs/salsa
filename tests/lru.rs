@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that a `tracked` fn with lru options
 //! compiles and executes successfully.
 

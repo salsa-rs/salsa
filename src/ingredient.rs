@@ -15,9 +15,11 @@ use crate::zalsa_local::QueryOriginRef;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
+///
 /// Each type implementing jar can be added to the database at most once.
 pub trait Jar: Any {
     /// Create the ingredients given the index of the first one.
+    ///
     /// All subsequent ingredients will be assigned contiguous indices.
     fn create_ingredients(
         zalsa: &mut Zalsa,

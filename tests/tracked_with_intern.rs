@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that a setting a field on a `#[salsa::input]`
 //! overwrites and returns the old value.
 

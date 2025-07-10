@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that the `Update` derive works as expected
 
 #[derive(salsa::Update)]

@@ -92,8 +92,13 @@ macro_rules! setup_interned_struct {
 
             type $Configuration = $StructWithStatic;
 
-            $zalsa::submit! {
-                $zalsa::ErasedJar::erase::<$zalsa_struct::JarImpl<$Configuration>>($zalsa::ErasedJarKind::Struct)
+            impl<$($db_lt_arg)?> $zalsa::HasJar for $Struct<$($db_lt_arg)?> {
+                type Jar = $zalsa_struct::JarImpl<$Configuration>;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+            }
+
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$StructWithStatic>()
             }
 
             type $StructDataIdent<$db_lt> = ($($field_ty,)*);

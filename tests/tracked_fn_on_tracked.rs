@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
 

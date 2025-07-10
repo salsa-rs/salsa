@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Demonstrates that accumulation is done in the order
 //! in which things were originally executed.
 

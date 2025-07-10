@@ -1,8 +1,5 @@
 use std::any::{Any, TypeId};
 use std::hash::BuildHasherDefault;
-use std::marker::PhantomData;
-use std::mem;
-use std::num::NonZeroU32;
 use std::panic::RefUnwindSafe;
 
 use hashbrown::HashMap;
@@ -12,7 +9,6 @@ use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
@@ -82,10 +78,16 @@ impl IngredientIndex {
     /// This reserves one bit for an optional tag.
     const MAX_INDEX: u32 = 0x7FFF_FFFF;
 
-    /// Create an ingredient index from a `usize`.
-    pub(crate) fn from(v: usize) -> Self {
-        assert!(v <= Self::MAX_INDEX as usize);
-        Self(v as u32)
+    /// Create an ingredient index from a `u32`.
+    pub(crate) fn from(v: u32) -> Self {
+        assert!(v <= Self::MAX_INDEX);
+        Self(v)
+    }
+
+    /// Create an ingredient index from a `u32`, without performing validating
+    /// that the index is valid.
+    pub(crate) fn from_unchecked(v: u32) -> Self {
+        Self(v)
     }
 
     /// Convert the ingredient index back into a `u32`.
@@ -173,6 +175,7 @@ impl RefUnwindSafe for Zalsa {}
 impl Zalsa {
     pub(crate) fn new<Db: Database>(
         event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+        jars: Vec<ErasedJar>,
     ) -> Self {
         let mut zalsa = Self {
             views_of: Views::new::<Db>(),
@@ -187,7 +190,14 @@ impl Zalsa {
         };
 
         // Collect and initialize all registered ingredients.
-        let mut jars = inventory::iter::<ErasedJar>().collect::<Vec<_>>();
+        #[cfg(feature = "inventory")]
+        let mut jars = inventory::iter::<ErasedJar>()
+            .copied()
+            .chain(jars)
+            .collect::<Vec<_>>();
+
+        #[cfg(not(feature = "inventory"))]
+        let mut jars = jars;
 
         // Ensure structs are initialized before tracked functions.
         jars.sort_by_key(|jar| jar.kind);
@@ -285,43 +295,6 @@ impl Zalsa {
     }
 }
 
-/// A type-erased `Jar`.
-pub struct ErasedJar {
-    kind: ErasedJarKind,
-    type_id: fn() -> TypeId,
-    id_struct_type_id: fn() -> TypeId,
-    create_ingredients: fn(&mut Zalsa, IngredientIndex) -> Vec<Box<dyn Ingredient>>,
-}
-
-/// The kind of an `ErasedJar`.
-///
-/// Note that the ordering of the variants is important. Struct ingredients must be
-/// initialized before tracked functions, as tracked function ingredients depend on
-/// their input struct.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
-pub enum ErasedJarKind {
-    /// An input/tracked/interned struct.
-    Struct,
-
-    /// A tracked function.
-    TrackedFn,
-}
-
-impl ErasedJar {
-    /// Performs type-erasure of a given jar.
-    pub const fn erase<J: Jar>(kind: ErasedJarKind) -> Self {
-        Self {
-            kind,
-            type_id: TypeId::of::<J>,
-            create_ingredients: J::create_ingredients,
-            id_struct_type_id: J::id_struct_type_id,
-        }
-    }
-}
-
-// Jars are collected at compile-time to ensure all ingredients are registered statically.
-inventory::collect!(ErasedJar);
-
 /// Semver unstable APIs used by the macro expansions
 impl Zalsa {
     /// **NOT SEMVER STABLE**
@@ -353,10 +326,10 @@ impl Zalsa {
         })
     }
 
-    fn insert_jar(&mut self, jar: &ErasedJar) {
+    fn insert_jar(&mut self, jar: ErasedJar) {
         let jar_type_id = (jar.type_id)();
 
-        let index = IngredientIndex::from(self.ingredients_vec.len());
+        let index = IngredientIndex::from(self.ingredients_vec.len() as u32);
 
         if self.jar_map.contains_key(&jar_type_id) {
             return;
@@ -462,183 +435,68 @@ impl Zalsa {
     }
 }
 
-/// Caches an ingredient index.
-///
-/// Unlike [`IngredientCache`], this is not restricted to a specific database.
-/// Note that ingredients are statically registered with `inventory`, so their
-/// indices should be stable across any databases.
-///
-/// If ingredient initialization is database dependent, e.g. for registering
-/// view casters, [`IngredientCache`] should be used instead.
-pub struct GlobalIngredientCache<I>
-where
-    I: Ingredient,
-{
-    ingredient_index: AtomicU32,
-    phantom: PhantomData<fn() -> I>,
+/// A type-erased `Jar`, used for ingredient registration.
+#[derive(Clone, Copy)]
+pub struct ErasedJar {
+    kind: JarKind,
+    type_id: fn() -> TypeId,
+    id_struct_type_id: fn() -> TypeId,
+    create_ingredients: fn(&mut Zalsa, IngredientIndex) -> Vec<Box<dyn Ingredient>>,
 }
 
-impl<I> Default for GlobalIngredientCache<I>
-where
-    I: Ingredient,
-{
-    fn default() -> Self {
-        Self::new()
-    }
+/// The kind of an `Jar`.
+///
+/// Note that the ordering of the variants is important. Struct ingredients must be
+/// initialized before tracked functions, as tracked function ingredients depend on
+/// their input struct.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+pub enum JarKind {
+    /// An input/tracked/interned struct.
+    Struct,
+
+    /// A tracked function.
+    TrackedFn,
 }
 
-impl<I> GlobalIngredientCache<I>
-where
-    I: Ingredient,
-{
-    const UNINITIALIZED: u32 = u32::MAX;
-
-    /// Create a new cache
-    pub const fn new() -> Self {
+impl ErasedJar {
+    /// Performs type-erasure of a given ingredient.
+    pub const fn erase<I: HasJar>() -> Self {
         Self {
-            ingredient_index: AtomicU32::new(Self::UNINITIALIZED),
-            phantom: PhantomData,
+            kind: I::KIND,
+            type_id: TypeId::of::<I::Jar>,
+            create_ingredients: <I::Jar>::create_ingredients,
+            id_struct_type_id: <I::Jar>::id_struct_type_id,
         }
-    }
-
-    /// Get a reference to the ingredient in the database.
-    ///
-    /// If the ingredient index is not already in the cache, it will be loaded and cached.
-    #[inline(always)]
-    pub fn get_or_create<'db>(
-        &self,
-        zalsa: &'db Zalsa,
-        load_index: impl Fn() -> IngredientIndex,
-    ) -> &'db I {
-        const _: () = assert!(
-            mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
-        );
-
-        let mut ingredient_index = self.ingredient_index.load(Ordering::Acquire);
-        if ingredient_index == Self::UNINITIALIZED {
-            ingredient_index = self.get_or_create_index_slow(load_index).as_u32();
-        };
-
-        zalsa
-            .lookup_ingredient(IngredientIndex(ingredient_index))
-            .assert_type()
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn get_or_create_index_slow(
-        &self,
-        load_index: impl Fn() -> IngredientIndex,
-    ) -> IngredientIndex {
-        let ingredient_index = load_index();
-
-        // It doesn't matter if we overwrite any stores, as `create_index` should
-        // always return the same index.
-        self.ingredient_index
-            .store(ingredient_index.as_u32(), Ordering::Release);
-
-        ingredient_index
     }
 }
 
-/// Caches ingredient initialization in a specific database.
+/// A salsa ingredient that can be registered in the database.
 ///
-/// Optimized for the case of a single database.
-pub struct IngredientCache<I>
-where
-    I: Ingredient,
-{
-    // A packed representation of `Option<(Nonce<StorageNonce>, IngredientIndex)>`.
-    //
-    // This allows us to replace a lock in favor of an atomic load. This works thanks to `Nonce`
-    // having a niche, which means the entire type can fit into an `AtomicU64`.
-    cached_data: AtomicU64,
-    phantom: PhantomData<fn() -> I>,
+/// This trait is implemented for tracked functions and salsa structs.
+pub trait HasJar {
+    /// The [`Jar`] associated with this ingredient.
+    type Jar: Jar;
+
+    /// The [`JarKind`] for `Self::Jar`.
+    const KIND: JarKind;
 }
 
-impl<I> Default for IngredientCache<I>
-where
-    I: Ingredient,
-{
-    fn default() -> Self {
-        Self::new()
-    }
+// Collect jars statically at compile-time if supported.
+#[cfg(feature = "inventory")]
+inventory::collect!(ErasedJar);
+
+#[cfg(feature = "inventory")]
+pub use inventory::submit as register_jar;
+
+#[cfg(not(feature = "inventory"))]
+#[macro_export]
+#[doc(hidden)]
+macro_rules! register_jar {
+    ($($_:tt)*) => {};
 }
 
-impl<I> IngredientCache<I>
-where
-    I: Ingredient,
-{
-    const UNINITIALIZED: u64 = 0;
-
-    /// Create a new cache
-    pub const fn new() -> Self {
-        Self {
-            cached_data: AtomicU64::new(Self::UNINITIALIZED),
-            phantom: PhantomData,
-        }
-    }
-
-    /// Get a reference to the ingredient in the database.
-    ///
-    /// If the ingredient is not already in the cache, it will be created.
-    #[inline(always)]
-    pub fn get_or_create<'db>(
-        &self,
-        zalsa: &'db Zalsa,
-        create_index: impl Fn() -> (IngredientIndex, &'db I),
-    ) -> &'db I {
-        const _: () = assert!(
-            mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
-        );
-
-        let cached_data = self.cached_data.load(Ordering::Acquire);
-        if cached_data == Self::UNINITIALIZED {
-            return self.get_or_create_index_slow(zalsa, create_index);
-        };
-
-        // Unpack our `u64` into the nonce and index.
-        let index = IngredientIndex(cached_data as u32);
-
-        // SAFETY: We've checked against `UNINITIALIZED` (0) above and so the upper bits must be non-zero.
-        let nonce = Nonce::<StorageNonce>::from_u32(unsafe {
-            NonZeroU32::new_unchecked((cached_data >> u32::BITS) as u32)
-        });
-
-        // The data was cached for a different database, we have to ensure the ingredient was
-        // created in ours.
-        if zalsa.nonce() != nonce {
-            let (_, ingredient) = create_index();
-            return ingredient;
-        }
-
-        zalsa.lookup_ingredient(index).assert_type()
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn get_or_create_index_slow<'db>(
-        &self,
-        zalsa: &'db Zalsa,
-        create_index: impl Fn() -> (IngredientIndex, &'db I),
-    ) -> &'db I {
-        let (index, ingredient) = create_index();
-        let nonce = zalsa.nonce().into_u32().get() as u64;
-        let packed = (nonce << u32::BITS) | (index.as_u32() as u64);
-        debug_assert_ne!(packed, IngredientCache::<I>::UNINITIALIZED);
-
-        // Discard the result, whether we won over the cache or not doesn't matter.
-        _ = self.cached_data.compare_exchange(
-            IngredientCache::<I>::UNINITIALIZED,
-            packed,
-            Ordering::Release,
-            Ordering::Relaxed,
-        );
-
-        // Use our locally computed index regardless of which one was cached.
-        ingredient
-    }
-}
+#[cfg(not(feature = "inventory"))]
+pub use crate::register_jar;
 
 /// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
 ///

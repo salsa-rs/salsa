@@ -1,3 +1,4 @@
+#![cfg(feature = "inventory")]
 #![allow(warnings)]
 
 use salsa::plumbing::HasStorage;

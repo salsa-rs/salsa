@@ -21,13 +21,19 @@ macro_rules! setup_accumulator_impl {
             use salsa::plumbing as $zalsa;
             use salsa::plumbing::accumulator as $zalsa_struct;
 
-            $zalsa::submit! {
-                $zalsa::ErasedJar::erase::<$zalsa_struct::JarImpl<$Struct>>($zalsa::ErasedJarKind::Struct)
+            impl $zalsa::HasJar for $Struct {
+                type Jar = $zalsa_struct::JarImpl<$Struct>;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+            }
+
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$Struct>()
             }
 
             fn $ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<$Struct> {
-                static $CACHE: $zalsa::GlobalIngredientCache<$zalsa_struct::IngredientImpl<$Struct>> =
-                    $zalsa::GlobalIngredientCache::new();
+                static $CACHE: $zalsa::GlobalIngredientCache<
+                    $zalsa_struct::IngredientImpl<$Struct>,
+                > = $zalsa::GlobalIngredientCache::new();
 
                 $CACHE.get_or_create(zalsa, || {
                     zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()

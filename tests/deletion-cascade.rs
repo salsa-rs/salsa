@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Delete cascade:
 //!
 //! * when we delete memoized data, also delete outputs from that data

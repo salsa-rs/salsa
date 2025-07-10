@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use salsa::plumbing::ZalsaDatabase;
 use salsa::{Durability, Setter};
 use test_log::test;
