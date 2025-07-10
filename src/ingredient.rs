@@ -133,7 +133,9 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         );
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes>;
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes>;
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes>;
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name(), index, fmt)

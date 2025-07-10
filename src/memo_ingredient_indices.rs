@@ -53,7 +53,7 @@ pub trait NewMemoIngredientIndices {
         struct_indices: IngredientIndices,
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
-        intern_ingredient_memo_types: Option<Arc<MemoTableTypes>>,
+        intern_ingredient_memo_types: Option<&mut Arc<MemoTableTypes>>,
     ) -> Self;
 }
 
@@ -66,30 +66,35 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
         struct_indices: IngredientIndices,
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
-        _intern_ingredient_memo_types: Option<Arc<MemoTableTypes>>,
+        _intern_ingredient_memo_types: Option<&mut Arc<MemoTableTypes>>,
     ) -> Self {
         debug_assert!(
             _intern_ingredient_memo_types.is_none(),
             "intern ingredient can only have a singleton memo ingredient"
         );
+
         let Some(&last) = struct_indices.indices.last() else {
             unreachable!("Attempting to construct struct memo mapping for non tracked function?")
         };
+
         let mut indices = Vec::new();
         indices.resize(
             (last.as_u32() as usize) + 1,
             MemoIngredientIndex::from_usize((u32::MAX - 1) as usize),
         );
+
         for &struct_ingredient in &struct_indices.indices {
-            let memo_types = zalsa
-                .lookup_ingredient(struct_ingredient)
-                .memo_table_types();
+            let memo_ingredient_index =
+                zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
+            indices[struct_ingredient.as_u32() as usize] = memo_ingredient_index;
 
-            let mi = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
-            memo_types.set(mi, &memo_type);
+            let (struct_ingredient, _) = zalsa.lookup_ingredient_mut(struct_ingredient);
+            let memo_types = Arc::get_mut(struct_ingredient.memo_table_types_mut())
+                .expect("memo tables are not shared until database initialization is complete");
 
-            indices[struct_ingredient.as_u32() as usize] = mi;
+            memo_types.set(memo_ingredient_index, memo_type);
         }
+
         MemoIngredientIndices {
             indices: indices.into_boxed_slice(),
         }
@@ -150,21 +155,23 @@ impl NewMemoIngredientIndices for MemoIngredientSingletonIndex {
         indices: IngredientIndices,
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
-        intern_ingredient_memo_types: Option<Arc<MemoTableTypes>>,
+        intern_ingredient_memo_types: Option<&mut Arc<MemoTableTypes>>,
     ) -> Self {
         let &[struct_ingredient] = &*indices.indices else {
             unreachable!("Attempting to construct struct memo mapping from enum?")
         };
 
+        let memo_ingredient_index = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
         let memo_types = intern_ingredient_memo_types.unwrap_or_else(|| {
-            zalsa
-                .lookup_ingredient(struct_ingredient)
-                .memo_table_types()
+            let (struct_ingredient, _) = zalsa.lookup_ingredient_mut(struct_ingredient);
+            struct_ingredient.memo_table_types_mut()
         });
 
-        let mi = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
-        memo_types.set(mi, &memo_type);
-        Self(mi)
+        Arc::get_mut(memo_types)
+            .expect("memo tables are not shared until database initialization is complete")
+            .set(memo_ingredient_index, memo_type);
+
+        Self(memo_ingredient_index)
     }
 }
 

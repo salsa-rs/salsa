@@ -415,7 +415,6 @@ where
         // Fill up the table for the first few revisions without attempting garbage collection.
         if !self.revision_queue.is_primed() {
             return self.intern_id_cold(
-                db,
                 key,
                 zalsa,
                 zalsa_local,
@@ -529,16 +528,16 @@ where
             // Insert the new value into the ID map.
             shard.key_map.insert_unique(hash, new_id, hasher);
 
-            // Free the memos associated with the previous interned value.
-            //
             // SAFETY: We hold the lock for the shard containing the value, and the
             // value has not been interned in the current revision, so no references to
             // it can exist.
-            let mut memo_table = unsafe { std::mem::take(&mut *value.memos.get()) };
+            let memo_table = unsafe { &mut *value.memos.get() };
 
+            // Free the memos associated with the previous interned value.
+            //
             // SAFETY: The memo table belongs to a value that we allocated, so it has the
             // correct type.
-            unsafe { self.clear_memos(zalsa, &mut memo_table, new_id) };
+            unsafe { self.clear_memos(zalsa, memo_table, new_id) };
 
             if value_shared.is_reusable::<C>() {
                 // Move the value to the front of the LRU list.
@@ -552,16 +551,7 @@ where
         }
 
         // If we could not find any stale slots, we are forced to allocate a new one.
-        self.intern_id_cold(
-            db,
-            key,
-            zalsa,
-            zalsa_local,
-            assemble,
-            shard,
-            shard_index,
-            hash,
-        )
+        self.intern_id_cold(key, zalsa, zalsa_local, assemble, shard, shard_index, hash)
     }
 
     /// The cold path for interning a value, allocating a new slot.
@@ -570,7 +560,6 @@ where
     #[allow(clippy::too_many_arguments)]
     fn intern_id_cold<'db, Key>(
         &'db self,
-        _db: &'db dyn crate::Database,
         key: Key,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -597,7 +586,7 @@ where
         let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
             shard: shard_index as u16,
             link: LinkedListLink::new(),
-            memos: UnsafeCell::new(MemoTable::default()),
+            memos: UnsafeCell::new(MemoTable::new(self.memo_table_types())),
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
             fields: UnsafeCell::new(unsafe { self.to_internal_data(assemble(id, key)) }),
             shared: UnsafeCell::new(ValueShared {
@@ -695,6 +684,9 @@ where
         };
 
         std::mem::forget(table_guard);
+
+        // Reset the table after having dropped any memos.
+        memo_table.reset();
     }
 
     // Hashes the value by its fields.
@@ -848,8 +840,12 @@ where
         C::DEBUG_NAME
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
-        self.memo_table_types.clone()
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        &self.memo_table_types
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
+        &mut self.memo_table_types
     }
 
     /// Returns memory usage information about any interned values.

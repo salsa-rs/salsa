@@ -116,7 +116,7 @@ impl<C: Configuration> IngredientImpl<C> {
                 fields,
                 revisions,
                 durabilities,
-                memos: Default::default(),
+                memos: MemoTable::new(self.memo_table_types()),
             })
         });
 
@@ -237,8 +237,12 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         C::DEBUG_NAME
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
-        self.memo_table_types.clone()
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        &self.memo_table_types
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
+        &mut self.memo_table_types
     }
 
     /// Returns memory usage information about any inputs.

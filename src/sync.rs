@@ -23,24 +23,6 @@ pub mod shim {
         }
     }
 
-    /// A wrapper around shuttle's `RwLock` to mirror parking-lot's API.
-    #[derive(Default, Debug)]
-    pub struct RwLock<T>(shuttle::sync::RwLock<T>);
-
-    impl<T> RwLock<T> {
-        pub fn read(&self) -> RwLockReadGuard<'_, T> {
-            self.0.read().unwrap()
-        }
-
-        pub fn write(&self) -> RwLockWriteGuard<'_, T> {
-            self.0.write().unwrap()
-        }
-
-        pub fn get_mut(&mut self) -> &mut T {
-            self.0.get_mut().unwrap()
-        }
-    }
-
     /// A wrapper around shuttle's `Condvar` to mirror parking-lot's API.
     #[derive(Default, Debug)]
     pub struct Condvar(shuttle::sync::Condvar);
@@ -130,7 +112,7 @@ pub mod shim {
 
 #[cfg(not(feature = "shuttle"))]
 pub mod shim {
-    pub use parking_lot::{Mutex, MutexGuard, RwLock};
+    pub use parking_lot::{Mutex, MutexGuard};
     pub use std::sync::*;
     pub use std::{thread, thread_local};
 

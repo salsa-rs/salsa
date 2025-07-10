@@ -274,14 +274,14 @@ macro_rules! setup_tracked_fn {
                     };
 
                     $zalsa::macro_if! { $needs_interner =>
-                        let intern_ingredient = <$zalsa::interned::IngredientImpl<$Configuration>>::new(
+                        let mut intern_ingredient = <$zalsa::interned::IngredientImpl<$Configuration>>::new(
                             first_index.successor(0)
                         );
                     }
 
                     let intern_ingredient_memo_types = $zalsa::macro_if! {
                         if $needs_interner {
-                            Some($zalsa::Ingredient::memo_table_types(&intern_ingredient))
+                            Some($zalsa::Ingredient::memo_table_types_mut(&mut intern_ingredient))
                         } else {
                             None
                         }

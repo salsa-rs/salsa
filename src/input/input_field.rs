@@ -76,7 +76,11 @@ where
         C::FIELD_DEBUG_NAMES[self.field_index]
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        unreachable!("input fields do not allocate pages")
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("input fields do not allocate pages")
     }
 }

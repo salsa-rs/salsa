@@ -114,7 +114,11 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         A::DEBUG_NAME
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        unreachable!("accumulator does not allocate pages")
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("accumulator does not allocate pages")
     }
 }
