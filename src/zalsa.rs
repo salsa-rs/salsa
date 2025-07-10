@@ -12,7 +12,7 @@ use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::sync::atomic::{AtomicU64, Ordering};
+use crate::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
 use crate::views::Views;
@@ -462,7 +462,87 @@ impl Zalsa {
     }
 }
 
-/// Caches a pointer to an ingredient in a database.
+/// Caches an ingredient index.
+///
+/// Unlike [`IngredientCache`], this is not restricted to a specific database.
+/// Note that ingredients are statically registered with `inventory`, so their
+/// indices should be stable across any databases.
+///
+/// If ingredient initialization is database dependent, e.g. for registering
+/// view casters, [`IngredientCache`] should be used instead.
+pub struct GlobalIngredientCache<I>
+where
+    I: Ingredient,
+{
+    ingredient_index: AtomicU32,
+    phantom: PhantomData<fn() -> I>,
+}
+
+impl<I> Default for GlobalIngredientCache<I>
+where
+    I: Ingredient,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<I> GlobalIngredientCache<I>
+where
+    I: Ingredient,
+{
+    const UNINITIALIZED: u32 = u32::MAX;
+
+    /// Create a new cache
+    pub const fn new() -> Self {
+        Self {
+            ingredient_index: AtomicU32::new(Self::UNINITIALIZED),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Get a reference to the ingredient in the database.
+    ///
+    /// If the ingredient index is not already in the cache, it will be loaded and cached.
+    #[inline(always)]
+    pub fn get_or_create<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        load_index: impl Fn() -> IngredientIndex,
+    ) -> &'db I {
+        const _: () = assert!(
+            mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
+        );
+
+        let mut ingredient_index = self.ingredient_index.load(Ordering::Acquire);
+        if ingredient_index == Self::UNINITIALIZED {
+            ingredient_index = self.get_or_create_index_slow(load_index).as_u32();
+        };
+
+        zalsa
+            .lookup_ingredient(IngredientIndex(ingredient_index))
+            .assert_type()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn get_or_create_index_slow(
+        &self,
+        load_index: impl Fn() -> IngredientIndex,
+    ) -> IngredientIndex {
+        let ingredient_index = load_index();
+
+        // It doesn't matter if we overwrite any stores, as `create_index` should
+        // always return the same index.
+        self.ingredient_index
+            .store(ingredient_index.as_u32(), Ordering::Release);
+
+        ingredient_index
+    }
+}
+
+/// Caches ingredient initialization in a specific database.
+///
 /// Optimized for the case of a single database.
 pub struct IngredientCache<I>
 where

@@ -106,8 +106,8 @@ macro_rules! setup_tracked_fn {
                         std::marker::PhantomData<fn() -> &$db_lt ()>,
                     );
 
-                    static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
-                        $zalsa::IngredientCache::new();
+                    static $INTERN_CACHE: $zalsa::GlobalIngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
+                        $zalsa::GlobalIngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
@@ -193,9 +193,7 @@ macro_rules! setup_tracked_fn {
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
                         $INTERN_CACHE.get_or_create(zalsa, || {
-                            let index = zalsa.lookup_jar_by_type::<$Configuration>().successor(0);
-                            let ingredient = zalsa.lookup_ingredient(index).assert_type();
-                            (index, ingredient)
+                            zalsa.lookup_jar_by_type::<$Configuration>().successor(0)
                         })
                     }
                 }

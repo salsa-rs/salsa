@@ -188,13 +188,11 @@ macro_rules! setup_tracked_struct {
                 }
 
                 fn ingredient_(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
-                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
-                        $zalsa::IngredientCache::new();
+                    static CACHE: $zalsa::GlobalIngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
+                        $zalsa::GlobalIngredientCache::new();
 
                     CACHE.get_or_create(zalsa, || {
-                        let index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
-                        let ingredient = zalsa.lookup_ingredient(index).assert_type();
-                        (index, ingredient)
+                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
                 }
             }

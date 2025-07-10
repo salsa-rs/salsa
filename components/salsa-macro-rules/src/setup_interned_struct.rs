@@ -148,14 +148,12 @@ macro_rules! setup_interned_struct {
                 where
                     Db: ?Sized + $zalsa::Database,
                 {
-                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
-                        $zalsa::IngredientCache::new();
+                    static CACHE: $zalsa::GlobalIngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
+                        $zalsa::GlobalIngredientCache::new();
 
                     let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
-                        let index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
-                        let ingredient = zalsa.lookup_ingredient(index).assert_type();
-                        (index, ingredient)
+                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
                 }
             }

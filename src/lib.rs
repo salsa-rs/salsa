@@ -104,8 +104,8 @@ pub mod plumbing {
     pub use crate::update::{always_update, Update};
     pub use crate::views::DatabaseDownCaster;
     pub use crate::zalsa::{
-        transmute_data_ptr, views, ErasedJar, ErasedJarKind, IngredientCache, IngredientIndex,
-        Zalsa, ZalsaDatabase,
+        transmute_data_ptr, views, ErasedJar, ErasedJarKind, GlobalIngredientCache,
+        IngredientCache, IngredientIndex, Zalsa, ZalsaDatabase,
     };
     pub use crate::zalsa_local::ZalsaLocal;
     pub use inventory::submit;
