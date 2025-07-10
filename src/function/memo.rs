@@ -316,9 +316,16 @@ where
     }
 
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo {
+    fn memory_usage(
+        &self,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> crate::database::MemoInfo {
         let size_of = std::mem::size_of::<Memo<C>>() + self.revisions.allocation_size();
-        let heap_size = self.value.as_ref().map(C::heap_size).unwrap_or(0);
+        let heap_size = self
+            .value
+            .as_ref()
+            .map(|value| C::heap_size(value, panic_if_missing))
+            .unwrap_or(0);
 
         crate::database::MemoInfo {
             debug_name: C::DEBUG_NAME,

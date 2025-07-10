@@ -44,6 +44,22 @@ pub trait Configuration: Sized + 'static {
 
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;
+
+    /// Returns the size of any heap allocations in the output value, in bytes.
+    fn heap_size(
+        _value: &Self::Fields<'_>,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> usize {
+        if panic_if_missing == crate::PanicIfHeapSizeMissing::Yes {
+            panic!(
+                "tried to estimate sizes but `heap_size()` was not defined.\n\
+                ingredient: {}\ntype: {}",
+                Self::DEBUG_NAME,
+                std::any::type_name::<Self::Struct<'_>>()
+            );
+        }
+        0
+    }
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone + Sync + Send {}
@@ -198,7 +214,12 @@ where
     /// The `MemoTable` must belong to a `Value` of the correct type. Additionally, the
     /// lock must be held for the shard containing the value.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
+    unsafe fn memory_usage(
+        &self,
+        memo_table_types: &MemoTableTypes,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> crate::database::SlotInfo {
+        let heap_size = C::heap_size(self.fields(), panic_if_missing);
         // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
         // have at-least read-only access to the value's memos.
         let memos = unsafe { &*self.memos.get() };
@@ -208,8 +229,8 @@ where
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
-            size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
-            memos: memos.memory_usage(),
+            size_of_fields: std::mem::size_of::<C::Fields<'_>>() + heap_size,
+            memos: memos.memory_usage(panic_if_missing),
         }
     }
 }
@@ -850,7 +871,11 @@ where
 
     /// Returns memory usage information about any interned values.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::database::SlotInfo>> {
+    fn memory_usage(
+        &self,
+        db: &dyn Database,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> Option<Vec<crate::database::SlotInfo>> {
         use parking_lot::lock_api::RawMutex;
 
         for shard in self.shards.iter() {
@@ -862,7 +887,7 @@ where
             .entries(db)
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type. Additionally, we are holding the locks for all shards.
-            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
+            .map(|value| unsafe { value.memory_usage(&self.memo_table_types, panic_if_missing) })
             .collect();
 
         for shard in self.shards.iter() {
