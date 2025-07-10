@@ -39,9 +39,3 @@ error: `revisions` option not allowed here
    |
 31 | #[salsa::tracked(revisions = 12)]
    |                  ^^^^^^^^^
-
-error: `heap_size` option not allowed here
-  --> tests/compile-fail/tracked_struct_incompatibles.rs:36:18
-   |
-36 | #[salsa::tracked(heap_size = size)]
-   |                  ^^^^^^^^^

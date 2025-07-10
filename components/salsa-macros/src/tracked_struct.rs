@@ -61,7 +61,7 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const REVISIONS: bool = false;
 
-    const HEAP_SIZE: bool = false;
+    const HEAP_SIZE: bool = true;
 
     const SELF_TY: bool = false;
 }
@@ -141,6 +141,8 @@ impl Macro {
             }
         });
 
+        let heap_size_fn = self.args.heap_size_fn.iter();
+
         let num_tracked_fields = salsa_struct.num_tracked_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
@@ -188,6 +190,9 @@ impl Macro {
 
                     num_tracked_fields: #num_tracked_fields,
                     generate_debug_impl: #generate_debug_impl,
+
+                    heap_size_fn: #(#heap_size_fn)*,
+
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,
