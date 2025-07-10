@@ -40,6 +40,19 @@ pub trait Configuration: Any {
 
     /// A array of [`Durability`], one per each of the value fields.
     type Durabilities: Send + Sync + fmt::Debug + IndexMut<usize, Output = Durability>;
+
+    /// Returns the size of any heap allocations in the output value, in bytes.
+    fn heap_size(_value: &Self::Fields, panic_if_missing: crate::PanicIfHeapSizeMissing) -> usize {
+        if panic_if_missing == crate::PanicIfHeapSizeMissing::Yes {
+            panic!(
+                "tried to estimate sizes but `heap_size()` was not defined.\n\
+                ingredient: {}\ntype: {}",
+                Self::DEBUG_NAME,
+                std::any::type_name::<Self::Fields>()
+            );
+        }
+        0
+    }
 }
 
 pub struct JarImpl<C: Configuration> {
@@ -247,12 +260,16 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     /// Returns memory usage information about any inputs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+    fn memory_usage(
+        &self,
+        db: &dyn crate::Database,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
-            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
+            .map(|value| unsafe { value.memory_usage(&self.memo_table_types, panic_if_missing) })
             .collect();
         Some(memory_usage)
     }
@@ -306,15 +323,20 @@ where
     ///
     /// The `MemoTable` must belong to a `Value` of the correct type.
     #[cfg(feature = "salsa_unstable")]
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
+    unsafe fn memory_usage(
+        &self,
+        memo_table_types: &MemoTableTypes,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> crate::database::SlotInfo {
+        let heap_size = C::heap_size(&self.fields, panic_if_missing);
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields>(),
-            size_of_fields: std::mem::size_of::<C::Fields>(),
-            memos: memos.memory_usage(),
+            size_of_fields: std::mem::size_of::<C::Fields>() + heap_size,
+            memos: memos.memory_usage(panic_if_missing),
         }
     }
 }

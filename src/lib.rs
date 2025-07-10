@@ -98,7 +98,7 @@ pub mod plumbing {
     pub use crate::accumulator::Accumulator;
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
-    pub use crate::database::{current_revision, Database};
+    pub use crate::database::{current_revision, Database, PanicIfHeapSizeMissing};
     pub use crate::durability::Durability;
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
     pub use crate::ingredient::{Ingredient, Jar, Location};

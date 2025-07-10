@@ -41,12 +41,6 @@ error: `#[tracked]` cannot be used with `#[salsa::interned]`
 34 | |     field: u32,
    | |______________^
 
-error: `heap_size` option not allowed here
-  --> tests/compile-fail/interned_struct_incompatibles.rs:42:19
-   |
-42 | #[salsa::interned(heap_size = size)]
-   |                   ^^^^^^^^^
-
 error: cannot find attribute `tracked` in this scope
   --> tests/compile-fail/interned_struct_incompatibles.rs:33:7
    |

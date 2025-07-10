@@ -25,7 +25,4 @@ struct InputWithTrackedField {
     field: u32,
 }
 
-#[salsa::input(heap_size = size)]
-struct InputWithHeapSize(u32);
-
 fn main() {}

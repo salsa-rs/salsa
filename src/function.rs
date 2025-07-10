@@ -75,7 +75,18 @@ pub trait Configuration: Any {
     fn id_to_input(zalsa: &Zalsa, key: Id) -> Self::Input<'_>;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
-    fn heap_size(_value: &Self::Output<'_>) -> usize {
+    fn heap_size(
+        _value: &Self::Output<'_>,
+        panic_if_missing: crate::PanicIfHeapSizeMissing,
+    ) -> usize {
+        if panic_if_missing == crate::PanicIfHeapSizeMissing::Yes {
+            panic!(
+                "tried to estimate sizes but `size_of()` was not defined.\n\
+                ingredient: {}\ntype: {}",
+                Self::DEBUG_NAME,
+                std::any::type_name::<Self::Output<'_>>()
+            );
+        }
         0
     }
 
