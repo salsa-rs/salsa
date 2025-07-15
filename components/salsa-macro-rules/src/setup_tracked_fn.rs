@@ -199,7 +199,8 @@ macro_rules! setup_tracked_fn {
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
                         $INTERN_CACHE.get_or_create(zalsa, || {
-                            zalsa.lookup_jar_by_type::<$fn_name>().successor(0)
+                            let index = zalsa.lookup_jar_by_type::<$fn_name>().successor(0);
+                            (index, zalsa.lookup_ingredient(index).assert_type())
                         })
                     }
                 }

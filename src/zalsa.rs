@@ -151,8 +151,6 @@ pub struct Zalsa {
     ingredient_to_id_struct_type_id_map: FxHashMap<IngredientIndex, TypeId>,
 
     /// Vector of ingredients.
-    ///
-    /// Immutable unless the mutex on `ingredients_map` is held.
     ingredients_vec: Vec<Box<dyn Ingredient>>,
 
     /// Indices of ingredients that require reset when a new revision starts.

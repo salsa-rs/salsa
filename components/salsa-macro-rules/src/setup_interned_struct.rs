@@ -158,7 +158,8 @@ macro_rules! setup_interned_struct {
 
                     let zalsa = db.zalsa();
                     CACHE.get_or_create(zalsa, || {
-                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
+                        let index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
+                        (index, zalsa.lookup_ingredient(index).assert_type())
                     })
                 }
             }

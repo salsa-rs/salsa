@@ -4,26 +4,33 @@ use std::num::NonZeroU32;
 
 use crate::nonce::Nonce;
 use crate::plumbing::Ingredient;
-use crate::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use crate::sync::atomic::{AtomicU64, Ordering};
 use crate::zalsa::{StorageNonce, Zalsa};
 use crate::IngredientIndex;
+
+#[cfg(not(feature = "inventory"))]
+/// With manual registration, ingredient indices can vary across databases,
+/// so the `GlobalIngredientCache` optimization does not apply.
+pub use IngredientCache as GlobalIngredientCache;
 
 /// Caches an ingredient index.
 ///
 /// Unlike [`IngredientCache`], this is not restricted to a specific database.
-/// Note that ingredients are statically registered with `inventory`, so their
+/// Note that all ingredients are statically registered with `inventory`, so their
 /// indices should be stable across any databases.
 ///
 /// If ingredient initialization is database dependent, e.g. for registering
 /// view casters, [`IngredientCache`] should be used instead.
+#[cfg(feature = "inventory")]
 pub struct GlobalIngredientCache<I>
 where
     I: Ingredient,
 {
-    ingredient_index: AtomicU32,
+    ingredient_index: std::sync::atomic::AtomicU32,
     phantom: PhantomData<fn() -> I>,
 }
 
+#[cfg(feature = "inventory")]
 impl<I> Default for GlobalIngredientCache<I>
 where
     I: Ingredient,
@@ -33,6 +40,7 @@ where
     }
 }
 
+#[cfg(feature = "inventory")]
 impl<I> GlobalIngredientCache<I>
 where
     I: Ingredient,
@@ -42,7 +50,7 @@ where
     /// Create a new cache
     pub const fn new() -> Self {
         Self {
-            ingredient_index: AtomicU32::new(Self::UNINITIALIZED),
+            ingredient_index: std::sync::atomic::AtomicU32::new(Self::UNINITIALIZED),
             phantom: PhantomData,
         }
     }
@@ -54,7 +62,7 @@ where
     pub fn get_or_create<'db>(
         &self,
         zalsa: &'db Zalsa,
-        load_index: impl Fn() -> IngredientIndex,
+        load_index: impl Fn() -> (IngredientIndex, &'db I),
     ) -> &'db I {
         const _: () = assert!(
             mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
@@ -72,14 +80,14 @@ where
 
     #[cold]
     #[inline(never)]
-    fn get_or_create_index_slow(
+    fn get_or_create_index_slow<'db>(
         &self,
-        load_index: impl Fn() -> IngredientIndex,
+        load_index: impl Fn() -> (IngredientIndex, &'db I),
     ) -> IngredientIndex {
-        let ingredient_index = load_index();
+        let (ingredient_index, _) = load_index();
 
         // It doesn't matter if we overwrite any stores, as `create_index` should
-        // always return the same index.
+        // always return the same index when the `inventory` feature is enabled.
         self.ingredient_index
             .store(ingredient_index.as_u32(), Ordering::Release);
 

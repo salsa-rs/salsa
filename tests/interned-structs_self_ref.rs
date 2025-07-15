@@ -101,7 +101,8 @@ const _: () = {
 
             let zalsa = db.zalsa();
             CACHE.get_or_create(zalsa, || {
-                zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
+                let index = zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>();
+                (index, zalsa.lookup_ingredient(index).assert_type())
             })
         }
     }

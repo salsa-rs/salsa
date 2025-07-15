@@ -36,7 +36,8 @@ macro_rules! setup_accumulator_impl {
                 > = $zalsa::GlobalIngredientCache::new();
 
                 $CACHE.get_or_create(zalsa, || {
-                    zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
+                    let index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>();
+                    (index, zalsa.lookup_ingredient(index).assert_type())
                 })
             }
 
