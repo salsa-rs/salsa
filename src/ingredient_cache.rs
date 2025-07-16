@@ -26,7 +26,7 @@ pub struct GlobalIngredientCache<I>
 where
     I: Ingredient,
 {
-    ingredient_index: std::sync::atomic::AtomicU32,
+    ingredient_index: crate::sync::atomic::AtomicU32,
     phantom: PhantomData<fn() -> I>,
 }
 
@@ -50,7 +50,7 @@ where
     /// Create a new cache
     pub const fn new() -> Self {
         Self {
-            ingredient_index: std::sync::atomic::AtomicU32::new(Self::UNINITIALIZED),
+            ingredient_index: crate::sync::atomic::AtomicU32::new(Self::UNINITIALIZED),
             phantom: PhantomData,
         }
     }
