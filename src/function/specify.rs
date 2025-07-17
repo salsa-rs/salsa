@@ -1,11 +1,14 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
+use crate::hash::FxIndexSet;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryOrigin, QueryOriginRef, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{
+    FullQueryRevisions, QueryOrigin, QueryOriginRef, QueryRevisions, QueryRevisionsExtra,
+};
 use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
@@ -62,7 +65,7 @@ where
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
 
         let revision = zalsa.current_revision();
-        let mut revisions = QueryRevisions {
+        let revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
             origin: QueryOrigin::assigned(active_query_key),
@@ -70,6 +73,7 @@ where
             verified_final: AtomicBool::new(true),
             extra: QueryRevisionsExtra::default(),
         };
+        let mut revisions = FullQueryRevisions::new(revisions, FxIndexSet::default());
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
@@ -80,7 +84,8 @@ where
         let memo = Memo {
             value: Some(value),
             verified_at: AtomicRevision::from(revision),
-            revisions,
+            // Specified queries don't create any outputs, so we can safely drop them here.
+            revisions: revisions.drop_tracked_outputs(),
         };
 
         tracing::debug!(
@@ -92,7 +97,7 @@ where
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
-        zalsa_local.add_output(database_key_index);
+        zalsa_local.add_untracked_output(database_key_index);
     }
 
     /// Invoked when the query `executor` has been validated as having green inputs

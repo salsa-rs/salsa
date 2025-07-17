@@ -10,6 +10,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulated
 use crate::active_query::QueryStack;
 use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount};
 use crate::durability::Durability;
+use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
@@ -166,11 +167,20 @@ impl ZalsaLocal {
         })
     }
 
-    /// Add an output to the current query's list of dependencies
-    pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) {
+    /// Add an output other than a tracked struct to the current query's list of dependencies
+    pub(crate) fn add_untracked_output(&self, entity: DatabaseKeyIndex) {
         self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_output(entity)
+                top_query.add_untracked_output(entity)
+            }
+        })
+    }
+
+    /// Add a tracked struct output to the current query's list of dependencies
+    pub(crate) fn add_tracked_output(&self, entity: DatabaseKeyIndex) {
+        self.with_query_stack_mut(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_tracked_output(entity)
             }
         })
     }
@@ -315,11 +325,68 @@ impl ZalsaLocal {
 // - neither can `query_stack` as we require the closures accessing it to be `UnwindSafe`
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
+/// An instance of [`QueryRevisions`] along with the tracked struct outputs created by the query.
+///
+/// Note that tracked structs outputs are not stored directly in the final memo as they are
+/// duplicated in the tracked structs [`IdentityMap`], hence the distinction here.
+#[derive(Debug)]
+pub(crate) struct FullQueryRevisions {
+    revisions: QueryRevisions,
+    tracked_outputs: FxIndexSet<DatabaseKeyIndex>,
+}
+
+impl FullQueryRevisions {
+    /// Create a new [`FullQueryRevisions`] with the given outputs.
+    pub(crate) fn new(
+        revisions: QueryRevisions,
+        tracked_outputs: FxIndexSet<DatabaseKeyIndex>,
+    ) -> Self {
+        Self {
+            revisions,
+            tracked_outputs,
+        }
+    }
+
+    /// Returns a reference to the outputs created by this query.
+    ///
+    /// Unlike [`QueryRevisions::outputs`], this will never return values from the
+    /// previous query.
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+        self.tracked_outputs
+            .iter()
+            .copied()
+            .chain(self.revisions.origin.as_ref().untracked_outputs())
+    }
+
+    /// Returns the [`QueryRevisions`], dropping the tracked struct output edges.
+    ///
+    /// This should only be performed after ensuring that the output edges are accurately
+    /// reflected in the tracked structs [`IdentityMap`], which is initially seeded with
+    /// IDs from the previous query.
+    pub(crate) fn drop_tracked_outputs(self) -> QueryRevisions {
+        self.revisions
+    }
+}
+
+impl std::ops::Deref for FullQueryRevisions {
+    type Target = QueryRevisions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.revisions
+    }
+}
+
+impl std::ops::DerefMut for FullQueryRevisions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.revisions
+    }
+}
+
 /// Summarizes "all the inputs that a query used"
 /// and "all the outputs it has written to"
 #[derive(Debug)]
 // #[derive(Clone)] cloning this is expensive, so we don't derive
-pub(crate) struct QueryRevisions {
+pub struct QueryRevisions {
     /// The most revision in which some input changed.
     pub(crate) changed_at: Revision,
 
@@ -401,8 +468,8 @@ impl QueryRevisionsExtra {
             Some(Box::new(QueryRevisionsExtraInner {
                 accumulated,
                 cycle_heads,
-                tracked_struct_ids: tracked_struct_ids.into_thin_vec(),
                 iteration,
+                tracked_struct_ids: tracked_struct_ids.into_thin_vec(),
             }))
         };
 
@@ -543,8 +610,8 @@ impl QueryRevisions {
         }
     }
 
-    /// Returns a reference to the `IdentityMap` for this query, or `None` if the map is empty.
-    pub fn tracked_struct_ids(&self) -> Option<&[(Identity, Id)]> {
+    /// Returns a reference to the identity map for this query, or `None` if the map is empty.
+    pub(crate) fn tracked_struct_ids(&self) -> Option<&[(Identity, Id)]> {
         self.extra
             .0
             .as_ref()
@@ -552,13 +619,32 @@ impl QueryRevisions {
             .filter(|tracked_struct_ids| !tracked_struct_ids.is_empty())
     }
 
-    /// Returns a mutable reference to the `IdentityMap` for this query, or `None` if the map is empty.
-    pub fn tracked_struct_ids_mut(&mut self) -> Option<&mut ThinVec<(Identity, Id)>> {
+    /// Returns a mutable reference to the identity map for this query, or `None` if the map is empty.
+    pub(crate) fn tracked_struct_ids_mut(&mut self) -> Option<&mut ThinVec<(Identity, Id)>> {
         self.extra
             .0
             .as_mut()
             .map(|extra| &mut extra.tracked_struct_ids)
             .filter(|tracked_struct_ids| !tracked_struct_ids.is_empty())
+    }
+
+    /// Returns the `DatabaseKeyIndex`s for any outputs created by this query.
+    ///
+    /// Note that the disclaimer on [`QueryRevisions::tracked_outputs`] applies.
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+        self.tracked_outputs()
+            .chain(self.origin.as_ref().untracked_outputs())
+    }
+
+    /// Returns the `DatabaseKeyIndex`s for any tracked struct outputs created by this query.
+    ///
+    /// Note that before the condition for [`FullQueryRevisions::drop_tracked_outputs`] is fulfilled,
+    /// this function may return outputs that were created by the previous query but not this one.
+    pub(crate) fn tracked_outputs(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+        self.tracked_struct_ids()
+            .into_iter()
+            .flatten()
+            .map(|(identity, id)| DatabaseKeyIndex::new(identity.ingredient_index(), *id))
     }
 }
 
@@ -598,8 +684,12 @@ impl<'a> QueryOriginRef<'a> {
         opt_edges.into_iter().flat_map(input_edges)
     }
 
-    /// Indices for queries *written* by this query (if any)
-    pub(crate) fn outputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
+    /// Indices for queries *written* by this query, not including tracked structs.
+    ///
+    /// Note that tracked struct outputs can be accessed through [`QueryRevisions::tracked_outputs`].
+    pub(crate) fn untracked_outputs(
+        self,
+    ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
             QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
@@ -928,7 +1018,8 @@ impl ActiveQueryGuard<'_> {
     pub(crate) fn seed_iteration(&self, previous: &QueryRevisions) {
         let durability = previous.durability;
         let changed_at = previous.changed_at;
-        let edges = previous.origin.as_ref().edges();
+        let input_outputs = previous.origin.as_ref().edges();
+        let tracked_outputs = previous.tracked_outputs();
         let untracked_read = matches!(
             previous.origin.as_ref(),
             QueryOriginRef::DerivedUntracked(_)
@@ -938,12 +1029,18 @@ impl ActiveQueryGuard<'_> {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
-            frame.seed_iteration(durability, changed_at, edges, untracked_read);
+            frame.seed_iteration(
+                durability,
+                changed_at,
+                input_outputs,
+                tracked_outputs,
+                untracked_read,
+            );
         })
     }
 
     /// Invoked when the query has successfully completed execution.
-    fn complete(self) -> QueryRevisions {
+    fn complete(self) -> FullQueryRevisions {
         let query = self.local_state.with_query_stack_mut(|stack| {
             stack.pop_into_revisions(
                 self.database_key_index,
@@ -955,11 +1052,11 @@ impl ActiveQueryGuard<'_> {
         query
     }
 
-    /// Pops an active query from the stack. Returns the [`QueryRevisions`]
-    /// which summarizes the other queries that were accessed during this
-    /// query's execution.
+    /// Pops an active query from the stack. Returns the [`FullQueryRevisions`]
+    /// which summarizes the other queries that were accessed during this query's
+    /// execution.
     #[inline]
-    pub(crate) fn pop(self) -> QueryRevisions {
+    pub(crate) fn pop(self) -> FullQueryRevisions {
         self.complete()
     }
 }

@@ -193,12 +193,14 @@ where
                         revisions.set_cycle_heads(CycleHeads::initial(database_key_index));
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
                         *revisions.verified_final.get_mut() = false;
-                        Some(self.insert_memo(
-                            zalsa,
-                            id,
-                            Memo::new(Some(fallback_value), zalsa.current_revision(), revisions),
-                            memo_ingredient_index,
-                        ))
+
+                        let memo = Memo::new(
+                            Some(fallback_value),
+                            zalsa.current_revision(),
+                            // TODO: Why is this correct?
+                            revisions.drop_tracked_outputs(),
+                        );
+                        Some(self.insert_memo(zalsa, id, memo, memo_ingredient_index))
                     }
                 };
             }

@@ -3,7 +3,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, FullQueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C> IngredientImpl<C>
@@ -108,10 +108,16 @@ where
             // outputs and update the tracked struct IDs for seeding the next revision.
             self.diff_outputs(zalsa, database_key_index, old_memo, &mut revisions);
         }
+
         self.insert_memo(
             zalsa,
             id,
-            Memo::new(Some(new_value), zalsa.current_revision(), revisions),
+            Memo::new(
+                Some(new_value),
+                zalsa.current_revision(),
+                // We called `diff_outputs`, so we can safely drop the output edges here.
+                revisions.drop_tracked_outputs(),
+            ),
             memo_ingredient_index,
         )
     }
@@ -125,7 +131,7 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> (C::Output<'db>, QueryRevisions) {
+    ) -> (C::Output<'db>, FullQueryRevisions) {
         let database_key_index = active_query.database_key_index;
         let mut iteration_count = IterationCount::initial();
         let mut fell_back = false;
@@ -223,12 +229,14 @@ where
                     tracing::debug!(
                         "{database_key_index:?}: execute: iterate again, revisions: {revisions:#?}"
                     );
-                    opt_last_provisional = Some(self.insert_memo(
-                        zalsa,
-                        id,
-                        Memo::new(Some(new_value), zalsa.current_revision(), revisions),
-                        memo_ingredient_index,
-                    ));
+                    let memo = Memo::new(
+                        Some(new_value),
+                        zalsa.current_revision(),
+                        // TODO: Why is this correct?
+                        revisions.drop_tracked_outputs(),
+                    );
+                    opt_last_provisional =
+                        Some(self.insert_memo(zalsa, id, memo, memo_ingredient_index));
 
                     active_query = db
                         .zalsa_local()
@@ -260,7 +268,7 @@ where
         opt_old_memo: Option<&Memo<'db, C>>,
         current_revision: Revision,
         id: Id,
-    ) -> (C::Output<'db>, QueryRevisions) {
+    ) -> (C::Output<'db>, FullQueryRevisions) {
         if let Some(old_memo) = opt_old_memo {
             // If we already executed this query once, then use the tracked-struct ids from the
             // previous execution as the starting point for the new one.

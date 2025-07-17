@@ -10,7 +10,7 @@ use crate::{Database, Id};
 /// database. Used to track input and output dependencies between queries. Fully
 /// ordered and equatable but those orderings are arbitrary, and meant to be used
 /// only for inserting into maps and the like.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DatabaseKeyIndex {
     key_index: Id,
     ingredient_index: IngredientIndex,

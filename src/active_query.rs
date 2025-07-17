@@ -10,7 +10,9 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{
+    FullQueryRevisions, QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra,
+};
 use crate::{Accumulator, IngredientIndex, Revision};
 
 #[derive(Debug)]
@@ -26,12 +28,18 @@ pub(crate) struct ActiveQuery {
     changed_at: Revision,
 
     /// Inputs: Set of subqueries that were accessed thus far.
-    /// Outputs: Tracks values written by this query. Could be...
     ///
-    /// * tracked structs created
+    /// Outputs: Tracks values written by this query. Could be...
     /// * invocations of `specify`
     /// * accumulators pushed to
     input_outputs: FxIndexSet<QueryEdge>,
+
+    /// Tracked structs created by this query.
+    ///
+    /// This is stored separate from `input_outputs` and it is not actually
+    /// stored on the resulting memo, as tracked struct IDs are already stored
+    /// in the `IdentityMap`.
+    tracked_outputs: FxIndexSet<DatabaseKeyIndex>,
 
     /// True if there was an untracked read.
     untracked_read: bool,
@@ -70,10 +78,12 @@ impl ActiveQuery {
         durability: Durability,
         changed_at: Revision,
         edges: &[QueryEdge],
+        tracked_outputs: impl Iterator<Item = DatabaseKeyIndex>,
         untracked_read: bool,
     ) {
         assert!(self.input_outputs.is_empty());
-        self.input_outputs = edges.iter().cloned().collect();
+        self.input_outputs = edges.iter().copied().collect();
+        self.tracked_outputs = tracked_outputs.collect();
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;
@@ -125,14 +135,19 @@ impl ActiveQuery {
         self.accumulated.accumulate(index, value);
     }
 
-    /// Adds a key to our list of outputs.
-    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
+    /// Adds a key to our list of non-tracked-struct outputs.
+    pub(super) fn add_untracked_output(&mut self, key: DatabaseKeyIndex) {
         self.input_outputs.insert(QueryEdge::output(key));
+    }
+
+    /// Adds a key to our list of tracked struct outputs.
+    pub(super) fn add_tracked_output(&mut self, key: DatabaseKeyIndex) {
+        self.tracked_outputs.insert(key);
     }
 
     /// True if the given key was output by this query.
     pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
-        self.input_outputs.contains(&QueryEdge::output(key))
+        self.input_outputs.contains(&QueryEdge::output(key)) || self.tracked_outputs.contains(&key)
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
@@ -166,6 +181,7 @@ impl ActiveQuery {
             durability: Durability::MAX,
             changed_at: Revision::start(),
             input_outputs: FxIndexSet::default(),
+            tracked_outputs: FxIndexSet::default(),
             untracked_read: false,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
@@ -176,12 +192,13 @@ impl ActiveQuery {
         }
     }
 
-    fn top_into_revisions(&mut self) -> QueryRevisions {
+    fn top_into_revisions(&mut self) -> FullQueryRevisions {
         let &mut Self {
             database_key_index: _,
             durability,
             changed_at,
             ref mut input_outputs,
+            ref mut tracked_outputs,
             untracked_read,
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
@@ -207,14 +224,16 @@ impl ActiveQuery {
         );
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
 
-        QueryRevisions {
+        let revisions = QueryRevisions {
             changed_at,
             durability,
             origin,
             accumulated_inputs,
             verified_final: AtomicBool::new(verified_final),
             extra,
-        }
+        };
+
+        FullQueryRevisions::new(revisions, mem::take(tracked_outputs))
     }
 
     fn clear(&mut self) {
@@ -223,6 +242,7 @@ impl ActiveQuery {
             durability: _,
             changed_at: _,
             input_outputs,
+            tracked_outputs,
             untracked_read: _,
             disambiguator_map,
             tracked_struct_ids,
@@ -232,6 +252,7 @@ impl ActiveQuery {
             iteration_count,
         } = self;
         input_outputs.clear();
+        tracked_outputs.clear();
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         accumulated.clear();
@@ -249,6 +270,7 @@ impl ActiveQuery {
             durability,
             changed_at,
             input_outputs,
+            tracked_outputs,
             untracked_read,
             disambiguator_map,
             tracked_struct_ids,
@@ -265,6 +287,10 @@ impl ActiveQuery {
         *iteration_count = new_iteration_count;
         debug_assert!(
             input_outputs.is_empty(),
+            "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
+        );
+        debug_assert!(
+            tracked_outputs.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
         );
         debug_assert!(
@@ -347,7 +373,7 @@ impl QueryStack {
         &mut self,
         key: DatabaseKeyIndex,
         #[cfg(debug_assertions)] push_len: usize,
-    ) -> QueryRevisions {
+    ) -> FullQueryRevisions {
         #[cfg(debug_assertions)]
         assert_eq!(push_len, self.len(), "unbalanced push/pop");
         debug_assert_ne!(self.len, 0, "too many pops");

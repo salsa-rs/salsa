@@ -274,7 +274,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) {
-        for output in self.revisions.origin.as_ref().outputs() {
+        for output in self.revisions.outputs() {
             output.mark_validated_output(zalsa, database_key_index);
         }
     }
@@ -309,8 +309,8 @@ impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
 where
     C::Output<'static>: Send + Sync + Any,
 {
-    fn origin(&self) -> QueryOriginRef<'_> {
-        self.revisions.origin.as_ref()
+    fn revisions(&self) -> &QueryRevisions {
+        &self.revisions
     }
 
     #[cfg(feature = "salsa_unstable")]

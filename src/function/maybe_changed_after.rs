@@ -6,7 +6,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef, ZalsaLocal};
 use crate::{AsDynDatabase as _, Id, Revision};
 
 /// Result of memo validation.
@@ -435,13 +435,18 @@ where
                 let dyn_db = db.as_dyn_database();
 
                 let mut inputs = InputAccumulatedValues::Empty;
+
                 // Fully tracked inputs? Iterate over the inputs and check them, one by one.
                 //
                 // NB: It's important here that we are iterating the inputs in the order that
                 // they executed. It's possible that if the value of some input I0 is no longer
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
-                for &edge in edges {
+                for edge in edges
+                    .iter()
+                    .copied()
+                    .chain(old_memo.revisions.tracked_outputs().map(QueryEdge::output))
+                {
                     match edge.kind() {
                         QueryEdgeKind::Input(dependency_index) => {
                             match dependency_index.maybe_changed_after(
