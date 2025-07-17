@@ -265,7 +265,11 @@ impl IdentityMap {
     }
 
     pub(crate) fn into_thin_vec(self) -> ThinVec<(Identity, Id)> {
-        self.table.into_iter().collect()
+        let mut vec: ThinVec<_> = self.table.into_iter().collect();
+        // We iterate over the tracked struct IDs to remove stale outputs, which shows
+        // up in the event logs, so make sure the order is stable here.
+        vec.sort_by_key(|(_, id)| id.index());
+        vec
     }
 }
 
@@ -399,7 +403,7 @@ where
             // The struct already exists in the intern map.
             let index = self.database_key_index(id);
             tracing::trace!("Reuse tracked struct {id:?}", id = index);
-            zalsa_local.add_output(index);
+            zalsa_local.add_tracked_output(index);
 
             // SAFETY: The `id` was present in the interned map, so the value must be initialized.
             let update_result =
@@ -425,7 +429,7 @@ where
         let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
         let key = self.database_key_index(id);
         tracing::trace!("Allocated new tracked struct {key:?}");
-        zalsa_local.add_output(key);
+        zalsa_local.add_tracked_output(key);
         zalsa_local.store_tracked_struct_id(identity, id);
         FromId::from_id(id)
     }
@@ -717,7 +721,7 @@ where
 
                 zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
-                for stale_output in memo.origin().outputs() {
+                for stale_output in memo.revisions().outputs() {
                     stale_output.remove_stale_output(zalsa, executor);
                 }
             })

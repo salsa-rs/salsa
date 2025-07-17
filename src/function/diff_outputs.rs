@@ -2,7 +2,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
-use crate::zalsa_local::{output_edges, QueryOriginRef, QueryRevisions};
+use crate::zalsa_local::FullQueryRevisions;
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -19,43 +19,41 @@ where
         zalsa: &Zalsa,
         key: DatabaseKeyIndex,
         old_memo: &Memo<'_, C>,
-        revisions: &mut QueryRevisions,
+        revisions: &mut FullQueryRevisions,
     ) {
-        let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
-            old_memo.revisions.origin.as_ref()
-        else {
-            return;
-        };
-        // Iterate over the outputs of the `old_memo` and put them into a hashset
+        // Collect the outputs from the previous execution of the query.
         //
-        // Ignore key_generation here, because we use the same tracked struct allocation for
-        // all generations with the same key_index and can't report it as stale
-        let mut old_outputs: FxIndexSet<_> = output_edges(edges)
-            .map(|a| (a.ingredient_index(), a.key_index().index()))
-            .collect();
+        // Ignore ID generations here, because we use the same tracked struct allocation for
+        // all generations with the same ID index. Any ID being reused with a new generation
+        // indicates that the cleanup has already been performed for the previous value.
+        let mut old_outputs = old_memo
+            .revisions
+            .tracked_outputs()
+            .map(|key| (key.ingredient_index(), key.key_index().index()))
+            .collect::<FxIndexSet<_>>();
 
         if old_outputs.is_empty() {
             return;
         }
 
-        // Iterate over the outputs of the current query
-        // and remove elements from `old_outputs` when we find them
-        for new_output in revisions.origin.as_ref().outputs() {
+        // Remove any elements from `old_outputs` that were recreated in the current revision.
+        for new_output in revisions.outputs() {
             old_outputs.swap_remove(&(
                 new_output.ingredient_index(),
                 new_output.key_index().index(),
             ));
         }
 
-        // Remove the outputs that are no longer present in the current revision
-        // to prevent that the next revision is seeded with an id mapping that no longer exists.
+        // Remove the outputs that are no longer present in the current revision, to prevent
+        // seeding the next revisions with IDs that no longer exist.
         if let Some(tracked_struct_ids) = revisions.tracked_struct_ids_mut() {
-            tracked_struct_ids
-                .retain(|(k, value)| !old_outputs.contains(&(k.ingredient_index(), value.index())));
-        };
+            tracked_struct_ids.retain(|(identity, id)| {
+                !old_outputs.contains(&(identity.ingredient_index(), id.index()))
+            });
+        }
 
         for (ingredient_index, key_index) in old_outputs {
-            // SAFETY: key_index acquired from valid output
+            // SAFETY: `key_index` was acquired from a valid `Id`.
             let id = unsafe { Id::from_index(key_index) };
             Self::report_stale_output(zalsa, key, DatabaseKeyIndex::new(ingredient_index, id));
         }

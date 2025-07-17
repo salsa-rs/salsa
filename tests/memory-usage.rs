@@ -147,7 +147,7 @@ fn test() {
                 IngredientInfo {
                     debug_name: "memory_usage::MyTracked",
                     count: 2,
-                    size_of_metadata: 192,
+                    size_of_metadata: 168,
                     size_of_fields: 16,
                 },
             ),
@@ -156,7 +156,7 @@ fn test() {
                 IngredientInfo {
                     debug_name: "(memory_usage::MyTracked, memory_usage::MyTracked)",
                     count: 1,
-                    size_of_metadata: 132,
+                    size_of_metadata: 108,
                     size_of_fields: 16,
                 },
             ),

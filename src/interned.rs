@@ -689,7 +689,7 @@ where
 
                 zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
-                for stale_output in memo.origin().outputs() {
+                for stale_output in memo.revisions().outputs() {
                     stale_output.remove_stale_output(zalsa, executor);
                 }
             })
