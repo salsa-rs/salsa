@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use salsa::{Durability, Setter};
 
 #[salsa::interned(no_lifetime)]

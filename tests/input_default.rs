@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Tests that fields attributed with `#[default]` are initialized with `Default::default()`.
 
 use salsa::Durability;

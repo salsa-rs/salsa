@@ -74,6 +74,15 @@ macro_rules! setup_input_struct {
 
             type $Configuration = $Struct;
 
+            impl $zalsa::HasJar for $Struct {
+                type Jar = $zalsa_struct::JarImpl<$Configuration>;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+            }
+
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$Struct>()
+            }
+
             impl $zalsa_struct::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
@@ -101,14 +110,14 @@ macro_rules! setup_input_struct {
                         $zalsa::IngredientCache::new();
 
                     CACHE.get_or_create(zalsa, || {
-                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create()
+                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
                 }
 
                 pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime) {
                     let zalsa_mut = db.zalsa_mut();
                     zalsa_mut.new_revision();
-                    let index = zalsa_mut.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create();
+                    let index = zalsa_mut.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
                     let (ingredient, runtime) = zalsa_mut.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa_struct::IngredientImpl<Self>>();
                     (ingredient, runtime)
@@ -149,8 +158,8 @@ macro_rules! setup_input_struct {
             impl $zalsa::SalsaStructInDb for $Struct {
                 type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
 
-                fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
-                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create().into()
+                fn lookup_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
                 }
 
                 #[inline]

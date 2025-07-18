@@ -91,6 +91,16 @@ macro_rules! setup_tracked_fn {
 
             struct $Configuration;
 
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$fn_name>()
+            }
+
+            #[allow(non_local_definitions)]
+            impl $zalsa::HasJar for $fn_name {
+                type Jar = $fn_name;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::TrackedFn;
+            }
+
             static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =
                 $zalsa::IngredientCache::new();
 
@@ -108,7 +118,7 @@ macro_rules! setup_tracked_fn {
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
 
-                        fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                        fn lookup_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
                             $zalsa::IngredientIndices::empty()
                         }
 
@@ -155,27 +165,19 @@ macro_rules! setup_tracked_fn {
             impl $Configuration {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     let zalsa = db.zalsa();
-                    $FN_CACHE.get_or_create(zalsa, || {
-                        let jar_entry = zalsa.lookup_jar_by_type::<$Configuration>();
-
-                        // If the ingredient has already been inserted, we know that the downcaster
-                        // has also been registered. This is a fast-path for multi-database use cases
-                        // that bypass the ingredient cache and will always execute this closure.
-                        if let Some(index) = jar_entry.get() {
-                            return index;
-                        }
-
-                        <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                        jar_entry.get_or_create()
-                    })
+                    $FN_CACHE
+                        .get_or_create(zalsa, || zalsa.lookup_jar_by_type::<$fn_name>())
+                        .get_or_init(|| <dyn $Db as $Db>::zalsa_register_downcaster(db))
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
-                    <dyn $Db as $Db>::zalsa_register_downcaster(db);
+                    let view = <dyn $Db as $Db>::zalsa_register_downcaster(db);
                     let zalsa_mut = db.zalsa_mut();
-                    let index = zalsa_mut.lookup_jar_by_type::<$Configuration>().get_or_create();
+                    let index = zalsa_mut.lookup_jar_by_type::<$fn_name>();
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
-                    ingredient.assert_type_mut::<$zalsa::function::IngredientImpl<Self>>()
+                    let ingredient = ingredient.assert_type_mut::<$zalsa::function::IngredientImpl<Self>>();
+                    ingredient.get_or_init(|| view);
+                    ingredient
                 }
 
                 $zalsa::macro_if! { $needs_interner =>
@@ -184,8 +186,7 @@ macro_rules! setup_tracked_fn {
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
                         $INTERN_CACHE.get_or_create(zalsa, || {
-                            <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                            zalsa.lookup_jar_by_type::<$Configuration>().get_or_create().successor(0)
+                            zalsa.lookup_jar_by_type::<$fn_name>().successor(0)
                         })
                     }
                 }
@@ -248,42 +249,31 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
-            impl $zalsa::Jar for $Configuration {
-                fn create_dependencies(zalsa: &$zalsa::Zalsa) -> $zalsa::IngredientIndices
-                where
-                    Self: Sized
-                {
-                    $zalsa::macro_if! {
-                        if $needs_interner {
-                            $zalsa::IngredientIndices::empty()
-                        } else {
-                            <$InternedData as $zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(zalsa)
-                        }
-                    }
-                }
-
+            #[allow(non_local_definitions)]
+            impl $zalsa::Jar for $fn_name {
                 fn create_ingredients(
-                    zalsa: &$zalsa::Zalsa,
+                    zalsa: &mut $zalsa::Zalsa,
                     first_index: $zalsa::IngredientIndex,
-                    struct_index: $zalsa::IngredientIndices,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
                     let struct_index: $zalsa::IngredientIndices = $zalsa::macro_if! {
                         if $needs_interner {
                             first_index.successor(0).into()
                         } else {
-                            struct_index
+                            // Note that struct ingredients are created before tracked functions,
+                            // so this cannot panic.
+                            <$InternedData as $zalsa::SalsaStructInDb>::lookup_ingredient_index(zalsa)
                         }
                     };
 
                     $zalsa::macro_if! { $needs_interner =>
-                        let intern_ingredient = <$zalsa::interned::IngredientImpl<$Configuration>>::new(
+                        let mut intern_ingredient = <$zalsa::interned::IngredientImpl<$Configuration>>::new(
                             first_index.successor(0)
                         );
                     }
 
                     let intern_ingredient_memo_types = $zalsa::macro_if! {
                         if $needs_interner {
-                            Some($zalsa::Ingredient::memo_table_types(&intern_ingredient))
+                            Some($zalsa::Ingredient::memo_table_types_mut(&mut intern_ingredient))
                         } else {
                             None
                         }
@@ -303,7 +293,6 @@ macro_rules! setup_tracked_fn {
                         first_index,
                         memo_ingredient_indices,
                         $lru,
-                        zalsa.views().downcaster_for::<dyn $Db>(),
                     );
                     $zalsa::macro_if! {
                         if $needs_interner {
@@ -386,6 +375,7 @@ macro_rules! setup_tracked_fn {
                 $zalsa::return_mode_expression!(($return_mode, __, __), $output_ty, result,)
             })
         }
+
         // The struct needs be last in the macro expansion in order to make the tracked
         // function's ident be identified as a function, not a struct, during semantic highlighting.
         // for more details, see https://github.com/salsa-rs/salsa/pull/612.

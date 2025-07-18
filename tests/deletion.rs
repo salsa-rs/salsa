@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Basic deletion test:
 //!
 //! * entities not created in a revision are deleted, as is any memoized data keyed on them.

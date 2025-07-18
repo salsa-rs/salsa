@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Basic Singleton struct test:
 //!
 //! Singleton structs are created only once. Subsequent `get`s and `new`s after creation return the same `Id`.

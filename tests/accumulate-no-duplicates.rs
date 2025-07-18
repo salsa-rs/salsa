@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that we don't get duplicate accumulated values
 
 mod common;

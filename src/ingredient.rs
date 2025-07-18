@@ -6,7 +6,6 @@ use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
 use crate::function::VerifyResult;
-use crate::plumbing::IngredientIndices;
 use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -16,35 +15,20 @@ use crate::zalsa_local::QueryOriginRef;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
+///
 /// Each type implementing jar can be added to the database at most once.
 pub trait Jar: Any {
-    /// This creates the ingredient dependencies of this jar. We need to split this from `create_ingredients()`
-    /// because while `create_ingredients()` is called, a lock on the ingredient map is held (to guarantee
-    /// atomicity), so other ingredients could not be created.
-    ///
-    /// Only tracked fns use this.
-    fn create_dependencies(_zalsa: &Zalsa) -> IngredientIndices
-    where
-        Self: Sized,
-    {
-        IngredientIndices::empty()
-    }
-
     /// Create the ingredients given the index of the first one.
+    ///
     /// All subsequent ingredients will be assigned contiguous indices.
     fn create_ingredients(
-        zalsa: &Zalsa,
+        zalsa: &mut Zalsa,
         first_index: IngredientIndex,
-        dependencies: IngredientIndices,
-    ) -> Vec<Box<dyn Ingredient>>
-    where
-        Self: Sized;
+    ) -> Vec<Box<dyn Ingredient>>;
 
     /// This returns the [`TypeId`] of the ID struct, that is, the struct that wraps `salsa::Id`
     /// and carry the name of the jar.
-    fn id_struct_type_id() -> TypeId
-    where
-        Self: Sized;
+    fn id_struct_type_id() -> TypeId;
 }
 
 pub struct Location {
@@ -151,7 +135,9 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         );
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes>;
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes>;
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes>;
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name(), index, fmt)

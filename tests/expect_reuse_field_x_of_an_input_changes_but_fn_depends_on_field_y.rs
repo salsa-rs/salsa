@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that if field X of an input changes but not field Y,
 //! functions that depend on X re-execute, but those depending only on Y do not
 //! compiles and executes successfully.

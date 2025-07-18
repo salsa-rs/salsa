@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Tests for incremental validation for queries involved in a cycle.
 mod common;
 

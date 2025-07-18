@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Tests that code using the builder's durability methods compiles.
 
 use salsa::Durability;

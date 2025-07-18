@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 #[salsa::interned]
 struct Interned<'db> {
     field: i32,

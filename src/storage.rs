@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::panic::RefUnwindSafe;
 
 use crate::sync::{Arc, Condvar, Mutex};
-use crate::zalsa::{Zalsa, ZalsaDatabase};
+use crate::zalsa::{ErasedJar, HasJar, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{self, ZalsaLocal};
 use crate::{Database, Event, EventKind};
 
@@ -42,8 +42,15 @@ impl<Db: Database> Default for StorageHandle<Db> {
 
 impl<Db: Database> StorageHandle<Db> {
     pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
+        Self::with_jars(event_callback, Vec::new())
+    }
+
+    fn with_jars(
+        event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+        jars: Vec<ErasedJar>,
+    ) -> Self {
         Self {
-            zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback)),
+            zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback, jars)),
             coordinate: CoordinateDrop(Arc::new(Coordinate {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
@@ -115,6 +122,11 @@ impl<Db: Database> Storage<Db> {
         }
     }
 
+    /// Returns a builder for database storage.
+    pub fn builder() -> StorageBuilder<Db> {
+        StorageBuilder::default()
+    }
+
     /// Convert this instance of [`Storage`] into a [`StorageHandle`].
     ///
     /// This will discard the local state of this [`Storage`], thereby returning a value that
@@ -166,6 +178,54 @@ impl<Db: Database> Storage<Db> {
         zalsa
     }
     // ANCHOR_END: cancel_other_workers
+}
+
+/// A builder for a [`Storage`] instance.
+///
+/// This type can be created with the [`Storage::builder`] function.
+pub struct StorageBuilder<Db> {
+    jars: Vec<ErasedJar>,
+    event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+    _db: PhantomData<Db>,
+}
+
+impl<Db> Default for StorageBuilder<Db> {
+    fn default() -> Self {
+        Self {
+            jars: Vec::new(),
+            event_callback: None,
+            _db: PhantomData,
+        }
+    }
+}
+
+impl<Db: Database> StorageBuilder<Db> {
+    /// Set a callback for salsa events.
+    ///
+    /// The `event_callback` function will be invoked by the salsa runtime at various points during execution.
+    pub fn event_callback(
+        mut self,
+        callback: Box<dyn Fn(crate::Event) + Send + Sync + 'static>,
+    ) -> Self {
+        self.event_callback = Some(callback);
+        self
+    }
+
+    /// Manually register an ingredient.
+    ///
+    /// Manual ingredient registration is necessary when the `inventory` feature is disabled.
+    pub fn ingredient<I: HasJar>(mut self) -> Self {
+        self.jars.push(ErasedJar::erase::<I>());
+        self
+    }
+
+    /// Construct the [`Storage`] using the provided builder options.
+    pub fn build(self) -> Storage<Db> {
+        Storage {
+            handle: StorageHandle::with_jars(self.event_callback, self.jars),
+            zalsa_local: ZalsaLocal::new(),
+        }
+    }
 }
 
 #[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety

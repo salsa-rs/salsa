@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that `PartialOrd` and `Ord` can be derived for tracked structs
 
 use salsa::{Database, DatabaseImpl};

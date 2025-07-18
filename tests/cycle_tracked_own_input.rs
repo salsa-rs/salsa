@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test for cycle handling where a tracked struct created in the first revision
 //! is stored in the final value of the cycle but isn't recreated in the second
 //! iteration of the creating query.

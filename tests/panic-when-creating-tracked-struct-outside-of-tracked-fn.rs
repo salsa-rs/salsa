@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that creating a tracked struct outside of a
 //! tracked function panics with an assert message.
 

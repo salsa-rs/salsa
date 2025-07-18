@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Accumulate values from within a tracked function.
 //! Then mutate the values so that the tracked function re-executes.
 //! Check that we accumulate the appropriate, new values.

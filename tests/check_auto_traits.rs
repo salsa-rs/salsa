@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that auto trait impls exist as expected.
 
 use std::panic::UnwindSafe;

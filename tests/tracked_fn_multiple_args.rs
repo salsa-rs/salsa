@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that a `tracked` fn on multiple salsa struct args
 //! compiles and executes successfully.
 

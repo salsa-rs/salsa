@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that the `constructor` macro overrides
 //! the `new` method's name and `get` and `set`
 //! change the name of the getter and setter of the fields.

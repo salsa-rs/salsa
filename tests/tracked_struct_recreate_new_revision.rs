@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that re-creating a `tracked` struct after it was deleted in a previous
 //! revision doesn't panic.
 #![allow(warnings)]

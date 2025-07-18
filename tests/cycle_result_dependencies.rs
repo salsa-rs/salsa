@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use salsa::{Database, Setter};
 
 #[salsa::input]

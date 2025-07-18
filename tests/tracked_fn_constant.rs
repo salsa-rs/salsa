@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that a constant `tracked` fn (has no inputs)
 //! compiles and executes successfully.
 #![allow(warnings)]

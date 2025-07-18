@@ -110,7 +110,7 @@ impl DbMacro {
         let trait_name = &input.ident;
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            fn zalsa_register_downcaster(&self);
+            fn zalsa_register_downcaster(&self) -> salsa::plumbing::DatabaseDownCaster<dyn #trait_name>;
         });
 
         let comment = format!(" Downcast a [`dyn Database`] to a [`dyn {trait_name}`]");
@@ -135,10 +135,11 @@ impl DbMacro {
         };
 
         input.items.push(parse_quote! {
+            #[cold]
+            #[inline(never)]
             #[doc(hidden)]
-            #[inline(always)]
-            fn zalsa_register_downcaster(&self)  {
-                salsa::plumbing::views(self).add(<Self as #TraitPath>::downcast);
+            fn zalsa_register_downcaster(&self) -> salsa::plumbing::DatabaseDownCaster<dyn #TraitPath> {
+                salsa::plumbing::views(self).add(<Self as #TraitPath>::downcast)
             }
         });
         input.items.push(parse_quote! {

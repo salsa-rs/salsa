@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test tracked struct output from a query in a cycle.
 mod common;
 use common::{HasLogger, LogDatabase, Logger};

@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test for a tracked struct where an untracked field has a
 //! very poorly chosen hash impl (always returns 0).
 //!

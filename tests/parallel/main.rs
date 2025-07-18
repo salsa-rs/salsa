@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 mod setup;
 mod signal;
 

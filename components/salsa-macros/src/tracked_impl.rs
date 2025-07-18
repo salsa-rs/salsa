@@ -99,7 +99,7 @@ impl Macro {
         });
 
         let InnerTrait = self.hygiene.ident("InnerTrait");
-        let inner_fn_name = self.hygiene.ident(&fn_item.sig.ident.to_string());
+        let inner_fn_name = self.hygiene.ident(fn_item.sig.ident.to_string());
 
         let AssociatedFunctionArguments {
             self_token,

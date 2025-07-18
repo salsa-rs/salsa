@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use expect_test::expect;
 
 #[salsa::input]

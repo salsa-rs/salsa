@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use std::hash::Hash;
 
 #[test]

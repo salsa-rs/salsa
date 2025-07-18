@@ -107,14 +107,23 @@ macro_rules! setup_tracked_struct {
             std::marker::PhantomData<fn() -> &$db_lt ()>
         );
 
-        #[allow(clippy::all)]
         #[allow(dead_code)]
+        #[allow(clippy::all)]
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::tracked_struct as $zalsa_struct;
             use $zalsa::Revision as $Revision;
 
             type $Configuration = $Struct<'static>;
+
+            impl<$db_lt> $zalsa::HasJar for $Struct<$db_lt> {
+                type Jar = $zalsa_struct::JarImpl<$Configuration>;
+                const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+            }
+
+            $zalsa::register_jar! {
+                $zalsa::ErasedJar::erase::<$Struct<'static>>()
+            }
 
             impl $zalsa_struct::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
@@ -188,7 +197,7 @@ macro_rules! setup_tracked_struct {
                         $zalsa::IngredientCache::new();
 
                     CACHE.get_or_create(zalsa, || {
-                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create()
+                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
                 }
             }
@@ -210,8 +219,8 @@ macro_rules! setup_tracked_struct {
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
                 type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
 
-                fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
-                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().get_or_create().into()
+                fn lookup_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                    aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
                 }
 
                 #[inline]

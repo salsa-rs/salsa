@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test a field whose `PartialEq` impl is always true.
 //! This can result in us getting different results than
 //! if we were to execute from scratch.

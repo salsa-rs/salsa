@@ -50,15 +50,23 @@ impl Hygiene {
     /// Generates an identifier similar to `text` but
     /// distinct from any identifiers that appear in the user's
     /// code.
-    pub(crate) fn ident(&self, text: &str) -> syn::Ident {
+    pub(crate) fn ident(&self, text: impl AsRef<str>) -> syn::Ident {
         // Make the default be `foo_` rather than `foo` -- this helps detect
         // cases where people wrote `foo` instead of `#foo` or `$foo` in the generated code.
-        let mut buffer = format!("{text}_");
+        let mut buffer = format!("{}_", text.as_ref());
 
         while self.user_tokens.contains(&buffer) {
             buffer.push('_');
         }
 
         syn::Ident::new(&buffer, proc_macro2::Span::call_site())
+    }
+
+    /// Generates an identifier similar to `text` but distinct from any identifiers
+    /// that appear in the user's code.
+    ///
+    /// The identifier must be unique relative to the `scope` identifier.
+    pub(crate) fn scoped_ident(&self, scope: &syn::Ident, text: &str) -> syn::Ident {
+        self.ident(format!("{scope}_{text}"))
     }
 }

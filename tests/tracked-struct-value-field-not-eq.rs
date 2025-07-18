@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test a field whose `PartialEq` impl is always true.
 //! This can our "last changed" data to be wrong
 //! but we *should* always reflect the final values.

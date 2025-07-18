@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test that a `tracked` fn with `Self` in its signature or body on a `salsa::input`
 //! compiles and executes successfully.
 #![allow(warnings)]

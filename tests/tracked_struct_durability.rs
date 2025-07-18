@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 /// Test that high durabilities can't cause "access tracked struct from previous revision" panic.
 ///
 /// The test models a situation where we have two File inputs (0, 1), where `File(0)` has LOW

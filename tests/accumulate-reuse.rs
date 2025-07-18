@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Accumulator re-use test.
 //!
 //! Tests behavior when a query's only inputs

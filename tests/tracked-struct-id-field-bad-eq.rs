@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test an id field whose `PartialEq` impl is always true.
 
 use salsa::{Database, Setter};

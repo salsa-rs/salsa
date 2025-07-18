@@ -3,6 +3,7 @@ use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
+use std::sync::OnceLock;
 pub(crate) use sync::SyncGuard;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
@@ -129,7 +130,7 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// The supplied database must be be the same as the database used to construct the [`Views`]
     /// instances that this downcaster was derived from.
-    view_caster: DatabaseDownCaster<C::DbView>,
+    view_caster: OnceLock<DatabaseDownCaster<C::DbView>>,
 
     sync_table: SyncTable,
 
@@ -156,16 +157,28 @@ where
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
-        view_caster: DatabaseDownCaster<C::DbView>,
     ) -> Self {
         Self {
             index,
             memo_ingredient_indices,
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
-            view_caster,
+            view_caster: OnceLock::new(),
             sync_table: SyncTable::new(index),
         }
+    }
+
+    /// Set the view-caster for this tracked function ingredient, if it has
+    /// not already been initialized.
+    #[inline]
+    pub fn get_or_init(
+        &self,
+        view_caster: impl FnOnce() -> DatabaseDownCaster<C::DbView>,
+    ) -> &Self {
+        // Note that we must set this lazily as we don't have access to the database
+        // type when ingredients are registered into the `Zalsa`.
+        self.view_caster.get_or_init(view_caster);
+        self
     }
 
     #[inline]
@@ -226,6 +239,12 @@ where
     fn memo_ingredient_index(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
         self.memo_ingredient_indices.get_zalsa_id(zalsa, id)
     }
+
+    fn view_caster(&self) -> &DatabaseDownCaster<C::DbView> {
+        self.view_caster
+            .get()
+            .expect("tracked function ingredients cannot be accessed before calling `init`")
+    }
 }
 
 impl<C> Ingredient for IngredientImpl<C>
@@ -248,7 +267,7 @@ where
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
-        let db = unsafe { self.view_caster.downcast_unchecked(db) };
+        let db = unsafe { self.view_caster().downcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
@@ -339,7 +358,11 @@ where
         C::DEBUG_NAME
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        unreachable!("function does not allocate pages")
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("function does not allocate pages")
     }
 
@@ -352,7 +375,7 @@ where
         db: &'db dyn Database,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        let db = self.view_caster.downcast(db);
+        let db = self.view_caster().downcast(db);
         self.accumulated_map(db, key_index)
     }
 }

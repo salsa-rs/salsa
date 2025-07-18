@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 use expect_test::expect;
 use salsa::{Backtrace, Database, DatabaseImpl};
 use test_log::test;
@@ -71,15 +73,15 @@ fn backtrace_works() {
     expect![[r#"
         query stacktrace:
            0: query_e(Id(0))
-                     at tests/backtrace.rs:30
+                     at tests/backtrace.rs:32
            1: query_d(Id(0))
-                     at tests/backtrace.rs:25
+                     at tests/backtrace.rs:27
            2: query_c(Id(0))
-                     at tests/backtrace.rs:20
+                     at tests/backtrace.rs:22
            3: query_b(Id(0))
-                     at tests/backtrace.rs:15
+                     at tests/backtrace.rs:17
            4: query_a(Id(0))
-                     at tests/backtrace.rs:10
+                     at tests/backtrace.rs:12
     "#]]
     .assert_eq(&backtrace);
 
@@ -87,15 +89,15 @@ fn backtrace_works() {
     expect![[r#"
         query stacktrace:
            0: query_e(Id(1)) -> (R1, Durability::LOW)
-                     at tests/backtrace.rs:30
+                     at tests/backtrace.rs:32
            1: query_d(Id(1)) -> (R1, Durability::HIGH)
-                     at tests/backtrace.rs:25
+                     at tests/backtrace.rs:27
            2: query_c(Id(1)) -> (R1, Durability::HIGH)
-                     at tests/backtrace.rs:20
+                     at tests/backtrace.rs:22
            3: query_b(Id(1)) -> (R1, Durability::HIGH)
-                     at tests/backtrace.rs:15
+                     at tests/backtrace.rs:17
            4: query_a(Id(1)) -> (R1, Durability::HIGH)
-                     at tests/backtrace.rs:10
+                     at tests/backtrace.rs:12
     "#]]
     .assert_eq(&backtrace);
 
@@ -103,12 +105,12 @@ fn backtrace_works() {
     expect![[r#"
         query stacktrace:
            0: query_e(Id(2))
-                     at tests/backtrace.rs:30
+                     at tests/backtrace.rs:32
            1: query_cycle(Id(2))
-                     at tests/backtrace.rs:43
+                     at tests/backtrace.rs:45
                      cycle heads: query_cycle(Id(2)) -> IterationCount(0)
            2: query_f(Id(2))
-                     at tests/backtrace.rs:38
+                     at tests/backtrace.rs:40
     "#]]
     .assert_eq(&backtrace);
 
@@ -116,12 +118,12 @@ fn backtrace_works() {
     expect![[r#"
         query stacktrace:
            0: query_e(Id(3)) -> (R1, Durability::LOW)
-                     at tests/backtrace.rs:30
+                     at tests/backtrace.rs:32
            1: query_cycle(Id(3)) -> (R1, Durability::HIGH, iteration = IterationCount(0))
-                     at tests/backtrace.rs:43
+                     at tests/backtrace.rs:45
                      cycle heads: query_cycle(Id(3)) -> IterationCount(0)
            2: query_f(Id(3)) -> (R1, Durability::HIGH)
-                     at tests/backtrace.rs:38
+                     at tests/backtrace.rs:40
     "#]]
     .assert_eq(&backtrace);
 }

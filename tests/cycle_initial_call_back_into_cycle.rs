@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Calling back into the same cycle from your cycle initial function will trigger another cycle.
 
 #[salsa::tracked]

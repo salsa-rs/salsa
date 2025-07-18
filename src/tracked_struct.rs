@@ -110,9 +110,8 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        _zalsa: &Zalsa,
+        _zalsa: &mut Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
-        _dependencies: crate::memo_ingredient_indices::IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
@@ -444,7 +443,7 @@ where
             // lifetime erase for storage
             fields: unsafe { mem::transmute::<C::Fields<'db>, C::Fields<'static>>(fields) },
             revisions: C::new_revisions(current_deps.changed_at),
-            memos: Default::default(),
+            memos: MemoTable::new(self.memo_table_types()),
         };
 
         while let Some(id) = self.free_list.pop() {
@@ -601,11 +600,11 @@ where
             // Note that we hold the lock and have exclusive access to the tracked struct data,
             // so there should be no live instances of IDs from the previous generation. We clear
             // the memos and return a new ID here as if we have allocated a new slot.
-            let mut table = data.take_memo_table();
+            let memo_table = data.memo_table_mut();
 
             // SAFETY: The memo table belongs to a value that we allocated, so it has the
             // correct type.
-            unsafe { self.clear_memos(zalsa, &mut table, id) };
+            unsafe { self.clear_memos(zalsa, memo_table, id) };
 
             id = id
                 .next_generation()
@@ -674,11 +673,11 @@ where
 
         // SAFETY: We have acquired the write lock
         let data = unsafe { &mut *data_raw };
-        let mut memo_table = data.take_memo_table();
+        let memo_table = data.memo_table_mut();
 
         // SAFETY: The memo table belongs to a value that we allocated, so it
         // has the correct type.
-        unsafe { self.clear_memos(zalsa, &mut memo_table, id) };
+        unsafe { self.clear_memos(zalsa, memo_table, id) };
 
         // now that all cleanup has occurred, make available for re-use
         self.free_list.push(id);
@@ -724,6 +723,9 @@ where
         };
 
         mem::forget(table_guard);
+
+        // Reset the table after having dropped any memos.
+        memo_table.reset();
     }
 
     /// Return reference to the field data ignoring dependency tracking.
@@ -849,8 +851,12 @@ where
         C::DEBUG_NAME
     }
 
-    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
-        self.memo_table_types.clone()
+    fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
+        &self.memo_table_types
+    }
+
+    fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
+        &mut self.memo_table_types
     }
 
     /// Returns memory usage information about any tracked structs.
@@ -891,13 +897,12 @@ where
         unsafe { mem::transmute::<&C::Fields<'static>, &C::Fields<'_>>(&self.fields) }
     }
 
-    fn take_memo_table(&mut self) -> MemoTable {
+    fn memo_table_mut(&mut self) -> &mut MemoTable {
         // This fn is only called after `updated_at` has been set to `None`;
         // this ensures that there is no concurrent access
         // (and that the `&mut self` is accurate...).
         assert!(self.updated_at.load().is_none());
-
-        mem::take(&mut self.memos)
+        &mut self.memos
     }
 
     fn read_lock(&self, current_revision: Revision) {
