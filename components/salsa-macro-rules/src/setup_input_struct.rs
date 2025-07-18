@@ -109,9 +109,13 @@ macro_rules! setup_input_struct {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
 
-                    CACHE.get_or_create(zalsa, || {
-                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
-                    })
+                    // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
+                    // ingredient created by our jar is the struct ingredient.
+                    unsafe {
+                        CACHE.get_or_create(zalsa, || {
+                            zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
+                        })
+                    }
                 }
 
                 pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime) {
