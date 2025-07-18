@@ -177,7 +177,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 }
 
 impl dyn Ingredient {
-    /// Equivalent to the `downcast` methods on `any`.
+    /// Equivalent to the `downcast` method on `Any`.
+    ///
     /// Because we do not have dyn-upcasting support, we need this workaround.
     pub fn assert_type<T: Any>(&self) -> &T {
         assert_eq!(
@@ -192,7 +193,27 @@ impl dyn Ingredient {
         unsafe { transmute_data_ptr(self) }
     }
 
-    /// Equivalent to the `downcast` methods on `any`.
+    /// Equivalent to the `downcast` methods on `Any`.
+    ///
+    /// Because we do not have dyn-upcasting support, we need this workaround.
+    ///
+    /// # Safety
+    ///
+    /// The contained value must be of type `T`.
+    pub unsafe fn assert_type_unchecked<T: Any>(&self) -> &T {
+        debug_assert_eq!(
+            self.type_id(),
+            TypeId::of::<T>(),
+            "ingredient `{self:?}` is not of type `{}`",
+            std::any::type_name::<T>()
+        );
+
+        // SAFETY: Guaranteed by caller.
+        unsafe { transmute_data_ptr(self) }
+    }
+
+    /// Equivalent to the `downcast` method on `Any`.
+    ///
     /// Because we do not have dyn-upcasting support, we need this workaround.
     pub fn assert_type_mut<T: Any>(&mut self) -> &mut T {
         assert_eq!(

@@ -754,7 +754,11 @@ impl QueryOrigin {
             QueryOriginKind::Assigned => {
                 // SAFETY: `data.index` is initialized when the tag is `QueryOriginKind::Assigned`.
                 let index = unsafe { self.data.index };
-                let ingredient_index = IngredientIndex::from(self.metadata);
+
+                // SAFETY: `metadata` is initialized from a valid `IngredientIndex` when the tag
+                // is `QueryOriginKind::Assigned`.
+                let ingredient_index = unsafe { IngredientIndex::new_unchecked(self.metadata) };
+
                 QueryOriginRef::Assigned(DatabaseKeyIndex::new(ingredient_index, index))
             }
 

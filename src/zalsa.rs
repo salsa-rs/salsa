@@ -80,14 +80,18 @@ impl IngredientIndex {
     const MAX_INDEX: u32 = 0x7FFF_FFFF;
 
     /// Create an ingredient index from a `u32`.
-    pub(crate) fn from(v: u32) -> Self {
+    pub(crate) fn new(v: u32) -> Self {
         assert!(v <= Self::MAX_INDEX);
         Self(v)
     }
 
     /// Create an ingredient index from a `u32`, without performing validating
     /// that the index is valid.
-    pub(crate) fn from_unchecked(v: u32) -> Self {
+    ///
+    /// # Safety
+    ///
+    /// The index must be less than or equal to `IngredientIndex::MAX_INDEX`.
+    pub(crate) unsafe fn new_unchecked(v: u32) -> Self {
         Self(v)
     }
 
@@ -236,6 +240,7 @@ impl Zalsa {
         unsafe { table.memos(id, self.current_revision()) }
     }
 
+    /// Returns the ingredient at the given index, or panics if it is out-of-bounds.
     #[inline]
     pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
         let index = index.as_u32() as usize;
@@ -243,6 +248,19 @@ impl Zalsa {
             .get(index)
             .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
             .as_ref()
+    }
+
+    /// Returns the ingredient at the given index.
+    ///
+    /// # Safety
+    ///
+    /// The index must be in-bounds.
+    #[inline]
+    pub unsafe fn lookup_ingredient_unchecked(&self, index: IngredientIndex) -> &dyn Ingredient {
+        let index = index.as_u32() as usize;
+
+        // SAFETY: Guaranteed by caller.
+        unsafe { self.ingredients_vec.get_unchecked(index).as_ref() }
     }
 
     pub(crate) fn ingredient_index_for_memo(
@@ -331,7 +349,7 @@ impl Zalsa {
     fn insert_jar(&mut self, jar: ErasedJar) {
         let jar_type_id = (jar.type_id)();
 
-        let index = IngredientIndex::from(self.ingredients_vec.len() as u32);
+        let index = IngredientIndex::new(self.ingredients_vec.len() as u32);
 
         if self.jar_map.contains_key(&jar_type_id) {
             return;

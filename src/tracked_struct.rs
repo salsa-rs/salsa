@@ -976,19 +976,19 @@ mod tests {
         let mut d = DisambiguatorMap::default();
         // set up all 4 permutations of differing field values
         let h1 = IdentityHash {
-            ingredient_index: IngredientIndex::from(0),
+            ingredient_index: IngredientIndex::new(0),
             hash: 0,
         };
         let h2 = IdentityHash {
-            ingredient_index: IngredientIndex::from(1),
+            ingredient_index: IngredientIndex::new(1),
             hash: 0,
         };
         let h3 = IdentityHash {
-            ingredient_index: IngredientIndex::from(0),
+            ingredient_index: IngredientIndex::new(0),
             hash: 1,
         };
         let h4 = IdentityHash {
-            ingredient_index: IngredientIndex::from(1),
+            ingredient_index: IngredientIndex::new(1),
             hash: 1,
         };
         assert_eq!(d.disambiguate(h1), Disambiguator(0));
@@ -1006,42 +1006,42 @@ mod tests {
         let mut d = IdentityMap::default();
         // set up all 8 permutations of differing field values
         let i1 = Identity {
-            ingredient_index: IngredientIndex::from(0),
+            ingredient_index: IngredientIndex::new(0),
             hash: 0,
             disambiguator: Disambiguator(0),
         };
         let i2 = Identity {
-            ingredient_index: IngredientIndex::from(1),
+            ingredient_index: IngredientIndex::new(1),
             hash: 0,
             disambiguator: Disambiguator(0),
         };
         let i3 = Identity {
-            ingredient_index: IngredientIndex::from(0),
+            ingredient_index: IngredientIndex::new(0),
             hash: 1,
             disambiguator: Disambiguator(0),
         };
         let i4 = Identity {
-            ingredient_index: IngredientIndex::from(1),
+            ingredient_index: IngredientIndex::new(1),
             hash: 1,
             disambiguator: Disambiguator(0),
         };
         let i5 = Identity {
-            ingredient_index: IngredientIndex::from(0),
+            ingredient_index: IngredientIndex::new(0),
             hash: 0,
             disambiguator: Disambiguator(1),
         };
         let i6 = Identity {
-            ingredient_index: IngredientIndex::from(1),
+            ingredient_index: IngredientIndex::new(1),
             hash: 0,
             disambiguator: Disambiguator(1),
         };
         let i7 = Identity {
-            ingredient_index: IngredientIndex::from(0),
+            ingredient_index: IngredientIndex::new(0),
             hash: 1,
             disambiguator: Disambiguator(1),
         };
         let i8 = Identity {
-            ingredient_index: IngredientIndex::from(1),
+            ingredient_index: IngredientIndex::new(1),
             hash: 1,
             disambiguator: Disambiguator(1),
         };

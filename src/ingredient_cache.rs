@@ -47,7 +47,12 @@ mod imp {
         /// Get a reference to the ingredient in the database.
         ///
         /// If the ingredient index is not already in the cache, it will be loaded and cached.
-        pub fn get_or_create<'db>(
+        ///
+        /// # Safety
+        ///
+        /// The `IngredientIndex` returned by the closure must reference a valid ingredient of
+        /// type `I` in the provided zalsa database.
+        pub unsafe fn get_or_create<'db>(
             &self,
             zalsa: &'db Zalsa,
             load_index: impl Fn() -> IngredientIndex,
@@ -57,9 +62,21 @@ mod imp {
                 ingredient_index = self.get_or_create_index_slow(load_index).as_u32();
             };
 
-            zalsa
-                .lookup_ingredient(IngredientIndex::from_unchecked(ingredient_index))
-                .assert_type()
+            // SAFETY: `ingredient_index` is initialized from a valid `IngredientIndex`.
+            let ingredient_index = unsafe { IngredientIndex::new_unchecked(ingredient_index) };
+
+            // SAFETY: There are a two cases here:
+            // - The `create_index` closure was called due to the data being uncached. In this
+            //   case, the caller guarantees the index is in-bounds and has the correct type.
+            // - The index was cached. While the current database might not be the same database
+            //   the ingredient was initially loaded from, the `inventory` feature is enabled, so
+            //   ingredient indices are stable across databases. Thus the index is still in-bounds
+            //   and has the correct type.
+            unsafe {
+                zalsa
+                    .lookup_ingredient_unchecked(ingredient_index)
+                    .assert_type_unchecked()
+            }
         }
 
         #[cold]
@@ -134,14 +151,30 @@ mod imp {
         /// Get a reference to the ingredient in the database.
         ///
         /// If the ingredient is not already in the cache, it will be created.
+        ///
+        /// # Safety
+        ///
+        /// The `IngredientIndex` returned by the closure must reference a valid ingredient of
+        /// type `I` in the provided zalsa database.
         #[inline(always)]
-        pub fn get_or_create<'db>(
+        pub unsafe fn get_or_create<'db>(
             &self,
             zalsa: &'db Zalsa,
             create_index: impl Fn() -> IngredientIndex,
         ) -> &'db I {
             let index = self.get_or_create_index(zalsa, create_index);
-            zalsa.lookup_ingredient(index).assert_type::<I>()
+
+            // SAFETY: There are a two cases here:
+            // - The `create_index` closure was called due to the data being uncached for the
+            //   provided database. In this case, the caller guarantees the index is in-bounds
+            //   and has the correct type.
+            // - We verified the index was cached for the same database, by the nonce check.
+            //   Thus the initial safety argument still applies.
+            unsafe {
+                zalsa
+                    .lookup_ingredient_unchecked(index)
+                    .assert_type_unchecked::<I>()
+            }
         }
 
         pub fn get_or_create_index(
@@ -159,7 +192,9 @@ mod imp {
             };
 
             // Unpack our `u64` into the nonce and index.
-            let index = IngredientIndex::from_unchecked(cached_data as u32);
+            //
+            // SAFETY: The lower bits of `cached_data` are initialized from a valid `IngredientIndex`.
+            let index = unsafe { IngredientIndex::new_unchecked(cached_data as u32) };
 
             // SAFETY: We've checked against `UNINITIALIZED` (0) above and so the upper bits must be non-zero.
             let nonce = crate::nonce::Nonce::<StorageNonce>::from_u32(unsafe {
