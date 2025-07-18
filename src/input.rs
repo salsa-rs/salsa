@@ -116,7 +116,9 @@ impl<C: Configuration> IngredientImpl<C> {
                 fields,
                 revisions,
                 durabilities,
-                memos: MemoTable::new(self.memo_table_types()),
+                // SAFETY: We only ever access the memos of a value that we allocated through
+                // our `MemoTableTypes`.
+                memos: unsafe { MemoTable::new(self.memo_table_types()) },
             })
         });
 

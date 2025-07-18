@@ -586,7 +586,9 @@ where
         let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
             shard: shard_index as u16,
             link: LinkedListLink::new(),
-            memos: UnsafeCell::new(MemoTable::new(self.memo_table_types())),
+            // SAFETY: We only ever access the memos of a value that we allocated through
+            // our `MemoTableTypes`.
+            memos: UnsafeCell::new(unsafe { MemoTable::new(self.memo_table_types()) }),
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
             fields: UnsafeCell::new(unsafe { self.to_internal_data(assemble(id, key)) }),
             shared: UnsafeCell::new(ValueShared {
