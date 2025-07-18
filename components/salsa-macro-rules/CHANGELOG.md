@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.23.0...salsa-macro-rules-v0.23.1) - 2025-07-18
+
+### Fixed
+
+- Fix phantom data usage in salsa structs affecting auto traits ([#932](https://github.com/salsa-rs/salsa/pull/932))
+
+### Other
+
+- Use `inventory` for static ingredient registration ([#934](https://github.com/salsa-rs/salsa/pull/934))
+
 ## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.22.0...salsa-macro-rules-v0.23.0) - 2025-06-27
 
 ### Added
