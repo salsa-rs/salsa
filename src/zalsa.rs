@@ -7,7 +7,6 @@ use rustc_hash::FxHashMap;
 
 use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
-use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
@@ -60,10 +59,12 @@ pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
 }
 /// Nonce type representing the underlying database storage.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(not(feature = "inventory"))]
 pub struct StorageNonce;
 
 // Generator for storage nonces.
-static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
+#[cfg(not(feature = "inventory"))]
+static NONCE: crate::nonce::NonceGenerator<StorageNonce> = crate::nonce::NonceGenerator::new();
 
 /// An ingredient index identifies a particular [`Ingredient`] in the database.
 ///
@@ -135,7 +136,8 @@ impl MemoIngredientIndex {
 pub struct Zalsa {
     views_of: Views,
 
-    nonce: Nonce<StorageNonce>,
+    #[cfg(not(feature = "inventory"))]
+    nonce: crate::nonce::Nonce<StorageNonce>,
 
     /// Map from the [`IngredientIndex::as_usize`][] of a salsa struct to a list of
     /// [ingredient-indices](`IngredientIndex`) for tracked functions that have this salsa struct
@@ -177,7 +179,6 @@ impl Zalsa {
     ) -> Self {
         let mut zalsa = Self {
             views_of: Views::new::<Db>(),
-            nonce: NONCE.nonce(),
             jar_map: HashMap::default(),
             ingredient_to_id_struct_type_id_map: Default::default(),
             ingredients_vec: Vec::new(),
@@ -185,6 +186,8 @@ impl Zalsa {
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
             event_callback,
+            #[cfg(not(feature = "inventory"))]
+            nonce: NONCE.nonce(),
         };
 
         // Collect and initialize all registered ingredients.
@@ -207,7 +210,8 @@ impl Zalsa {
         zalsa
     }
 
-    pub(crate) fn nonce(&self) -> Nonce<StorageNonce> {
+    #[cfg(not(feature = "inventory"))]
+    pub(crate) fn nonce(&self) -> crate::nonce::Nonce<StorageNonce> {
         self.nonce
     }
 

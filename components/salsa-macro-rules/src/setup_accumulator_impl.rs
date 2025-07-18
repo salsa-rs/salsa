@@ -31,13 +31,11 @@ macro_rules! setup_accumulator_impl {
             }
 
             fn $ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<$Struct> {
-                static $CACHE: $zalsa::GlobalIngredientCache<
-                    $zalsa_struct::IngredientImpl<$Struct>,
-                > = $zalsa::GlobalIngredientCache::new();
+                static $CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Struct>> =
+                    $zalsa::IngredientCache::new();
 
                 $CACHE.get_or_create(zalsa, || {
-                    let index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>();
-                    (index, zalsa.lookup_ingredient(index).assert_type())
+                    zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
                 })
             }
 

@@ -19,9 +19,6 @@ mod input;
 mod interned;
 mod key;
 mod memo_ingredient_indices;
-mod nonce;
-#[cfg(feature = "rayon")]
-mod parallel;
 mod return_mode;
 mod revision;
 mod runtime;
@@ -34,6 +31,12 @@ mod update;
 mod views;
 mod zalsa;
 mod zalsa_local;
+
+#[cfg(not(feature = "inventory"))]
+mod nonce;
+
+#[cfg(feature = "rayon")]
+mod parallel;
 
 #[cfg(feature = "rayon")]
 pub use parallel::{join, par_map};
@@ -91,7 +94,7 @@ pub mod plumbing {
     pub use crate::durability::Durability;
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
     pub use crate::ingredient::{Ingredient, Jar, Location};
-    pub use crate::ingredient_cache::{GlobalIngredientCache, IngredientCache};
+    pub use crate::ingredient_cache::IngredientCache;
     pub use crate::key::DatabaseKeyIndex;
     pub use crate::memo_ingredient_indices::{
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,

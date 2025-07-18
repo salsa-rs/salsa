@@ -168,22 +168,17 @@ where
         }
     }
 
-    /// Initialize the view-caster for this tracked function ingredient.
-    ///
-    /// This function must be called before the ingredient is accessed.
-    #[cold]
-    #[inline(never)]
-    pub fn init(&self, view_caster: DatabaseDownCaster<C::DbView>) -> &Self {
+    /// Set the view-caster for this tracked function ingredient, if it has
+    /// not already been initialized.
+    #[inline]
+    pub fn get_or_init(
+        &self,
+        view_caster: impl FnOnce() -> DatabaseDownCaster<C::DbView>,
+    ) -> &Self {
         // Note that we must set this lazily as we don't have access to the database
         // type when ingredients are registered into the `Zalsa`.
-        let _ = self.view_caster.set(view_caster);
+        self.view_caster.get_or_init(view_caster);
         self
-    }
-
-    /// Returns `true` if [`Self::init`] has already been called.
-    #[inline]
-    pub fn is_initialized(&self) -> bool {
-        self.view_caster.get().is_some()
     }
 
     #[inline]

@@ -112,8 +112,8 @@ macro_rules! setup_tracked_fn {
                         std::marker::PhantomData<fn() -> &$db_lt ()>,
                     );
 
-                    static $INTERN_CACHE: $zalsa::GlobalIngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
-                        $zalsa::GlobalIngredientCache::new();
+                    static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
+                        $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
@@ -165,22 +165,9 @@ macro_rules! setup_tracked_fn {
             impl $Configuration {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     let zalsa = db.zalsa();
-                    $FN_CACHE.get_or_create(zalsa, || {
-                        let index = zalsa.lookup_jar_by_type::<$fn_name>();
-
-                        let ingredient = zalsa.lookup_ingredient(index)
-                            .assert_type::<$zalsa::function::IngredientImpl<$Configuration>>();
-
-                        // If the ingredient has already been initialized, we know that the downcaster
-                        // has also been registered. This is a fast-path for multi-database use cases
-                        // that bypass the ingredient cache and will always execute this closure.
-                        if ingredient.is_initialized() {
-                            return (index, ingredient);
-                        }
-
-                        let view = <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                        (index, ingredient.init(view))
-                    })
+                    $FN_CACHE
+                        .get_or_create(zalsa, || zalsa.lookup_jar_by_type::<$fn_name>())
+                        .get_or_init(|| <dyn $Db as $Db>::zalsa_register_downcaster(db))
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
@@ -189,7 +176,7 @@ macro_rules! setup_tracked_fn {
                     let index = zalsa_mut.lookup_jar_by_type::<$fn_name>();
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa::function::IngredientImpl<Self>>();
-                    ingredient.init(view);
+                    ingredient.get_or_init(|| view);
                     ingredient
                 }
 
@@ -199,8 +186,7 @@ macro_rules! setup_tracked_fn {
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
                         $INTERN_CACHE.get_or_create(zalsa, || {
-                            let index = zalsa.lookup_jar_by_type::<$fn_name>().successor(0);
-                            (index, zalsa.lookup_ingredient(index).assert_type())
+                            zalsa.lookup_jar_by_type::<$fn_name>().successor(0)
                         })
                     }
                 }

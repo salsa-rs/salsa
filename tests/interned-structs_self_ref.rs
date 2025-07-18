@@ -95,14 +95,12 @@ const _: () = {
         where
             Db: ?Sized + zalsa_::Database,
         {
-            static CACHE: zalsa_::GlobalIngredientCache<
-                zalsa_struct_::IngredientImpl<Configuration_>,
-            > = zalsa_::GlobalIngredientCache::new();
+            static CACHE: zalsa_::IngredientCache<zalsa_struct_::IngredientImpl<Configuration_>> =
+                zalsa_::IngredientCache::new();
 
             let zalsa = db.zalsa();
             CACHE.get_or_create(zalsa, || {
-                let index = zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>();
-                (index, zalsa.lookup_ingredient(index).assert_type())
+                zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
             })
         }
     }
