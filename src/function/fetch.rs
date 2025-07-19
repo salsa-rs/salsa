@@ -19,6 +19,7 @@ where
         let _span = tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
 
