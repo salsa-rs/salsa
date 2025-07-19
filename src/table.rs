@@ -383,13 +383,10 @@ impl Page {
 
     #[inline]
     fn assert_type<T: Slot>(&self) -> PageView<'_, T> {
-        assert_eq!(
-            self.slot_type_id,
-            TypeId::of::<T>(),
-            "page has slot type `{:?}` but `{:?}` was expected",
-            self.slot_type_name,
-            std::any::type_name::<T>(),
-        );
+        if self.slot_type_id != TypeId::of::<T>() {
+            type_assert_failed::<T>(self);
+        }
+
         PageView(self, PhantomData)
     }
 
@@ -401,6 +398,17 @@ impl Page {
             None
         }
     }
+}
+
+/// This function is explicitly outlined to avoid debug machinery in the hot-path.
+#[cold]
+#[inline(never)]
+fn type_assert_failed<T: 'static>(page: &Page) -> ! {
+    panic!(
+        "page has slot type `{:?}` but `{:?}` was expected",
+        page.slot_type_name,
+        std::any::type_name::<T>(),
+    )
 }
 
 impl Drop for Page {
