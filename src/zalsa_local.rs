@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 
@@ -33,14 +33,14 @@ pub struct ZalsaLocal {
 
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
-    most_recent_pages: RefCell<FxHashMap<IngredientIndex, PageIndex>>,
+    most_recent_pages: UnsafeCell<FxHashMap<IngredientIndex, PageIndex>>,
 }
 
 impl ZalsaLocal {
     pub(crate) fn new() -> Self {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
-            most_recent_pages: RefCell::new(FxHashMap::default()),
+            most_recent_pages: UnsafeCell::new(FxHashMap::default()),
         }
     }
 
@@ -66,16 +66,16 @@ impl ZalsaLocal {
                 .memo_table_types()
                 .clone()
         };
+
+        // SAFETY: todo
+        let most_recent_pages = unsafe { &mut *self.most_recent_pages.get() };
+
         // Find the most recent page, pushing a page if needed
-        let mut page = *self
-            .most_recent_pages
-            .borrow_mut()
-            .entry(ingredient)
-            .or_insert_with(|| {
-                zalsa
-                    .table()
-                    .fetch_or_push_page::<T>(ingredient, memo_types)
-            });
+        let mut page = *most_recent_pages.entry(ingredient).or_insert_with(|| {
+            zalsa
+                .table()
+                .fetch_or_push_page::<T>(ingredient, memo_types)
+        });
 
         loop {
             // Try to allocate an entry on that page
@@ -90,7 +90,7 @@ impl ZalsaLocal {
                 Err(v) => {
                     value = v;
                     page = zalsa.table().push_page::<T>(ingredient, memo_types());
-                    self.most_recent_pages.borrow_mut().insert(ingredient, page);
+                    most_recent_pages.insert(ingredient, page);
                 }
             }
         }
@@ -102,14 +102,16 @@ impl ZalsaLocal {
         database_key_index: DatabaseKeyIndex,
         iteration_count: IterationCount,
     ) -> ActiveQueryGuard<'_> {
-        let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push_new_query(database_key_index, iteration_count);
-        ActiveQueryGuard {
-            local_state: self,
-            database_key_index,
-            #[cfg(debug_assertions)]
-            push_len: query_stack.len(),
-        }
+        self.with_query_stack_mut(|stack| {
+            stack.push_new_query(database_key_index, iteration_count);
+
+            ActiveQueryGuard {
+                local_state: self,
+                database_key_index,
+                #[cfg(debug_assertions)]
+                push_len: stack.len(),
+            }
+        })
     }
 
     /// Executes a closure within the context of the current active query stacks (mutable).
@@ -118,12 +120,14 @@ impl ZalsaLocal {
         &self,
         c: impl UnwindSafe + FnOnce(&mut QueryStack) -> R,
     ) -> R {
-        c(&mut self.query_stack.borrow_mut())
+        // SAFETY: todo
+        unsafe { c(&mut self.query_stack.try_borrow_mut().unwrap_unchecked()) }
     }
 
     #[inline(always)]
     pub(crate) fn with_query_stack<R>(&self, c: impl UnwindSafe + FnOnce(&QueryStack) -> R) -> R {
-        c(&mut self.query_stack.borrow())
+        // SAFETY: todo
+        unsafe { c(&mut self.query_stack.try_borrow().unwrap_unchecked()) }
     }
 
     #[inline(always)]
