@@ -170,6 +170,16 @@ macro_rules! setup_input_struct {
                         $zalsa::None
                     }
                 }
+
+                #[inline]
+                unsafe fn memo_table(
+                    zalsa: &$zalsa::Zalsa,
+                    id: $zalsa::Id,
+                    current_revision: $zalsa::Revision,
+                ) -> $zalsa::MemoTableWithTypes<'_> {
+                    // SAFETY: Guaranteed by caller.
+                    unsafe { zalsa.table().memos::<$zalsa_struct::Value<$Configuration>>(id, current_revision) }
+                }
             }
 
             impl $Struct {

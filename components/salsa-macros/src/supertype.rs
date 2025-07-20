@@ -89,6 +89,19 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
                     None
                 }
             }
+
+            #[inline]
+            unsafe fn memo_table(
+                zalsa: &zalsa::Zalsa,
+                id: zalsa::Id,
+                current_revision: zalsa::Revision,
+            ) -> zalsa::MemoTableWithTypes<'_> {
+                // Note that we need to use `dyn_memos` here, as the `Id` could map to any variant
+                // of the supertype enum.
+                //
+                // SAFETY: Guaranteed by caller.
+                unsafe { zalsa.table().dyn_memos(id, current_revision) }
+            }
         }
     };
 

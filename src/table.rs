@@ -34,7 +34,7 @@ pub struct Table {
 ///
 /// Implementors of this trait need to make sure that their type is unique with respect to
 /// their owning ingredient as the allocation strategy relies on this.
-pub(crate) unsafe trait Slot: Any + Send + Sync {
+pub unsafe trait Slot: Any + Send + Sync {
     /// Access the [`MemoTable`][] for this slot.
     ///
     /// # Safety condition
@@ -220,17 +220,42 @@ impl Table {
         PageIndex::new(self.pages.push(Page::new::<T>(ingredient, memo_types)))
     }
 
-    /// Get the memo table associated with `id`
+    /// Get the memo table associated with `id` for the concrete type `T`.
     ///
-    /// # Safety condition
+    /// # Safety
     ///
-    /// The parameter `current_revision` MUST be the current revision
-    /// of the owner of database owning this table.
-    pub(crate) unsafe fn memos(
+    /// The parameter `current_revision` must be the current revision of the owner of database
+    /// owning this table.
+    ///
+    /// # Panics
+    ///
+    /// If `page` is out of bounds or the type `T` is incorrect.
+    pub unsafe fn memos<T: Slot>(
         &self,
         id: Id,
         current_revision: Revision,
     ) -> MemoTableWithTypes<'_> {
+        let (page, slot) = split_id(id);
+        let page = self.pages[page.0].assert_type::<T>();
+        let slot = &page.data()[slot.0];
+
+        // SAFETY: The caller is required to pass the `current_revision`.
+        let memos = unsafe { slot.memos(current_revision) };
+
+        // SAFETY: The `Page` keeps the correct memo types.
+        unsafe { page.0.memo_types.attach_memos(memos) }
+    }
+
+    /// Get the memo table associated with `id`.
+    ///
+    /// Unlike `Table::memos`, this does not require a concrete type, and instead uses dynamic
+    /// dispatch.
+    ///
+    /// # Safety
+    ///
+    /// The parameter `current_revision` must be the current revision of the owner of database
+    /// owning this table.
+    pub unsafe fn dyn_memos(&self, id: Id, current_revision: Revision) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
         let page = &self.pages[page.0];
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
@@ -373,6 +398,7 @@ impl Page {
             slot.0 < len,
             "out of bounds access `{slot:?}` (maximum slot `{len}`)"
         );
+
         // SAFETY: We have checked that the resulting pointer will be within bounds.
         unsafe {
             self.data

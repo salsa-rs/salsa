@@ -130,6 +130,16 @@ macro_rules! setup_tracked_fn {
                                 None
                             }
                         }
+
+                        #[inline]
+                        unsafe fn memo_table(
+                            zalsa: &$zalsa::Zalsa,
+                            id: $zalsa::Id,
+                            current_revision: $zalsa::Revision,
+                        ) -> $zalsa::MemoTableWithTypes<'_> {
+                            // SAFETY: Guaranteed by caller.
+                            unsafe { zalsa.table().memos::<$zalsa::interned::Value<$Configuration>>(id, current_revision) }
+                        }
                     }
 
                     impl $zalsa::AsId for $InternedData<'_> {

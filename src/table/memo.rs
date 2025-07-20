@@ -9,7 +9,7 @@ use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOriginRef};
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
-pub(crate) struct MemoTable {
+pub struct MemoTable {
     memos: Box<[MemoEntry]>,
 }
 
@@ -168,7 +168,7 @@ impl MemoTableTypes {
     }
 }
 
-pub(crate) struct MemoTableWithTypes<'a> {
+pub struct MemoTableWithTypes<'a> {
     types: &'a MemoTableTypes,
     memos: &'a MemoTable,
 }

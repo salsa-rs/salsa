@@ -1,8 +1,9 @@
 use std::any::TypeId;
 
 use crate::memo_ingredient_indices::{IngredientIndices, MemoIngredientMap};
+use crate::table::memo::MemoTableWithTypes;
 use crate::zalsa::Zalsa;
-use crate::Id;
+use crate::{Id, Revision};
 
 pub trait SalsaStructInDb: Sized {
     type MemoIngredientMap: MemoIngredientMap;
@@ -62,4 +63,16 @@ pub trait SalsaStructInDb: Sized {
     /// Why `TypeId` and not `IngredientIndex`? Because it's cheaper and easier: the `TypeId` is readily
     /// available at compile time, while the `IngredientIndex` requires a runtime lookup.
     fn cast(id: Id, type_id: TypeId) -> Option<Self>;
+
+    /// Return the memo table associated with `id`.
+    ///
+    /// # Safety
+    ///
+    /// The parameter `current_revision` must be the current revision of the owner of database
+    /// owning this table.
+    unsafe fn memo_table(
+        zalsa: &Zalsa,
+        id: Id,
+        current_revision: Revision,
+    ) -> MemoTableWithTypes<'_>;
 }
