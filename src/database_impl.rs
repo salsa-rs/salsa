@@ -16,7 +16,7 @@ impl Default for DatabaseImpl {
             // Default behavior: tracing debug log the event.
             storage: Storage::new(if tracing::enabled!(Level::DEBUG) {
                 Some(Box::new(|event| {
-                    tracing::debug!("salsa_event({:?})", event)
+                    crate::tracing::debug!("salsa_event({:?})", event)
                 }))
             } else {
                 None

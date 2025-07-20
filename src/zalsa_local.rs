@@ -4,7 +4,6 @@ use std::ptr::{self, NonNull};
 
 use rustc_hash::FxHashMap;
 use thin_vec::ThinVec;
-use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
 use crate::active_query::QueryStack;
@@ -197,10 +196,13 @@ impl ZalsaLocal {
         accumulated_inputs: &AtomicInputAccumulatedValues,
         cycle_heads: &CycleHeads,
     ) {
-        debug!(
+        crate::tracing::debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
-            input, durability, changed_at
+            input,
+            durability,
+            changed_at
         );
+
         self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read(
@@ -223,10 +225,13 @@ impl ZalsaLocal {
         durability: Durability,
         changed_at: Revision,
     ) {
-        debug!(
+        crate::tracing::debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
-            input, durability, changed_at
+            input,
+            durability,
+            changed_at
         );
+
         self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read_simple(input, durability, changed_at);

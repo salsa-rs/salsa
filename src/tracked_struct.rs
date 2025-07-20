@@ -397,7 +397,7 @@ where
         if let Some(id) = zalsa_local.tracked_struct_id(&identity) {
             // The struct already exists in the intern map.
             let index = self.database_key_index(id);
-            tracing::trace!("Reuse tracked struct {id:?}", id = index);
+            crate::tracing::trace!("Reuse tracked struct {id:?}", id = index);
             zalsa_local.add_output(index);
 
             // SAFETY: The `id` was present in the interned map, so the value must be initialized.
@@ -423,7 +423,7 @@ where
         // in the struct map.
         let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
         let key = self.database_key_index(id);
-        tracing::trace!("Allocated new tracked struct {key:?}");
+        crate::tracing::trace!("Allocated new tracked struct {key:?}");
         zalsa_local.add_output(key);
         zalsa_local.store_tracked_struct_id(identity, id);
         FromId::from_id(id)
@@ -453,7 +453,7 @@ where
             // If the generation would overflow, we are forced to leak the slot. Note that this
             // shouldn't be a problem in general as sufficient bits are reserved for the generation.
             let Some(id) = id.next_generation() else {
-                tracing::info!(
+                crate::tracing::info!(
                     "leaking tracked struct {:?} due to generation overflow",
                     self.database_key_index(id)
                 );
@@ -553,7 +553,7 @@ where
             // the unlikely case that the ID is already at its maximum generation, we are forced to leak
             // the previous slot and allocate a new value.
             if id.generation() == u32::MAX {
-                tracing::info!(
+                crate::tracing::info!(
                     "leaking tracked struct {:?} due to generation overflow",
                     self.database_key_index(id)
                 );

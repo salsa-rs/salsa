@@ -53,7 +53,9 @@ where
         loop {
             let database_key_index = self.database_key_index(id);
 
-            tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
+            crate::tracing::debug!(
+                "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
+            );
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
@@ -117,7 +119,7 @@ where
                     return Some(VerifyResult::unchanged());
                 }
                 CycleRecoveryStrategy::Fixpoint => {
-                    tracing::debug!(
+                    crate::tracing::debug!(
                         "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
                     );
                     cycle_heads.push_initial(database_key_index);
@@ -132,7 +134,7 @@ where
             return Some(VerifyResult::Changed);
         };
 
-        tracing::debug!(
+        crate::tracing::debug!(
             "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
                 revision = {revision:?}, old_memo = {old_memo:#?}",
             old_memo = old_memo.tracing_debug()
@@ -194,7 +196,7 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
     ) -> ShallowUpdate {
-        tracing::debug!(
+        crate::tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
@@ -207,7 +209,7 @@ where
         }
 
         let last_changed = zalsa.last_changed_revision(memo.revisions.durability);
-        tracing::debug!(
+        crate::tracing::debug!(
             "{database_key_index:?}: check_durability(memo = {memo:#?}, last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
             verified_at,
@@ -263,7 +265,7 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
     ) -> bool {
-        tracing::trace!(
+        crate::tracing::trace!(
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
@@ -324,7 +326,7 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
     ) -> bool {
-        tracing::trace!(
+        crate::tracing::trace!(
             "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
@@ -377,7 +379,7 @@ where
         database_key_index: DatabaseKeyIndex,
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
-        tracing::debug!(
+        crate::tracing::debug!(
             "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
             old_memo = old_memo.tracing_debug()
         );

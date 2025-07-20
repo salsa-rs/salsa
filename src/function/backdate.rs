@@ -34,7 +34,7 @@ where
             if revisions.durability >= old_memo.revisions.durability
                 && C::values_equal(old_value, value)
             {
-                tracing::debug!(
+                crate::tracing::debug!(
                     "{index:?} value is equal, back-dating to {:?}",
                     old_memo.revisions.changed_at,
                 );
