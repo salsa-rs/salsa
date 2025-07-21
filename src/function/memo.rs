@@ -30,7 +30,7 @@ impl<C: Configuration> IngredientImpl<C> {
         let static_memo =
             unsafe { transmute::<NonNull<Memo<'db, C>>, NonNull<Memo<'static, C>>>(memo) };
         let old_static_memo = zalsa
-            .memo_table_for(id)
+            .memo_table_for::<C::SalsaStruct<'_>>(id)
             .insert(memo_ingredient_index, static_memo)?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
@@ -48,7 +48,9 @@ impl<C: Configuration> IngredientImpl<C> {
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<'db, C>> {
-        let static_memo = zalsa.memo_table_for(id).get(memo_ingredient_index)?;
+        let static_memo = zalsa
+            .memo_table_for::<C::SalsaStruct<'_>>(id)
+            .get(memo_ingredient_index)?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
@@ -451,8 +453,9 @@ mod _memory_usage {
     use crate::cycle::CycleRecoveryStrategy;
     use crate::ingredient::Location;
     use crate::plumbing::{IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
+    use crate::table::memo::MemoTableWithTypes;
     use crate::zalsa::Zalsa;
-    use crate::{CycleRecoveryAction, Database, Id};
+    use crate::{CycleRecoveryAction, Database, Id, Revision};
 
     use std::any::TypeId;
     use std::num::NonZeroUsize;
@@ -471,6 +474,10 @@ mod _memory_usage {
         }
 
         fn cast(_: Id, _: TypeId) -> Option<Self> {
+            unimplemented!()
+        }
+
+        unsafe fn memo_table(_: &Zalsa, _: Id, _: Revision) -> MemoTableWithTypes<'_> {
             unimplemented!()
         }
     }

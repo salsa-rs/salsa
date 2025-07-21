@@ -7,6 +7,7 @@ use rustc_hash::FxHashMap;
 
 use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
+use crate::plumbing::SalsaStructInDb;
 use crate::runtime::Runtime;
 use crate::table::memo::MemoTableWithTypes;
 use crate::table::Table;
@@ -225,15 +226,14 @@ impl Zalsa {
 
     /// Returns the [`Table`] used to store the value of salsa structs
     #[inline]
-    pub(crate) fn table(&self) -> &Table {
+    pub fn table(&self) -> &Table {
         self.runtime.table()
     }
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
-    pub(crate) fn memo_table_for(&self, id: Id) -> MemoTableWithTypes<'_> {
-        let table = self.table();
-        // SAFETY: We are supplying the correct current revision
-        unsafe { table.memos(id, self.current_revision()) }
+    pub(crate) fn memo_table_for<T: SalsaStructInDb>(&self, id: Id) -> MemoTableWithTypes<'_> {
+        // SAFETY: We are supplying the correct current revision.
+        unsafe { T::memo_table(self, id, self.current_revision()) }
     }
 
     #[inline]

@@ -954,9 +954,8 @@ where
 {
     #[inline(always)]
     unsafe fn memos(&self, current_revision: Revision) -> &crate::table::memo::MemoTable {
-        // Acquiring the read lock here with the current revision
-        // ensures that there is no danger of a race
-        // when deleting a tracked struct.
+        // Acquiring the read lock here with the current revision to ensure that there
+        // is no danger of a race when deleting a tracked struct.
         self.read_lock(current_revision);
         &self.memos
     }

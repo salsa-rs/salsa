@@ -139,6 +139,20 @@ const _: () = {
                 None
             }
         }
+
+        #[inline]
+        unsafe fn memo_table(
+            zalsa: &zalsa_::Zalsa,
+            id: zalsa_::Id,
+            current_revision: zalsa_::Revision,
+        ) -> zalsa_::MemoTableWithTypes<'_> {
+            // SAFETY: Guaranteed by caller.
+            unsafe {
+                zalsa
+                    .table()
+                    .memos::<zalsa_struct_::Value<Configuration_>>(id, current_revision)
+            }
+        }
     }
 
     unsafe impl zalsa_::Update for InternedString<'_> {
