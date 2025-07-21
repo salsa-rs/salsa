@@ -224,7 +224,7 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// The parameter `current_revision` must be the current revision of the owner of database
+    /// The parameter `current_revision` must be the current revision of the database
     /// owning this table.
     ///
     /// # Panics
