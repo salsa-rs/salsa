@@ -431,9 +431,17 @@ impl Zalsa {
 
     #[inline(always)]
     pub fn event(&self, event: &dyn Fn() -> crate::Event) {
-        if let Some(event_callback) = &self.event_callback {
-            event_callback(event());
+        if self.event_callback.is_some() {
+            self.event_cold(event);
         }
+    }
+
+    // Avoid inlining, as events are typically only enabled for debugging purposes.
+    #[cold]
+    #[inline(never)]
+    pub fn event_cold(&self, event: &dyn Fn() -> crate::Event) {
+        let event_callback = self.event_callback.as_ref().unwrap();
+        event_callback(event());
     }
 }
 
