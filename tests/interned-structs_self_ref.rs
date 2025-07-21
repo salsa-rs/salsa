@@ -99,9 +99,14 @@ const _: () = {
                 zalsa_::IngredientCache::new();
 
             let zalsa = db.zalsa();
-            CACHE.get_or_create(zalsa, || {
-                zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
-            })
+
+            // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
+            // ingredient created by our jar is the struct ingredient.
+            unsafe {
+                CACHE.get_or_create(zalsa, || {
+                    zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
+                })
+            }
         }
     }
     impl zalsa_::AsId for InternedString<'_> {
