@@ -92,19 +92,8 @@ pub trait Configuration: Sized + 'static {
     ) -> bool;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
-    fn heap_size(
-        _value: &Self::Fields<'_>,
-        panic_if_missing: crate::PanicIfHeapSizeMissing,
-    ) -> usize {
-        if panic_if_missing == crate::PanicIfHeapSizeMissing::Yes {
-            panic!(
-                "tried to estimate sizes but `heap_size()` was not defined.\n\
-                ingredient: {}\ntype: {}",
-                Self::DEBUG_NAME,
-                std::any::type_name::<Self::Struct<'_>>()
-            );
-        }
-        0
+    fn heap_size(_value: &Self::Fields<'_>) -> Option<usize> {
+        None
     }
 }
 // ANCHOR_END: Configuration
@@ -877,16 +866,12 @@ where
 
     /// Returns memory usage information about any tracked structs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(
-        &self,
-        db: &dyn crate::Database,
-        panic_if_missing: crate::PanicIfHeapSizeMissing,
-    ) -> Option<Vec<crate::database::SlotInfo>> {
+    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
-            .map(|value| unsafe { value.memory_usage(&self.memo_table_types, panic_if_missing) })
+            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
             .collect();
         Some(memory_usage)
     }
@@ -954,20 +939,17 @@ where
     ///
     /// The `MemoTable` must belong to a `Value` of the correct type.
     #[cfg(feature = "salsa_unstable")]
-    unsafe fn memory_usage(
-        &self,
-        memo_table_types: &MemoTableTypes,
-        panic_if_missing: crate::PanicIfHeapSizeMissing,
-    ) -> crate::database::SlotInfo {
-        let heap_size = C::heap_size(self.fields(), panic_if_missing);
+    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
+        let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
             size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::Fields<'_>>(),
-            size_of_fields: mem::size_of::<C::Fields<'_>>() + heap_size,
-            memos: memos.memory_usage(panic_if_missing),
+            size_of_fields: mem::size_of::<C::Fields<'_>>(),
+            heap_size_of_fields: heap_size,
+            memos: memos.memory_usage(),
         }
     }
 }

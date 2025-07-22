@@ -14,7 +14,7 @@ pub struct MemoTable {
 }
 
 impl MemoTable {
-    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.  
+    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.
     ///
     /// # Safety
     ///
@@ -44,10 +44,7 @@ pub trait Memo: Any + Send + Sync {
 
     /// Returns memory usage information about the memoized value.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(
-        &self,
-        panic_if_missing: crate::PanicIfHeapSizeMissing,
-    ) -> crate::database::MemoInfo;
+    fn memory_usage(&self) -> crate::database::MemoInfo;
 }
 
 /// Data for a memoized entry.
@@ -123,16 +120,14 @@ impl Memo for DummyMemo {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(
-        &self,
-        _panic_if_missing: crate::PanicIfHeapSizeMissing,
-    ) -> crate::database::MemoInfo {
+    fn memory_usage(&self) -> crate::database::MemoInfo {
         crate::database::MemoInfo {
             debug_name: "dummy",
             output: crate::database::SlotInfo {
                 debug_name: "dummy",
                 size_of_metadata: 0,
                 size_of_fields: 0,
+                heap_size_of_fields: None,
                 memos: Vec::new(),
             },
         }
@@ -240,10 +235,7 @@ impl MemoTableWithTypes<'_> {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn memory_usage(
-        &self,
-        panic_if_missing: crate::PanicIfHeapSizeMissing,
-    ) -> Vec<crate::database::MemoInfo> {
+    pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
         let mut memory_usage = Vec::new();
         for (index, memo) in self.memos.memos.iter().enumerate() {
             let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
@@ -256,7 +248,7 @@ impl MemoTableWithTypes<'_> {
 
             // SAFETY: The `TypeId` is asserted in `insert()`.
             let dyn_memo: &dyn Memo = unsafe { (type_.to_dyn_fn)(memo).as_ref() };
-            memory_usage.push(dyn_memo.memory_usage(panic_if_missing));
+            memory_usage.push(dyn_memo.memory_usage());
         }
 
         memory_usage

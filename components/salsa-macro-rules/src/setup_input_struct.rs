@@ -103,8 +103,8 @@ macro_rules! setup_input_struct {
                 type Durabilities = [$zalsa::Durability; $N];
 
                 $(
-                    fn heap_size(value: &Self::Fields, _panic_if_missing: $zalsa::PanicIfHeapSizeMissing) -> usize {
-                        $heap_size_fn(value)
+                    fn heap_size(value: &Self::Fields) -> Option<usize> {
+                        Some($heap_size_fn(value))
                     }
                 )?
             }
