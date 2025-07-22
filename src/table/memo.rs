@@ -14,7 +14,7 @@ pub struct MemoTable {
 }
 
 impl MemoTable {
-    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.  
+    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.
     pub fn new(types: &MemoTableTypes) -> Self {
         Self {
             memos: (0..types.len()).map(|_| MemoEntry::default()).collect(),
@@ -120,6 +120,7 @@ impl Memo for DummyMemo {
                 debug_name: "dummy",
                 size_of_metadata: 0,
                 size_of_fields: 0,
+                heap_size_of_fields: None,
                 memos: Vec::new(),
             },
         }
