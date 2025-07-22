@@ -76,7 +76,7 @@ fn test() {
     let _string1 = input_to_string(&db);
     let _string2 = input_to_string_get_size(&db);
 
-    let structs_info = <dyn salsa::Database>::structs_info(&db, salsa::PanicIfHeapSizeMissing::No);
+    let structs_info = <dyn salsa::Database>::structs_info(&db);
 
     let expected = expect![[r#"
         [
@@ -84,40 +84,50 @@ fn test() {
                 debug_name: "MyInput",
                 count: 3,
                 size_of_metadata: 96,
-                size_of_fields: 522,
+                size_of_fields: 72,
+                heap_size_of_fields: Some(
+                    450,
+                ),
             },
             IngredientInfo {
                 debug_name: "MyTracked",
                 count: 4,
                 size_of_metadata: 128,
-                size_of_fields: 396,
+                size_of_fields: 96,
+                heap_size_of_fields: Some(
+                    300,
+                ),
             },
             IngredientInfo {
                 debug_name: "MyInterned",
                 count: 3,
                 size_of_metadata: 168,
-                size_of_fields: 522,
+                size_of_fields: 72,
+                heap_size_of_fields: Some(
+                    450,
+                ),
             },
             IngredientInfo {
                 debug_name: "input_to_string::interned_arguments",
                 count: 1,
                 size_of_metadata: 56,
                 size_of_fields: 0,
+                heap_size_of_fields: None,
             },
             IngredientInfo {
                 debug_name: "input_to_string_get_size::interned_arguments",
                 count: 1,
                 size_of_metadata: 56,
                 size_of_fields: 0,
+                heap_size_of_fields: None,
             },
         ]"#]];
 
     expected.assert_eq(&format!("{structs_info:#?}"));
 
-    let mut queries_info =
-        <dyn salsa::Database>::queries_info(&db, salsa::PanicIfHeapSizeMissing::No)
-            .into_iter()
-            .collect::<Vec<_>>();
+    let mut queries_info = <dyn salsa::Database>::queries_info(&db)
+        .into_iter()
+        .collect::<Vec<_>>();
     queries_info.sort();
 
     let expected = expect![[r#"
@@ -129,6 +139,7 @@ fn test() {
                     count: 3,
                     size_of_metadata: 192,
                     size_of_fields: 24,
+                    heap_size_of_fields: None,
                 },
             ),
             (
@@ -138,6 +149,7 @@ fn test() {
                     count: 1,
                     size_of_metadata: 40,
                     size_of_fields: 24,
+                    heap_size_of_fields: None,
                 },
             ),
             (
@@ -146,7 +158,10 @@ fn test() {
                     debug_name: "alloc::string::String",
                     count: 1,
                     size_of_metadata: 40,
-                    size_of_fields: 1024,
+                    size_of_fields: 24,
+                    heap_size_of_fields: Some(
+                        1000,
+                    ),
                 },
             ),
             (
@@ -156,6 +171,7 @@ fn test() {
                     count: 2,
                     size_of_metadata: 192,
                     size_of_fields: 16,
+                    heap_size_of_fields: None,
                 },
             ),
             (
@@ -165,21 +181,10 @@ fn test() {
                     count: 1,
                     size_of_metadata: 132,
                     size_of_fields: 16,
+                    heap_size_of_fields: None,
                 },
             ),
         ]"#]];
 
     expected.assert_eq(&format!("{queries_info:#?}"));
-}
-
-#[test]
-#[should_panic = "tried to estimate sizes but `heap_size()` was not defined.\ningredient: MyInput"]
-fn missing_coverage() {
-    #[salsa::input]
-    struct MyInput {}
-
-    let db = salsa::DatabaseImpl::default();
-    let _input = MyInput::new(&db);
-
-    <dyn salsa::Database>::structs_info(&db, salsa::PanicIfHeapSizeMissing::Yes);
 }

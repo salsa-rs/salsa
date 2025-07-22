@@ -143,16 +143,9 @@ pub use memory_usage::IngredientInfo;
 #[cfg(feature = "salsa_unstable")]
 pub(crate) use memory_usage::{MemoInfo, SlotInfo};
 
-/// Whether to panic on the default `heap_size()`, to ensure the user has provided a custom one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PanicIfHeapSizeMissing {
-    Yes,
-    No,
-}
-
 #[cfg(feature = "salsa_unstable")]
 mod memory_usage {
-    use crate::{Database, PanicIfHeapSizeMissing};
+    use crate::Database;
     use hashbrown::HashMap;
 
     impl dyn Database {
@@ -160,27 +153,31 @@ mod memory_usage {
         ///
         /// If `panic_is_missing` is [`PanicIfHeapSizeMissing::Yes`], and there is an ingredient with no `heap_size()` function,
         /// this function will panic. This can be used to ensure coverage.
-        pub fn structs_info(
-            &self,
-            panic_if_missing: PanicIfHeapSizeMissing,
-        ) -> Vec<IngredientInfo> {
+        pub fn structs_info(&self) -> Vec<IngredientInfo> {
             self.zalsa()
                 .ingredients()
                 .filter_map(|ingredient| {
                     let mut size_of_fields = 0;
                     let mut size_of_metadata = 0;
                     let mut instances = 0;
+                    let mut heap_size_of_fields = None;
 
-                    for slot in ingredient.memory_usage(self, panic_if_missing)? {
+                    for slot in ingredient.memory_usage(self)? {
                         instances += 1;
                         size_of_fields += slot.size_of_fields;
                         size_of_metadata += slot.size_of_metadata;
+
+                        if let Some(slot_heap_size) = slot.heap_size_of_fields {
+                            heap_size_of_fields =
+                                Some(heap_size_of_fields.unwrap_or_default() + slot_heap_size);
+                        }
                     }
 
                     Some(IngredientInfo {
                         count: instances,
                         size_of_fields,
                         size_of_metadata,
+                        heap_size_of_fields,
                         debug_name: ingredient.debug_name(),
                     })
                 })
@@ -194,14 +191,11 @@ mod memory_usage {
         ///
         /// If `panic_is_missing` is [`PanicIfHeapSizeMissing::Yes`], and there is an ingredient with no `heap_size()` function,
         /// this function will panic. This can be used to ensure coverage.
-        pub fn queries_info(
-            &self,
-            panic_if_missing: PanicIfHeapSizeMissing,
-        ) -> HashMap<&'static str, IngredientInfo> {
+        pub fn queries_info(&self) -> HashMap<&'static str, IngredientInfo> {
             let mut queries = HashMap::new();
 
             for input_ingredient in self.zalsa().ingredients() {
-                let Some(input_info) = input_ingredient.memory_usage(self, panic_if_missing) else {
+                let Some(input_info) = input_ingredient.memory_usage(self) else {
                     continue;
                 };
 
@@ -215,6 +209,11 @@ mod memory_usage {
                         info.count += 1;
                         info.size_of_fields += memo.output.size_of_fields;
                         info.size_of_metadata += memo.output.size_of_metadata;
+
+                        if let Some(memo_heap_size) = memo.output.heap_size_of_fields {
+                            info.heap_size_of_fields =
+                                Some(info.heap_size_of_fields.unwrap_or_default() + memo_heap_size);
+                        }
                     }
                 }
             }
@@ -230,6 +229,7 @@ mod memory_usage {
         count: usize,
         size_of_metadata: usize,
         size_of_fields: usize,
+        heap_size_of_fields: Option<usize>,
     }
 
     impl IngredientInfo {
@@ -238,9 +238,16 @@ mod memory_usage {
             self.debug_name
         }
 
-        /// Returns the total size of the fields of any instances of this ingredient, in bytes.
+        /// Returns the total stack size of the fields of any instances of this ingredient, in bytes.
         pub fn size_of_fields(&self) -> usize {
             self.size_of_fields
+        }
+
+        /// Returns the total heap size of the fields of any instances of this ingredient, in bytes.
+        ///
+        /// Returns `None` if the ingredient doesn't specify a `heap_size` function.
+        pub fn heap_size_of_fields(&self) -> Option<usize> {
+            self.heap_size_of_fields
         }
 
         /// Returns the total size of Salsa metadata of any instances of this ingredient, in bytes.
@@ -259,6 +266,7 @@ mod memory_usage {
         pub(crate) debug_name: &'static str,
         pub(crate) size_of_metadata: usize,
         pub(crate) size_of_fields: usize,
+        pub(crate) heap_size_of_fields: Option<usize>,
         pub(crate) memos: Vec<MemoInfo>,
     }
 

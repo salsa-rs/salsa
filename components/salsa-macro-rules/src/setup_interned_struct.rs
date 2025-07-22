@@ -151,8 +151,8 @@ macro_rules! setup_interned_struct {
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
 
                 $(
-                    fn heap_size(value: &Self::Fields<'_>, _panic_if_missing: $zalsa::PanicIfHeapSizeMissing) -> usize {
-                        $heap_size_fn(value)
+                    fn heap_size(value: &Self::Fields<'_>) -> Option<usize> {
+                        Some($heap_size_fn(value))
                     }
                 )?
             }
