@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.23.0"
+version = "0.23.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,8 +9,8 @@ rust-version.workspace = true
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
 
 [dependencies]
-salsa-macro-rules = { version = "0.23.0", path = "components/salsa-macro-rules" }
-salsa-macros = { version = "0.23.0", path = "components/salsa-macros", optional = true }
+salsa-macro-rules = { version = "0.23.1", path = "components/salsa-macro-rules" }
+salsa-macros = { version = "0.23.1", path = "components/salsa-macros", optional = true }
 
 boxcar = "0.2.13"
 crossbeam-queue = "0.3.11"
@@ -50,7 +50,7 @@ macros = ["dep:salsa-macros"]
 # which may ultimately result in odd issues due to the proc-macro
 # output mismatching with the declarative macro inputs
 [target.'cfg(any())'.dependencies]
-salsa-macros = { version = "=0.23.0", path = "components/salsa-macros" }
+salsa-macros = { version = "=0.23.1", path = "components/salsa-macros" }
 
 [dev-dependencies]
 # examples

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.23.0...salsa-v0.23.1) - 2025-07-22
+
+### Fixed
+
+- Fix phantom data usage in salsa structs affecting auto traits ([#932](https://github.com/salsa-rs/salsa/pull/932))
+
+### Other
+
+- Outline all tracing events ([#942](https://github.com/salsa-rs/salsa/pull/942))
+- remove bounds and type checks from `IngredientCache` ([#937](https://github.com/salsa-rs/salsa/pull/937))
+- Avoid dynamic dispatch to access memo tables ([#941](https://github.com/salsa-rs/salsa/pull/941))
+- optimize page access ([#940](https://github.com/salsa-rs/salsa/pull/940))
+- Use `inventory` for static ingredient registration ([#934](https://github.com/salsa-rs/salsa/pull/934))
+- Fix `heap_size` option not being preserved in tracked impls ([#930](https://github.com/salsa-rs/salsa/pull/930))
+- update papaya ([#928](https://github.com/salsa-rs/salsa/pull/928))
+
 ## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.22.0...salsa-v0.23.0) - 2025-06-27
 
 ### Added
