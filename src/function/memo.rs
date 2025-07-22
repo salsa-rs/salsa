@@ -14,6 +14,8 @@ use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions, ZalsaLocal};
+#[cfg(feature = "salsa_unstable")]
+use crate::MemoryUsageVisitor;
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -316,24 +318,21 @@ where
     }
 
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo {
+    fn memory_usage(&self, visitor: &mut dyn MemoryUsageVisitor) {
         let size_of = std::mem::size_of::<Memo<C>>() + self.revisions.allocation_size();
         let heap_size = if let Some(value) = self.value.as_ref() {
-            C::heap_size(value)
+            C::heap_size(value, visitor)
         } else {
             Some(0)
         };
 
-        crate::database::MemoInfo {
-            debug_name: C::DEBUG_NAME,
-            output: crate::database::SlotInfo {
-                size_of_metadata: size_of - std::mem::size_of::<C::Output<'static>>(),
-                debug_name: std::any::type_name::<C::Output<'static>>(),
-                size_of_fields: std::mem::size_of::<C::Output<'static>>(),
-                heap_size_of_fields: heap_size,
-                memos: Vec::new(),
-            },
-        }
+        visitor.visit_memo(crate::database::MemoMemoryInfo {
+            size_of_metadata: size_of - std::mem::size_of::<C::Output<'static>>(),
+            query_debug_name: C::DEBUG_NAME,
+            result_debug_name: std::any::type_name::<C::Output<'static>>(),
+            size_of_fields: std::mem::size_of::<C::Output<'static>>(),
+            heap_size_of_fields: heap_size,
+        })
     }
 }
 

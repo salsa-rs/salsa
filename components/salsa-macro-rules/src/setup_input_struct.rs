@@ -103,8 +103,8 @@ macro_rules! setup_input_struct {
                 type Durabilities = [$zalsa::Durability; $N];
 
                 $(
-                    fn heap_size(value: &Self::Fields) -> Option<usize> {
-                        Some($heap_size_fn(value))
+                    fn heap_size(value: &Self::Fields, visitor: &mut dyn salsa::MemoryUsageVisitor) -> Option<usize> {
+                        Some($heap_size_fn(value, visitor))
                     }
                 )?
             }

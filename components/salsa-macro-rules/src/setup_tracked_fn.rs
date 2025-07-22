@@ -231,8 +231,8 @@ macro_rules! setup_tracked_fn {
                 $($values_equal)+
 
                 $(
-                    fn heap_size(value: &Self::Output<'_>) -> Option<usize> {
-                        Some($heap_size_fn(value))
+                    fn heap_size(value: &Self::Output<'_>, visitor: &mut dyn salsa::MemoryUsageVisitor) -> Option<usize> {
+                        Some($heap_size_fn(value, visitor))
                     }
                 )?
 

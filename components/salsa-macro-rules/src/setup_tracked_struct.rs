@@ -190,8 +190,8 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    fn heap_size(value: &Self::Fields<'_>) -> Option<usize> {
-                        Some($heap_size_fn(value))
+                    fn heap_size(value: &Self::Fields<'_>, visitor: &mut dyn salsa::MemoryUsageVisitor) -> Option<usize> {
+                        Some($heap_size_fn(value, visitor))
                     }
                 )?
             }

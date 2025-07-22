@@ -12,6 +12,8 @@ use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
+#[cfg(feature = "salsa_unstable")]
+use crate::MemoryUsageVisitor;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -171,8 +173,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Returns memory usage information about any instances of the ingredient,
     /// if applicable.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, _db: &dyn Database) -> Option<Vec<crate::database::SlotInfo>> {
-        None
+    fn memory_usage(&self, db: &dyn Database, visitor: &mut dyn MemoryUsageVisitor) {
+        let _ = (db, visitor);
     }
 }
 

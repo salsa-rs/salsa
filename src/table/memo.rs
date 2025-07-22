@@ -4,6 +4,8 @@ use std::mem;
 use std::ptr::{self, NonNull};
 
 use crate::sync::atomic::{AtomicPtr, Ordering};
+#[cfg(feature = "salsa_unstable")]
+use crate::MemoryUsageVisitor;
 use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOriginRef};
 
 /// The "memo table" stores the memoized results of tracked function calls.
@@ -37,7 +39,7 @@ pub trait Memo: Any + Send + Sync {
 
     /// Returns memory usage information about the memoized value.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo;
+    fn memory_usage(&self, visitor: &mut dyn MemoryUsageVisitor);
 }
 
 /// Data for a memoized entry.
@@ -113,17 +115,13 @@ impl Memo for DummyMemo {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo {
-        crate::database::MemoInfo {
+    fn memory_usage(&self, visitor: &mut dyn MemoryUsageVisitor) {
+        visitor.visit_struct(crate::database::StructMemoryInfo {
             debug_name: "dummy",
-            output: crate::database::SlotInfo {
-                debug_name: "dummy",
-                size_of_metadata: 0,
-                size_of_fields: 0,
-                heap_size_of_fields: None,
-                memos: Vec::new(),
-            },
-        }
+            size_of_metadata: 0,
+            size_of_fields: 0,
+            heap_size_of_fields: None,
+        });
     }
 }
 
@@ -223,8 +221,7 @@ impl MemoTableWithTypes<'_> {
     }
 
     #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
-        let mut memory_usage = Vec::new();
+    pub(crate) fn memory_usage(&self, visitor: &mut dyn MemoryUsageVisitor) {
         for (index, memo) in self.memos.memos.iter().enumerate() {
             let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
                 continue;
@@ -236,10 +233,8 @@ impl MemoTableWithTypes<'_> {
 
             // SAFETY: The `TypeId` is asserted in `insert()`.
             let dyn_memo: &dyn Memo = unsafe { (type_.to_dyn_fn)(memo).as_ref() };
-            memory_usage.push(dyn_memo.memory_usage());
+            dyn_memo.memory_usage(visitor);
         }
-
-        memory_usage
     }
 }
 

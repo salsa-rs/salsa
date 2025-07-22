@@ -44,7 +44,7 @@ pub use parallel::{join, par_map};
 pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 
 #[cfg(feature = "salsa_unstable")]
-pub use self::database::IngredientInfo;
+pub use self::database::{MemoMemoryInfo, MemoryUsageVisitor, StructMemoryInfo};
 
 pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;

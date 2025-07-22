@@ -1,6 +1,10 @@
 #![cfg(feature = "inventory")]
 
+use std::collections::BTreeMap;
+
 use expect_test::expect;
+
+use salsa::{MemoMemoryInfo, MemoryUsageVisitor, StructMemoryInfo};
 
 #[salsa::input(heap_size = string_tuple_size_of)]
 struct MyInput {
@@ -37,11 +41,19 @@ fn input_to_string_get_size<'db>(_db: &'db dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
-fn string_size_of(x: &String) -> usize {
+fn string_size_of(x: &String, visitor: &mut dyn MemoryUsageVisitor) -> usize {
+    visitor.add_detail("String", x.capacity());
+
     x.capacity()
 }
 
-fn string_tuple_size_of((x,): &(String,)) -> usize {
+fn string_tuple_size_of((x,): &(String,), visitor: &mut dyn MemoryUsageVisitor) -> usize {
+    if let Some(visitor) = (visitor as &mut dyn std::any::Any).downcast_mut::<Visitor>() {
+        visitor.visit_tuple(2);
+    }
+
+    visitor.add_detail("String", x.capacity());
+
     x.capacity()
 }
 
@@ -54,6 +66,100 @@ fn input_to_tracked_tuple<'db>(
         MyTracked::new(db, input.field(db)),
         MyTracked::new(db, input.field(db)),
     )
+}
+
+#[derive(Debug)]
+struct IngredientInfo {
+    count: usize,
+    size_of_metadata: usize,
+    size_of_fields: usize,
+    heap_size_of_fields: usize,
+    #[allow(unused)]
+    kind: SlotKind,
+}
+
+struct MemoryInfo {
+    size_of_metadata: usize,
+    size_of_fields: usize,
+    heap_size_of_fields: usize,
+}
+
+impl From<StructMemoryInfo> for MemoryInfo {
+    fn from(info: StructMemoryInfo) -> Self {
+        MemoryInfo {
+            size_of_metadata: info.size_of_metadata(),
+            size_of_fields: info.size_of_fields(),
+            heap_size_of_fields: info.heap_size_of_fields().unwrap_or_default(),
+        }
+    }
+}
+
+impl From<MemoMemoryInfo> for MemoryInfo {
+    fn from(value: MemoMemoryInfo) -> Self {
+        MemoryInfo {
+            size_of_metadata: value.size_of_metadata(),
+            size_of_fields: value.size_of_fields(),
+            heap_size_of_fields: value.heap_size_of_fields().unwrap_or_default(),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum SlotKind {
+    Input,
+    Tracked,
+    Interned,
+    Memo,
+}
+
+#[derive(Default, Debug)]
+struct Visitor {
+    slots: BTreeMap<&'static str, IngredientInfo>,
+    custom: BTreeMap<&'static str, usize>,
+    max_tuple_elements: usize,
+}
+
+impl Visitor {
+    fn add(&mut self, name: &'static str, info: MemoryInfo, kind: SlotKind) {
+        let aggregated = self.slots.entry(name).or_insert_with(|| IngredientInfo {
+            count: 0,
+            size_of_metadata: 0,
+            size_of_fields: 0,
+            heap_size_of_fields: 0,
+            kind,
+        });
+
+        aggregated.count += 1;
+        aggregated.size_of_metadata += info.size_of_metadata;
+        aggregated.size_of_fields += info.size_of_fields;
+        aggregated.heap_size_of_fields += info.heap_size_of_fields;
+    }
+
+    fn visit_tuple(&mut self, elements: usize) {
+        self.max_tuple_elements = self.max_tuple_elements.max(elements);
+    }
+}
+
+impl MemoryUsageVisitor for Visitor {
+    fn visit_input_struct(&mut self, slot: salsa::StructMemoryInfo) {
+        self.add(slot.debug_name(), slot.into(), SlotKind::Input);
+    }
+
+    fn visit_interned_struct(&mut self, slot: salsa::StructMemoryInfo) {
+        self.add(slot.debug_name(), slot.into(), SlotKind::Interned);
+    }
+
+    fn visit_tracked_struct(&mut self, slot: salsa::StructMemoryInfo) {
+        self.add(slot.debug_name(), slot.into(), SlotKind::Tracked);
+    }
+
+    fn visit_memo(&mut self, slot: salsa::MemoMemoryInfo) {
+        self.add(slot.query_debug_name(), slot.into(), SlotKind::Memo);
+    }
+
+    fn add_detail(&mut self, name: &'static str, size: usize) {
+        *self.custom.entry(name).or_default() += size;
+    }
 }
 
 #[test]
@@ -76,115 +182,60 @@ fn test() {
     let _string1 = input_to_string(&db);
     let _string2 = input_to_string_get_size(&db);
 
-    let structs_info = <dyn salsa::Database>::structs_info(&db);
+    let mut visitor = Visitor::default();
+    <dyn salsa::Database>::memory_usage(&db, &mut visitor);
 
     let expected = expect![[r#"
-        [
-            IngredientInfo {
-                debug_name: "MyInput",
-                count: 3,
-                size_of_metadata: 96,
-                size_of_fields: 72,
-                heap_size_of_fields: Some(
-                    450,
-                ),
-            },
-            IngredientInfo {
-                debug_name: "MyTracked",
-                count: 4,
-                size_of_metadata: 128,
-                size_of_fields: 96,
-                heap_size_of_fields: Some(
-                    300,
-                ),
-            },
-            IngredientInfo {
-                debug_name: "MyInterned",
-                count: 3,
-                size_of_metadata: 168,
-                size_of_fields: 72,
-                heap_size_of_fields: Some(
-                    450,
-                ),
-            },
-            IngredientInfo {
-                debug_name: "input_to_string::interned_arguments",
-                count: 1,
-                size_of_metadata: 56,
-                size_of_fields: 0,
-                heap_size_of_fields: None,
-            },
-            IngredientInfo {
-                debug_name: "input_to_string_get_size::interned_arguments",
-                count: 1,
-                size_of_metadata: 56,
-                size_of_fields: 0,
-                heap_size_of_fields: None,
-            },
-        ]"#]];
-
-    expected.assert_eq(&format!("{structs_info:#?}"));
-
-    let mut queries_info = <dyn salsa::Database>::queries_info(&db)
-        .into_iter()
-        .collect::<Vec<_>>();
-    queries_info.sort();
-
-    let expected = expect![[r#"
-        [
-            (
-                "input_to_interned",
-                IngredientInfo {
-                    debug_name: "memory_usage::MyInterned",
+        Visitor {
+            slots: {
+                "MyInput": IngredientInfo {
+                    count: 3,
+                    size_of_metadata: 96,
+                    size_of_fields: 72,
+                    heap_size_of_fields: 450,
+                    kind: Input,
+                },
+                "input_to_interned": IngredientInfo {
                     count: 3,
                     size_of_metadata: 192,
                     size_of_fields: 24,
-                    heap_size_of_fields: None,
+                    heap_size_of_fields: 0,
+                    kind: Memo,
                 },
-            ),
-            (
-                "input_to_string",
-                IngredientInfo {
-                    debug_name: "alloc::string::String",
+                "input_to_string": IngredientInfo {
                     count: 1,
                     size_of_metadata: 40,
                     size_of_fields: 24,
-                    heap_size_of_fields: None,
+                    heap_size_of_fields: 0,
+                    kind: Memo,
                 },
-            ),
-            (
-                "input_to_string_get_size",
-                IngredientInfo {
-                    debug_name: "alloc::string::String",
+                "input_to_string_get_size": IngredientInfo {
                     count: 1,
                     size_of_metadata: 40,
                     size_of_fields: 24,
-                    heap_size_of_fields: Some(
-                        1000,
-                    ),
+                    heap_size_of_fields: 1000,
+                    kind: Memo,
                 },
-            ),
-            (
-                "input_to_tracked",
-                IngredientInfo {
-                    debug_name: "memory_usage::MyTracked",
+                "input_to_tracked": IngredientInfo {
                     count: 2,
                     size_of_metadata: 192,
                     size_of_fields: 16,
-                    heap_size_of_fields: None,
+                    heap_size_of_fields: 0,
+                    kind: Memo,
                 },
-            ),
-            (
-                "input_to_tracked_tuple",
-                IngredientInfo {
-                    debug_name: "(memory_usage::MyTracked, memory_usage::MyTracked)",
+                "input_to_tracked_tuple": IngredientInfo {
                     count: 1,
                     size_of_metadata: 132,
                     size_of_fields: 16,
-                    heap_size_of_fields: None,
+                    heap_size_of_fields: 0,
+                    kind: Memo,
                 },
-            ),
-        ]"#]];
+            },
+            custom: {
+                "String": 2200,
+            },
+            max_tuple_elements: 2,
+        }"#]];
 
-    expected.assert_eq(&format!("{queries_info:#?}"));
+    expected.assert_eq(&format!("{visitor:#?}"));
 }
