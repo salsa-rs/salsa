@@ -165,9 +165,6 @@ mod memory_usage {
 
     impl dyn Database {
         /// Returns information about any Salsa structs.
-        ///
-        /// If `panic_is_missing` is [`PanicIfHeapSizeMissing::Yes`], and there is an ingredient with no `heap_size()` function,
-        /// this function will panic. This can be used to ensure coverage.
         pub fn structs_info(&self) -> Vec<IngredientInfo> {
             self.zalsa()
                 .ingredients()
@@ -203,9 +200,6 @@ mod memory_usage {
         ///
         /// The returned map holds memory usage information for memoized values of a given query, keyed
         /// by the query function name.
-        ///
-        /// If `panic_is_missing` is [`PanicIfHeapSizeMissing::Yes`], and there is an ingredient with no `heap_size()` function,
-        /// this function will panic. This can be used to ensure coverage.
         pub fn queries_info(&self) -> HashMap<&'static str, IngredientInfo> {
             let mut queries = HashMap::new();
 
