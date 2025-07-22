@@ -15,8 +15,9 @@ where
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);
+
         #[cfg(debug_assertions)]
-        let _span = tracing::debug_span!("fetch", query = ?database_key_index).entered();
+        let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
@@ -169,7 +170,7 @@ where
                         );
                     }),
                     CycleRecoveryStrategy::Fixpoint => {
-                        tracing::debug!(
+                        crate::tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
                             inserting and returning fixpoint initial value"
                         );
@@ -183,7 +184,7 @@ where
                         ))
                     }
                     CycleRecoveryStrategy::FallbackImmediate => {
-                        tracing::debug!(
+                        crate::tracing::debug!(
                             "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
                         );
                         let active_query =

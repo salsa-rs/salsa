@@ -86,7 +86,7 @@ impl Running<'_> {
             })
         });
 
-        tracing::debug!(
+        crate::tracing::debug!(
             "block_on: thread {thread_id:?} is blocking on {database_key:?} in thread {other_id:?}",
         );
 
@@ -180,7 +180,7 @@ impl Runtime {
     }
 
     pub(crate) fn set_cancellation_flag(&self) {
-        tracing::trace!("set_cancellation_flag");
+        crate::tracing::trace!("set_cancellation_flag");
         self.revision_canceled.store(true, Ordering::Release);
     }
 
@@ -206,7 +206,7 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
-        tracing::debug!("new_revision: {r_old:?} -> {r_new:?}");
+        crate::tracing::debug!("new_revision: {r_old:?} -> {r_new:?}");
         r_new
     }
 
@@ -236,7 +236,7 @@ impl Runtime {
         let dg = self.dependency_graph.lock();
 
         if dg.depends_on(other_id, thread_id) {
-            tracing::debug!("block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}");
+            crate::tracing::debug!("block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}");
             return BlockResult::Cycle { same_thread: false };
         }
 

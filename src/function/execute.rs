@@ -29,7 +29,7 @@ where
         let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index();
 
-        tracing::info!("{:?}: executing query", database_key_index);
+        crate::tracing::info!("{:?}: executing query", database_key_index);
         let zalsa = db.zalsa();
 
         zalsa.event(&|| {
@@ -169,7 +169,7 @@ where
                 };
                 // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
                 let last_provisional_value = unsafe { last_provisional_value.unwrap_unchecked() };
-                tracing::debug!(
+                crate::tracing::debug!(
                     "{database_key_index:?}: execute: \
                         I am a cycle head, comparing last provisional value with new value"
                 );
@@ -196,7 +196,7 @@ where
                     ) {
                         crate::CycleRecoveryAction::Iterate => {}
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
-                            tracing::debug!(
+                            crate::tracing::debug!(
                                 "{database_key_index:?}: execute: user cycle_fn says to fall back"
                             );
                             new_value = fallback_value;
@@ -220,7 +220,7 @@ where
                     });
                     cycle_heads.update_iteration_count(database_key_index, iteration_count);
                     revisions.update_iteration_count(iteration_count);
-                    tracing::debug!(
+                    crate::tracing::debug!(
                         "{database_key_index:?}: execute: iterate again, revisions: {revisions:#?}"
                     );
                     opt_last_provisional = Some(self.insert_memo(
@@ -236,7 +236,7 @@ where
 
                     continue;
                 }
-                tracing::debug!(
+                crate::tracing::debug!(
                     "{database_key_index:?}: execute: fixpoint iteration has a final value"
                 );
                 cycle_heads.remove(&database_key_index);
@@ -247,7 +247,9 @@ where
                 }
             }
 
-            tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
+            crate::tracing::debug!(
+                "{database_key_index:?}: execute: result.revisions = {revisions:#?}"
+            );
 
             break (new_value, revisions);
         }

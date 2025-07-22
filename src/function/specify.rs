@@ -83,7 +83,7 @@ where
             revisions,
         };
 
-        tracing::debug!(
+        crate::tracing::debug!(
             "specify: about to add memo {:#?} for key {:?}",
             memo.tracing_debug(),
             key

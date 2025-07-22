@@ -153,7 +153,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
         } else {
             // all our cycle heads are complete; re-fetch
             // and we should get a non-provisional memo.
-            tracing::debug!(
+            crate::tracing::debug!(
                 "Retrying provisional memo {database_key_index:?} after awaiting cycle heads."
             );
             true
@@ -180,7 +180,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
 
         #[inline(never)]
         fn block_on_heads_cold(zalsa: &Zalsa, heads: &CycleHeads) -> bool {
-            let _entered = tracing::debug_span!("block_on_heads").entered();
+            let _entered = crate::tracing::debug_span!("block_on_heads").entered();
             let mut cycle_heads = TryClaimCycleHeadsIter::new(zalsa, heads);
             let mut all_cycles = true;
 
@@ -209,7 +209,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
     /// Unlike `block_on_heads`, this code does not block on any cycle head. Instead it returns `false` if
     /// claiming all cycle heads failed because one of them is running on another thread.
     pub(super) fn try_claim_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
-        let _entered = tracing::debug_span!("try_claim_heads").entered();
+        let _entered = crate::tracing::debug_span!("try_claim_heads").entered();
         if self.all_cycles_on_stack(zalsa_local) {
             return true;
         }
@@ -419,7 +419,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
             ProvisionalStatus::Final { .. } | ProvisionalStatus::FallbackImmediate => {
                 // This cycle is already finalized, so we don't need to wait on it;
                 // keep looping through cycle heads.
-                tracing::trace!("Dependent cycle head {head:?} has been finalized.");
+                crate::tracing::trace!("Dependent cycle head {head:?} has been finalized.");
                 Some(TryClaimHeadsResult::Finalized)
             }
             ProvisionalStatus::Provisional { .. } => {
@@ -427,11 +427,11 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                     WaitForResult::Cycle { .. } => {
                         // We hit a cycle blocking on the cycle head; this means this query actively
                         // participates in the cycle and some other query is blocked on this thread.
-                        tracing::debug!("Waiting for {head:?} results in a cycle");
+                        crate::tracing::debug!("Waiting for {head:?} results in a cycle");
                         Some(TryClaimHeadsResult::Cycle)
                     }
                     WaitForResult::Running(running) => {
-                        tracing::debug!("Ingredient {head:?} is running: {running:?}");
+                        crate::tracing::debug!("Ingredient {head:?} is running: {running:?}");
 
                         Some(TryClaimHeadsResult::Running(RunningCycleHead {
                             inner: running,

@@ -414,7 +414,7 @@ impl Zalsa {
     #[doc(hidden)]
     pub fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
-        let _span = tracing::debug_span!("new_revision", ?new_revision).entered();
+        let _span = crate::tracing::debug_span!("new_revision", ?new_revision).entered();
 
         for (_, index) in self.ingredients_requiring_reset.iter() {
             let index = index.as_u32() as usize;
@@ -432,7 +432,7 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     pub fn evict_lru(&mut self) {
-        let _span = tracing::debug_span!("evict_lru").entered();
+        let _span = crate::tracing::debug_span!("evict_lru").entered();
         for (_, index) in self.ingredients_requiring_reset.iter() {
             let index = index.as_u32() as usize;
             self.ingredients_vec
@@ -449,9 +449,17 @@ impl Zalsa {
 
     #[inline(always)]
     pub fn event(&self, event: &dyn Fn() -> crate::Event) {
-        if let Some(event_callback) = &self.event_callback {
-            event_callback(event());
+        if self.event_callback.is_some() {
+            self.event_cold(event);
         }
+    }
+
+    // Avoid inlining, as events are typically only enabled for debugging purposes.
+    #[cold]
+    #[inline(never)]
+    pub fn event_cold(&self, event: &dyn Fn() -> crate::Event) {
+        let event_callback = self.event_callback.as_ref().unwrap();
+        event_callback(event());
     }
 }
 
