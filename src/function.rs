@@ -74,8 +74,11 @@ pub trait Configuration: Any {
     fn id_to_input(db: &Self::DbView, key: Id) -> Self::Input<'_>;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
-    fn heap_size(_value: &Self::Output<'_>) -> usize {
-        0
+    fn heap_size(
+        _value: &Self::Output<'_>,
+        _visitor: &mut dyn crate::MemoryUsageVisitor,
+    ) -> Option<usize> {
+        None
     }
 
     /// Invoked when we need to compute the value for the given key, either because we've never
