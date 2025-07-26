@@ -82,8 +82,8 @@ pub mod plumbing {
     pub use std::option::Option::{self, None, Some};
 
     pub use salsa_macro_rules::{
-        macro_if, maybe_backdate, maybe_default, maybe_default_tt, return_mode_expression,
-        return_mode_ty, setup_accumulator_impl, setup_input_struct, setup_interned_struct,
+        macro_if, maybe_default, maybe_default_tt, return_mode_expression, return_mode_ty,
+        setup_accumulator_impl, setup_input_struct, setup_interned_struct,
         setup_tracked_assoc_fn_body, setup_tracked_fn, setup_tracked_method_body,
         setup_tracked_struct, unexpected_cycle_initial, unexpected_cycle_recovery,
     };

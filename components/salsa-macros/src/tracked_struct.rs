@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 use crate::db_lifetime;
 use crate::hygiene::Hygiene;
 use crate::options::Options;
-use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
+use crate::salsa_struct::{SalsaField, SalsaStruct, SalsaStructAllowedOptions};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -124,22 +124,23 @@ impl Macro {
         let tracked_field_unused_attrs = salsa_struct.tracked_field_attrs();
         let untracked_field_unused_attrs = salsa_struct.untracked_field_attrs();
 
-        let tracked_maybe_update = salsa_struct.tracked_fields_iter().map(|(_, field)| {
+        let field_to_maybe_update = |(_, field): (usize, &SalsaField<'_>)| {
             let field_ty = &field.field.ty;
-            if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
+            if field.has_no_eq_attr {
+                quote! {{#zalsa::always_update::<#field_ty>}}
+            } else if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
                 quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #maybe_update; maybe_update }) }
             } else {
                 quote! {(#zalsa::UpdateDispatch::<#field_ty>::maybe_update)}
             }
-        });
-        let untracked_maybe_update = salsa_struct.untracked_fields_iter().map(|(_, field)| {
-            let field_ty = &field.field.ty;
-            if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
-                quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #maybe_update; maybe_update }) }
-            } else {
-                quote! {(#zalsa::UpdateDispatch::<#field_ty>::maybe_update)}
-            }
-        });
+        };
+
+        let tracked_maybe_update = salsa_struct
+            .tracked_fields_iter()
+            .map(field_to_maybe_update);
+        let untracked_maybe_update = salsa_struct
+            .untracked_fields_iter()
+            .map(field_to_maybe_update);
 
         let num_tracked_fields = salsa_struct.num_tracked_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();

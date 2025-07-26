@@ -86,7 +86,7 @@ macro_rules! setup_tracked_fn {
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
             $($input_id: $input_ty,)*
-        ) -> salsa::plumbing::return_mode_ty!(($return_mode, __, __), $db_lt, $output_ty) {
+        ) -> salsa::plumbing::return_mode_ty!(($return_mode, __), $db_lt, $output_ty) {
             use salsa::plumbing as $zalsa;
 
             struct $Configuration;
@@ -391,7 +391,7 @@ macro_rules! setup_tracked_fn {
                     }
                 };
 
-                $zalsa::return_mode_expression!(($return_mode, __, __), $output_ty, result,)
+                $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
             })
         }
 

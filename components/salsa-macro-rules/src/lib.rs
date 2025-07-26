@@ -13,7 +13,6 @@
 //! of this crate.
 
 mod macro_if;
-mod maybe_backdate;
 mod maybe_default;
 mod return_mode;
 mod setup_accumulator_impl;
