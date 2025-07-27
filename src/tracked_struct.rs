@@ -443,7 +443,9 @@ where
             // lifetime erase for storage
             fields: unsafe { mem::transmute::<C::Fields<'db>, C::Fields<'static>>(fields) },
             revisions: C::new_revisions(current_deps.changed_at),
-            memos: MemoTable::new(self.memo_table_types()),
+            // SAFETY: We only ever access the memos of a value that we allocated through
+            // our `MemoTableTypes`.
+            memos: unsafe { MemoTable::new(self.memo_table_types()) },
         };
 
         while let Some(id) = self.free_list.pop() {
