@@ -73,7 +73,7 @@ impl ActiveQuery {
         untracked_read: bool,
     ) {
         assert!(self.input_outputs.is_empty());
-        self.input_outputs = edges.iter().cloned().collect();
+        self.input_outputs.extend(edges.iter().cloned());
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;
