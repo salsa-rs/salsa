@@ -180,7 +180,7 @@ where
                             inserting and returning fixpoint initial value"
                         );
                         let revisions = QueryRevisions::fixpoint_initial(database_key_index);
-                        let initial_value = C::cycle_initial(db, C::id_to_input(db, id));
+                        let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                         Some(self.insert_memo(
                             zalsa,
                             id,
@@ -194,7 +194,7 @@ where
                         );
                         let active_query =
                             zalsa_local.push_query(database_key_index, IterationCount::initial());
-                        let fallback_value = C::cycle_initial(db, C::id_to_input(db, id));
+                        let fallback_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                         let mut revisions = active_query.pop();
                         revisions.set_cycle_heads(CycleHeads::initial(database_key_index));
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.

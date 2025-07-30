@@ -69,10 +69,9 @@ pub trait Configuration: Any {
     /// This invokes user code in form of the `Eq` impl.
     fn values_equal<'db>(old_value: &Self::Output<'db>, new_value: &Self::Output<'db>) -> bool;
 
-    // FIXME: This should take a `&Zalsa`
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
-    fn id_to_input(db: &Self::DbView, key: Id) -> Self::Input<'_>;
+    fn id_to_input(zalsa: &Zalsa, key: Id) -> Self::Input<'_>;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
     fn heap_size(_value: &Self::Output<'_>) -> usize {

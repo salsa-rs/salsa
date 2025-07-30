@@ -497,7 +497,7 @@ mod _memory_usage {
             unimplemented!()
         }
 
-        fn id_to_input(_: &Self::DbView, _: Id) -> Self::Input<'_> {
+        fn id_to_input(_: &Zalsa, _: Id) -> Self::Input<'_> {
             unimplemented!()
         }
 

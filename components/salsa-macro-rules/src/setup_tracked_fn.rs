@@ -203,11 +203,10 @@ macro_rules! setup_tracked_fn {
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
-                        Self::intern_ingredient_(db, zalsa)
+                        Self::intern_ingredient_(zalsa)
                     }
                     #[inline]
                     fn intern_ingredient_<'z>(
-                        db: &dyn $Db,
                         zalsa: &'z $zalsa::Zalsa
                     ) -> &'z $zalsa::interned::IngredientImpl<$Configuration> {
                         // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the second
@@ -267,11 +266,10 @@ macro_rules! setup_tracked_fn {
                     $($cycle_recovery_fn)*(db, value, count, $($input_id),*)
                 }
 
-                fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {
-                    let zalsa = db.zalsa();
+                fn id_to_input<$db_lt>(zalsa: &$db_lt $zalsa::Zalsa, key: salsa::Id) -> Self::Input<$db_lt> {
                     $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient_(db, zalsa).data(zalsa, key).clone()
+                            $Configuration::intern_ingredient_(zalsa).data(zalsa, key).clone()
                         } else {
                             $zalsa::FromIdWithDb::from_id(key, zalsa)
                         }
@@ -393,16 +391,15 @@ macro_rules! setup_tracked_fn {
             }
 
             $zalsa::attach($db, || {
+                let (zalsa, zalsa_local) = $db.zalsas();
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
                         {
-                            let (zalsa, zalsa_local) = $db.zalsas();
-                            let key = $Configuration::intern_ingredient_($db, zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
+                            let key = $Configuration::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
                             $Configuration::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
                         }
                     } else {
                         {
-                            let (zalsa, zalsa_local) = $db.zalsas();
                             $Configuration::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
                         }
                     }
