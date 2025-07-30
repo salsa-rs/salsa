@@ -35,9 +35,11 @@ where
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            memo.revisions.accumulated().is_some(),
-            &memo.revisions.accumulated_inputs,
             memo.cycle_heads(),
+            #[cfg(feature = "accumulator")]
+            memo.revisions.accumulated().is_some(),
+            #[cfg(feature = "accumulator")]
+            &memo.revisions.accumulated_inputs,
         );
 
         memo_value
@@ -221,7 +223,7 @@ where
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 let mut cycle_heads = CycleHeads::default();
-                if let VerifyResult::Unchanged(_) =
+                if let VerifyResult::Unchanged { .. } =
                     self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
                 {
                     if cycle_heads.is_empty() {

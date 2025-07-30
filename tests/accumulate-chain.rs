@@ -1,4 +1,4 @@
-#![cfg(feature = "inventory")]
+#![cfg(all(feature = "inventory", feature = "accumulator"))]
 
 //! Test that when having nested tracked functions
 //! we don't drop any values when accumulating.

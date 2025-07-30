@@ -1,4 +1,4 @@
-#![cfg(feature = "inventory")]
+#![cfg(all(feature = "inventory", feature = "accumulator"))]
 
 mod common;
 

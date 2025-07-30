@@ -5,7 +5,11 @@ use std::ptr::{self, NonNull};
 use rustc_hash::FxHashMap;
 use thin_vec::ThinVec;
 
-use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
+#[cfg(feature = "accumulator")]
+use crate::accumulator::{
+    accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
+    Accumulator,
+};
 use crate::active_query::QueryStack;
 use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount};
 use crate::durability::Durability;
@@ -15,7 +19,7 @@ use crate::sync::atomic::AtomicBool;
 use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{Accumulator, Cancelled, Id, Revision};
+use crate::{Cancelled, Id, Revision};
 
 /// State that is specific to a single execution thread.
 ///
@@ -201,6 +205,7 @@ impl ZalsaLocal {
     /// Add an output to the current query's list of dependencies
     ///
     /// Returns `Err` if not in a query.
+    #[cfg(feature = "accumulator")]
     pub(crate) fn accumulate<A: Accumulator>(
         &self,
         index: IngredientIndex,
@@ -252,9 +257,9 @@ impl ZalsaLocal {
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        has_accumulated: bool,
-        accumulated_inputs: &AtomicInputAccumulatedValues,
         cycle_heads: &CycleHeads,
+        #[cfg(feature = "accumulator")] has_accumulated: bool,
+        #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
         crate::tracing::debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
@@ -271,9 +276,11 @@ impl ZalsaLocal {
                         input,
                         durability,
                         changed_at,
-                        has_accumulated,
-                        accumulated_inputs,
                         cycle_heads,
+                        #[cfg(feature = "accumulator")]
+                        has_accumulated,
+                        #[cfg(feature = "accumulator")]
+                        accumulated_inputs,
                     );
                 }
             })
@@ -420,6 +427,7 @@ pub(crate) struct QueryRevisions {
     ///
     /// Note that this field could be in `QueryRevisionsExtra` as it is only relevant
     /// for accumulators, but we get it for free anyways due to padding.
+    #[cfg(feature = "accumulator")]
     pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
 
     /// Are the `cycle_heads` verified to not be provisional anymore?
@@ -439,10 +447,11 @@ impl QueryRevisions {
         let QueryRevisions {
             changed_at: _,
             durability: _,
-            accumulated_inputs: _,
             verified_final: _,
             origin,
             extra,
+            #[cfg(feature = "accumulator")]
+                accumulated_inputs: _,
         } = self;
 
         let mut memory = 0;
@@ -472,19 +481,24 @@ pub(crate) struct QueryRevisionsExtra(Option<Box<QueryRevisionsExtraInner>>);
 
 impl QueryRevisionsExtra {
     pub fn new(
-        accumulated: AccumulatedMap,
+        #[cfg(feature = "accumulator")] accumulated: AccumulatedMap,
         tracked_struct_ids: IdentityMap,
         cycle_heads: CycleHeads,
         iteration: IterationCount,
     ) -> Self {
-        let inner = if tracked_struct_ids.is_empty()
+        #[cfg(feature = "accumulator")]
+        let acc = accumulated.is_empty();
+        #[cfg(not(feature = "accumulator"))]
+        let acc = true;
+        let inner = if acc
+            && tracked_struct_ids.is_empty()
             && cycle_heads.is_empty()
-            && accumulated.is_empty()
             && iteration.is_initial()
         {
             None
         } else {
             Some(Box::new(QueryRevisionsExtraInner {
+                #[cfg(feature = "accumulator")]
                 accumulated,
                 cycle_heads,
                 tracked_struct_ids: tracked_struct_ids.into_thin_vec(),
@@ -498,6 +512,7 @@ impl QueryRevisionsExtra {
 
 #[derive(Debug)]
 struct QueryRevisionsExtraInner {
+    #[cfg(feature = "accumulator")]
     accumulated: AccumulatedMap,
 
     /// The ids of tracked structs created by this query.
@@ -536,15 +551,18 @@ impl QueryRevisionsExtraInner {
     #[cfg(feature = "salsa_unstable")]
     fn allocation_size(&self) -> usize {
         let QueryRevisionsExtraInner {
+            #[cfg(feature = "accumulator")]
             accumulated,
             tracked_struct_ids,
             cycle_heads,
             iteration: _,
         } = self;
 
-        accumulated.allocation_size()
-            + cycle_heads.allocation_size()
-            + std::mem::size_of_val(tracked_struct_ids.as_slice())
+        #[cfg(feature = "accumulator")]
+        let b = accumulated.allocation_size();
+        #[cfg(not(feature = "accumulator"))]
+        let b = 0;
+        b + cycle_heads.allocation_size() + std::mem::size_of_val(tracked_struct_ids.as_slice())
     }
 }
 
@@ -555,7 +573,7 @@ const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
-    [(); std::mem::size_of::<[usize; 7]>()];
+    [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
@@ -563,9 +581,11 @@ impl QueryRevisions {
             changed_at: Revision::start(),
             durability: Durability::MAX,
             origin: QueryOrigin::fixpoint_initial(),
+            #[cfg(feature = "accumulator")]
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
             extra: QueryRevisionsExtra::new(
+                #[cfg(feature = "accumulator")]
                 AccumulatedMap::default(),
                 IdentityMap::default(),
                 CycleHeads::initial(query),
@@ -575,6 +595,7 @@ impl QueryRevisions {
     }
 
     /// Returns a reference to the `AccumulatedMap` for this query, or `None` if the map is empty.
+    #[cfg(feature = "accumulator")]
     pub(crate) fn accumulated(&self) -> Option<&AccumulatedMap> {
         self.extra
             .0
@@ -606,6 +627,7 @@ impl QueryRevisions {
             Some(extra) => extra.cycle_heads = cycle_heads,
             None => {
                 self.extra = QueryRevisionsExtra::new(
+                    #[cfg(feature = "accumulator")]
                     AccumulatedMap::default(),
                     IdentityMap::default(),
                     cycle_heads,
@@ -676,6 +698,7 @@ pub enum QueryOriginRef<'a> {
 impl<'a> QueryOriginRef<'a> {
     /// Indices for queries *read* by this query
     #[inline]
+    #[cfg(feature = "accumulator")]
     pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
@@ -968,6 +991,7 @@ pub enum QueryEdgeKind {
 /// Returns the (tracked) inputs that were executed in computing this memoized value.
 ///
 /// These will always be in execution order.
+#[cfg(feature = "accumulator")]
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {

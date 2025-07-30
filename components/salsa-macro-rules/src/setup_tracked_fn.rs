@@ -343,21 +343,23 @@ macro_rules! setup_tracked_fn {
 
             #[allow(non_local_definitions)]
             impl $fn_name {
-                pub fn accumulated<$db_lt, A: salsa::Accumulator>(
-                    $db: &$db_lt dyn $Db,
-                    $($input_id: $interned_input_ty,)*
-                ) -> Vec<&$db_lt A> {
-                    use salsa::plumbing as $zalsa;
-                    let key = $zalsa::macro_if! {
-                        if $needs_interner {{
-                            let (zalsa, zalsa_local) = $db.zalsas();
-                            $Configuration::intern_ingredient($db).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
-                        }} else {
-                            $zalsa::AsId::as_id(&($($input_id),*))
-                        }
-                    };
+                $zalsa::gate_accumulated! {
+                    pub fn accumulated<$db_lt, A: salsa::Accumulator>(
+                        $db: &$db_lt dyn $Db,
+                        $($input_id: $interned_input_ty,)*
+                    ) -> Vec<&$db_lt A> {
+                        use salsa::plumbing as $zalsa;
+                        let key = $zalsa::macro_if! {
+                            if $needs_interner {{
+                                let (zalsa, zalsa_local) = $db.zalsas();
+                                $Configuration::intern_ingredient($db).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
+                            }} else {
+                                $zalsa::AsId::as_id(&($($input_id),*))
+                            }
+                        };
 
-                    $Configuration::fn_ingredient($db).accumulated_by::<A>($db, key)
+                        $Configuration::fn_ingredient($db).accumulated_by::<A>($db, key)
+                    }
                 }
 
                 $zalsa::macro_if! { $is_specifiable =>

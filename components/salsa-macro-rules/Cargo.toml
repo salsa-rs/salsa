@@ -9,3 +9,6 @@ rust-version.workspace = true
 description = "Declarative macros for the salsa crate"
 
 [dependencies]
+
+[features]
+accumulator = []

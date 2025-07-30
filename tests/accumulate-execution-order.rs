@@ -1,4 +1,4 @@
-#![cfg(feature = "inventory")]
+#![cfg(all(feature = "inventory", feature = "accumulator"))]
 
 //! Demonstrates that accumulation is done in the order
 //! in which things were originally executed.
