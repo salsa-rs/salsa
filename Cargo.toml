@@ -19,7 +19,7 @@ hashbrown = "0.15"
 hashlink = "0.10"
 indexmap = "2"
 intrusive-collections = "0.9.7"
-parking_lot = "0.12"
+parking_lot = {version = "0.12", features = ["send_guard"]}
 portable-atomic = "1"
 rustc-hash = "2"
 smallvec = "1"

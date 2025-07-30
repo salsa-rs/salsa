@@ -1,8 +1,10 @@
+use std::mem::{self, ManuallyDrop};
 use std::pin::Pin;
 
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
+use crate::function::SyncGuard;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
@@ -25,7 +27,34 @@ pub(super) struct DependencyGraph {
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
     wait_results: FxHashMap<ThreadId, WaitResult>,
+    /// Another thread is blocked on a computation that is happening in a differing thread, having
+    /// taken the mutex on this `DependencyGraph`.
+    /// This contains the state of that blocked thread.
+    ///
+    /// Invariant: If this is some then `Runtime::dependency_graph`'s lock is held.
+    blocked_on_state: Option<BlockedOnState>,
 }
+
+pub struct BlockedOnState {
+    pub query_mutex_guard: SyncGuard<'static>,
+    pub database_key: DatabaseKeyIndex,
+    pub blocked_on: ThreadId,
+    pub thread_id: ThreadId,
+}
+
+impl std::fmt::Debug for BlockedOnState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlockedOnState")
+            .field("database_key", &self.database_key)
+            .field("other_id", &self.blocked_on)
+            .field("thread_id", &self.thread_id)
+            .finish()
+    }
+}
+
+/// A `MutexGuard` on `DependencyGraph` representing that a thread is blocked on a running
+/// computation on a different thread.
+pub struct Running<'me>(ManuallyDrop<MutexGuard<'me, DependencyGraph>>);
 
 impl DependencyGraph {
     /// True if `from_id` depends on `to_id`.
@@ -187,5 +216,111 @@ mod edge {
         pub(super) fn notify(self) {
             self.condvar.condvar.notify_one();
         }
+    }
+}
+
+impl<'me> Running<'me> {
+    pub(super) fn new_blocked_on(
+        mut me: MutexGuard<'me, DependencyGraph>,
+        database_key: DatabaseKeyIndex,
+        blocked_on: ThreadId,
+        thread_id: ThreadId,
+        sync_guard: SyncGuard<'me>,
+    ) -> Self {
+        debug_assert!(me
+            .blocked_on_state
+            .replace(BlockedOnState {
+                // SAFETY: Self-referential field, we clear `blocked_on_state` on drop or `block_on`
+                //call while keeping the `MutexGuard` on `DependencyGraph` alive. As such, the sync
+                //guard will never escape the `'me` lifetime.
+                query_mutex_guard: unsafe {
+                    mem::transmute::<SyncGuard<'me>, SyncGuard<'static>>(sync_guard)
+                },
+                database_key,
+                blocked_on,
+                thread_id,
+            })
+            .is_none());
+        Running(ManuallyDrop::new(me))
+    }
+
+    #[inline]
+    pub(crate) fn database_key(&self) -> DatabaseKeyIndex {
+        self.blocked_on_state().database_key
+    }
+
+    /// Blocks on the other thread to complete the computation.
+    pub(crate) fn block_on(mut self, zalsa: &crate::zalsa::Zalsa) {
+        let BlockedOnState {
+            query_mutex_guard,
+            database_key,
+            blocked_on,
+            thread_id,
+        } = self.take_blocked_on_state();
+
+        zalsa.event(&|| {
+            crate::Event::new(crate::EventKind::WillBlockOn {
+                other_thread_id: blocked_on,
+                database_key,
+            })
+        });
+
+        crate::tracing::debug!(
+            "block_on: thread {thread_id:?} is blocking on {database_key:?} in thread {blocked_on:?}",
+        );
+
+        let result = DependencyGraph::block_on(
+            // SAFETY: We have ownership, beyond this point we no longer access `self.0`.
+            unsafe { ManuallyDrop::take(&mut self.0) },
+            thread_id,
+            database_key,
+            blocked_on,
+            query_mutex_guard,
+        );
+
+        match result {
+            WaitResult::Panicked => {
+                // If the other thread panicked, then we consider this thread
+                // cancelled. The assumption is that the panic will be detected
+                // by the other thread and responded to appropriately.
+                crate::Cancelled::PropagatedPanic.throw()
+            }
+            WaitResult::Completed => {}
+        }
+    }
+
+    #[inline]
+    fn blocked_on_state(&self) -> &BlockedOnState {
+        // SAFETY: As per invariant of `blocked_on_state`, this is populated.
+        unsafe { self.0.blocked_on_state.as_ref().unwrap_unchecked() }
+    }
+
+    #[inline]
+    fn take_blocked_on_state(&mut self) -> BlockedOnState {
+        // SAFETY: As per invariant of `blocked_on_state`, this is populated.
+        unsafe { self.0.blocked_on_state.take().unwrap_unchecked() }
+    }
+}
+
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        self.take_blocked_on_state();
+    }
+}
+
+impl std::fmt::Debug for Running<'_> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let BlockedOnState {
+            query_mutex_guard: _,
+            database_key,
+            blocked_on: other_id,
+            thread_id,
+        } = self.blocked_on_state();
+
+        fmt.debug_struct("Running")
+            .field("database_key", database_key)
+            .field("other_id", other_id)
+            .field("thread_id", thread_id)
+            .finish()
     }
 }
