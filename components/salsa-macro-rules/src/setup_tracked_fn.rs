@@ -231,7 +231,7 @@ macro_rules! setup_tracked_fn {
                 $($values_equal)+
 
                 $(
-                    fn heap_size(value: &Self::Output<'_>) -> usize {
+                    fn heap_size(value: &Self::Output<'_>, _panic_if_missing: $zalsa::PanicIfHeapSizeMissing) -> usize {
                         $heap_size_fn(value)
                     }
                 )?
