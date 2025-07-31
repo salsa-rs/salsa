@@ -5,7 +5,7 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::{database::RawDatabasePointer, Database};
+use crate::{database::RawDatabase, Database};
 
 /// A `Views` struct is associated with some specific database type
 /// (a `DatabaseImpl<U>` for some existential `U`). It contains functions
@@ -31,27 +31,21 @@ struct ViewCaster {
 }
 
 impl ViewCaster {
-    fn new<DbView: ?Sized + Any>(func: DatabaseDownCasterSigRaw<DbView>) -> ViewCaster {
+    fn new<DbView: ?Sized + Any>(func: DatabaseDownCasterSig<DbView>) -> ViewCaster {
         ViewCaster {
             target_type_id: TypeId::of::<DbView>(),
             type_name: std::any::type_name::<DbView>(),
             // SAFETY: We are type erasing for storage, taking care of unerasing before we call
             // the function pointer.
             cast: unsafe {
-                mem::transmute::<DatabaseDownCasterSigRaw<DbView>, ErasedDatabaseDownCasterSig>(
-                    func,
-                )
+                mem::transmute::<DatabaseDownCasterSig<DbView>, ErasedDatabaseDownCasterSig>(func)
             },
         }
     }
 }
 
-type ErasedDatabaseDownCasterSig = unsafe fn(RawDatabasePointer<'_>) -> NonNull<()>;
-type DatabaseDownCasterSigRaw<DbView> =
-    for<'db> unsafe fn(RawDatabasePointer<'db>) -> NonNull<DbView>;
-type DatabaseDownCasterSig<DbView> = for<'db> unsafe fn(RawDatabasePointer<'db>) -> &'db DbView;
-type DatabaseDownCasterSigMut<DbView> =
-    for<'db> unsafe fn(RawDatabasePointer<'db>) -> &'db mut DbView;
+type ErasedDatabaseDownCasterSig = unsafe fn(RawDatabase<'_>) -> NonNull<()>;
+type DatabaseDownCasterSig<DbView> = unsafe fn(RawDatabase<'_>) -> NonNull<DbView>;
 
 #[repr(transparent)]
 pub struct DatabaseDownCaster<DbView: ?Sized>(ViewCaster, PhantomData<fn() -> DbView>);
@@ -70,13 +64,10 @@ impl<DbView: ?Sized + Any> DatabaseDownCaster<DbView> {
     ///
     /// The caller must ensure that `db` is of the correct type.
     #[inline]
-    pub unsafe fn downcast_unchecked<'db>(&self, db: RawDatabasePointer<'db>) -> &'db DbView {
+    pub unsafe fn downcast_unchecked<'db>(&self, db: RawDatabase<'db>) -> &'db DbView {
         // SAFETY: The caller must ensure that `db` is of the correct type.
-        unsafe {
-            (mem::transmute::<ErasedDatabaseDownCasterSig, DatabaseDownCasterSig<DbView>>(
-                self.0.cast,
-            ))(db)
-        }
+        // The returned pointer is live for `'db` due to construction of the downcaster functions.
+        unsafe { (self.unerased_downcaster())(db).as_ref() }
     }
     /// Downcast `db` to `DbView`.
     ///
@@ -84,15 +75,19 @@ impl<DbView: ?Sized + Any> DatabaseDownCaster<DbView> {
     ///
     /// The caller must ensure that `db` is of the correct type.
     #[inline]
-    pub unsafe fn downcast_mut_unchecked<'db>(
-        &self,
-        db: RawDatabasePointer<'db>,
-    ) -> &'db mut DbView {
+    pub unsafe fn downcast_mut_unchecked<'db>(&self, db: RawDatabase<'db>) -> &'db mut DbView {
         // SAFETY: The caller must ensure that `db` is of the correct type.
+        // The returned pointer is live for `'db` due to construction of the downcaster functions.
+        unsafe { (self.unerased_downcaster())(db).as_mut() }
+    }
+
+    #[inline]
+    fn unerased_downcaster(&self) -> DatabaseDownCasterSig<DbView> {
+        // SAFETY: The type-erased function pointer is guaranteed to be ABI compatible for `DbView`
         unsafe {
-            (mem::transmute::<ErasedDatabaseDownCasterSig, DatabaseDownCasterSigMut<DbView>>(
+            mem::transmute::<ErasedDatabaseDownCasterSig, DatabaseDownCasterSig<DbView>>(
                 self.0.cast,
-            ))(db)
+            )
         }
     }
 }
@@ -111,7 +106,7 @@ impl Views {
     /// Add a new downcaster to `dyn DbView`.
     pub fn add<Concrete: 'static, DbView: ?Sized + Any>(
         &self,
-        func: fn(&Concrete) -> &DbView,
+        func: fn(NonNull<Concrete>) -> NonNull<DbView>,
     ) -> &DatabaseDownCaster<DbView> {
         assert_eq!(self.source_type_id, TypeId::of::<Concrete>());
         let target_type_id = TypeId::of::<DbView>();
@@ -121,24 +116,20 @@ impl Views {
             .find(|(_, u)| u.target_type_id == target_type_id)
         {
             // SAFETY: The type-erased function pointer is guaranteed to be valid for `DbView`
-            return unsafe { &*(caster as *const ViewCaster as *const DatabaseDownCaster<DbView>) };
+            return unsafe { &*(&raw const *caster).cast::<DatabaseDownCaster<DbView>>() };
         }
 
         // SAFETY: We are type erasing the function pointer for storage, and we will unerase it
         // before we call it.
-        let caster = ViewCaster::new::<DbView>(unsafe {
-            mem::transmute::<fn(&Concrete) -> &DbView, DatabaseDownCasterSigRaw<DbView>>(func)
-        });
+        let caster = unsafe {
+            mem::transmute::<fn(NonNull<Concrete>) -> NonNull<DbView>, DatabaseDownCasterSig<DbView>>(
+                func,
+            )
+        };
+        let caster = ViewCaster::new::<DbView>(caster);
         let idx = self.view_casters.push(caster);
         // SAFETY: The type-erased function pointer is guaranteed to be valid for `DbView`
         unsafe { &*(&raw const self.view_casters[idx]).cast::<DatabaseDownCaster<DbView>>() }
-    }
-
-    #[inline]
-    pub fn base_database_downcaster(&self) -> &DatabaseDownCaster<dyn Database> {
-        // SAFETY: The type-erased function pointer is guaranteed to be valid for `dyn Database`
-        // since we created it with the same type.
-        unsafe { &*((&raw const self.view_casters[0]).cast::<DatabaseDownCaster<dyn Database>>()) }
     }
 
     /// Retrieve an downcaster function to `dyn DbView`.

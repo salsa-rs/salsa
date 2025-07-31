@@ -6,25 +6,25 @@ use crate::zalsa::{IngredientIndex, ZalsaDatabase};
 use crate::{Durability, Revision};
 
 #[derive(Copy, Clone)]
-pub struct RawDatabasePointer<'db> {
+pub struct RawDatabase<'db> {
     pub(crate) ptr: NonNull<()>,
     _marker: std::marker::PhantomData<&'db dyn Database>,
 }
 
-impl<'db, Db: Database + ?Sized> From<&'db Db> for RawDatabasePointer<'db> {
+impl<'db, Db: Database + ?Sized> From<&'db Db> for RawDatabase<'db> {
     #[inline]
     fn from(db: &'db Db) -> Self {
-        RawDatabasePointer {
+        RawDatabase {
             ptr: NonNull::from(db).cast(),
             _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<'db, Db: Database + ?Sized> From<&'db mut Db> for RawDatabasePointer<'db> {
+impl<'db, Db: Database + ?Sized> From<&'db mut Db> for RawDatabase<'db> {
     #[inline]
     fn from(db: &'db mut Db) -> Self {
-        RawDatabasePointer {
+        RawDatabase {
             ptr: NonNull::from(db).cast(),
             _marker: std::marker::PhantomData,
         }

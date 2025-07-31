@@ -36,27 +36,18 @@ impl DatabaseKeyIndex {
 
     pub(crate) fn maybe_changed_after(
         &self,
-        db: crate::database::RawDatabasePointer<'_>,
+        db: crate::database::RawDatabase<'_>,
         zalsa: &Zalsa,
         last_verified_at: crate::Revision,
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {
-            // heer, `db` has to be either the correct type already, or a subtype (as far as trait
+            // here, `db` has to be either the correct type already, or a subtype (as far as trait
             // hierarchy is concerned)
             zalsa
                 .lookup_ingredient(self.ingredient_index())
-                .maybe_changed_after(
-                    zalsa,
-                    // lets say we do turn this into an opaque pair of data and vtable pointer
-                    // then we also need an downcast function, from our dbview to the ingredients
-                    // dbview
-                    db,
-                    self.key_index(),
-                    last_verified_at,
-                    cycle_heads,
-                )
+                .maybe_changed_after(zalsa, db, self.key_index(), last_verified_at, cycle_heads)
         }
     }
 

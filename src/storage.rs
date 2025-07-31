@@ -2,7 +2,7 @@
 use std::marker::PhantomData;
 use std::panic::RefUnwindSafe;
 
-use crate::database::RawDatabasePointer;
+use crate::database::RawDatabase;
 use crate::sync::{Arc, Condvar, Mutex};
 use crate::zalsa::{ErasedJar, HasJar, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{self, ZalsaLocal};
@@ -246,7 +246,7 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
     }
 
     #[inline(always)]
-    fn fork_db(&self) -> RawDatabasePointer<'static> {
+    fn fork_db(&self) -> RawDatabase<'static> {
         Box::leak(Box::new(self.clone())).into()
     }
 }

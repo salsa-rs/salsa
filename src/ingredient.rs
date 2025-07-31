@@ -5,7 +5,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
-use crate::database::RawDatabasePointer;
+use crate::database::RawDatabase;
 use crate::function::VerifyResult;
 use crate::runtime::Running;
 use crate::sync::Arc;
@@ -49,7 +49,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     unsafe fn maybe_changed_after(
         &self,
         zalsa: &crate::zalsa::Zalsa,
-        db: crate::database::RawDatabasePointer<'_>,
+        db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
         cycle_heads: &mut CycleHeads,
@@ -167,7 +167,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// The passed in database needs to be the same one that the ingredient was created with.
     unsafe fn accumulated<'db>(
         &'db self,
-        db: RawDatabasePointer<'db>,
+        db: RawDatabase<'db>,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let _ = (db, key_index);

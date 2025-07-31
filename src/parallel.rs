@@ -1,6 +1,6 @@
 use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelIterator};
 
-use crate::{database::RawDatabasePointer, views::DatabaseDownCaster, Database};
+use crate::{database::RawDatabase, views::DatabaseDownCaster, Database};
 
 pub fn par_map<Db, F, T, R, C>(db: &Db, inputs: impl IntoParallelIterator<Item = T>, op: F) -> C
 where
@@ -12,7 +12,7 @@ where
 {
     let views = db.zalsa().views();
     let caster = &views.downcaster_for::<Db>();
-    let db_caster = &views.base_database_downcaster();
+    let db_caster = &views.downcaster_for::<dyn Database>();
     inputs
         .into_par_iter()
         .map_with(
@@ -23,7 +23,7 @@ where
 }
 
 struct DbForkOnClone<'views, Db: Database + ?Sized>(
-    RawDatabasePointer<'static>,
+    RawDatabase<'static>,
     &'views DatabaseDownCaster<Db>,
     &'views DatabaseDownCaster<dyn Database>,
 );

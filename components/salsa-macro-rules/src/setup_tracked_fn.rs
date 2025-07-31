@@ -318,7 +318,6 @@ macro_rules! setup_tracked_fn {
                     };
 
                     let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
-                        zalsa,
                         first_index,
                         memo_ingredient_indices,
                         $lru,

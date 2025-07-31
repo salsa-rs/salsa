@@ -5,7 +5,7 @@ use std::panic::RefUnwindSafe;
 use hashbrown::HashMap;
 use rustc_hash::FxHashMap;
 
-use crate::database::RawDatabasePointer;
+use crate::database::RawDatabase;
 use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::SalsaStructInDb;
@@ -53,7 +53,7 @@ pub unsafe trait ZalsaDatabase: Any {
 
     /// Clone the database.
     #[doc(hidden)]
-    fn fork_db(&self) -> RawDatabasePointer<'static>;
+    fn fork_db(&self) -> RawDatabase<'static>;
 }
 
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {

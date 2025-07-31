@@ -10,7 +10,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
 };
-use crate::database::RawDatabasePointer;
+use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::{Ingredient, WaitForResult};
@@ -130,7 +130,6 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// The supplied database must be be the same as the database used to construct the [`Views`]
     /// instances that this downcaster was derived from.
-    /// instances that this downcaster was derived from.
     view_caster: OnceLock<DatabaseDownCaster<C::DbView>>,
 
     sync_table: SyncTable,
@@ -155,7 +154,6 @@ where
     C: Configuration,
 {
     pub fn new(
-        _zalsa: &Zalsa,
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
@@ -173,7 +171,10 @@ where
     /// Set the view-caster for this tracked function ingredient, if it has
     /// not already been initialized.
     #[inline]
-    pub fn get_or_init(&self, view_caster: impl FnOnce() -> DatabaseDownCaster<C::DbView>) -> &Self {
+    pub fn get_or_init(
+        &self,
+        view_caster: impl FnOnce() -> DatabaseDownCaster<C::DbView>,
+    ) -> &Self {
         // Note that we must set this lazily as we don't have access to the database
         // type when ingredients are registered into the `Zalsa`.
         self.view_caster.get_or_init(view_caster);
@@ -261,7 +262,7 @@ where
     unsafe fn maybe_changed_after(
         &self,
         _zalsa: &crate::zalsa::Zalsa,
-        db: RawDatabasePointer<'_>,
+        db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
         cycle_heads: &mut CycleHeads,
@@ -372,7 +373,7 @@ where
 
     unsafe fn accumulated<'db>(
         &'db self,
-        db: RawDatabasePointer<'db>,
+        db: RawDatabase<'db>,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant

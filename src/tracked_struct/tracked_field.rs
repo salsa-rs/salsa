@@ -58,7 +58,7 @@ where
     unsafe fn maybe_changed_after(
         &self,
         zalsa: &crate::zalsa::Zalsa,
-        _db: crate::database::RawDatabasePointer<'_>,
+        _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: crate::Revision,
         _cycle_heads: &mut CycleHeads,
