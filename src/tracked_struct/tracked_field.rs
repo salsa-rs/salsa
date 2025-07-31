@@ -7,7 +7,7 @@ use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
 use crate::zalsa::IngredientIndex;
-use crate::{Database, Id};
+use crate::Id;
 
 /// Created for each tracked struct.
 ///
@@ -55,14 +55,14 @@ where
         self.ingredient_index
     }
 
-    unsafe fn maybe_changed_after<'db>(
-        &'db self,
-        db: &'db dyn Database,
+    unsafe fn maybe_changed_after(
+        &self,
+        zalsa: &crate::zalsa::Zalsa,
+        _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: crate::Revision,
         _cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
-        let zalsa = db.zalsa();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
         let field_changed_at = data.revisions[self.field_index];
         VerifyResult::changed_if(field_changed_at > revision)

@@ -23,7 +23,7 @@ use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::{Database, Durability, Event, EventKind, Id, Revision};
+use crate::{Durability, Event, EventKind, Id, Revision};
 
 pub mod tracked_field;
 
@@ -375,11 +375,10 @@ where
 
     pub fn new_struct<'db>(
         &'db self,
-        db: &'db dyn Database,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         mut fields: C::Fields<'db>,
     ) -> C::Struct<'db> {
-        let (zalsa, zalsa_local) = db.zalsas();
-
         let identity_hash = IdentityHash {
             ingredient_index: self.ingredient_index,
             hash: crate::hash::hash(&C::untracked_fields(&fields)),
@@ -734,11 +733,11 @@ where
     /// Used for debugging.
     pub fn leak_fields<'db>(
         &'db self,
-        db: &'db dyn Database,
+        zalsa: &'db Zalsa,
         s: C::Struct<'db>,
     ) -> &'db C::Fields<'db> {
         let id = AsId::as_id(&s);
-        let data = Self::data(db.zalsa().table(), id);
+        let data = Self::data(zalsa.table(), id);
         data.fields()
     }
 
@@ -748,11 +747,11 @@ where
     /// The caller is responsible for selecting the appropriate element.
     pub fn tracked_field<'db>(
         &'db self,
-        db: &'db dyn crate::Database,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         s: C::Struct<'db>,
         relative_tracked_index: usize,
     ) -> &'db C::Fields<'db> {
-        let (zalsa, zalsa_local) = db.zalsas();
         let id = AsId::as_id(&s);
         let field_ingredient_index = self.ingredient_index.successor(relative_tracked_index);
         let data = Self::data(zalsa.table(), id);
@@ -776,10 +775,9 @@ where
     /// The caller is responsible for selecting the appropriate element.
     pub fn untracked_field<'db>(
         &'db self,
-        db: &'db dyn crate::Database,
+        zalsa: &'db Zalsa,
         s: C::Struct<'db>,
     ) -> &'db C::Fields<'db> {
-        let zalsa = db.zalsa();
         let id = AsId::as_id(&s);
         let data = Self::data(zalsa.table(), id);
 
@@ -794,11 +792,8 @@ where
 
     #[cfg(feature = "salsa_unstable")]
     /// Returns all data corresponding to the tracked struct.
-    pub fn entries<'db>(
-        &'db self,
-        db: &'db dyn crate::Database,
-    ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa().table().slots_of::<Value<C>>()
+    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = &'db Value<C>> {
+        zalsa.table().slots_of::<Value<C>>()
     }
 }
 
@@ -816,7 +811,8 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        _db: &dyn Database,
+        _zalsa: &crate::zalsa::Zalsa,
+        _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
         _cycle_heads: &mut CycleHeads,
@@ -863,9 +859,9 @@ where
 
     /// Returns memory usage information about any tracked structs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, db: &dyn Database) -> Option<Vec<crate::database::SlotInfo>> {
+    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
-            .entries(db)
+            .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
             .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })

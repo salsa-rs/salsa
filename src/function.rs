@@ -10,6 +10,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
 };
+use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::{Ingredient, WaitForResult};
@@ -22,7 +23,7 @@ use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
-use crate::{Database, Id, Revision};
+use crate::{Id, Revision};
 
 mod accumulated;
 mod backdate;
@@ -68,10 +69,9 @@ pub trait Configuration: Any {
     /// This invokes user code in form of the `Eq` impl.
     fn values_equal<'db>(old_value: &Self::Output<'db>, new_value: &Self::Output<'db>) -> bool;
 
-    // FIXME: This should take a `&Zalsa`
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
-    fn id_to_input(db: &Self::DbView, key: Id) -> Self::Input<'_>;
+    fn id_to_input(zalsa: &Zalsa, key: Id) -> Self::Input<'_>;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
     fn heap_size(_value: &Self::Output<'_>) -> usize {
@@ -124,7 +124,7 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
 
-    /// A downcaster from `dyn Database` to `C::DbView`.
+    /// An downcaster to `C::DbView`.
     ///
     /// # Safety
     ///
@@ -261,7 +261,8 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        db: &dyn Database,
+        _zalsa: &crate::zalsa::Zalsa,
+        db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
         cycle_heads: &mut CycleHeads,
@@ -370,12 +371,13 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn accumulated<'db>(
+    unsafe fn accumulated<'db>(
         &'db self,
-        db: &'db dyn Database,
+        db: RawDatabase<'db>,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        let db = self.view_caster().downcast(db);
+        // SAFETY: The `db` belongs to the ingredient as per caller invariant
+        let db = unsafe { self.view_caster().downcast_unchecked(db) };
         self.accumulated_map(db, key_index)
     }
 }

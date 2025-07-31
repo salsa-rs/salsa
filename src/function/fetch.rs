@@ -2,7 +2,7 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
-use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
+use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::Id;
 
@@ -10,8 +10,13 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &'db C::Output<'db> {
-        let (zalsa, zalsa_local) = db.zalsas();
+    pub fn fetch<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        id: Id,
+    ) -> &'db C::Output<'db> {
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);
@@ -175,7 +180,7 @@ where
                             inserting and returning fixpoint initial value"
                         );
                         let revisions = QueryRevisions::fixpoint_initial(database_key_index);
-                        let initial_value = C::cycle_initial(db, C::id_to_input(db, id));
+                        let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                         Some(self.insert_memo(
                             zalsa,
                             id,
@@ -189,7 +194,7 @@ where
                         );
                         let active_query =
                             zalsa_local.push_query(database_key_index, IterationCount::initial());
-                        let fallback_value = C::cycle_initial(db, C::id_to_input(db, id));
+                        let fallback_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                         let mut revisions = active_query.pop();
                         revisions.set_cycle_heads(CycleHeads::initial(database_key_index));
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.

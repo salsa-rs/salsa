@@ -51,7 +51,7 @@ pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::CycleRecoveryAction;
-pub use self::database::{AsDynDatabase, Database};
+pub use self::database::Database;
 pub use self::database_impl::DatabaseImpl;
 pub use self::durability::Durability;
 pub use self::event::{Event, EventKind};

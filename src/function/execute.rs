@@ -4,7 +4,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
-use crate::{Event, EventKind, Id, Revision};
+use crate::{Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -41,16 +41,11 @@ where
 
         let (new_value, mut revisions) = match C::CYCLE_STRATEGY {
             CycleRecoveryStrategy::Panic => {
-                Self::execute_query(db, active_query, opt_old_memo, zalsa.current_revision(), id)
+                Self::execute_query(db, zalsa, active_query, opt_old_memo, id)
             }
             CycleRecoveryStrategy::FallbackImmediate => {
-                let (mut new_value, mut revisions) = Self::execute_query(
-                    db,
-                    active_query,
-                    opt_old_memo,
-                    zalsa.current_revision(),
-                    id,
-                );
+                let (mut new_value, mut revisions) =
+                    Self::execute_query(db, zalsa, active_query, opt_old_memo, id);
 
                 if let Some(cycle_heads) = revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
@@ -77,7 +72,7 @@ where
                     let active_query = db
                         .zalsa_local()
                         .push_query(database_key_index, IterationCount::initial());
-                    new_value = C::cycle_initial(db, C::id_to_input(db, id));
+                    new_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                     revisions = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
                     // When verifying this, we will see we have fallback and mark ourselves verified.
@@ -136,13 +131,8 @@ where
         let mut opt_last_provisional: Option<&Memo<'db, C>> = None;
         loop {
             let previous_memo = opt_last_provisional.or(opt_old_memo);
-            let (mut new_value, mut revisions) = Self::execute_query(
-                db,
-                active_query,
-                previous_memo,
-                zalsa.current_revision(),
-                id,
-            );
+            let (mut new_value, mut revisions) =
+                Self::execute_query(db, zalsa, active_query, previous_memo, id);
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if let Some(cycle_heads) = revisions
@@ -192,7 +182,7 @@ where
                         db,
                         &new_value,
                         iteration_count.as_u32(),
-                        C::id_to_input(db, id),
+                        C::id_to_input(zalsa, id),
                     ) {
                         crate::CycleRecoveryAction::Iterate => {}
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
@@ -258,9 +248,9 @@ where
     #[inline]
     fn execute_query<'db>(
         db: &'db C::DbView,
+        zalsa: &'db Zalsa,
         active_query: ActiveQueryGuard<'db>,
         opt_old_memo: Option<&Memo<'db, C>>,
-        current_revision: Revision,
         id: Id,
     ) -> (C::Output<'db>, QueryRevisions) {
         if let Some(old_memo) = opt_old_memo {
@@ -275,14 +265,16 @@ where
             // * ensure that tracked struct created during the previous iteration
             //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
             // * ensure the final returned memo depends on all inputs from all iterations.
-            if old_memo.may_be_provisional() && old_memo.verified_at.load() == current_revision {
+            if old_memo.may_be_provisional()
+                && old_memo.verified_at.load() == zalsa.current_revision()
+            {
                 active_query.seed_iteration(&old_memo.revisions);
             }
         }
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let new_value = C::execute(db, C::id_to_input(db, id));
+        let new_value = C::execute(db, C::id_to_input(zalsa, id));
 
         (new_value, active_query.pop())
     }

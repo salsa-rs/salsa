@@ -102,7 +102,8 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     unsafe fn maybe_changed_after(
         &self,
-        _db: &dyn Database,
+        _zalsa: &crate::zalsa::Zalsa,
+        _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
         _cycle_heads: &mut CycleHeads,
