@@ -109,7 +109,7 @@ pub mod plumbing {
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::helper::{Dispatch as UpdateDispatch, Fallback as UpdateFallback};
     pub use crate::update::{always_update, Update};
-    pub use crate::views::DatabaseUpCaster;
+    pub use crate::views::DatabaseDownCaster;
     pub use crate::zalsa::{
         register_jar, transmute_data_ptr, views, ErasedJar, HasJar, IngredientIndex, JarKind,
         Zalsa, ZalsaDatabase,

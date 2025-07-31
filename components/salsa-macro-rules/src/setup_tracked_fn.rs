@@ -185,11 +185,11 @@ macro_rules! setup_tracked_fn {
                     unsafe {
                         $FN_CACHE.get_or_create(zalsa, || zalsa.lookup_jar_by_type::<$fn_name>())
                     }
-                    .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_upcaster(db))
+                    .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_downcaster(db))
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
-                    let view = *<dyn $Db as $Db>::zalsa_register_upcaster(db);
+                    let view = *<dyn $Db as $Db>::zalsa_register_downcaster(db);
                     let zalsa_mut = db.zalsa_mut();
                     let index = zalsa_mut.lookup_jar_by_type::<$fn_name>();
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);

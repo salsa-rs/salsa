@@ -185,7 +185,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 impl dyn Ingredient {
     /// Equivalent to the `downcast` method on `Any`.
     ///
-    /// Because we do not have dyn-upcasting support, we need this workaround.
+    /// Because we do not have dyn-downcasting support, we need this workaround.
     pub fn assert_type<T: Any>(&self) -> &T {
         assert_eq!(
             self.type_id(),
@@ -201,7 +201,7 @@ impl dyn Ingredient {
 
     /// Equivalent to the `downcast` methods on `Any`.
     ///
-    /// Because we do not have dyn-upcasting support, we need this workaround.
+    /// Because we do not have dyn-downcasting support, we need this workaround.
     ///
     /// # Safety
     ///
@@ -220,7 +220,7 @@ impl dyn Ingredient {
 
     /// Equivalent to the `downcast` method on `Any`.
     ///
-    /// Because we do not have dyn-upcasting support, we need this workaround.
+    /// Because we do not have dyn-downcasting support, we need this workaround.
     pub fn assert_type_mut<T: Any>(&mut self) -> &mut T {
         assert_eq!(
             Any::type_id(self),

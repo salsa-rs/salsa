@@ -110,14 +110,14 @@ impl DbMacro {
         let trait_name = &input.ident;
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            fn zalsa_register_upcaster(&self) -> &salsa::plumbing::DatabaseUpCaster<dyn #trait_name>;
+            fn zalsa_register_downcaster(&self) -> &salsa::plumbing::DatabaseDownCaster<dyn #trait_name>;
         });
 
-        let comment = format!(" upcast `Self` to a [`dyn {trait_name}`]");
+        let comment = format!(" downcast `Self` to a [`dyn {trait_name}`]");
         input.items.push(parse_quote! {
             #[doc = #comment]
             #[doc(hidden)]
-            fn upcast(&self) -> &dyn #trait_name where Self: Sized;
+            fn downcast(&self) -> &dyn #trait_name where Self: Sized;
         });
         Ok(())
     }
@@ -134,14 +134,14 @@ impl DbMacro {
             #[cold]
             #[inline(never)]
             #[doc(hidden)]
-            fn zalsa_register_upcaster(&self) -> &salsa::plumbing::DatabaseUpCaster<dyn #TraitPath> {
-                salsa::plumbing::views(self).add(<Self as #TraitPath>::upcast)
+            fn zalsa_register_downcaster(&self) -> &salsa::plumbing::DatabaseDownCaster<dyn #TraitPath> {
+                salsa::plumbing::views(self).add(<Self as #TraitPath>::downcast)
             }
         });
         input.items.push(parse_quote! {
             #[doc(hidden)]
             #[inline(always)]
-            fn upcast(&self) -> &dyn #TraitPath where Self: Sized {
+            fn downcast(&self) -> &dyn #TraitPath where Self: Sized {
                 self
             }
         });

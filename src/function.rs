@@ -20,7 +20,7 @@ use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
-use crate::views::DatabaseUpCaster;
+use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
 use crate::{Id, Revision};
@@ -124,14 +124,14 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
 
-    /// An upcaster to `C::DbView`.
+    /// An downcaster to `C::DbView`.
     ///
     /// # Safety
     ///
     /// The supplied database must be be the same as the database used to construct the [`Views`]
-    /// instances that this upcaster was derived from.
     /// instances that this downcaster was derived from.
-    view_caster: OnceLock<DatabaseUpCaster<C::DbView>>,
+    /// instances that this downcaster was derived from.
+    view_caster: OnceLock<DatabaseDownCaster<C::DbView>>,
 
     sync_table: SyncTable,
 
@@ -173,7 +173,7 @@ where
     /// Set the view-caster for this tracked function ingredient, if it has
     /// not already been initialized.
     #[inline]
-    pub fn get_or_init(&self, view_caster: impl FnOnce() -> DatabaseUpCaster<C::DbView>) -> &Self {
+    pub fn get_or_init(&self, view_caster: impl FnOnce() -> DatabaseDownCaster<C::DbView>) -> &Self {
         // Note that we must set this lazily as we don't have access to the database
         // type when ingredients are registered into the `Zalsa`.
         self.view_caster.get_or_init(view_caster);
@@ -239,7 +239,7 @@ where
         self.memo_ingredient_indices.get_zalsa_id(zalsa, id)
     }
 
-    fn view_caster(&self) -> &DatabaseUpCaster<C::DbView> {
+    fn view_caster(&self) -> &DatabaseDownCaster<C::DbView> {
         self.view_caster
             .get()
             .expect("tracked function ingredients cannot be accessed before calling `init`")
@@ -267,7 +267,7 @@ where
         cycle_heads: &mut CycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
-        let db = unsafe { self.view_caster().upcast_unchecked(db) };
+        let db = unsafe { self.view_caster().downcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
@@ -376,7 +376,7 @@ where
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
-        let db = unsafe { self.view_caster().upcast_unchecked(db) };
+        let db = unsafe { self.view_caster().downcast_unchecked(db) };
         self.accumulated_map(db, key_index)
     }
 }

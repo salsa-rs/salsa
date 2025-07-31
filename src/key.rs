@@ -50,7 +50,7 @@ impl DatabaseKeyIndex {
                 .maybe_changed_after(
                     zalsa,
                     // lets say we do turn this into an opaque pair of data and vtable pointer
-                    // then we also need an upcast function, from our dbview to the ingredients
+                    // then we also need an downcast function, from our dbview to the ingredients
                     // dbview
                     db,
                     self.key_index(),
