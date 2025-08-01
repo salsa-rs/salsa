@@ -111,14 +111,16 @@ impl<C: Configuration> IngredientImpl<C> {
         durabilities: C::Durabilities,
     ) -> C::Struct {
         let id = self.singleton.with_scope(|| {
-            zalsa_local.allocate(zalsa, self.ingredient_index, |_| Value::<C> {
+            let (id, _) = zalsa_local.allocate(zalsa, self.ingredient_index, |_| Value::<C> {
                 fields,
                 revisions,
                 durabilities,
                 // SAFETY: We only ever access the memos of a value that we allocated through
                 // our `MemoTableTypes`.
                 memos: unsafe { MemoTable::new(self.memo_table_types()) },
-            })
+            });
+
+            id
         });
 
         FromIdWithDb::from_id(id, zalsa)

@@ -583,7 +583,7 @@ where
             .unwrap_or((Durability::MAX, Revision::max()));
 
         // Allocate the value slot.
-        let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
+        let (id, value) = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
             shard: shard_index as u16,
             link: LinkedListLink::new(),
             // SAFETY: We only ever access the memos of a value that we allocated through
@@ -598,7 +598,6 @@ where
             }),
         });
 
-        let value = zalsa.table().get::<Value<C>>(id);
         // SAFETY: We hold the lock for the shard containing the value.
         let value_shared = unsafe { &mut *value.shared.get() };
 
