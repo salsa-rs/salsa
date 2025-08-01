@@ -25,7 +25,6 @@ where
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
-
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
 
@@ -168,16 +167,13 @@ where
                 }
                 // no provisional value; create/insert/return initial provisional value
                 return match C::CYCLE_STRATEGY {
-                    // SAFETY: We do not access the query stack reentrantly.
-                    CycleRecoveryStrategy::Panic => unsafe {
-                        zalsa_local.with_query_stack_unchecked(|stack| {
-                            panic!(
-                                "dependency graph cycle when querying {database_key_index:#?}, \
+                    CycleRecoveryStrategy::Panic => zalsa_local.with_query_stack(|stack| {
+                        panic!(
+                            "dependency graph cycle when querying {database_key_index:#?}, \
                             set cycle_fn/cycle_initial to fixpoint iterate.\n\
                             Query stack:\n{stack:#?}",
-                            );
-                        })
-                    },
+                        );
+                    }),
                     CycleRecoveryStrategy::Fixpoint => {
                         crate::tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
