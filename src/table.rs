@@ -286,6 +286,8 @@ impl Table {
             .flat_map(|view| view.data())
     }
 
+    #[cold]
+    #[inline(never)]
     pub(crate) fn fetch_or_push_page<T: Slot>(
         &self,
         ingredient: IngredientIndex,
@@ -299,6 +301,7 @@ impl Table {
         {
             return page;
         }
+
         self.push_page::<T>(ingredient, memo_types())
     }
 
@@ -311,22 +314,23 @@ impl Table {
     }
 }
 
-impl<'p, T: Slot> PageView<'p, T> {
+impl<'db, T: Slot> PageView<'db, T> {
     #[inline]
-    fn page_data(&self) -> &'p [PageDataEntry<T>] {
+    fn page_data(&self) -> &'db [PageDataEntry<T>] {
         let len = self.0.allocated.load(Ordering::Acquire);
         // SAFETY: `len` is the initialized length of the page
         unsafe { slice::from_raw_parts(self.0.data.cast::<PageDataEntry<T>>().as_ptr(), len) }
     }
 
     #[inline]
-    fn data(&self) -> &'p [T] {
+    fn data(&self) -> &'db [T] {
         let len = self.0.allocated.load(Ordering::Acquire);
         // SAFETY: `len` is the initialized length of the page
         unsafe { slice::from_raw_parts(self.0.data.cast::<T>().as_ptr(), len) }
     }
 
-    pub(crate) fn allocate<V>(&self, page: PageIndex, value: V) -> Result<Id, V>
+    #[inline]
+    pub(crate) fn allocate<V>(&self, page: PageIndex, value: V) -> Result<(Id, &'db T), V>
     where
         V: FnOnce(Id) -> T,
     {
@@ -347,11 +351,14 @@ impl<'p, T: Slot> PageView<'p, T> {
         // interior
         unsafe { (*entry.get()).write(value(id)) };
 
+        // SAFETY: We just initialized the value above.
+        let value = unsafe { (*entry.get()).assume_init_ref() };
+
         // Update the length (this must be done after initialization as otherwise an uninitialized
         // read could occur!)
         self.0.allocated.store(index + 1, Ordering::Release);
 
-        Ok(id)
+        Ok((id, value))
     }
 }
 

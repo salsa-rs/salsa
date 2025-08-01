@@ -53,12 +53,36 @@ impl ZalsaLocal {
     /// Allocate a new id in `table` for the given ingredient
     /// storing `value`. Remembers the most recent page from this
     /// thread and attempts to reuse it.
-    pub(crate) fn allocate<T: Slot>(
+    pub(crate) fn allocate<'db, T: Slot>(
         &self,
-        zalsa: &Zalsa,
+        zalsa: &'db Zalsa,
         ingredient: IngredientIndex,
         mut value: impl FnOnce(Id) -> T,
-    ) -> Id {
+    ) -> (Id, &'db T) {
+        // SAFETY: `ZalsaLocal` is `!Sync`, and we never expose a reference to this field,
+        // so we have exclusive access.
+        let most_recent_pages = unsafe { &mut *self.most_recent_pages.get() };
+
+        // Fast-path, we already have an unfilled page available.
+        if let Some(&page) = most_recent_pages.get(&ingredient) {
+            let page_ref = zalsa.table().page::<T>(page);
+            match page_ref.allocate(page, value) {
+                Ok((id, value)) => return (id, value),
+                Err(v) => value = v,
+            }
+        }
+
+        self.allocate_cold(zalsa, ingredient, value)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn allocate_cold<'db, T: Slot>(
+        &self,
+        zalsa: &'db Zalsa,
+        ingredient: IngredientIndex,
+        mut value: impl FnOnce(Id) -> T,
+    ) -> (Id, &'db T) {
         let memo_types = || {
             zalsa
                 .lookup_ingredient(ingredient)
@@ -82,7 +106,7 @@ impl ZalsaLocal {
             let page_ref = zalsa.table().page::<T>(page);
             match page_ref.allocate(page, value) {
                 // If successful, return
-                Ok(id) => return id,
+                Ok((id, value)) => return (id, value),
 
                 // Otherwise, create a new page and try again
                 // Note that we could try fetching a page again, but as we just filled one up

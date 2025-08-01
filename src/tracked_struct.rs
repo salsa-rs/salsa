@@ -477,7 +477,9 @@ where
             return id;
         }
 
-        zalsa_local.allocate::<Value<C>>(zalsa, self.ingredient_index, value)
+        let (id, _) = zalsa_local.allocate::<Value<C>>(zalsa, self.ingredient_index, value);
+
+        id
     }
 
     /// Get mutable access to the data for `id` -- this holds a write lock for the duration
