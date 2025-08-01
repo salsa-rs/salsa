@@ -236,17 +236,14 @@ impl<'db, C: Configuration> Memo<'db, C> {
             return true;
         }
 
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            zalsa_local.with_query_stack_unchecked(|stack| {
-                cycle_heads.iter().all(|cycle_head| {
-                    stack
-                        .iter()
-                        .rev()
-                        .any(|query| query.database_key_index == cycle_head.database_key_index)
-                })
+        zalsa_local.with_query_stack(|stack| {
+            cycle_heads.iter().all(|cycle_head| {
+                stack
+                    .iter()
+                    .rev()
+                    .any(|query| query.database_key_index == cycle_head.database_key_index)
             })
-        }
+        })
     }
 
     /// Cycle heads that should be propagated to dependent queries.

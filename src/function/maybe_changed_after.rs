@@ -108,16 +108,13 @@ where
                 return None;
             }
             ClaimResult::Cycle { .. } => match C::CYCLE_STRATEGY {
-                // SAFETY: We do not access the query stack reentrantly.
-                CycleRecoveryStrategy::Panic => unsafe {
-                    db.zalsa_local().with_query_stack_unchecked(|stack| {
-                        panic!(
-                            "dependency graph cycle when validating {database_key_index:#?}, \
+                CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
+                    panic!(
+                        "dependency graph cycle when validating {database_key_index:#?}, \
                         set cycle_fn/cycle_initial to fixpoint iterate.\n\
                         Query stack:\n{stack:#?}",
-                        );
-                    })
-                },
+                    );
+                }),
                 CycleRecoveryStrategy::FallbackImmediate => {
                     return Some(VerifyResult::unchanged());
                 }
@@ -339,38 +336,32 @@ where
             return true;
         }
 
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            zalsa_local.with_query_stack_unchecked(|stack| {
-                cycle_heads.iter().all(|cycle_head| {
-                    stack
-                        .iter()
-                        .rev()
-                        .find(|query| query.database_key_index == cycle_head.database_key_index)
-                        .map(|query| query.iteration_count())
-                        .or_else(|| {
-                            // If this is a cycle head is owned by another thread that is blocked by this ingredient,
-                            // check if it has the same iteration count.
-                            let ingredient = zalsa.lookup_ingredient(
-                                cycle_head.database_key_index.ingredient_index(),
-                            );
-                            let wait_result = ingredient
-                                .wait_for(zalsa, cycle_head.database_key_index.key_index());
+        zalsa_local.with_query_stack(|stack| {
+            cycle_heads.iter().all(|cycle_head| {
+                stack
+                    .iter()
+                    .rev()
+                    .find(|query| query.database_key_index == cycle_head.database_key_index)
+                    .map(|query| query.iteration_count())
+                    .or_else(|| {
+                        // If this is a cycle head is owned by another thread that is blocked by this ingredient,
+                        // check if it has the same iteration count.
+                        let ingredient = zalsa
+                            .lookup_ingredient(cycle_head.database_key_index.ingredient_index());
+                        let wait_result =
+                            ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index());
 
-                            if !wait_result.is_cycle_with_other_thread() {
-                                return None;
-                            }
+                        if !wait_result.is_cycle_with_other_thread() {
+                            return None;
+                        }
 
-                            let provisional_status = ingredient.provisional_status(
-                                zalsa,
-                                cycle_head.database_key_index.key_index(),
-                            )?;
-                            provisional_status.iteration()
-                        })
-                        == Some(cycle_head.iteration_count)
-                })
+                        let provisional_status = ingredient
+                            .provisional_status(zalsa, cycle_head.database_key_index.key_index())?;
+                        provisional_status.iteration()
+                    })
+                    == Some(cycle_head.iteration_count)
             })
-        }
+        })
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
