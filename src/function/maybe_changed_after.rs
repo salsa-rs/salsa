@@ -267,7 +267,7 @@ where
     ///   cycle heads have all been finalized.
     /// * provisional memos that have been created in the same revision and iteration and are part of the same cycle.
     #[inline]
-    pub(super) fn validate_may_be_provisional(
+    fn validate_may_be_provisional(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -342,7 +342,7 @@ where
     /// If this is a provisional memo, validate that it was cached in the same iteration of the
     /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
     /// runaway re-execution of the same queries within a fixpoint iteration.
-    pub(super) fn validate_same_iteration(
+    fn validate_same_iteration(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -380,6 +380,9 @@ where
                             if !wait_result.is_cycle() {
                                 return None;
                             }
+
+                            // Is the issue here that we used the provisional memo forever?
+                            //
 
                             let provisional_status = ingredient.provisional_status(
                                 zalsa,

@@ -54,9 +54,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
-        run: cargo nextest run --workspace --all-targets --no-fail-fast
+        run: cargo nextest run --workspace --all-targets --no-fail-fast --no-capture
       - name: Test Manual Registration / no-default-features
-        run: cargo nextest run --workspace --tests --no-fail-fast --no-default-features --features macros
+        run: cargo nextest run --workspace --tests --no-fail-fast --no-default-features --features macros --no-capture
       - name: Test docs
         run: cargo test --workspace --doc
 
@@ -117,7 +117,7 @@ jobs:
             ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-
             ${{ runner.os }}-cargo-
       - name: Test with Shuttle
-        run: cargo nextest run --features shuttle --test parallel
+        run: cargo nextest run --features shuttle --test parallel --no-capture
 
   benchmarks:
     # https://github.com/CodSpeedHQ/action/issues/126
