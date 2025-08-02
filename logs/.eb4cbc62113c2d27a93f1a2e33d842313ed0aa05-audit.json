@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/Users/micha/astral/salsa/logs/.eb4cbc62113c2d27a93f1a2e33d842313ed0aa05-audit.json",
+    "files": [
+        {
+            "date": 1754138088653,
+            "name": "/Users/micha/astral/salsa/logs/mcp-puppeteer-2025-08-02.log",
+            "hash": "72e8adeb702aa36c72a282da5aca88b98d669118c08407bd75bf993cbd85d949"
+        }
+    ],
+    "hashType": "sha256"
+}
