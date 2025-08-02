@@ -19,24 +19,23 @@ use crate::{Event, EventKind, Id, Revision};
 impl<C: Configuration> IngredientImpl<C> {
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
     pub(super) fn insert_memo_into_table_for<'db>(
-        &self,
+        &'db self,
         zalsa: &'db Zalsa,
         id: Id,
         memo: NonNull<Memo<'db, C>>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<NonNull<Memo<'db, C>>> {
+    ) {
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         let static_memo =
             unsafe { transmute::<NonNull<Memo<'db, C>>, NonNull<Memo<'static, C>>>(memo) };
         let old_static_memo = zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .insert(memo_ingredient_index, static_memo)?;
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        Some(unsafe {
-            transmute::<NonNull<Memo<'static, C>>, NonNull<Memo<'db, C>>>(old_static_memo)
-        })
+            .insert(memo_ingredient_index, static_memo);
+        if let Some(old_memo) = old_static_memo {
+            // SAFETY: We delay clearing properly
+            unsafe { self.delete.push(old_memo) };
+        }
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
@@ -62,9 +61,10 @@ impl<C: Configuration> IngredientImpl<C> {
     pub(super) fn evict_value_from_memo_for(
         table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,
+        //FIXME should provide a page to move the value into so we can delay the drop
     ) {
-        let map = |memo: &mut Memo<'static, C>| {
-            match memo.revisions.origin.as_ref() {
+        if let Some(memo) = table.fetch::<Memo<'static, C>>(memo_ingredient_index) {
+            match &memo.revisions.origin.as_ref() {
                 QueryOriginRef::Assigned(_)
                 | QueryOriginRef::DerivedUntracked(_)
                 | QueryOriginRef::FixpointInitial => {
@@ -73,14 +73,9 @@ impl<C: Configuration> IngredientImpl<C> {
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
                 }
-                QueryOriginRef::Derived(_) => {
-                    // Set the memo value to `None`.
-                    memo.value = None;
-                }
+                QueryOriginRef::Derived(_) => _ = memo.value.take(),
             }
-        };
-
-        table.map_memo(memo_ingredient_index, map)
+        }
     }
 }
 
@@ -332,6 +327,10 @@ where
                 memos: Vec::new(),
             },
         }
+    }
+
+    fn clear_value(&mut self) {
+        self.value = None;
     }
 }
 

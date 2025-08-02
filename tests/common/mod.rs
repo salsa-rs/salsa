@@ -62,6 +62,19 @@ pub struct LoggerDatabase {
     logger: Logger,
 }
 
+impl LoggerDatabase {
+    pub fn new_with_drop_channel() -> (LoggerDatabase, salsa::DropChannelReceiver) {
+        let (storage, drop_chan) = Storage::new_with_drop_channel(None, None);
+        (
+            Self {
+                storage,
+                logger: Logger::default(),
+            },
+            drop_chan,
+        )
+    }
+}
+
 impl HasLogger for LoggerDatabase {
     fn logger(&self) -> &Logger {
         &self.logger

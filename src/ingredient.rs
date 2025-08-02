@@ -9,7 +9,7 @@ use crate::database::RawDatabase;
 use crate::function::VerifyResult;
 use crate::runtime::Running;
 use crate::sync::Arc;
-use crate::table::memo::MemoTableTypes;
+use crate::table::memo::{DeletedEntries, MemoTableTypes};
 use crate::table::Table;
 use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
@@ -128,8 +128,12 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ///
     /// **Important:** to actually receive resets, the ingredient must set
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
-    fn reset_for_new_revision(&mut self, table: &mut Table) {
-        _ = table;
+    fn reset_for_new_revision(
+        &mut self,
+        table: &mut Table,
+        new_buffer: DeletedEntries,
+    ) -> DeletedEntries {
+        _ = (table, new_buffer);
         panic!(
             "Ingredient `{}` set `Ingredient::requires_reset_for_new_revision` to true but does \
             not overwrite `Ingredient::reset_for_new_revision`",

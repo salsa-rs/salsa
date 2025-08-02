@@ -413,7 +413,7 @@ impl std::panic::RefUnwindSafe for ZalsaLocal {}
 #[derive(Debug)]
 // #[derive(Clone)] cloning this is expensive, so we don't derive
 pub(crate) struct QueryRevisions {
-    /// The most revision in which some input changed.
+    /// The most recent revision in which some input changed.
     pub(crate) changed_at: Revision,
 
     /// Minimum durability of the inputs to this query.

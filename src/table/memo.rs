@@ -14,7 +14,7 @@ pub struct MemoTable {
 }
 
 impl MemoTable {
-    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.  
+    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.
     ///
     /// # Safety
     ///
@@ -45,6 +45,58 @@ pub trait Memo: Any + Send + Sync {
     /// Returns memory usage information about the memoized value.
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo;
+
+    fn clear_value(&mut self);
+}
+
+/// An untyped memo that can only be dropped.
+#[derive(Debug)]
+pub struct MemoDrop(NonNull<DummyMemo>, unsafe fn(NonNull<DummyMemo>));
+
+impl MemoDrop {
+    pub fn new<M: Memo>(memo: NonNull<M>) -> Self {
+        Self(
+            MemoEntryType::to_dummy(memo),
+            // SAFETY: `M` is the same as used in `to_dummy`
+            |memo| unsafe { drop(Box::from_raw(MemoEntryType::from_dummy::<M>(memo).as_ptr())) },
+        )
+    }
+}
+
+impl Drop for MemoDrop {
+    fn drop(&mut self) {
+        // SAFETY: We only construct this type with a valid drop function pointer
+        unsafe { self.1(self.0) };
+    }
+}
+
+/// SAFETY: `MemoDrop` is `Send` because only contains `Memo` types which are `Send`
+unsafe impl Send for MemoDrop where DummyMemo: Send {}
+/// SAFETY: `MemoDrop` is `Sync` because only contains `Memo` types which are `Sync`
+unsafe impl Sync for MemoDrop where DummyMemo: Sync {}
+
+#[derive(Default)]
+pub struct DeletedEntries {
+    memos: Box<boxcar::Vec<MemoDrop>>,
+}
+
+impl DeletedEntries {
+    /// # Safety
+    ///
+    /// The memo must be valid and safe to free when the `DeletedEntries` list is cleared or dropped.
+    pub(crate) unsafe fn push<M: Memo>(&self, memo: NonNull<M>) {
+        self.memos.push(MemoDrop::new(memo));
+    }
+
+    // FIXME: This implies that dropping `DeletedEntries` should be unsafe.
+    /// Free all deleted memos, keeping the list available for reuse.
+    pub(crate) unsafe fn clear(&mut self) {
+        self.memos.clear();
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.memos.is_empty()
+    }
 }
 
 /// Data for a memoized entry.
@@ -130,6 +182,10 @@ impl Memo for DummyMemo {
                 memos: Vec::new(),
             },
         }
+    }
+
+    fn clear_value(&mut self) {
+        unreachable!("should not get here")
     }
 }
 
@@ -254,26 +310,19 @@ impl MemoTableWithTypes<'_> {
     }
 }
 
-pub(crate) struct MemoTableWithTypesMut<'a> {
-    types: &'a MemoTableTypes,
-    memos: &'a mut MemoTable,
+pub(crate) struct MemoTableWithTypesMut<'db> {
+    types: &'db MemoTableTypes,
+    memos: &'db mut MemoTable,
 }
 
-impl MemoTableWithTypesMut<'_> {
+impl<'db> MemoTableWithTypesMut<'db> {
     /// Calls `f` on the memo at `memo_ingredient_index`.
-    ///
-    /// If the memo is not present, `f` is not called.
-    pub(crate) fn map_memo<M: Memo>(
+    pub(crate) fn fetch<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
-        f: impl FnOnce(&mut M),
-    ) {
-        let Some(MemoEntry { atomic_memo }) =
-            self.memos.memos.get_mut(memo_ingredient_index.as_usize())
-        else {
-            return;
-        };
-
+    ) -> Option<&'db mut M> {
+        let MemoEntry { atomic_memo } =
+            self.memos.memos.get_mut(memo_ingredient_index.as_usize())?;
         // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
         // corresponding `MemoTableTypes`, by construction.
         let type_ = unsafe {
@@ -287,12 +336,10 @@ impl MemoTableWithTypesMut<'_> {
             type_assert_failed(memo_ingredient_index);
         }
 
-        let Some(memo) = NonNull::new(*atomic_memo.get_mut()) else {
-            return;
-        };
+        let memo = NonNull::new(*atomic_memo.get_mut())?;
 
         // SAFETY: We asserted that the type is correct above.
-        f(unsafe { MemoEntryType::from_dummy(memo).as_mut() });
+        Some(unsafe { MemoEntryType::from_dummy(memo).as_mut() })
     }
 
     /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.
