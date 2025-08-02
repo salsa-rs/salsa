@@ -26,7 +26,7 @@ fn initial(_db: &dyn KnobsDatabase) -> u32 {
     0
 }
 
-#[test_log::test]
+#[test]
 fn execute() {
     let db = Knobs::default();
 
