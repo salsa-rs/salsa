@@ -311,7 +311,7 @@ where
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim(zalsa, key_index) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle { same_thread } => WaitForResult::Cycle { same_thread },
+            ClaimResult::Cycle => WaitForResult::Cycle,
             ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }

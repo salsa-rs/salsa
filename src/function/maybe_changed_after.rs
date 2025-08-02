@@ -267,7 +267,7 @@ where
     ///   cycle heads have all been finalized.
     /// * provisional memos that have been created in the same revision and iteration and are part of the same cycle.
     #[inline]
-    pub(super) fn validate_may_be_provisional(
+    fn validate_may_be_provisional(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -342,7 +342,7 @@ where
     /// If this is a provisional memo, validate that it was cached in the same iteration of the
     /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
     /// runaway re-execution of the same queries within a fixpoint iteration.
-    pub(super) fn validate_same_iteration(
+    fn validate_same_iteration(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -369,6 +369,11 @@ where
                         .find(|query| query.database_key_index == cycle_head.database_key_index)
                         .map(|query| query.iteration_count())
                         .or_else(|| {
+                            // We know that our own head isn't finalized yet.
+                            if cycle_head.database_key_index == database_key_index {
+                                return None;
+                            }
+
                             // If this is a cycle head is owned by another thread that is blocked by this ingredient,
                             // check if it has the same iteration count.
                             let ingredient = zalsa.lookup_ingredient(
@@ -377,9 +382,12 @@ where
                             let wait_result = ingredient
                                 .wait_for(zalsa, cycle_head.database_key_index.key_index());
 
-                            if !wait_result.is_cycle_with_other_thread() {
+                            if !wait_result.is_cycle() {
                                 return None;
                             }
+
+                            // Is the issue here that we used the provisional memo forever?
+                            //
 
                             let provisional_status = ingredient.provisional_status(
                                 zalsa,

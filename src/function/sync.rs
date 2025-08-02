@@ -20,7 +20,7 @@ pub(crate) enum ClaimResult<'a> {
     /// Can't claim the query because it is running on an other thread.
     Running(Running<'a>),
     /// Claiming the query results in a cycle.
-    Cycle { same_thread: bool },
+    Cycle,
     /// Successfully claimed the query.
     Claimed(ClaimGuard<'a>),
 }
@@ -62,7 +62,7 @@ impl SyncTable {
                     write,
                 ) {
                     BlockResult::Running(blocked_on) => ClaimResult::Running(blocked_on),
-                    BlockResult::Cycle { same_thread } => ClaimResult::Cycle { same_thread },
+                    BlockResult::Cycle => ClaimResult::Cycle,
                 }
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {

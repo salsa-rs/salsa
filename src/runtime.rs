@@ -51,7 +51,7 @@ pub(crate) enum BlockResult<'me> {
     ///
     /// The lock is hold by the current thread or there's another thread that is waiting on the current thread,
     /// and blocking this thread on the other thread would result in a deadlock/cycle.
-    Cycle { same_thread: bool },
+    Cycle,
 }
 
 pub struct Running<'me>(Box<BlockedOnInner<'me>>);
@@ -230,14 +230,14 @@ impl Runtime {
         let thread_id = thread::current().id();
         // Cycle in the same thread.
         if thread_id == other_id {
-            return BlockResult::Cycle { same_thread: true };
+            return BlockResult::Cycle;
         }
 
         let dg = self.dependency_graph.lock();
 
         if dg.depends_on(other_id, thread_id) {
             crate::tracing::debug!("block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}");
-            return BlockResult::Cycle { same_thread: false };
+            return BlockResult::Cycle;
         }
 
         BlockResult::Running(Running(Box::new(BlockedOnInner {
