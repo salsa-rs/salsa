@@ -1025,3 +1025,42 @@ fn repeat_provisional_query() {
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
         ]"#]]);
 }
+
+#[test]
+fn repeat_provisional_query_incremental() {
+    let mut db = ExecuteValidateLoggerDatabase::default();
+    let a_in = Inputs::new(&db, vec![]);
+    let b_in = Inputs::new(&db, vec![]);
+    let c_in = Inputs::new(&db, vec![]);
+    let a = Input::MinIterate(a_in);
+    let b = Input::MinPanic(b_in);
+    let c = Input::MinPanic(c_in);
+    a_in.set_inputs(&mut db).to(vec![value(59), b.clone()]);
+    b_in.set_inputs(&mut db)
+        .to(vec![value(60), c.clone(), c.clone(), c]);
+    c_in.set_inputs(&mut db).to(vec![a.clone()]);
+
+    a.assert_value(&db, 59);
+
+    db.clear_logs();
+
+    c_in.set_inputs(&mut db).to(vec![a.clone()]);
+
+    a.assert_value(&db, 59);
+
+    // `min_panic(Id(2)) should only twice:
+    // * Once before iterating
+    // * Once as part of iterating
+    //
+    // If it runs more than once before iterating, than this suggests that
+    // `validate_same_iteration` incorrectly returns `false`.
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
+            "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
+            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration_count: IterationCount(1), fell_back: false })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
+        ]"#]]);
+}

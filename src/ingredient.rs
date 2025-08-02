@@ -255,6 +255,6 @@ pub enum WaitForResult<'me> {
 
 impl WaitForResult<'_> {
     pub const fn is_cycle(&self) -> bool {
-        matches!(self, WaitForResult::Cycle { .. })
+        matches!(self, WaitForResult::Cycle)
     }
 }

@@ -34,6 +34,10 @@ pub trait LogDatabase: HasLogger + Database {
         self.logger().logs.lock().unwrap().push(string);
     }
 
+    fn clear_logs(&self) {
+        std::mem::take(&mut *self.logger().logs.lock().unwrap());
+    }
+
     /// Asserts what the (formatted) logs should look like,
     /// clearing the logged events. This takes `&mut self` because
     /// it is meant to be run from outside any tracked functions.
