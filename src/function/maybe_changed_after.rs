@@ -377,7 +377,7 @@ where
                             let wait_result = ingredient
                                 .wait_for(zalsa, cycle_head.database_key_index.key_index());
 
-                            if !wait_result.is_cycle_with_other_thread() {
+                            if !wait_result.is_cycle() {
                                 return None;
                             }
 
