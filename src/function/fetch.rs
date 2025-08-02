@@ -1,4 +1,4 @@
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHeadKeys, CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
@@ -222,7 +222,7 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
-                let mut cycle_heads = CycleHeads::default();
+                let mut cycle_heads = CycleHeadKeys::new();
                 if let VerifyResult::Unchanged { .. } =
                     self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
                 {

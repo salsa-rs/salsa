@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::cycle::CycleHeads;
+use crate::cycle::CycleHeadKeys;
 use crate::function::VerifyResult;
 use crate::ingredient::Ingredient;
 use crate::sync::Arc;
@@ -61,7 +61,7 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: crate::Revision,
-        _cycle_heads: &mut CycleHeads,
+        _cycle_heads: &mut CycleHeadKeys,
     ) -> VerifyResult {
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
         let field_changed_at = data.revisions[self.field_index];
