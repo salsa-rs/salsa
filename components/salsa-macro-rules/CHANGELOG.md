@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.23.0...salsa-macro-rules-v0.24.0) - 2025-08-02
+
+### Fixed
+
+- Fix phantom data usage in salsa structs affecting auto traits ([#932](https://github.com/salsa-rs/salsa/pull/932))
+
+### Other
+
+- Gate accumulator feature behind a feature flag ([#946](https://github.com/salsa-rs/salsa/pull/946))
+- Do manual trait casting ([#922](https://github.com/salsa-rs/salsa/pull/922))
+- remove bounds and type checks from `IngredientCache` ([#937](https://github.com/salsa-rs/salsa/pull/937))
+- Avoid dynamic dispatch to access memo tables ([#941](https://github.com/salsa-rs/salsa/pull/941))
+- Use `inventory` for static ingredient registration ([#934](https://github.com/salsa-rs/salsa/pull/934))
+
 ## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.22.0...salsa-macro-rules-v0.23.0) - 2025-06-27
 
 ### Added
