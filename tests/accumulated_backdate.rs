@@ -1,4 +1,4 @@
-#![cfg(feature = "inventory")]
+#![cfg(all(feature = "inventory", feature = "accumulator"))]
 
 //! Tests that accumulated values are correctly accounted for
 //! when backdating a value.

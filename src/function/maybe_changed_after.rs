@@ -1,3 +1,4 @@
+#[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::function::memo::Memo;
@@ -18,7 +19,10 @@ pub enum VerifyResult {
     ///
     /// The inner value tracks whether the memo or any of its dependencies have an
     /// accumulated value.
-    Unchanged(InputAccumulatedValues),
+    Unchanged {
+        #[cfg(feature = "accumulator")]
+        accumulated: InputAccumulatedValues,
+    },
 }
 
 impl VerifyResult {
@@ -31,7 +35,10 @@ impl VerifyResult {
     }
 
     pub(crate) fn unchanged() -> Self {
-        Self::Unchanged(InputAccumulatedValues::Empty)
+        Self::Unchanged {
+            #[cfg(feature = "accumulator")]
+            accumulated: InputAccumulatedValues::Empty,
+        }
     }
 }
 
@@ -71,7 +78,10 @@ where
                 return if memo.revisions.changed_at > revision {
                     VerifyResult::Changed
                 } else {
-                    VerifyResult::Unchanged(memo.revisions.accumulated_inputs.load())
+                    VerifyResult::Unchanged {
+                        #[cfg(feature = "accumulator")]
+                        accumulated: memo.revisions.accumulated_inputs.load(),
+                    }
                 };
             }
 
@@ -146,11 +156,18 @@ where
         // Check if the inputs are still valid. We can just compare `changed_at`.
         let deep_verify =
             self.deep_verify_memo(db, zalsa, old_memo, database_key_index, cycle_heads);
-        if let VerifyResult::Unchanged(accumulated_inputs) = deep_verify {
+        if let VerifyResult::Unchanged {
+            #[cfg(feature = "accumulator")]
+                accumulated: accumulated_inputs,
+        } = deep_verify
+        {
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::Changed
             } else {
-                VerifyResult::Unchanged(accumulated_inputs)
+                VerifyResult::Unchanged {
+                    #[cfg(feature = "accumulator")]
+                    accumulated: accumulated_inputs,
+                }
             });
         }
 
@@ -174,10 +191,13 @@ where
             return Some(if changed_at > revision {
                 VerifyResult::Changed
             } else {
-                VerifyResult::Unchanged(match memo.revisions.accumulated() {
-                    Some(_) => InputAccumulatedValues::Any,
-                    None => memo.revisions.accumulated_inputs.load(),
-                })
+                VerifyResult::Unchanged {
+                    #[cfg(feature = "accumulator")]
+                    accumulated: match memo.revisions.accumulated() {
+                        Some(_) => InputAccumulatedValues::Any,
+                        None => memo.revisions.accumulated_inputs.load(),
+                    },
+                }
             });
         }
 
@@ -443,6 +463,7 @@ where
                     return VerifyResult::Changed;
                 }
 
+                #[cfg(feature = "accumulator")]
                 let mut inputs = InputAccumulatedValues::Empty;
                 // Fully tracked inputs? Iterate over the inputs and check them, one by one.
                 //
@@ -460,9 +481,12 @@ where
                                 cycle_heads,
                             ) {
                                 VerifyResult::Changed => return VerifyResult::Changed,
-                                VerifyResult::Unchanged(input_accumulated) => {
-                                    inputs |= input_accumulated;
+                                #[cfg(feature = "accumulator")]
+                                VerifyResult::Unchanged { accumulated } => {
+                                    inputs |= accumulated;
                                 }
+                                #[cfg(not(feature = "accumulator"))]
+                                VerifyResult::Unchanged { .. } => {}
                             }
                         }
                         QueryEdgeKind::Output(dependency_index) => {
@@ -517,6 +541,7 @@ where
                 // 1 and 3
                 if cycle_heads.is_empty() {
                     old_memo.mark_as_verified(zalsa, database_key_index);
+                    #[cfg(feature = "accumulator")]
                     old_memo.revisions.accumulated_inputs.store(inputs);
 
                     if is_provisional {
@@ -527,7 +552,10 @@ where
                     }
                 }
 
-                VerifyResult::Unchanged(inputs)
+                VerifyResult::Unchanged {
+                    #[cfg(feature = "accumulator")]
+                    accumulated: inputs,
+                }
             }
         }
     }

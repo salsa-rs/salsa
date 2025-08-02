@@ -1,7 +1,6 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
@@ -165,13 +164,20 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// # Safety
     ///
     /// The passed in database needs to be the same one that the ingredient was created with.
+    #[cfg(feature = "accumulator")]
     unsafe fn accumulated<'db>(
         &'db self,
         db: RawDatabase<'db>,
         key_index: Id,
-    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+    ) -> (
+        Option<&'db crate::accumulator::accumulated_map::AccumulatedMap>,
+        crate::accumulator::accumulated_map::InputAccumulatedValues,
+    ) {
         let _ = (db, key_index);
-        (None, InputAccumulatedValues::Empty)
+        (
+            None,
+            crate::accumulator::accumulated_map::InputAccumulatedValues::Empty,
+        )
     }
 
     /// Returns memory usage information about any instances of the ingredient,

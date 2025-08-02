@@ -1,4 +1,4 @@
-#![cfg(feature = "inventory")]
+#![cfg(all(feature = "inventory", feature = "accumulator"))]
 
 //! Demonstrates the workaround of wrapping calls to
 //! `accumulated` in a tracked function to get better

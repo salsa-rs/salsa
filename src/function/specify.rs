@@ -1,3 +1,4 @@
+#[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
@@ -66,6 +67,7 @@ where
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
             origin: QueryOrigin::assigned(active_query_key),
+            #[cfg(feature = "accumulator")]
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(true),
             extra: QueryRevisionsExtra::default(),
@@ -124,6 +126,7 @@ where
 
         let database_key_index = self.database_key_index(key);
         memo.mark_as_verified(zalsa, database_key_index);
+        #[cfg(feature = "accumulator")]
         memo.revisions
             .accumulated_inputs
             .store(InputAccumulatedValues::Empty);

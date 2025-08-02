@@ -6,7 +6,6 @@ use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 pub(crate) use sync::SyncGuard;
 
-use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
 };
@@ -25,6 +24,7 @@ use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
 use crate::{Id, Revision};
 
+#[cfg(feature = "accumulator")]
 mod accumulated;
 mod backdate;
 mod delete;
@@ -371,11 +371,15 @@ where
         C::CYCLE_STRATEGY
     }
 
+    #[cfg(feature = "accumulator")]
     unsafe fn accumulated<'db>(
         &'db self,
         db: RawDatabase<'db>,
         key_index: Id,
-    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+    ) -> (
+        Option<&'db crate::accumulator::accumulated_map::AccumulatedMap>,
+        crate::accumulator::accumulated_map::InputAccumulatedValues,
+    ) {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
         self.accumulated_map(db, key_index)

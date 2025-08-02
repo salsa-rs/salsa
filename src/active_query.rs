@@ -1,7 +1,9 @@
 use std::{fmt, mem, ops};
 
-use crate::accumulator::accumulated_map::{
-    AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
+#[cfg(feature = "accumulator")]
+use crate::accumulator::{
+    accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
+    Accumulator,
 };
 use crate::cycle::{CycleHeads, IterationCount};
 use crate::durability::Durability;
@@ -11,7 +13,7 @@ use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
-use crate::{Accumulator, IngredientIndex, Revision};
+use crate::Revision;
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {
@@ -51,10 +53,12 @@ pub(crate) struct ActiveQuery {
 
     /// Stores the values accumulated to the given ingredient.
     /// The type of accumulated value is erased but known to the ingredient.
+    #[cfg(feature = "accumulator")]
     accumulated: AccumulatedMap,
 
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
     /// has any accumulated values.
+    #[cfg(feature = "accumulator")]
     accumulated_inputs: InputAccumulatedValues,
 
     /// Provisional cycle results that this query depends on.
@@ -84,18 +88,21 @@ impl ActiveQuery {
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        has_accumulated: bool,
-        accumulated_inputs: &AtomicInputAccumulatedValues,
         cycle_heads: &CycleHeads,
+        #[cfg(feature = "accumulator")] has_accumulated: bool,
+        #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.input_outputs.insert(QueryEdge::input(input));
-        self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
-            true => InputAccumulatedValues::Any,
-            false => accumulated_inputs.load(),
-        });
         self.cycle_heads.extend(cycle_heads);
+        #[cfg(feature = "accumulator")]
+        {
+            self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
+                true => InputAccumulatedValues::Any,
+                false => accumulated_inputs.load(),
+            });
+        }
     }
 
     pub(super) fn add_read_simple(
@@ -121,7 +128,8 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(revision);
     }
 
-    pub(super) fn accumulate(&mut self, index: IngredientIndex, value: impl Accumulator) {
+    #[cfg(feature = "accumulator")]
+    pub(super) fn accumulate(&mut self, index: crate::IngredientIndex, value: impl Accumulator) {
         self.accumulated.accumulate(index, value);
     }
 
@@ -169,10 +177,12 @@ impl ActiveQuery {
             untracked_read: false,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
-            accumulated: Default::default(),
-            accumulated_inputs: Default::default(),
             cycle_heads: Default::default(),
             iteration_count,
+            #[cfg(feature = "accumulator")]
+            accumulated: Default::default(),
+            #[cfg(feature = "accumulator")]
+            accumulated_inputs: Default::default(),
         }
     }
 
@@ -185,10 +195,12 @@ impl ActiveQuery {
             untracked_read,
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
-            ref mut accumulated,
-            accumulated_inputs,
             ref mut cycle_heads,
             iteration_count,
+            #[cfg(feature = "accumulator")]
+            ref mut accumulated,
+            #[cfg(feature = "accumulator")]
+            accumulated_inputs,
         } = self;
 
         let origin = if untracked_read {
@@ -198,19 +210,22 @@ impl ActiveQuery {
         };
         disambiguator_map.clear();
 
+        #[cfg(feature = "accumulator")]
+        let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
         let verified_final = cycle_heads.is_empty();
         let extra = QueryRevisionsExtra::new(
+            #[cfg(feature = "accumulator")]
             mem::take(accumulated),
             mem::take(tracked_struct_ids),
             mem::take(cycle_heads),
             iteration_count,
         );
-        let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
 
         QueryRevisions {
             changed_at,
             durability,
             origin,
+            #[cfg(feature = "accumulator")]
             accumulated_inputs,
             verified_final: AtomicBool::new(verified_final),
             extra,
@@ -226,17 +241,20 @@ impl ActiveQuery {
             untracked_read: _,
             disambiguator_map,
             tracked_struct_ids,
-            accumulated,
-            accumulated_inputs: _,
             cycle_heads,
             iteration_count,
+            #[cfg(feature = "accumulator")]
+            accumulated,
+            #[cfg(feature = "accumulator")]
+                accumulated_inputs: _,
         } = self;
         input_outputs.clear();
         disambiguator_map.clear();
         tracked_struct_ids.clear();
-        accumulated.clear();
         *cycle_heads = Default::default();
         *iteration_count = IterationCount::initial();
+        #[cfg(feature = "accumulator")]
+        accumulated.clear();
     }
 
     fn reset_for(
@@ -252,16 +270,17 @@ impl ActiveQuery {
             untracked_read,
             disambiguator_map,
             tracked_struct_ids,
-            accumulated,
-            accumulated_inputs,
             cycle_heads,
             iteration_count,
+            #[cfg(feature = "accumulator")]
+            accumulated,
+            #[cfg(feature = "accumulator")]
+            accumulated_inputs,
         } = self;
         *database_key_index = new_database_key_index;
         *durability = Durability::MAX;
         *changed_at = Revision::start();
         *untracked_read = false;
-        *accumulated_inputs = Default::default();
         *iteration_count = new_iteration_count;
         debug_assert!(
             input_outputs.is_empty(),
@@ -279,10 +298,14 @@ impl ActiveQuery {
             cycle_heads.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
         );
-        debug_assert!(
-            accumulated.is_empty(),
-            "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
-        );
+        #[cfg(feature = "accumulator")]
+        {
+            *accumulated_inputs = Default::default();
+            debug_assert!(
+                accumulated.is_empty(),
+                "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
+            );
+        }
     }
 }
 

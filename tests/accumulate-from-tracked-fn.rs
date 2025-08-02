@@ -1,4 +1,4 @@
-#![cfg(feature = "inventory")]
+#![cfg(all(feature = "inventory", feature = "accumulator"))]
 
 //! Accumulate values from within a tracked function.
 //! Then mutate the values so that the tracked function re-executes.

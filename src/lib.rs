@@ -1,6 +1,7 @@
 #![deny(clippy::undocumented_unsafe_blocks)]
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+#[cfg(feature = "accumulator")]
 mod accumulator;
 mod active_query;
 mod attach;
@@ -47,6 +48,7 @@ pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Upd
 #[cfg(feature = "salsa_unstable")]
 pub use self::database::IngredientInfo;
 
+#[cfg(feature = "accumulator")]
 pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
@@ -68,7 +70,9 @@ pub use self::zalsa::IngredientIndex;
 pub use crate::attach::{attach, with_attached_database};
 
 pub mod prelude {
-    pub use crate::{Accumulator, Database, Setter};
+    #[cfg(feature = "accumulator")]
+    pub use crate::accumulator::Accumulator;
+    pub use crate::{Database, Setter};
 }
 
 /// Internal names used by salsa macros.
@@ -81,13 +85,16 @@ pub mod plumbing {
     pub use std::any::TypeId;
     pub use std::option::Option::{self, None, Some};
 
+    #[cfg(feature = "accumulator")]
+    pub use salsa_macro_rules::setup_accumulator_impl;
     pub use salsa_macro_rules::{
-        macro_if, maybe_backdate, maybe_default, maybe_default_tt, return_mode_expression,
-        return_mode_ty, setup_accumulator_impl, setup_input_struct, setup_interned_struct,
+        gate_accumulated, macro_if, maybe_backdate, maybe_default, maybe_default_tt,
+        return_mode_expression, return_mode_ty, setup_input_struct, setup_interned_struct,
         setup_tracked_assoc_fn_body, setup_tracked_fn, setup_tracked_method_body,
         setup_tracked_struct, unexpected_cycle_initial, unexpected_cycle_recovery,
     };
 
+    #[cfg(feature = "accumulator")]
     pub use crate::accumulator::Accumulator;
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
@@ -116,6 +123,7 @@ pub mod plumbing {
     };
     pub use crate::zalsa_local::ZalsaLocal;
 
+    #[cfg(feature = "accumulator")]
     pub mod accumulator {
         pub use crate::accumulator::{IngredientImpl, JarImpl};
     }
