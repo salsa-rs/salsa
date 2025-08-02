@@ -1,6 +1,6 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleHeadKeys, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -51,7 +51,7 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
-        cycle_heads: &mut CycleHeads,
+        cycle_heads: &mut CycleHeadKeys,
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
@@ -108,7 +108,7 @@ where
         key_index: Id,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
-        cycle_heads: &mut CycleHeads,
+        cycle_heads: &mut CycleHeadKeys,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
@@ -135,7 +135,7 @@ where
                     crate::tracing::debug!(
                         "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
                     );
-                    cycle_heads.push_initial(database_key_index);
+                    cycle_heads.insert(database_key_index);
                     return Some(VerifyResult::unchanged());
                 }
             },
@@ -406,7 +406,7 @@ where
         zalsa: &Zalsa,
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
-        cycle_heads: &mut CycleHeads,
+        cycle_heads: &mut CycleHeadKeys,
     ) -> VerifyResult {
         crate::tracing::debug!(
             "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
@@ -447,7 +447,7 @@ where
             // are tracked by the outer query. Nothing should have changed assuming that the
             // fixpoint initial function is deterministic.
             QueryOriginRef::FixpointInitial => {
-                cycle_heads.push_initial(database_key_index);
+                cycle_heads.insert(database_key_index);
                 VerifyResult::unchanged()
             }
             QueryOriginRef::DerivedUntracked(_) => {

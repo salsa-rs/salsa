@@ -7,7 +7,8 @@ use std::sync::OnceLock;
 pub(crate) use sync::SyncGuard;
 
 use crate::cycle::{
-    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
+    empty_cycle_heads, CycleHeadKeys, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy,
+    ProvisionalStatus,
 };
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
@@ -265,7 +266,7 @@ where
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        cycle_heads: &mut CycleHeads,
+        cycle_heads: &mut CycleHeadKeys,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };

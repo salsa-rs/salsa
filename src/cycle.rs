@@ -179,22 +179,6 @@ impl CycleHeads {
     }
 
     #[inline]
-    pub(crate) fn push_initial(&mut self, database_key_index: DatabaseKeyIndex) {
-        if let Some(existing) = self
-            .0
-            .iter()
-            .find(|candidate| candidate.database_key_index == database_key_index)
-        {
-            assert_eq!(existing.iteration_count, IterationCount::initial());
-        } else {
-            self.0.push(CycleHead {
-                database_key_index,
-                iteration_count: IterationCount::initial(),
-            });
-        }
-    }
-
-    #[inline]
     pub(crate) fn extend(&mut self, other: &Self) {
         self.0.reserve(other.0.len());
 
@@ -245,6 +229,37 @@ impl From<CycleHead> for CycleHeads {
 pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
     static EMPTY_CYCLE_HEADS: OnceLock<CycleHeads> = OnceLock::new();
     EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
+}
+
+/// Set of cycle head database keys.
+///
+/// Unlike [`CycleHeads`], this type doesn't track the iteration count
+/// of each cycle head.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CycleHeadKeys(Vec<DatabaseKeyIndex>);
+
+impl CycleHeadKeys {
+    pub(crate) fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub(crate) fn insert(&mut self, database_key_index: DatabaseKeyIndex) {
+        if !self.0.contains(&database_key_index) {
+            self.0.push(database_key_index);
+        }
+    }
+
+    pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
+        let found = self.0.iter().position(|&head| head == *value);
+        let Some(found) = found else { return false };
+
+        self.0.swap_remove(found);
+        true
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
