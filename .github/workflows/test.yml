@@ -55,8 +55,12 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo nextest run --workspace --all-targets --no-fail-fast --no-capture
+        env:
+          RUST_LOG: trace
       - name: Test Manual Registration / no-default-features
         run: cargo nextest run --workspace --tests --no-fail-fast --no-default-features --features macros --no-capture
+        env:
+          RUST_LOG: trace
       - name: Test docs
         run: cargo test --workspace --doc
 
@@ -118,6 +122,8 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Test with Shuttle
         run: cargo nextest run --features shuttle --test parallel --no-capture
+        env:
+          RUST_LOG: trace
 
   benchmarks:
     # https://github.com/CodSpeedHQ/action/issues/126
