@@ -369,13 +369,35 @@ where
                         .find(|query| query.database_key_index == cycle_head.database_key_index)
                         .map(|query| query.iteration_count())
                         .or_else(|| {
-                            // We know that our own head isn't finalized yet.
+                            // If the cycle head isn't on our stack because:
+                            //
+                            // * another thread holds the lock on the cycle head (but it waits for the current query to complete)
+                            // * we're in `maybe_changed_after` because `maybe_changed_after` doesn't modify the cycle stack
+                            //
+                            // check if the latest memo has the same iteration count.
+
+                            // However, we've to be careful to skip over fixpoint initial values:
+                            // If the head is the memoy we're trying to validate, always return `None`
+                            // to force a re-execution of the query. This is necessary because the query
+                            // has obvioulsy not completed its iteration yet.
+                            //
+                            // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
+                            // without this check. What happens there is that:
+                            //
+                            // * query a blocks on query b
+                            // * query b tries to claim a, fails to do so and inserts the fixpoint initial value
+                            // * query b completes and has `a` as head. It returns its query result Salsa blocks query b from
+                            //   exiting inside `block_on` (or the thread would complete before the cycle iteration is complete)
+                            // * query a resumes but panics because of the fixpoint iteration function
+                            // * query b resumes. It rexecutes its own query which then tries to fetch a (which depends on itself because it's a fixpoint initial value).
+                            //   Without this check, `validate_same_iteration` would return `true` because the latest memo for `a` is the fixpoint initial value.
+                            //   But it should return `false` so that query b's thread re-executes `a` (which then also causes the panic).
+                            //
+                            // That's why we always return `None` if the cycle head is the same as the current database key index.
                             if cycle_head.database_key_index == database_key_index {
                                 return None;
                             }
 
-                            // If this is a cycle head is owned by another thread that is blocked by this ingredient,
-                            // check if it has the same iteration count.
                             let ingredient = zalsa.lookup_ingredient(
                                 cycle_head.database_key_index.ingredient_index(),
                             );
@@ -385,9 +407,6 @@ where
                             if !wait_result.is_cycle() {
                                 return None;
                             }
-
-                            // Is the issue here that we used the provisional memo forever?
-                            //
 
                             let provisional_status = ingredient.provisional_status(
                                 zalsa,
