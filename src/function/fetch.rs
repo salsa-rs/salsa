@@ -4,7 +4,7 @@ use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
-use crate::Id;
+use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -130,6 +130,7 @@ where
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let claim_guard = match self.sync_table.try_claim(zalsa, id) {
+            ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
 
@@ -146,75 +147,15 @@ where
                 return None;
             }
             ClaimResult::Cycle { .. } => {
-                // check if there's a provisional value for this query
-                // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
-                // existing provisional memo if it exists
-                let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-                if let Some(memo) = memo_guard {
-                    if memo.value.is_some()
-                        && memo.revisions.cycle_heads().contains(&database_key_index)
-                    {
-                        let can_shallow_update =
-                            self.shallow_verify_memo(zalsa, database_key_index, memo);
-                        if can_shallow_update.yes() {
-                            self.update_shallow(
-                                zalsa,
-                                database_key_index,
-                                memo,
-                                can_shallow_update,
-                            );
-                            // SAFETY: memo is present in memo_map.
-                            return unsafe { Some(self.extend_memo_lifetime(memo)) };
-                        }
-                    }
-                }
-                // no provisional value; create/insert/return initial provisional value
-                return match C::CYCLE_STRATEGY {
-                    // SAFETY: We do not access the query stack reentrantly.
-                    CycleRecoveryStrategy::Panic => unsafe {
-                        zalsa_local.with_query_stack_unchecked(|stack| {
-                            panic!(
-                                "dependency graph cycle when querying {database_key_index:#?}, \
-                            set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                            Query stack:\n{stack:#?}",
-                            );
-                        })
-                    },
-                    CycleRecoveryStrategy::Fixpoint => {
-                        crate::tracing::debug!(
-                            "hit cycle at {database_key_index:#?}, \
-                            inserting and returning fixpoint initial value"
-                        );
-                        let revisions = QueryRevisions::fixpoint_initial(database_key_index);
-                        let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
-                        Some(self.insert_memo(
-                            zalsa,
-                            id,
-                            Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
-                            memo_ingredient_index,
-                        ))
-                    }
-                    CycleRecoveryStrategy::FallbackImmediate => {
-                        crate::tracing::debug!(
-                            "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
-                        );
-                        let active_query =
-                            zalsa_local.push_query(database_key_index, IterationCount::initial());
-                        let fallback_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
-                        let mut revisions = active_query.pop();
-                        revisions.set_cycle_heads(CycleHeads::initial(database_key_index));
-                        // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
-                        *revisions.verified_final.get_mut() = false;
-                        Some(self.insert_memo(
-                            zalsa,
-                            id,
-                            Memo::new(Some(fallback_value), zalsa.current_revision(), revisions),
-                            memo_ingredient_index,
-                        ))
-                    }
-                };
+                return Some(self.fetch_cold_cycle(
+                    zalsa,
+                    zalsa_local,
+                    db,
+                    id,
+                    database_key_index,
+                    memo_ingredient_index,
+                ));
             }
-            ClaimResult::Claimed(guard) => guard,
         };
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
@@ -271,5 +212,77 @@ where
         );
 
         Some(memo)
+    }
+
+    #[cold]
+    fn fetch_cold_cycle<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        db: &'db C::DbView,
+        id: Id,
+        database_key_index: DatabaseKeyIndex,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> &'db Memo<'db, C> {
+        // check if there's a provisional value for this query
+        // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
+        // existing provisional memo if it exists
+        let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+        if let Some(memo) = memo_guard {
+            if memo.value.is_some() && memo.revisions.cycle_heads().contains(&database_key_index) {
+                let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
+                if can_shallow_update.yes() {
+                    self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
+                    // SAFETY: memo is present in memo_map.
+                    return unsafe { self.extend_memo_lifetime(memo) };
+                }
+            }
+        }
+
+        // no provisional value; create/insert/return initial provisional value
+        match C::CYCLE_STRATEGY {
+            // SAFETY: We do not access the query stack reentrantly.
+            CycleRecoveryStrategy::Panic => unsafe {
+                zalsa_local.with_query_stack_unchecked(|stack| {
+                    panic!(
+                        "dependency graph cycle when querying {database_key_index:#?}, \
+                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                    Query stack:\n{stack:#?}",
+                    );
+                })
+            },
+            CycleRecoveryStrategy::Fixpoint => {
+                crate::tracing::debug!(
+                    "hit cycle at {database_key_index:#?}, \
+                    inserting and returning fixpoint initial value"
+                );
+                let revisions = QueryRevisions::fixpoint_initial(database_key_index);
+                let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
+                self.insert_memo(
+                    zalsa,
+                    id,
+                    Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
+                    memo_ingredient_index,
+                )
+            }
+            CycleRecoveryStrategy::FallbackImmediate => {
+                crate::tracing::debug!(
+                    "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
+                );
+                let active_query =
+                    zalsa_local.push_query(database_key_index, IterationCount::initial());
+                let fallback_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
+                let mut revisions = active_query.pop();
+                revisions.set_cycle_heads(CycleHeads::initial(database_key_index));
+                // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
+                *revisions.verified_final.get_mut() = false;
+                self.insert_memo(
+                    zalsa,
+                    id,
+                    Memo::new(Some(fallback_value), zalsa.current_revision(), revisions),
+                    memo_ingredient_index,
+                )
+            }
+        }
     }
 }
