@@ -223,9 +223,14 @@ where
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 let mut cycle_heads = CycleHeadKeys::new();
-                if let VerifyResult::Unchanged { .. } =
-                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
-                {
+                if let VerifyResult::Unchanged { .. } = self.deep_verify_memo(
+                    db,
+                    zalsa,
+                    zalsa_local,
+                    old_memo,
+                    database_key_index,
+                    &mut cycle_heads,
+                ) {
                     if cycle_heads.is_empty() {
                         // SAFETY: memo is present in memo_map and we have verified that it is
                         // still valid for the current revision.

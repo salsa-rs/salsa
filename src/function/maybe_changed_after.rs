@@ -87,6 +87,7 @@ where
 
             if let Some(mcs) = self.maybe_changed_after_cold(
                 zalsa,
+                zalsa_local,
                 db,
                 id,
                 revision,
@@ -104,6 +105,7 @@ where
     fn maybe_changed_after_cold<'db>(
         &'db self,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
@@ -154,8 +156,14 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        let deep_verify =
-            self.deep_verify_memo(db, zalsa, old_memo, database_key_index, cycle_heads);
+        let deep_verify = self.deep_verify_memo(
+            db,
+            zalsa,
+            zalsa_local,
+            old_memo,
+            database_key_index,
+            cycle_heads,
+        );
         if let VerifyResult::Unchanged {
             #[cfg(feature = "accumulator")]
                 accumulated: accumulated_inputs,
@@ -404,6 +412,7 @@ where
         &self,
         db: &C::DbView,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
         cycle_heads: &mut CycleHeadKeys,
@@ -426,6 +435,8 @@ where
 
             return VerifyResult::unchanged();
         }
+
+        let _guard = zalsa_local.push_query(database_key_index, IterationCount::initial());
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Assigned(_) => {
