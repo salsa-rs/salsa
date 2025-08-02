@@ -369,6 +369,11 @@ where
                         .find(|query| query.database_key_index == cycle_head.database_key_index)
                         .map(|query| query.iteration_count())
                         .or_else(|| {
+                            // We know that our own head isn't finalized yet.
+                            if cycle_head.database_key_index == database_key_index {
+                                return None;
+                            }
+
                             // If this is a cycle head is owned by another thread that is blocked by this ingredient,
                             // check if it has the same iteration count.
                             let ingredient = zalsa.lookup_ingredient(
