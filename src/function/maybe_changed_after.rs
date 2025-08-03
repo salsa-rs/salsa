@@ -377,7 +377,7 @@ where
                             // check if the latest memo has the same iteration count.
 
                             // However, we've to be careful to skip over fixpoint initial values:
-                            // If the head is the memoy we're trying to validate, always return `None`
+                            // If the head is the memo we're trying to validate, always return `None`
                             // to force a re-execution of the query. This is necessary because the query
                             // has obvioulsy not completed its iteration yet.
                             //
