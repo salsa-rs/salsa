@@ -13,7 +13,7 @@ salsa-macro-rules = { version = "0.23.0", path = "components/salsa-macro-rules" 
 salsa-macros = { version = "0.23.0", path = "components/salsa-macros", optional = true }
 
 boxcar = "0.2.13"
-crossbeam-queue = "0.3.11"
+crossbeam-queue = "0.3.12"
 crossbeam-utils = "0.8.21"
 hashbrown = "0.15"
 hashlink = "0.10"
@@ -33,9 +33,9 @@ rayon = { version = "1.10.0", optional = true }
 
 # Stuff we want Update impls for by default
 compact_str = { version = "0.9", optional = true }
-thin-vec = "0.2.13"
+thin-vec = "0.2.14"
 
-shuttle = { version = "0.8.0", optional = true }
+shuttle = { version = "0.8.1", optional = true }
 
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
@@ -55,18 +55,18 @@ salsa-macros = { version = "=0.23.0", path = "components/salsa-macros" }
 
 [dev-dependencies]
 # examples
-crossbeam-channel = "0.5.14"
+crossbeam-channel = "0.5.15"
 dashmap = { version = "6", features = ["raw-api"] }
-eyre = "0.6.8"
+eyre = "0.6.12"
 notify-debouncer-mini = "0.4.1"
-ordered-float = "4.2.1"
+ordered-float = "5.0.0"
 
 # tests/benches
 annotate-snippets = "0.11.5"
-codspeed-criterion-compat = { version = "2.6.0", default-features = false }
-expect-test = "1.5.0"
+codspeed-criterion-compat = { version = "3.0.5", default-features = false }
+expect-test = "1.5.1"
 rustversion = "1.0"
-test-log = { version = "0.2.11", features = ["trace"] }
+test-log = { version = "0.2.18", features = ["trace"] }
 trybuild = "1.0"
 
 [target.'cfg(all(not(target_os = "windows"), not(target_os = "openbsd"), any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "powerpc64")))'.dev-dependencies]
