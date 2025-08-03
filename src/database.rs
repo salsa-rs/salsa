@@ -59,6 +59,14 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
         zalsa_mut.runtime_mut().report_tracked_write(durability);
     }
 
+    /// This method triggers cancellation.
+    /// If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    fn trigger_cancellation(&mut self) {
+        let _ = self.zalsa_mut();
+    }
+
     /// Reports that the query depends on some state unknown to salsa.
     ///
     /// Queries which report untracked reads will be re-executed in the next
