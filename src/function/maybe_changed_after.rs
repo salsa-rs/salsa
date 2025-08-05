@@ -379,7 +379,7 @@ where
                             // However, we've to be careful to skip over fixpoint initial values:
                             // If the head is the memo we're trying to validate, always return `None`
                             // to force a re-execution of the query. This is necessary because the query
-                            // has obvioulsy not completed its iteration yet.
+                            // has obviously not completed its iteration yet.
                             //
                             // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
                             // without this check. What happens there is that:
