@@ -267,7 +267,7 @@ where
     ///   cycle heads have all been finalized.
     /// * provisional memos that have been created in the same revision and iteration and are part of the same cycle.
     #[inline]
-    pub(super) fn validate_may_be_provisional(
+    fn validate_may_be_provisional(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -342,7 +342,7 @@ where
     /// If this is a provisional memo, validate that it was cached in the same iteration of the
     /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
     /// runaway re-execution of the same queries within a fixpoint iteration.
-    pub(super) fn validate_same_iteration(
+    fn validate_same_iteration(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -369,15 +369,42 @@ where
                         .find(|query| query.database_key_index == cycle_head.database_key_index)
                         .map(|query| query.iteration_count())
                         .or_else(|| {
-                            // If this is a cycle head is owned by another thread that is blocked by this ingredient,
-                            // check if it has the same iteration count.
+                            // If the cycle head isn't on our stack because:
+                            //
+                            // * another thread holds the lock on the cycle head (but it waits for the current query to complete)
+                            // * we're in `maybe_changed_after` because `maybe_changed_after` doesn't modify the cycle stack
+                            //
+                            // check if the latest memo has the same iteration count.
+
+                            // However, we've to be careful to skip over fixpoint initial values:
+                            // If the head is the memo we're trying to validate, always return `None`
+                            // to force a re-execution of the query. This is necessary because the query
+                            // has obviously not completed its iteration yet.
+                            //
+                            // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
+                            // without this check. What happens there is that:
+                            //
+                            // * query a blocks on query b
+                            // * query b tries to claim a, fails to do so and inserts the fixpoint initial value
+                            // * query b completes and has `a` as head. It returns its query result Salsa blocks query b from
+                            //   exiting inside `block_on` (or the thread would complete before the cycle iteration is complete)
+                            // * query a resumes but panics because of the fixpoint iteration function
+                            // * query b resumes. It rexecutes its own query which then tries to fetch a (which depends on itself because it's a fixpoint initial value).
+                            //   Without this check, `validate_same_iteration` would return `true` because the latest memo for `a` is the fixpoint initial value.
+                            //   But it should return `false` so that query b's thread re-executes `a` (which then also causes the panic).
+                            //
+                            // That's why we always return `None` if the cycle head is the same as the current database key index.
+                            if cycle_head.database_key_index == database_key_index {
+                                return None;
+                            }
+
                             let ingredient = zalsa.lookup_ingredient(
                                 cycle_head.database_key_index.ingredient_index(),
                             );
                             let wait_result = ingredient
                                 .wait_for(zalsa, cycle_head.database_key_index.key_index());
 
-                            if !wait_result.is_cycle_with_other_thread() {
+                            if !wait_result.is_cycle() {
                                 return None;
                             }
 

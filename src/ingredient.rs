@@ -250,12 +250,11 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available,
-    Cycle { same_thread: bool },
+    Cycle,
 }
 
 impl WaitForResult<'_> {
-    /// Returns `true` if waiting for this input results in a cycle with another thread.
-    pub const fn is_cycle_with_other_thread(&self) -> bool {
-        matches!(self, WaitForResult::Cycle { same_thread: false })
+    pub const fn is_cycle(&self) -> bool {
+        matches!(self, WaitForResult::Cycle)
     }
 }
