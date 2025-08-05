@@ -212,6 +212,21 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
+        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+        if can_shallow_update.yes()
+            && self.validate_may_be_provisional(
+                zalsa,
+                db.zalsa_local(),
+                database_key_index,
+                old_memo,
+                false,
+            )
+        {
+            self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
+
+            return Some(VerifyResult::unchanged());
+        }
+
         // Check if the inputs are still valid. We can just compare `changed_at`.
         let deep_verify =
             self.deep_verify_memo(db, zalsa, old_memo, database_key_index, has_outer_cycles);
@@ -368,17 +383,20 @@ where
     /// * provisional memos that have been successfully marked as verified final, that is, its
     ///   cycle heads have all been finalized.
     /// * provisional memos that have been created in the same revision and iteration and are part of the same cycle.
+    ///   This check is skipped if `allow_non_finalized` is `false` as the memo itself is still not finalized. It's a provisional value.
     #[inline]
-    fn validate_may_be_provisional(
+    pub(super) fn validate_may_be_provisional(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
+        allow_non_finalized: bool,
     ) -> bool {
         !memo.may_be_provisional()
             || self.validate_provisional(zalsa, database_key_index, memo)
-            || self.validate_same_iteration(zalsa, zalsa_local, database_key_index, memo)
+            || (allow_non_finalized
+                && self.validate_same_iteration(zalsa, zalsa_local, database_key_index, memo))
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
@@ -542,27 +560,16 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
-        if can_shallow_update.yes()
-            && self.validate_may_be_provisional(
-                zalsa,
-                db.zalsa_local(),
-                database_key_index,
-                old_memo,
-            )
-        {
-            self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
-
-            return VerifyResult::unchanged();
-        }
-
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
                 let is_provisional = old_memo.may_be_provisional();
 
                 // If the value is from the same revision but is still provisional, consider it changed
                 // because we're now in a new iteration.
-                if can_shallow_update == ShallowUpdate::Verified && is_provisional {
+                if is_provisional
+                    && self.shallow_verify_memo(zalsa, database_key_index, old_memo)
+                        == ShallowUpdate::Verified
+                {
                     return VerifyResult::changed();
                 }
 

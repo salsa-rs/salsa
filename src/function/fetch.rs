@@ -163,8 +163,27 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
+                let can_shallow_update =
+                    self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+                if can_shallow_update.yes()
+                    && self.validate_may_be_provisional(
+                        zalsa,
+                        zalsa_local,
+                        database_key_index,
+                        old_memo,
+                        true,
+                    )
+                {
+                    self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
+
+                    // SAFETY: memo is present in memo_map and we have verified that it is
+                    // still valid for the current revision.
+                    return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+                }
+
                 let verify_result =
                     self.deep_verify_memo(db, zalsa, old_memo, database_key_index, false);
+
                 if verify_result.is_unchanged() && verify_result.cycle_heads().is_empty() {
                     // SAFETY: memo is present in memo_map and we have verified that it is
                     // still valid for the current revision.
