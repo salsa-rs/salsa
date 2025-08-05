@@ -10,7 +10,6 @@ use crossbeam_queue::SegQueue;
 use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
-use crate::cycle::CycleHeadKeys;
 use crate::function::VerifyResult;
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
@@ -822,7 +821,7 @@ where
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut CycleHeadKeys,
+        _has_outer_cycles: bool,
     ) -> VerifyResult {
         // Any change to a tracked struct results in a new ID generation.
         VerifyResult::unchanged()

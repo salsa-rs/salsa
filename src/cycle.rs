@@ -236,11 +236,11 @@ pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
 /// Unlike [`CycleHeads`], this type doesn't track the iteration count
 /// of each cycle head.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CycleHeadKeys(Vec<DatabaseKeyIndex>);
+pub struct CycleHeadKeys(ThinVec<DatabaseKeyIndex>);
 
 impl CycleHeadKeys {
     pub(crate) fn new() -> Self {
-        Self(Vec::new())
+        Self(ThinVec::new())
     }
 
     pub(crate) fn insert(&mut self, database_key_index: DatabaseKeyIndex) {
@@ -259,6 +259,23 @@ impl CycleHeadKeys {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+}
+
+impl Extend<DatabaseKeyIndex> for CycleHeadKeys {
+    fn extend<T: IntoIterator<Item = DatabaseKeyIndex>>(&mut self, iter: T) {
+        for head in iter {
+            self.insert(head);
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a CycleHeadKeys {
+    type Item = DatabaseKeyIndex;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'a, DatabaseKeyIndex>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().copied()
     }
 }
 

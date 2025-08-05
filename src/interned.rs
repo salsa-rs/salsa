@@ -10,7 +10,6 @@ use crossbeam_utils::CachePadded;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use rustc_hash::FxBuildHasher;
 
-use crate::cycle::CycleHeadKeys;
 use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::id::{AsId, FromId};
@@ -804,7 +803,7 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         _revision: Revision,
-        _cycle_heads: &mut CycleHeadKeys,
+        _has_outer_cycles: bool,
     ) -> VerifyResult {
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();
@@ -820,7 +819,7 @@ where
 
         // The slot was reused.
         if value_shared.id.generation() > input.generation() {
-            return VerifyResult::Changed;
+            return VerifyResult::changed();
         }
 
         // Validate the value for the current revision to avoid reuse.

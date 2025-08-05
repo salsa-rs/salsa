@@ -1,7 +1,7 @@
-use crate::cycle::{CycleHeadKeys, CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl, VerifyResult};
+use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
@@ -163,15 +163,12 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
-                let mut cycle_heads = CycleHeadKeys::new();
-                if let VerifyResult::Unchanged { .. } =
-                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
-                {
-                    if cycle_heads.is_empty() {
-                        // SAFETY: memo is present in memo_map and we have verified that it is
-                        // still valid for the current revision.
-                        return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
-                    }
+                let verify_result =
+                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, false);
+                if verify_result.is_unchanged() && verify_result.cycle_heads().is_empty() {
+                    // SAFETY: memo is present in memo_map and we have verified that it is
+                    // still valid for the current revision.
+                    return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
 
                 // If this is a provisional memo from the same revision, await all its cycle heads because

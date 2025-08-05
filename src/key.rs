@@ -1,6 +1,5 @@
 use core::fmt;
 
-use crate::cycle::CycleHeadKeys;
 use crate::function::VerifyResult;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::Id;
@@ -39,7 +38,7 @@ impl DatabaseKeyIndex {
         db: crate::database::RawDatabase<'_>,
         zalsa: &Zalsa,
         last_verified_at: crate::Revision,
-        cycle_heads: &mut CycleHeadKeys,
+        has_outer_cycles: bool,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {
@@ -47,7 +46,13 @@ impl DatabaseKeyIndex {
             // hierarchy is concerned)
             zalsa
                 .lookup_ingredient(self.ingredient_index())
-                .maybe_changed_after(zalsa, db, self.key_index(), last_verified_at, cycle_heads)
+                .maybe_changed_after(
+                    zalsa,
+                    db,
+                    self.key_index(),
+                    last_verified_at,
+                    has_outer_cycles,
+                )
         }
     }
 
