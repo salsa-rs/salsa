@@ -1,6 +1,6 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleHeadKeys, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -13,7 +13,13 @@ use crate::{Id, Revision};
 /// Result of memo validation.
 #[derive(Debug)]
 pub enum VerifyResult {
+    /// Memo has changed and needs to be recomputed.
     Changed,
+
+    /// Memo remains valid.
+    ///
+    /// The inner value tracks whether the memo or any of its dependencies have an
+    /// accumulated value.
     Unchanged {
         #[cfg(feature = "accumulator")]
         accumulated: InputAccumulatedValues,
@@ -171,8 +177,14 @@ where
         }
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        let deep_verify =
-            self.deep_verify_memo(db, zalsa, old_memo, database_key_index, cycle_heads);
+        let deep_verify = self.deep_verify_memo(
+            db,
+            zalsa,
+            old_memo,
+            database_key_index,
+            cycle_heads,
+            can_shallow_update,
+        );
 
         if deep_verify.is_unchanged() {
             return Some(if old_memo.revisions.changed_at > revision {
@@ -502,6 +514,7 @@ where
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
         cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        can_shallow_update: ShallowUpdate,
     ) -> VerifyResult {
         crate::tracing::debug!(
             "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
@@ -512,20 +525,15 @@ where
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
-                let is_provisional = old_memo.may_be_provisional();
-
                 // If the value is from the same revision but is still provisional, consider it changed
                 // because we're now in a new iteration.
-                if is_provisional
-                    && self.shallow_verify_memo(zalsa, database_key_index, old_memo)
-                        == ShallowUpdate::Verified
-                {
+                if can_shallow_update == ShallowUpdate::Verified && old_memo.may_be_provisional() {
                     return VerifyResult::changed();
                 }
 
                 #[cfg(feature = "accumulator")]
                 let mut inputs = InputAccumulatedValues::Empty;
-                let mut child_cycle_heads = CycleHeadKeys::new();
+                let mut child_cycle_heads = Vec::new();
 
                 // Fully tracked inputs? Iterate over the inputs and check them, one by one.
                 //
@@ -553,7 +561,7 @@ where
                             );
 
                             child_cycle_heads = inner_cycle_heads.heads;
-                            // Aggregate all cycle heads
+                            // Aggregate the cycle heads into the parent cycle heads
                             cycle_heads.append(&mut child_cycle_heads);
 
                             match input_result {
@@ -620,13 +628,10 @@ where
                     old_memo.mark_as_verified(zalsa, database_key_index);
                     #[cfg(feature = "accumulator")]
                     old_memo.revisions.accumulated_inputs.store(inputs);
-
-                    if is_provisional {
-                        old_memo
-                            .revisions
-                            .verified_final
-                            .store(true, Ordering::Relaxed);
-                    }
+                    old_memo
+                        .revisions
+                        .verified_final
+                        .store(true, Ordering::Relaxed);
                 }
 
                 VerifyResult::unchanged_with_accumulated(
@@ -691,7 +696,7 @@ impl ShallowUpdate {
 
 #[derive(Debug, Default)]
 pub struct MaybeChangeAfterCycleHeads {
-    heads: CycleHeadKeys,
+    heads: Vec<DatabaseKeyIndex>,
     has_outer_cycles: bool,
 }
 
@@ -701,16 +706,34 @@ impl MaybeChangeAfterCycleHeads {
         self.heads.contains(&key)
     }
 
+    #[inline]
     fn insert(&mut self, key: DatabaseKeyIndex) {
-        self.heads.insert(key);
+        if !self.heads.contains(&key) {
+            self.heads.push(key);
+        }
     }
 
-    fn remove(&mut self, key: DatabaseKeyIndex) {
-        self.heads.remove(key);
+    fn remove(&mut self, key: DatabaseKeyIndex) -> bool {
+        let found = self.heads.iter().position(|&head| head == key);
+        let Some(found) = found else { return false };
+
+        self.heads.swap_remove(found);
+        true
     }
 
-    fn append(&mut self, heads: &mut CycleHeadKeys) {
-        self.heads.append(heads);
+    #[inline]
+    fn append(&mut self, heads: &mut Vec<DatabaseKeyIndex>) {
+        if heads.is_empty() {
+            return;
+        }
+
+        self.append_slow(heads);
+    }
+
+    fn append_slow(&mut self, heads: &mut Vec<DatabaseKeyIndex>) {
+        for key in heads.drain(..) {
+            self.insert(key);
+        }
     }
 
     pub fn has_any(&self) -> bool {
@@ -719,9 +742,5 @@ impl MaybeChangeAfterCycleHeads {
 
     fn has_own(&self) -> bool {
         !self.heads.is_empty()
-    }
-
-    fn has_outer(&self) -> bool {
-        self.has_outer_cycles
     }
 }

@@ -189,6 +189,7 @@ where
                     old_memo,
                     database_key_index,
                     &mut cycle_heads,
+                    can_shallow_update,
                 );
 
                 if verify_result.is_unchanged() && !cycle_heads.has_any() {
