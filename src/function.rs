@@ -1,4 +1,4 @@
-pub(crate) use maybe_changed_after::VerifyResult;
+pub(crate) use maybe_changed_after::{MaybeChangeAfterCycleHeads, VerifyResult};
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
@@ -265,11 +265,11 @@ where
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        has_outer_cycles: bool,
+        cycle_heads: &mut MaybeChangeAfterCycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision, has_outer_cycles)
+        self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
     /// Returns `final` only if the memo has the `verified_final` flag set and the cycle recovery strategy is not `FallbackImmediate`.

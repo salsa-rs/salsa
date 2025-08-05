@@ -1,4 +1,5 @@
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::function::maybe_changed_after::MaybeChangeAfterCycleHeads;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -181,10 +182,16 @@ where
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
 
-                let verify_result =
-                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, false);
+                let mut cycle_heads = MaybeChangeAfterCycleHeads::default();
+                let verify_result = self.deep_verify_memo(
+                    db,
+                    zalsa,
+                    old_memo,
+                    database_key_index,
+                    &mut cycle_heads,
+                );
 
-                if verify_result.is_unchanged() && verify_result.cycle_heads().is_empty() {
+                if verify_result.is_unchanged() && !cycle_heads.has_any() {
                     // SAFETY: memo is present in memo_map and we have verified that it is
                     // still valid for the current revision.
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };

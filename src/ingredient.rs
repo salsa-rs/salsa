@@ -5,7 +5,7 @@ use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
 use crate::database::RawDatabase;
-use crate::function::VerifyResult;
+use crate::function::{MaybeChangeAfterCycleHeads, VerifyResult};
 use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -51,7 +51,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        has_outer_cycles: bool,
+        cycle_heads: &mut MaybeChangeAfterCycleHeads,
     ) -> VerifyResult;
 
     /// Returns information about the current provisional status of `input`.
