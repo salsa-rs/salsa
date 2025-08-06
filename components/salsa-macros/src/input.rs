@@ -65,7 +65,7 @@ impl crate::options::AllowedOptions for InputStruct {
 
     const REVISIONS: bool = false;
 
-    const HEAP_SIZE: bool = false;
+    const HEAP_SIZE: bool = true;
 
     const SELF_TY: bool = false;
 }
@@ -112,6 +112,7 @@ impl Macro {
         let field_attrs = salsa_struct.field_attrs();
         let is_singleton = self.args.singleton.is_some();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
+        let heap_size_fn = self.args.heap_size_fn.iter();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -140,6 +141,7 @@ impl Macro {
                     num_fields: #num_fields,
                     is_singleton: #is_singleton,
                     generate_debug_impl: #generate_debug_impl,
+                    heap_size_fn: #(#heap_size_fn)*,
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

@@ -44,6 +44,11 @@ pub trait Configuration: Sized + 'static {
 
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;
+
+    /// Returns the size of any heap allocations in the output value, in bytes.
+    fn heap_size(_value: &Self::Fields<'_>) -> Option<usize> {
+        None
+    }
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone + Sync + Send {}
@@ -199,6 +204,7 @@ where
     /// lock must be held for the shard containing the value.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
+        let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
         // have at-least read-only access to the value's memos.
         let memos = unsafe { &*self.memos.get() };
@@ -209,6 +215,7 @@ where
             debug_name: C::DEBUG_NAME,
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
             size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
+            heap_size_of_fields: heap_size,
             memos: memos.memory_usage(),
         }
     }

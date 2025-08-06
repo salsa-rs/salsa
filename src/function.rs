@@ -75,8 +75,8 @@ pub trait Configuration: Any {
     fn id_to_input(zalsa: &Zalsa, key: Id) -> Self::Input<'_>;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
-    fn heap_size(_value: &Self::Output<'_>) -> usize {
-        0
+    fn heap_size(_value: &Self::Output<'_>) -> Option<usize> {
+        None
     }
 
     /// Invoked when we need to compute the value for the given key, either because we've never

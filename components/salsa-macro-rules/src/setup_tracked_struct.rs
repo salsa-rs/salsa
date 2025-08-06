@@ -88,6 +88,9 @@ macro_rules! setup_tracked_struct {
         // If true, generate a debug impl.
         generate_debug_impl: $generate_debug_impl:tt,
 
+        // The function used to implement `C::heap_size`.
+        heap_size_fn: $($heap_size_fn:path)?,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -185,6 +188,12 @@ macro_rules! setup_tracked_struct {
                         )* false
                     }
                 }
+
+                $(
+                    fn heap_size(value: &Self::Fields<'_>) -> Option<usize> {
+                        Some($heap_size_fn(value))
+                    }
+                )?
             }
 
             impl $Configuration {

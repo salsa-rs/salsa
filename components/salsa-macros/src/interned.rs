@@ -65,7 +65,7 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const REVISIONS: bool = true;
 
-    const HEAP_SIZE: bool = false;
+    const HEAP_SIZE: bool = true;
 
     const SELF_TY: bool = false;
 }
@@ -131,6 +131,8 @@ impl Macro {
             (None, quote!(#struct_ident), static_lifetime)
         };
 
+        let heap_size_fn = self.args.heap_size_fn.iter();
+
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
@@ -161,6 +163,7 @@ impl Macro {
                     field_attrs: [#([#(#field_unused_attrs),*]),*],
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,
+                    heap_size_fn: #(#heap_size_fn)*,
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

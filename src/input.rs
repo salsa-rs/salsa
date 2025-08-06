@@ -40,6 +40,11 @@ pub trait Configuration: Any {
 
     /// A array of [`Durability`], one per each of the value fields.
     type Durabilities: Send + Sync + fmt::Debug + IndexMut<usize, Output = Durability>;
+
+    /// Returns the size of any heap allocations in the output value, in bytes.
+    fn heap_size(_value: &Self::Fields) -> Option<usize> {
+        None
+    }
 }
 
 pub struct JarImpl<C: Configuration> {
@@ -307,6 +312,7 @@ where
     /// The `MemoTable` must belong to a `Value` of the correct type.
     #[cfg(feature = "salsa_unstable")]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
+        let heap_size = C::heap_size(&self.fields);
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
@@ -314,6 +320,7 @@ where
             debug_name: C::DEBUG_NAME,
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields>(),
             size_of_fields: std::mem::size_of::<C::Fields>(),
+            heap_size_of_fields: heap_size,
             memos: memos.memory_usage(),
         }
     }
