@@ -191,6 +191,7 @@ where
     }
 
     #[cold]
+    #[inline(never)]
     fn maybe_changed_after_cold_cycle<'db>(
         &'db self,
         db: &'db C::DbView,

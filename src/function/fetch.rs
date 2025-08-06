@@ -215,6 +215,7 @@ where
     }
 
     #[cold]
+    #[inline(never)]
     fn fetch_cold_cycle<'db>(
         &'db self,
         zalsa: &'db Zalsa,
