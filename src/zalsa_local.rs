@@ -70,7 +70,10 @@ impl ZalsaLocal {
         // Fast-path, we already have an unfilled page available.
         if let Some(&page) = most_recent_pages.get(&ingredient) {
             let page_ref = zalsa.table().page::<T>(page);
-            match page_ref.allocate(page, value) {
+
+            // SAFETY: `ZalsaLocal` is `!Sync`, and we only insert a page into `most_recent_pages`
+            // if it was allocated by our thread, so we are the unique writer.
+            match unsafe { page_ref.allocate(page, value) } {
                 Ok((id, value)) => return (id, value),
                 Err(v) => value = v,
             }
@@ -108,11 +111,15 @@ impl ZalsaLocal {
         loop {
             // Try to allocate an entry on that page
             let page_ref = zalsa.table().page::<T>(page);
-            match page_ref.allocate(page, value) {
+
+            // SAFETY: `ZalsaLocal` is `!Sync`, and we only insert a page into `most_recent_pages`
+            // if it was allocated by our thread, so we are the unique writer.
+            match unsafe { page_ref.allocate(page, value) } {
                 // If successful, return
                 Ok((id, value)) => return (id, value),
 
-                // Otherwise, create a new page and try again
+                // Otherwise, create a new page and try again.
+                //
                 // Note that we could try fetching a page again, but as we just filled one up
                 // it is unlikely that there is a non-full one available.
                 Err(v) => {

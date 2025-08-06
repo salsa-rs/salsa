@@ -60,9 +60,11 @@ struct SlotVTable {
     /// [`Slot`] methods
     memos: SlotMemosFnRaw,
     memos_mut: SlotMemosMutFnRaw,
+    /// The type name of what is stored as entries in data.
+    type_name: fn() -> &'static str,
     /// A drop impl to call when the own page drops
-    /// SAFETY: The caller is required to supply a correct data pointer to a `Box<PageDataEntry<T>>` and initialized length,
-    /// and correct memo types.
+    /// SAFETY: The caller is required to supply a valid pointer to a `Box<PageDataEntry<T>>`, and
+    /// the correct initialized length and memo types.
     drop_impl: unsafe fn(data: *mut (), initialized: usize, memo_types: &MemoTableTypes),
 }
 
@@ -70,20 +72,23 @@ impl SlotVTable {
     const fn of<T: Slot>() -> &'static Self {
         const {
             &Self {
-                drop_impl: |data, initialized, memo_types|
-                // SAFETY: The caller is required to supply a correct data pointer and initialized length
-                unsafe {
-                    let data = Box::from_raw(data.cast::<PageData<T>>());
+                drop_impl: |data, initialized, memo_types| {
+                    // SAFETY: The caller is required to provide a valid data pointer.
+                    let data = unsafe { Box::from_raw(data.cast::<PageData<T>>()) };
                     for i in 0..initialized {
                         let item = data[i].get().cast::<T>();
-                        memo_types.attach_memos_mut((*item).memos_mut()).drop();
-                        ptr::drop_in_place(item);
+                        // SAFETY: The caller is required to provide a valid initialized length.
+                        unsafe {
+                            memo_types.attach_memos_mut((*item).memos_mut()).drop();
+                            ptr::drop_in_place(item);
+                        }
                     }
                 },
                 layout: Layout::new::<T>(),
-                // SAFETY: The signatures are compatible
+                type_name: std::any::type_name::<T>,
+                // SAFETY: The signatures are ABI-compatible.
                 memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnRaw>(T::memos) },
-                // SAFETY: The signatures are compatible
+                // SAFETY: The signatures are ABI-compatible.
                 memos_mut: unsafe {
                     mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnRaw>(T::memos_mut)
                 },
@@ -102,16 +107,6 @@ struct Page {
     /// Number of elements of `data` that are initialized.
     allocated: AtomicUsize,
 
-    /// The "allocation lock" is held when we allocate a new entry.
-    ///
-    /// It ensures that we can load the index, initialize it, and then update the length atomically
-    /// with respect to other allocations.
-    ///
-    /// We could avoid it if we wanted, we'd just have to be a bit fancier in our reasoning
-    /// (for example, the bounds check in `Page::get` no longer suffices to truly guarantee
-    /// that the data is initialized).
-    allocation_lock: Mutex<()>,
-
     /// The potentially uninitialized data of this page. As we initialize new entries, we increment `allocated`.
     /// This is a box allocated `PageData<SlotType>`
     data: NonNull<()>,
@@ -121,9 +116,6 @@ struct Page {
     /// The type id of what is stored as entries in data.
     // FIXME: Move this into SlotVTable once const stable
     slot_type_id: TypeId,
-    /// The type name of what is stored as entries in data.
-    // FIXME: Move this into SlotVTable once const stable
-    slot_type_name: &'static str,
 
     memo_types: Arc<MemoTableTypes>,
 }
@@ -329,12 +321,17 @@ impl<'db, T: Slot> PageView<'db, T> {
         unsafe { slice::from_raw_parts(self.0.data.cast::<T>().as_ptr(), len) }
     }
 
+    /// Allocate a value in this page.
+    ///
+    /// # Safety
+    ///
+    /// The caller must be the unique writer to this page, i.e. `allocate` cannot be called
+    /// concurrently by multiple threads. Concurrent readers however, are fine.
     #[inline]
-    pub(crate) fn allocate<V>(&self, page: PageIndex, value: V) -> Result<(Id, &'db T), V>
+    pub(crate) unsafe fn allocate<V>(&self, page: PageIndex, value: V) -> Result<(Id, &'db T), V>
     where
         V: FnOnce(Id) -> T,
     {
-        let _guard = self.0.allocation_lock.lock();
         let index = self.0.allocated.load(Ordering::Acquire);
         if index >= PAGE_LEN {
             return Err(value);
@@ -347,15 +344,14 @@ impl<'db, T: Slot> PageView<'db, T> {
         // SAFETY: `index` is also guaranteed to be in bounds as per the check above.
         let entry = unsafe { &*data.as_ptr().add(index) };
 
-        // SAFETY: We acquired the allocation lock, so we have unique access to the UnsafeCell
-        // interior
+        // SAFETY: The caller guarantees we are the unique writer, and readers will not attempt to
+        // access this index until we have updated the length.
         unsafe { (*entry.get()).write(value(id)) };
 
         // SAFETY: We just initialized the value above.
         let value = unsafe { (*entry.get()).assume_init_ref() };
 
-        // Update the length (this must be done after initialization as otherwise an uninitialized
-        // read could occur!)
+        // Update the length now that we have initialized the value.
         self.0.allocated.store(index + 1, Ordering::Release);
 
         Ok((id, value))
@@ -383,14 +379,12 @@ impl Page {
         };
 
         Self {
+            ingredient,
+            memo_types,
             slot_vtable: SlotVTable::of::<T>(),
             slot_type_id: TypeId::of::<T>(),
-            slot_type_name: std::any::type_name::<T>(),
-            ingredient,
-            allocated: Default::default(),
-            allocation_lock: Default::default(),
+            allocated: AtomicUsize::new(0),
             data: NonNull::from(Box::leak(data)).cast::<()>(),
-            memo_types,
         }
     }
 
@@ -439,7 +433,7 @@ impl Page {
 fn type_assert_failed<T: 'static>(page: &Page) -> ! {
     panic!(
         "page has slot type `{:?}` but `{:?}` was expected",
-        page.slot_type_name,
+        (page.slot_vtable.type_name)(),
         std::any::type_name::<T>(),
     )
 }
