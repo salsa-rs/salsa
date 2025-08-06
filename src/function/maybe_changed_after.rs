@@ -113,33 +113,18 @@ where
         let database_key_index = self.database_key_index(key_index);
 
         let _claim_guard = match self.sync_table.try_claim(zalsa, key_index) {
+            ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
                 return None;
             }
-            ClaimResult::Cycle { .. } => match C::CYCLE_STRATEGY {
-                // SAFETY: We do not access the query stack reentrantly.
-                CycleRecoveryStrategy::Panic => unsafe {
-                    db.zalsa_local().with_query_stack_unchecked(|stack| {
-                        panic!(
-                            "dependency graph cycle when validating {database_key_index:#?}, \
-                        set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                        Query stack:\n{stack:#?}",
-                        );
-                    })
-                },
-                CycleRecoveryStrategy::FallbackImmediate => {
-                    return Some(VerifyResult::unchanged());
-                }
-                CycleRecoveryStrategy::Fixpoint => {
-                    crate::tracing::debug!(
-                        "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
-                    );
-                    cycle_heads.insert(database_key_index);
-                    return Some(VerifyResult::unchanged());
-                }
-            },
-            ClaimResult::Claimed(guard) => guard,
+            ClaimResult::Cycle { .. } => {
+                return Some(self.maybe_changed_after_cold_cycle(
+                    db,
+                    database_key_index,
+                    cycle_heads,
+                ))
+            }
         };
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
@@ -203,6 +188,36 @@ where
 
         // Otherwise, nothing for it: have to consider the value to have changed.
         Some(VerifyResult::Changed)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn maybe_changed_after_cold_cycle<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        database_key_index: DatabaseKeyIndex,
+        cycle_heads: &mut CycleHeadKeys,
+    ) -> VerifyResult {
+        match C::CYCLE_STRATEGY {
+            // SAFETY: We do not access the query stack reentrantly.
+            CycleRecoveryStrategy::Panic => unsafe {
+                db.zalsa_local().with_query_stack_unchecked(|stack| {
+                    panic!(
+                        "dependency graph cycle when validating {database_key_index:#?}, \
+                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                    Query stack:\n{stack:#?}",
+                    );
+                })
+            },
+            CycleRecoveryStrategy::FallbackImmediate => VerifyResult::unchanged(),
+            CycleRecoveryStrategy::Fixpoint => {
+                crate::tracing::debug!(
+                    "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
+                );
+                cycle_heads.insert(database_key_index);
+                VerifyResult::unchanged()
+            }
+        }
     }
 
     /// `Some` if the memo's value and `changed_at` time is still valid in this revision.
@@ -455,32 +470,6 @@ where
         }
 
         match old_memo.revisions.origin.as_ref() {
-            QueryOriginRef::Assigned(_) => {
-                // If the value was assigned by another query,
-                // and that query were up-to-date,
-                // then we would have updated the `verified_at` field already.
-                // So the fact that we are here means that it was not specified
-                // during this revision or is otherwise stale.
-                //
-                // Example of how this can happen:
-                //
-                // Conditionally specified queries
-                // where the value is specified
-                // in rev 1 but not in rev 2.
-                VerifyResult::Changed
-            }
-            // Return `Unchanged` similar to the initial value that we insert
-            // when we hit the cycle. Any dependencies accessed when creating the fixpoint initial
-            // are tracked by the outer query. Nothing should have changed assuming that the
-            // fixpoint initial function is deterministic.
-            QueryOriginRef::FixpointInitial => {
-                cycle_heads.insert(database_key_index);
-                VerifyResult::unchanged()
-            }
-            QueryOriginRef::DerivedUntracked(_) => {
-                // Untracked inputs? Have to assume that it changed.
-                VerifyResult::Changed
-            }
             QueryOriginRef::Derived(edges) => {
                 let is_provisional = old_memo.may_be_provisional();
 
@@ -583,6 +572,33 @@ where
                     #[cfg(feature = "accumulator")]
                     accumulated: inputs,
                 }
+            }
+
+            QueryOriginRef::Assigned(_) => {
+                // If the value was assigned by another query,
+                // and that query were up-to-date,
+                // then we would have updated the `verified_at` field already.
+                // So the fact that we are here means that it was not specified
+                // during this revision or is otherwise stale.
+                //
+                // Example of how this can happen:
+                //
+                // Conditionally specified queries
+                // where the value is specified
+                // in rev 1 but not in rev 2.
+                VerifyResult::Changed
+            }
+            // Return `Unchanged` similar to the initial value that we insert
+            // when we hit the cycle. Any dependencies accessed when creating the fixpoint initial
+            // are tracked by the outer query. Nothing should have changed assuming that the
+            // fixpoint initial function is deterministic.
+            QueryOriginRef::FixpointInitial => {
+                cycle_heads.insert(database_key_index);
+                VerifyResult::unchanged()
+            }
+            QueryOriginRef::DerivedUntracked(_) => {
+                // Untracked inputs? Have to assume that it changed.
+                VerifyResult::Changed
             }
         }
     }
