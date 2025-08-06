@@ -994,6 +994,79 @@ fn cycle_unchanged_nested_intertwined() {
     }
 }
 
+/// Test that cycle heads from one dependency don't interfere with sibling verification.
+///
+/// a:Ni(b, c, d) -> b:Ni(a)        [cycle with a, unchanged]
+///               \-> c:Np(v100)    [no cycle, unchanged]
+///                \-> d:Np(v200->v201) [no cycle, changes]
+///
+/// When verifying a in a new revision:
+/// 1. b goes through deep verification (detects b->a cycle, adds cycle heads, returns unchanged)
+/// 2. c gets verified (should not be affected by b's cycle heads with the fix)
+/// 3. d returns changed, causing a to re-execute
+///
+/// Without the fix: cycle heads from b's verification remain in shared context and interfere with c
+/// With the fix: c gets fresh cycle head context and verifies cleanly
+#[test]
+fn cycle_sibling_interference() {
+    let mut db = ExecuteValidateLoggerDatabase::default();
+    let a_in = Inputs::new(&db, vec![]); // a = min_iterate(Id(0))
+    let b_in = Inputs::new(&db, vec![]); // b = min_iterate(Id(1))
+    let c_in = Inputs::new(&db, vec![]); // c = min_panic(Id(2))
+    let d_in = Inputs::new(&db, vec![]); // d = min_panic(Id(3))
+    let a = Input::MinIterate(a_in);
+    let b = Input::MinIterate(b_in);
+    let c = Input::MinPanic(c_in);
+    let d = Input::MinPanic(d_in);
+
+    a_in.set_inputs(&mut db)
+        .to(vec![b.clone(), c.clone(), d.clone()]); // a depends on b, c, d (in that order)
+    b_in.set_inputs(&mut db).to(vec![a.clone()]); // b depends on a (forming a->b->a cycle)
+    c_in.set_inputs(&mut db).to(vec![value(100)]); // c is independent, no cycles
+    d_in.set_inputs(&mut db).to(vec![value(200)]); // d is independent, no cycles
+
+    // First execution - this will establish the cycle and memos
+    // The cycle: a depends on b, b depends on a
+    // During fixpoint iteration, initial values are 255
+    // a computes min(255, 100, 200) = 100
+    // b computes min(100) = 100
+    // Next iteration: a computes min(100, 100, 200) = 100 (converged)
+    a.assert_value(&db, 100);
+    b.assert_value(&db, 100);
+    c.assert_value(&db, 100);
+    d.assert_value(&db, 200);
+
+    // Clear logs to prepare for the next revision
+    db.clear_logs();
+
+    // Change d's input to trigger a new revision
+    // This forces verification of all dependencies in the new revision
+    d_in.set_inputs(&mut db).to(vec![value(201)]);
+
+    // Verify a - this should trigger:
+    // 1. b: deep verification (cycle detected, cycle heads added to context, but b unchanged)
+    // 2. c: verification (should be clean without cycle head interference)
+    // 3. d: changed, causing a to re-execute
+    a.assert_value(&db, 100); // min(255, 100, 201) = 100
+
+    // Query mapping: a=min_iterate(Id(0)), b=min_iterate(Id(1)), c=min_panic(Id(2)), d=min_panic(Id(3))
+    // - c gets validated cleanly during verification of `a`. The fact that `a` and `b` form a cycle shouldn't prevent that
+    // - a re-executes (due to d changing)
+    // - b re-executes (as part of a-b cycle)
+    // - d re-executes (input changed)
+    // - cycle iteration continues
+    // - b re-executes again during cycle iteration
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
+            "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
+            "salsa_event(WillExecute { database_key: min_iterate(Id(1)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(3)) })",
+            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration_count: IterationCount(1), fell_back: false })",
+            "salsa_event(WillExecute { database_key: min_iterate(Id(1)) })",
+        ]"#]]);
+}
+
 /// Provisional query results in a cycle should still be cached within a single iteration.
 ///
 /// a:Ni(v59, b) -> b:Np(v60, c, c, c) -> c:Np(a)
