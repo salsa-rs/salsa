@@ -164,52 +164,32 @@ mod memory_usage {
     use hashbrown::HashMap;
 
     impl dyn Database {
-        /// Returns information about any Salsa structs.
-        pub fn structs_info(&self) -> Vec<IngredientInfo> {
-            self.zalsa()
-                .ingredients()
-                .filter_map(|ingredient| {
-                    let mut size_of_fields = 0;
-                    let mut size_of_metadata = 0;
-                    let mut instances = 0;
-                    let mut heap_size_of_fields = None;
-
-                    for slot in ingredient.memory_usage(self)? {
-                        instances += 1;
-                        size_of_fields += slot.size_of_fields;
-                        size_of_metadata += slot.size_of_metadata;
-
-                        if let Some(slot_heap_size) = slot.heap_size_of_fields {
-                            heap_size_of_fields =
-                                Some(heap_size_of_fields.unwrap_or_default() + slot_heap_size);
-                        }
-                    }
-
-                    Some(IngredientInfo {
-                        count: instances,
-                        size_of_fields,
-                        size_of_metadata,
-                        heap_size_of_fields,
-                        debug_name: ingredient.debug_name(),
-                    })
-                })
-                .collect()
-        }
-
-        /// Returns information about any memoized Salsa queries.
-        ///
-        /// The returned map holds memory usage information for memoized values of a given query, keyed
-        /// by the query function name.
-        pub fn queries_info(&self) -> HashMap<&'static str, IngredientInfo> {
+        /// Returns memory usage information about ingredients in the database.
+        pub fn memory_usage(&self) -> DatabaseInfo {
             let mut queries = HashMap::new();
+            let mut structs = Vec::new();
 
             for input_ingredient in self.zalsa().ingredients() {
                 let Some(input_info) = input_ingredient.memory_usage(self) else {
                     continue;
                 };
 
-                for input in input_info {
-                    for memo in input.memos {
+                let mut size_of_fields = 0;
+                let mut size_of_metadata = 0;
+                let mut count = 0;
+                let mut heap_size_of_fields = None;
+
+                for input_slot in input_info {
+                    count += 1;
+                    size_of_fields += input_slot.size_of_fields;
+                    size_of_metadata += input_slot.size_of_metadata;
+
+                    if let Some(slot_heap_size) = input_slot.heap_size_of_fields {
+                        heap_size_of_fields =
+                            Some(heap_size_of_fields.unwrap_or_default() + slot_heap_size);
+                    }
+
+                    for memo in input_slot.memos {
                         let info = queries.entry(memo.debug_name).or_insert(IngredientInfo {
                             debug_name: memo.output.debug_name,
                             ..Default::default()
@@ -225,10 +205,28 @@ mod memory_usage {
                         }
                     }
                 }
+
+                structs.push(IngredientInfo {
+                    count,
+                    size_of_fields,
+                    size_of_metadata,
+                    heap_size_of_fields,
+                    debug_name: input_ingredient.debug_name(),
+                });
             }
 
-            queries
+            DatabaseInfo { structs, queries }
         }
+    }
+
+    /// Memory usage information about ingredients in the Salsa database.
+    pub struct DatabaseInfo {
+        /// Information about any Salsa structs.
+        pub structs: Vec<IngredientInfo>,
+
+        /// Memory usage information for memoized values of a given query, keyed
+        /// by the query function name.
+        pub queries: HashMap<&'static str, IngredientInfo>,
     }
 
     /// Information about instances of a particular Salsa ingredient.

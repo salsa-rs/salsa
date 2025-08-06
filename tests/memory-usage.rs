@@ -76,7 +76,7 @@ fn test() {
     let _string1 = input_to_string(&db);
     let _string2 = input_to_string_get_size(&db);
 
-    let structs_info = <dyn salsa::Database>::structs_info(&db);
+    let memory_usage = <dyn salsa::Database>::memory_usage(&db);
 
     let expected = expect![[r#"
         [
@@ -123,11 +123,9 @@ fn test() {
             },
         ]"#]];
 
-    expected.assert_eq(&format!("{structs_info:#?}"));
+    expected.assert_eq(&format!("{:#?}", memory_usage.structs));
 
-    let mut queries_info = <dyn salsa::Database>::queries_info(&db)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut queries_info = memory_usage.queries.into_iter().collect::<Vec<_>>();
     queries_info.sort();
 
     let expected = expect![[r#"
