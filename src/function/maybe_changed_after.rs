@@ -168,6 +168,10 @@ where
                 db.zalsa_local(),
                 database_key_index,
                 old_memo,
+                // Don't conclude that the query is unchanged if the memo itself is still
+                // provisional (because all its cycle heads have the same iteration count
+                // as the cycle head memos in the database).
+                // See https://github.com/salsa-rs/salsa/pull/961
                 false,
             )
         {
@@ -190,6 +194,7 @@ where
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
+                // Returns unchanged but propagates the accumulated values
                 deep_verify
             });
         }
@@ -198,27 +203,12 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        //
-        // However, executing the query here is only safe if there's no "unverified"
-        // cycle. Let's assume we have:
-        // * query `a`
-        //   * depends on `b` (input)
-        //   * depends on `c` (input)
-        //   * creates interned `x` (input)
-        // * query `c`
-        //   * depends on `a` (input)
-        //   * depeonds on `d` (input/changed)
-        //   * reads `x`
-        //
-        // When `maybe_changed_after` runs on `a`, it recurses into `b` and then `c`. Now, `c` will recurse into `a` again
-        // where we return `Unchanged` but add `a` to the cycle heads. `maybe_changed_after` now continues checking `d`
-        // which returns `changed` so we'll reach the point here. Now, the reason we can't `execute` c
-        // is because `a` hasn't re-interned `x` at this point (we started recursing into `c`).
-        //
-        // We can't run into this situation with normal queries because a dependency can't depent on values from
-        // the outer query (it's a tree and not a graph). However, it's possible with cycles because
-        // an interned or tracked struct like `x` can flow into a dependent query as part of a later iteration and
-        // those values come later in `input_outputs` than the first call to the query that ultimately causes the cycle.
+        // However, executing the query here is only safe if we are not in a cycle.
+        // In a cycle, it's important that the cycle head gets executed or we
+        // risk that some dependencies of this query haven't been verified yet because
+        // the cycle head returned *fixpoint initial* without validating its dependencies.
+        // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
+        // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && !cycle_heads.has_any() {
             let active_query = db
                 .zalsa_local()
@@ -226,25 +216,25 @@ where
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
-            // Always assume that a provisional value has changed (we simply don't know yet
-            // and we need to iterate some outer cycle to determine it, which we can't do here).
+            // Always assume that a provisional value has changed.
+            //
+            // We don't know if a provisional value has actually changed. To determine whether a provisional
+            // value has changed, we need to iterate the outer cycle, which cannot be done here.
             return Some(if changed_at > revision || memo.may_be_provisional() {
                 VerifyResult::changed()
             } else {
                 VerifyResult::unchanged_with_accumulated(
                     #[cfg(feature = "accumulator")]
-                    {
-                        match memo.revisions.accumulated() {
-                            Some(_) => InputAccumulatedValues::Any,
-                            None => memo.revisions.accumulated_inputs.load(),
-                        }
+                    match memo.revisions.accumulated() {
+                        Some(_) => InputAccumulatedValues::Any,
+                        None => memo.revisions.accumulated_inputs.load(),
                     },
                 )
             });
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
-        Some(deep_verify)
+        Some(VerifyResult::changed())
     }
 
     #[cold]
@@ -502,11 +492,6 @@ where
     /// Takes an [`ActiveQueryGuard`] argument because this function recursively
     /// walks dependencies of `old_memo` and may even execute them to see if their
     /// outputs have changed.
-    ///
-    /// `cycle_heads` tracks all cycle heads encountered while verifying if the memo has changed and that haven't been verified yet.
-    /// These are all cycle heads from the entire subtree. Note, an empty set if the result is `Changed` doesn't suggest that there are no cycles.
-    /// It only means that the verification didn't encounter any cycles during verification but the
-    /// query might very well have participated in a cycle in its original computation.
     pub(super) fn deep_verify_memo(
         &self,
         db: &C::DbView,
@@ -546,8 +531,8 @@ where
                         QueryEdgeKind::Input(dependency_index) => {
                             debug_assert!(child_cycle_heads.is_empty());
 
-                            // Pass fresh cycle heads to the child query to avoid
-                            // that cycles introduced by siblings prevent queries from being verified.
+                            // The `MaybeChangeAfterCycleHeads` is used as an out parameter and it's
+                            // the caller's responsibility to pass an empty `heads`, which is what we do here.
                             let mut inner_cycle_heads = MaybeChangeAfterCycleHeads {
                                 heads: std::mem::take(&mut child_cycle_heads),
                                 has_outer_cycles: cycle_heads.has_any(),
@@ -560,6 +545,7 @@ where
                                 &mut inner_cycle_heads,
                             );
 
+                            // Reuse the cycle head allocation.
                             child_cycle_heads = inner_cycle_heads.heads;
                             // Aggregate the cycle heads into the parent cycle heads
                             cycle_heads.append(&mut child_cycle_heads);
@@ -596,8 +582,6 @@ where
                     }
                 }
 
-                cycle_heads.remove(database_key_index);
-
                 // Possible scenarios here:
                 //
                 // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
@@ -623,6 +607,8 @@ where
                 //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
                 //    future iteration; first the outer cycle head needs to verify itself.
 
+                cycle_heads.remove(database_key_index);
+
                 // 1 and 3
                 if !cycle_heads.has_own() {
                     old_memo.mark_as_verified(zalsa, database_key_index);
@@ -636,9 +622,7 @@ where
 
                 VerifyResult::unchanged_with_accumulated(
                     #[cfg(feature = "accumulator")]
-                    {
-                        inputs
-                    },
+                    inputs,
                 )
             }
 
@@ -694,9 +678,24 @@ impl ShallowUpdate {
     }
 }
 
+/// The cycles encountered while verifying if an ingredient has changed after a given revision.
+///
+/// We use this as an out parameter to avoid increasing the size of [`VerifyResult`].
+/// The `heads` of a `MaybeChangeAfterCycleHeads` must be empty when
+/// calling [`maybe_changed_after`]. The [`maybe_changed_after`] then collects all cycle heads
+/// encountered while verifying this ingredient and its subtree.
+///
+/// Note that `heads` only contains the cycle heads up to the point where [`maybe_changed_after`]
+/// returned [`VerifyResult::Changed`]. Cycles that only manifest when verifying later dependencies
+/// aren't included.
+///
+/// [`maybe_changed_after`]: crate::ingredient::Ingredient::maybe_changed_after
 #[derive(Debug, Default)]
 pub struct MaybeChangeAfterCycleHeads {
     heads: Vec<DatabaseKeyIndex>,
+
+    /// Whether the outer query (e.g. the parent query running `maybe_changed_after`) has encountered
+    /// any cycles to this point.
     has_outer_cycles: bool,
 }
 
@@ -736,10 +735,13 @@ impl MaybeChangeAfterCycleHeads {
         }
     }
 
+    /// Returns `true` if this query or any of its dependencies has encountered a cycle or
+    /// if the outer query has encountered a cycle.
     pub fn has_any(&self) -> bool {
         self.has_outer_cycles || !self.heads.is_empty()
     }
 
+    /// Returns `true` if this query has encountered a cycle.
     fn has_own(&self) -> bool {
         !self.heads.is_empty()
     }
