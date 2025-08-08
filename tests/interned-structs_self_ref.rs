@@ -92,16 +92,17 @@ const _: () = {
 
         const PERSIST: bool = false;
 
-        fn serialize<S: serde::Serializer>(
-            value: &Self::Fields<'_>,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error> {
+        fn serialize<S>(value: &Self::Fields<'_>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: zalsa_::serde::Serializer,
+        {
             panic!("attempted to serialize value not marked with `persist` attribute")
         }
 
-        fn deserialize<'de, D: serde::Deserializer<'de>>(
-            deserializer: D,
-        ) -> Result<Self::Fields<'static>, D::Error> {
+        fn deserialize<'de, D>(deserializer: D) -> Result<Self::Fields<'static>, D::Error>
+        where
+            D: zalsa_::serde::Deserializer<'de>,
+        {
             panic!("attempted to deserialize value not marked with `persist` attribute")
         }
     }

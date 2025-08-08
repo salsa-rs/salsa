@@ -162,9 +162,7 @@ fn everything() {
             "MyTracked": {
               "3073": {
                 "durability": "Low",
-                "updated_at": {
-                  "data": 1
-                },
+                "updated_at": 1,
                 "revisions": [],
                 "fields": [
                   "a"
@@ -197,9 +195,7 @@ fn everything() {
             "input_pair_to_string": {
               "9:4097": {
                 "value": "aaa",
-                "verified_at": {
-                  "data": 1
-                },
+                "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
                   "durability": "Low",
@@ -236,9 +232,7 @@ fn everything() {
                   "index": 3073,
                   "generation": 0
                 },
-                "verified_at": {
-                  "data": 1
-                },
+                "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
                   "durability": "Low",
@@ -291,9 +285,7 @@ fn everything() {
                   "index": 2049,
                   "generation": 0
                 },
-                "verified_at": {
-                  "data": 1
-                },
+                "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
                   "durability": "High",
