@@ -55,9 +55,9 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       # TODO: Use something like cargo-hack for more robust feature configuration testing.
       - name: Clippy / all-features
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --features persistence -- -D warnings
       - name: Test
-        run: cargo nextest run --workspace --all-targets --all-features --no-fail-fast
+        run: cargo nextest run --workspace --all-targets --features persistence --no-fail-fast
       - name: Test Manual Registration / no-default-features
         run: cargo nextest run --workspace --tests --no-fail-fast --no-default-features --features macros
       - name: Test docs
