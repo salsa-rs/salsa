@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.23.0...salsa-v0.23.1) - 2025-08-08
+
+### Fixed
+
+- Fix phantom data usage in salsa structs affecting auto traits ([#932](https://github.com/salsa-rs/salsa/pull/932))
+
+### Other
+
+- Fix `maybe_changed_after` runnaway for fixpoint queries ([#961](https://github.com/salsa-rs/salsa/pull/961))
+- add parallel maybe changed after test ([#963](https://github.com/salsa-rs/salsa/pull/963))
+- Update tests for Rust 1.89 ([#966](https://github.com/salsa-rs/salsa/pull/966))
+- remove allocation lock ([#962](https://github.com/salsa-rs/salsa/pull/962))
+- consolidate memory usage information API ([#964](https://github.com/salsa-rs/salsa/pull/964))
+- Add heap size support for salsa structs ([#943](https://github.com/salsa-rs/salsa/pull/943))
+- Extract the cycle branches from `fetch` and `maybe_changed_after` ([#955](https://github.com/salsa-rs/salsa/pull/955))
+- allow reuse of cached provisional memos within the same cycle iteration during `maybe_changed_after` ([#954](https://github.com/salsa-rs/salsa/pull/954))
+- Expose API to manually trigger cancellation ([#959](https://github.com/salsa-rs/salsa/pull/959))
+- Upgrade dependencies ([#956](https://github.com/salsa-rs/salsa/pull/956))
+- Use `CycleHeadSet` in `maybe_update_after` ([#953](https://github.com/salsa-rs/salsa/pull/953))
+- Gate accumulator feature behind a feature flag ([#946](https://github.com/salsa-rs/salsa/pull/946))
+- optimize allocation fast-path ([#949](https://github.com/salsa-rs/salsa/pull/949))
+- remove borrow checks from `ZalsaLocal` ([#939](https://github.com/salsa-rs/salsa/pull/939))
+- Do manual trait casting ([#922](https://github.com/salsa-rs/salsa/pull/922))
+- Retain backing allocation of `ActiveQuery::input_outputs` in `ActiveQuery::seed_iteration` ([#948](https://github.com/salsa-rs/salsa/pull/948))
+- remove extra bounds checks from memo table hot-paths ([#938](https://github.com/salsa-rs/salsa/pull/938))
+- Outline all tracing events ([#942](https://github.com/salsa-rs/salsa/pull/942))
+- remove bounds and type checks from `IngredientCache` ([#937](https://github.com/salsa-rs/salsa/pull/937))
+- Avoid dynamic dispatch to access memo tables ([#941](https://github.com/salsa-rs/salsa/pull/941))
+- optimize page access ([#940](https://github.com/salsa-rs/salsa/pull/940))
+- Use `inventory` for static ingredient registration ([#934](https://github.com/salsa-rs/salsa/pull/934))
+- Fix `heap_size` option not being preserved in tracked impls ([#930](https://github.com/salsa-rs/salsa/pull/930))
+- update papaya ([#928](https://github.com/salsa-rs/salsa/pull/928))
+
 ## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.22.0...salsa-v0.23.0) - 2025-06-27
 
 ### Added
