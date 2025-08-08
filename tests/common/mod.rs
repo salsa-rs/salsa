@@ -41,6 +41,7 @@ pub trait LogDatabase: HasLogger + Database {
     /// Asserts what the (formatted) logs should look like,
     /// clearing the logged events. This takes `&mut self` because
     /// it is meant to be run from outside any tracked functions.
+    #[track_caller]
     fn assert_logs(&self, expected: expect_test::Expect) {
         let logs = std::mem::take(&mut *self.logger().logs.lock().unwrap());
         expected.assert_eq(&format!("{logs:#?}"));
@@ -49,6 +50,7 @@ pub trait LogDatabase: HasLogger + Database {
     /// Asserts the length of the logs,
     /// clearing the logged events. This takes `&mut self` because
     /// it is meant to be run from outside any tracked functions.
+    #[track_caller]
     fn assert_logs_len(&self, expected: usize) {
         let logs = std::mem::take(&mut *self.logger().logs.lock().unwrap());
         assert_eq!(logs.len(), expected, "Actual logs: {logs:#?}");

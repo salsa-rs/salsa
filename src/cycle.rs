@@ -231,37 +231,6 @@ pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
     EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
 }
 
-/// Set of cycle head database keys.
-///
-/// Unlike [`CycleHeads`], this type doesn't track the iteration count
-/// of each cycle head.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CycleHeadKeys(Vec<DatabaseKeyIndex>);
-
-impl CycleHeadKeys {
-    pub(crate) fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    pub(crate) fn insert(&mut self, database_key_index: DatabaseKeyIndex) {
-        if !self.0.contains(&database_key_index) {
-            self.0.push(database_key_index);
-        }
-    }
-
-    pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
-        let found = self.0.iter().position(|&head| head == *value);
-        let Some(found) = found else { return false };
-
-        self.0.swap_remove(found);
-        true
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProvisionalStatus {
     Provisional { iteration: IterationCount },

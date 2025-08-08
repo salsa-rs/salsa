@@ -2,11 +2,10 @@ use std::any::{Any, TypeId};
 use std::fmt;
 
 use crate::cycle::{
-    empty_cycle_heads, CycleHeadKeys, CycleHeads, CycleRecoveryStrategy, IterationCount,
-    ProvisionalStatus,
+    empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
 use crate::database::RawDatabase;
-use crate::function::VerifyResult;
+use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -52,7 +51,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        cycle_heads: &mut CycleHeadKeys,
+        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult;
 
     /// Returns information about the current provisional status of `input`.

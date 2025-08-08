@@ -1,7 +1,8 @@
-use crate::cycle::{CycleHeadKeys, CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::function::maybe_changed_after::VerifyCycleHeads;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl, VerifyResult};
+use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
@@ -163,15 +164,38 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
-                let mut cycle_heads = CycleHeadKeys::new();
-                if let VerifyResult::Unchanged { .. } =
-                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index, &mut cycle_heads)
+                let can_shallow_update =
+                    self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+                if can_shallow_update.yes()
+                    && self.validate_may_be_provisional(
+                        zalsa,
+                        zalsa_local,
+                        database_key_index,
+                        old_memo,
+                        true,
+                    )
                 {
-                    if cycle_heads.is_empty() {
-                        // SAFETY: memo is present in memo_map and we have verified that it is
-                        // still valid for the current revision.
-                        return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
-                    }
+                    self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
+
+                    // SAFETY: memo is present in memo_map and we have verified that it is
+                    // still valid for the current revision.
+                    return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+                }
+
+                let mut cycle_heads = VerifyCycleHeads::default();
+                let verify_result = self.deep_verify_memo(
+                    db,
+                    zalsa,
+                    old_memo,
+                    database_key_index,
+                    &mut cycle_heads,
+                    can_shallow_update,
+                );
+
+                if verify_result.is_unchanged() && !cycle_heads.has_any() {
+                    // SAFETY: memo is present in memo_map and we have verified that it is
+                    // still valid for the current revision.
+                    return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
 
                 // If this is a provisional memo from the same revision, await all its cycle heads because

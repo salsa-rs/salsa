@@ -148,12 +148,14 @@ where
                     // initial provisional value from there.
                     let memo = self
                         .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                        .filter(|memo| memo.verified_at.load() == zalsa.current_revision())
                         .unwrap_or_else(|| {
                             unreachable!(
                                 "{database_key_index:#?} is a cycle head, \
                                         but no provisional memo found"
                             )
                         });
+
                     debug_assert!(memo.may_be_provisional());
                     memo.value.as_ref()
                 };

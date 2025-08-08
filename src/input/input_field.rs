@@ -1,8 +1,7 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::cycle::CycleHeadKeys;
-use crate::function::VerifyResult;
+use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
@@ -56,7 +55,7 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        _cycle_heads: &mut CycleHeadKeys,
+        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         let value = <IngredientImpl<C>>::data(zalsa, input);
         VerifyResult::changed_if(value.revisions[self.field_index] > revision)
