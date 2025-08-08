@@ -1214,10 +1214,18 @@ mod persistence {
                 }
             }
 
-            map.serialize_entry(&"durability", &self.durability)?;
-            map.serialize_entry(&"updated_at", &self.updated_at)?;
-            map.serialize_entry(&"revisions", &self.revisions)?;
-            map.serialize_entry(&"fields", &SerializeFields::<C>(&self.fields))?;
+            let Value {
+                durability,
+                updated_at,
+                fields,
+                revisions,
+                memos: _,
+            } = self;
+
+            map.serialize_entry(&"durability", &durability)?;
+            map.serialize_entry(&"updated_at", &updated_at)?;
+            map.serialize_entry(&"revisions", &revisions)?;
+            map.serialize_entry(&"fields", &SerializeFields::<C>(fields))?;
 
             map.end()
         }

@@ -493,9 +493,16 @@ mod persistence {
                 }
             }
 
-            map.serialize_entry(&"durabilities", &self.durabilities)?;
-            map.serialize_entry(&"revisions", &self.revisions)?;
-            map.serialize_entry(&"fields", &SerializeFields::<C>(&self.fields))?;
+            let Value {
+                fields,
+                revisions,
+                durabilities,
+                memos: _,
+            } = self;
+
+            map.serialize_entry(&"durabilities", &durabilities)?;
+            map.serialize_entry(&"revisions", &revisions)?;
+            map.serialize_entry(&"fields", &SerializeFields::<C>(fields))?;
 
             map.end()
         }

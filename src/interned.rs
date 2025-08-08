@@ -154,6 +154,7 @@ where
 
 /// Shared value data can only be read through the lock.
 #[repr(Rust, packed)] // Allow `durability` to be stored in the padding of the outer `Value` struct.
+#[derive(Clone, Copy)]
 struct ValueShared {
     /// The interned ID for this value.
     ///
@@ -1345,16 +1346,28 @@ mod persistence {
                 }
             }
 
-            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
-            // to the database.
-            let fields = unsafe { &*self.fields.get() };
+            let Value {
+                fields,
+                shared,
+                shard: _,
+                link: _,
+                memos: _,
+            } = self;
 
             // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
             // to the database.
-            let value_shared = unsafe { &*self.shared.get() };
+            let fields = unsafe { &*fields.get() };
 
-            map.serialize_entry(&"durability", &{ value_shared.durability })?;
-            map.serialize_entry(&"last_interned_at", &{ value_shared.last_interned_at })?;
+            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
+            // to the database.
+            let ValueShared {
+                durability,
+                last_interned_at,
+                id: _,
+            } = unsafe { *shared.get() };
+
+            map.serialize_entry(&"durability", &durability)?;
+            map.serialize_entry(&"last_interned_at", &last_interned_at)?;
             map.serialize_entry(&"fields", &SerializeFields::<C>(fields))?;
 
             map.end()

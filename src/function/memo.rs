@@ -379,15 +379,18 @@ mod persistence {
                 }
             }
 
-            let value = self
-                .value
-                .as_ref()
-                .expect("attempted to serialize empty memo");
+            let Memo {
+                value,
+                verified_at,
+                revisions,
+            } = self;
+
+            let value = value.as_ref().expect("attempted to serialize empty memo");
 
             let mut s = serializer.serialize_struct("Memo", 3)?;
             s.serialize_field("value", &SerializeValue::<C>(value))?;
-            s.serialize_field("verified_at", &self.verified_at)?;
-            s.serialize_field("revisions", &self.revisions)?;
+            s.serialize_field("verified_at", &verified_at)?;
+            s.serialize_field("revisions", &revisions)?;
             s.end()
         }
     }
