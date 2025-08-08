@@ -3,7 +3,7 @@
 //! The trick is that different threads call into the same cycle from different entry queries and
 //! the cycle heads change over different iterations
 //!
-//! * Thread 1: `a` -> b -> c
+//! * Thread 1: `a` -> `b` -> `c`
 //! * Thread 2: `b`
 //! * Thread 3: `d` -> `c`
 //! * Thread 4: `e` -> `c`
