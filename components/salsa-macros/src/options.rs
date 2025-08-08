@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use syn::ext::IdentExt;
-use syn::parenthesized;
 use syn::spanned::Spanned;
+use syn::{parenthesized, token};
 
 /// "Options" are flags that can be supplied to the various salsa related
 /// macros. They are listed like `(ref, no_eq, foo=bar)` etc. The commas
@@ -50,9 +50,11 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `non_update_return_type` identifier.
     pub non_update_return_type: Option<syn::Ident>,
 
-    /// The `serde` option indicates that the type provides an implementation of the
-    /// `serde::{Serialize, Deserialize}` traits, and can be persisted along with the database.
-    pub serde: Option<SerializeOptions>,
+    /// The `persist` options indicates that the ingredient should be persisted with the database.
+    ///
+    /// If this is `Some`, the value is optional paths to custom serialization/deserialization
+    /// functions, based on `serde::{Serialize, Deserialize}`.
+    pub persist: Option<PersistOptions>,
 
     /// The `db = <path>` option is used to indicate the db.
     ///
@@ -117,16 +119,13 @@ pub(crate) struct Options<A: AllowedOptions> {
     phantom: PhantomData<A>,
 }
 
-#[derive(Debug)]
-pub enum SerializeOptions {
-    /// Use the default `serde::{Serialize, Deserialize}` implementations.
-    Default,
+#[derive(Debug, Default, Clone)]
+pub struct PersistOptions {
+    /// Path to a custom serialize function.
+    pub serialize_fn: Option<syn::Path>,
 
-    /// Paths to custom serialize and deserialize functions.
-    Custom {
-        serialize_fn: Option<syn::Path>,
-        deserialize_fn: Option<syn::Path>,
-    },
+    /// Path to a custom serialize function.
+    pub deserialize_fn: Option<syn::Path>,
 }
 
 impl<A: AllowedOptions> Default for Options<A> {
@@ -151,7 +150,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             revisions: Default::default(),
             heap_size_fn: Default::default(),
             self_ty: Default::default(),
-            serde: Default::default(),
+            persist: Default::default(),
         }
     }
 }
@@ -176,13 +175,23 @@ pub(crate) trait AllowedOptions {
     const REVISIONS: bool;
     const HEAP_SIZE: bool;
     const SELF_TY: bool;
-    const SERIALIZE: AllowedSerializeOptions;
+    const PERSIST: AllowedPersistOptions;
 }
 
-pub(crate) enum AllowedSerializeOptions {
+pub(crate) enum AllowedPersistOptions {
     AllowedIdent,
     AllowedValue,
     Invalid,
+}
+
+impl AllowedPersistOptions {
+    fn allowed(&self) -> bool {
+        matches!(self, Self::AllowedIdent | Self::AllowedValue)
+    }
+
+    fn allowed_value(&self) -> bool {
+        matches!(self, Self::AllowedValue)
+    }
 }
 
 type Equals = syn::Token![=];
@@ -271,108 +280,53 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`unsafe` options not allowed here",
                     ));
                 }
-            } else if ident == "serialize" {
-                match A::SERIALIZE {
-                    AllowedSerializeOptions::AllowedIdent => {
-                        if options.serde.replace(SerializeOptions::Default).is_some() {
-                            return Err(syn::Error::new(
-                                ident.span(),
-                                "option `serialize` provided twice",
-                            ));
-                        }
-                    }
-                    AllowedSerializeOptions::AllowedValue => {
-                        let path = Equals::parse(input)
-                            .map(|_eq| syn::Path::parse(input))
-                            .unwrap_or_else(|_| {
-                                // By default, use the `Serialize` implementation for tuples.
-                                Ok(syn::parse_quote! { serde::Serialize::serialize })
-                            })?;
-
-                        match options.serde {
-                            None | Some(SerializeOptions::Default) => {
-                                options.serde = Some(SerializeOptions::Custom {
-                                    serialize_fn: Some(path),
-                                    deserialize_fn: None,
-                                });
-                            }
-                            Some(SerializeOptions::Custom {
-                                serialize_fn: None,
-                                deserialize_fn,
-                            }) => {
-                                options.serde = Some(SerializeOptions::Custom {
-                                    serialize_fn: Some(path),
-                                    deserialize_fn,
-                                });
-                            }
-                            Some(SerializeOptions::Custom {
-                                serialize_fn: Some(_),
-                                ..
-                            }) => {
-                                return Err(syn::Error::new(
-                                    ident.span(),
-                                    "option `serialize` provided twice",
-                                ));
-                            }
-                        }
-                    }
-                    AllowedSerializeOptions::Invalid => {
+            } else if ident == "persist" {
+                if A::PERSIST.allowed() {
+                    if options.persist.is_some() {
                         return Err(syn::Error::new(
                             ident.span(),
-                            "`serialize` option not allowed here",
+                            "option `persist` provided twice",
                         ));
                     }
-                }
-            } else if ident == "deserialize" {
-                match A::SERIALIZE {
-                    AllowedSerializeOptions::AllowedIdent => {
-                        if options.serde.replace(SerializeOptions::Default).is_some() {
-                            return Err(syn::Error::new(
-                                ident.span(),
-                                "option `deserialize` provided twice",
-                            ));
-                        }
-                    }
-                    AllowedSerializeOptions::AllowedValue => {
-                        let path = Equals::parse(input)
-                            .map(|_eq| syn::Path::parse(input))
-                            .unwrap_or_else(|_| {
-                                // By default, use the `Deserialize` implementation for tuples.
-                                Ok(syn::parse_quote! { serde::Deserialize::deserialize })
-                            })?;
 
-                        match options.serde {
-                            None | Some(SerializeOptions::Default) => {
-                                options.serde = Some(SerializeOptions::Custom {
-                                    serialize_fn: None,
-                                    deserialize_fn: Some(path),
-                                });
+                    let persist = options.persist.insert(PersistOptions::default());
+
+                    if input.peek(token::Paren) {
+                        let content;
+                        parenthesized!(content in input);
+
+                        let parse_argument = |content| {
+                            let ident = syn::Ident::parse(content)?;
+                            let _ = Equals::parse(content)?;
+                            let path = syn::Path::parse(content)?;
+                            Ok((ident, path))
+                        };
+
+                        for (ident, path) in
+                            content.parse_terminated(parse_argument, syn::Token![,])?
+                        {
+                            if !A::PERSIST.allowed_value() {
+                                return Err(syn::Error::new(ident.span(), "unexpected argument"));
                             }
-                            Some(SerializeOptions::Custom {
-                                serialize_fn,
-                                deserialize_fn: None,
-                            }) => {
-                                options.serde = Some(SerializeOptions::Custom {
-                                    serialize_fn,
-                                    deserialize_fn: Some(path),
-                                });
-                            }
-                            Some(SerializeOptions::Custom {
-                                deserialize_fn: Some(_),
-                                ..
-                            }) => {
-                                return Err(syn::Error::new(
-                                    ident.span(),
-                                    "option `deserialize` provided twice",
-                                ));
+
+                            if ident == "serialize" {
+                                if persist.serialize_fn.replace(path).is_some() {
+                                    return Err(syn::Error::new(
+                                        ident.span(),
+                                        "option `serialize` provided twice",
+                                    ));
+                                }
+                            } else if ident == "deserialize" {
+                                if persist.deserialize_fn.replace(path).is_some() {
+                                    return Err(syn::Error::new(
+                                        ident.span(),
+                                        "option `deserialize` provided twice",
+                                    ));
+                                }
+                            } else {
+                                return Err(syn::Error::new(ident.span(), "unexpected argument"));
                             }
                         }
-                    }
-                    AllowedSerializeOptions::Invalid => {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            "`deserialize` option not allowed here",
-                        ));
                     }
                 }
             } else if ident == "singleton" {
@@ -604,7 +558,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             revisions,
             heap_size_fn,
             self_ty,
-            serde,
+            persist,
             phantom: _,
         } = self;
         if let Some(returns) = returns {
@@ -627,9 +581,6 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         }
         if non_update_return_type.is_some() {
             tokens.extend(quote::quote! { unsafe(non_update_return_type), });
-        }
-        if serde.is_some() {
-            tokens.extend(quote::quote! { serde, });
         }
         if let Some(db_path) = db_path {
             tokens.extend(quote::quote! { db = #db_path, });
@@ -663,6 +614,23 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         }
         if let Some(self_ty) = self_ty {
             tokens.extend(quote::quote! { self_ty = #self_ty, });
+        }
+        if let Some(persist) = persist {
+            let mut args = proc_macro2::TokenStream::new();
+
+            if let Some(path) = &persist.serialize_fn {
+                args.extend(quote::quote! { serialize = #path, });
+            }
+
+            if let Some(path) = &persist.deserialize_fn {
+                args.extend(quote::quote! { deserialize = #path, });
+            }
+
+            if args.is_empty() {
+                tokens.extend(quote::quote! { persist, });
+            } else {
+                tokens.extend(quote::quote! { persist(#args), });
+            }
         }
     }
 }

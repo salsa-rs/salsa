@@ -27,8 +27,8 @@ pub trait Configuration: Any {
     const FIELD_DEBUG_NAMES: &'static [&'static str];
     const LOCATION: crate::ingredient::Location;
 
-    /// Whether this struct should be serialized with the database.
-    const SERIALIZABLE: bool;
+    /// Whether this struct should be persisted with the database.
+    const PERSIST: bool;
 
     /// The singleton state for this input if any.
     type Singleton: SingletonChoice + Send + Sync;
@@ -62,7 +62,7 @@ pub trait Configuration: Any {
 
     /// Serialize the fields using `serde`.
     ///
-    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
     fn serialize<S: serde::Serializer>(
         value: &Self::Fields,
         serializer: S,
@@ -70,7 +70,7 @@ pub trait Configuration: Any {
 
     /// Deserialize the fields using `serde`.
     ///
-    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
     fn deserialize<'de, D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Self::Fields, D::Error>;
@@ -305,12 +305,12 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         Some(memory_usage)
     }
 
-    fn is_serializable(&self) -> bool {
-        C::SERIALIZABLE
+    fn is_persistable(&self) -> bool {
+        C::PERSIST
     }
 
     fn should_serialize(&self, zalsa: &Zalsa) -> bool {
-        C::SERIALIZABLE && self.entries(zalsa).next().is_some()
+        C::PERSIST && self.entries(zalsa).next().is_some()
     }
 
     #[cfg(not(feature = "shuttle"))]

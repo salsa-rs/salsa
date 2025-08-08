@@ -90,19 +90,19 @@ const _: () = {
         type Fields<'a> = StructData<'a>;
         type Struct<'a> = InternedString<'a>;
 
-        const SERIALIZABLE: bool = false;
+        const PERSIST: bool = false;
 
         fn serialize<S: serde::Serializer>(
             value: &Self::Fields<'_>,
             serializer: S,
         ) -> Result<S::Ok, S::Error> {
-            panic!("attempted to serialize value not marked with `serialize` attribute")
+            panic!("attempted to serialize value not marked with `persist` attribute")
         }
 
         fn deserialize<'de, D: serde::Deserializer<'de>>(
             deserializer: D,
         ) -> Result<Self::Fields<'static>, D::Error> {
-            panic!("attempted to deserialize value not marked with `serialize` attribute")
+            panic!("attempted to deserialize value not marked with `persist` attribute")
         }
     }
     impl Configuration_ {

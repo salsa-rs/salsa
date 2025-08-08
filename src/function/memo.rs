@@ -587,7 +587,7 @@ mod _memory_usage {
     impl super::Configuration for DummyConfiguration {
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
-        const SERIALIZABLE: bool = false;
+        const PERSIST: bool = false;
         const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
 
         type DbView = dyn Database;

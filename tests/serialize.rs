@@ -5,32 +5,32 @@ use common::LogDatabase;
 
 use expect_test::expect;
 
-#[salsa::input(serialize)]
+#[salsa::input(persist)]
 struct MyInput {
     field: usize,
 }
 
-#[salsa::interned(serialize)]
+#[salsa::interned(persist)]
 struct MyInterned<'db> {
     field: String,
 }
 
-#[salsa::tracked(serialize)]
+#[salsa::tracked(persist)]
 struct MyTracked<'db> {
     field: String,
 }
 
-#[salsa::tracked(serialize)]
+#[salsa::tracked(persist)]
 fn unit_to_interned(db: &dyn salsa::Database) -> MyInterned<'_> {
     MyInterned::new(db, "a".repeat(50))
 }
 
-#[salsa::tracked(serialize)]
+#[salsa::tracked(persist)]
 fn input_to_tracked(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, "a".repeat(input.field(db)))
 }
 
-#[salsa::tracked(serialize)]
+#[salsa::tracked(persist)]
 fn input_pair_to_string(db: &dyn salsa::Database, input1: MyInput, input2: MyInput) -> String {
     "a".repeat(input1.field(db) + input2.field(db))
 }
@@ -342,14 +342,14 @@ fn everything() {
 }
 
 #[test]
-#[should_panic(expected = "is not serializable")]
+#[should_panic(expected = "is not persistable")]
 fn invalid_dependency() {
     #[salsa::interned]
     struct MyInterned<'db> {
         field: usize,
     }
 
-    #[salsa::tracked(serialize)]
+    #[salsa::tracked(persist)]
     fn new_interned(db: &dyn salsa::Database) {
         let _interned = MyInterned::new(db, 0);
     }

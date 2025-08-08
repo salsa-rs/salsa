@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 
 use crate::hygiene::Hygiene;
-use crate::options::{AllowedOptions, AllowedSerializeOptions, Options};
+use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
 use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
 use crate::{db_lifetime, token_stream_with_error};
 
@@ -69,7 +69,7 @@ impl AllowedOptions for InternedStruct {
 
     const SELF_TY: bool = false;
 
-    const SERIALIZE: AllowedSerializeOptions = AllowedSerializeOptions::AllowedValue;
+    const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedValue;
 }
 
 impl SalsaStructAllowedOptions for InternedStruct {
@@ -133,8 +133,9 @@ impl Macro {
             (None, quote!(#struct_ident), static_lifetime)
         };
 
-        let serializable = salsa_struct.serializable();
-        let serde_fn = salsa_struct.serde_fn()?;
+        let persist = salsa_struct.persist();
+        let serialize_fn = salsa_struct.serialize_fn();
+        let deserialize_fn = salsa_struct.deserialize_fn();
 
         let heap_size_fn = self.args.heap_size_fn.iter();
 
@@ -169,8 +170,9 @@ impl Macro {
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,
                     heap_size_fn: #(#heap_size_fn)*,
-                    serializable: #serializable,
-                    serde_fn: #(#serde_fn)*,
+                    persist: #persist,
+                    serialize_fn: #(#serialize_fn)*,
+                    deserialize_fn: #(#deserialize_fn)*,
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

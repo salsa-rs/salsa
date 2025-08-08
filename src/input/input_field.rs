@@ -87,9 +87,9 @@ where
         unreachable!("input fields do not allocate pages")
     }
 
-    fn is_serializable(&self) -> bool {
-        // Input field dependencies are valid as long as the input is serializable.
-        C::SERIALIZABLE
+    fn is_persistable(&self) -> bool {
+        // Input field dependencies are valid as long as the input is persistable.
+        C::PERSIST
     }
 
     fn should_serialize(&self, _zalsa: &Zalsa) -> bool {

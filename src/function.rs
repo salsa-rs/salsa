@@ -46,7 +46,7 @@ pub type Memo<C> = memo::Memo<'static, C>;
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
-    const SERIALIZABLE: bool;
+    const PERSIST: bool;
 
     /// The database that this function is associated with.
     type DbView: ?Sized + crate::Database;
@@ -103,7 +103,7 @@ pub trait Configuration: Any {
 
     /// Serialize the output type using `serde`.
     ///
-    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
     fn serialize<S: serde::Serializer>(
         value: &Self::Output<'_>,
         serializer: S,
@@ -111,7 +111,7 @@ pub trait Configuration: Any {
 
     /// Deserialize the output type using `serde`.
     ///
-    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
     fn deserialize<'de, D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Self::Output<'static>, D::Error>;
@@ -408,12 +408,12 @@ where
         self.accumulated_map(db, key_index)
     }
 
-    fn is_serializable(&self) -> bool {
-        C::SERIALIZABLE
+    fn is_persistable(&self) -> bool {
+        C::PERSIST
     }
 
     fn should_serialize(&self, zalsa: &Zalsa) -> bool {
-        if !C::SERIALIZABLE {
+        if !C::PERSIST {
             return false;
         }
 
@@ -511,7 +511,7 @@ mod persistence {
             {
                 let struct_ingredient = zalsa.lookup_ingredient(struct_index);
                 assert!(
-                    struct_ingredient.is_serializable(),
+                    struct_ingredient.is_persistable(),
                     "the input of a serialized tracked function must be serialized"
                 );
             }
@@ -534,8 +534,8 @@ mod persistence {
                         // TODO: This is not strictly necessary, we only need the transitive input
                         // dependencies of this query to serialize a valid memo.
                         assert!(
-                            dependency.is_serializable(),
-                            "attempted to serialize query `{}`, but dependency `{}` is not serializable",
+                            dependency.is_persistable(),
+                            "attempted to serialize query `{}`, but dependency `{}` is not persistable",
                             ingredient.debug_name(),
                             dependency.debug_name()
                         );

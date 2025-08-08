@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 use syn::{Ident, ItemFn};
 
 use crate::hygiene::Hygiene;
-use crate::options::{AllowedOptions, AllowedSerializeOptions, Options};
+use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
 use crate::{db_lifetime, fn_util};
 
 // Source:
@@ -62,7 +62,7 @@ impl AllowedOptions for TrackedFn {
 
     const SELF_TY: bool = true;
 
-    const SERIALIZE: AllowedSerializeOptions = AllowedSerializeOptions::AllowedIdent;
+    const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedIdent;
 }
 
 struct Macro {
@@ -185,7 +185,7 @@ impl Macro {
             ));
         }
 
-        let serializable = self.args.serde.is_some();
+        let persist = self.args.persist.is_some();
 
         // The path expression is responsible for emitting the primary span in the diagnostic we
         // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted
@@ -233,7 +233,7 @@ impl Macro {
                 heap_size_fn: #(#heap_size_fn)*,
                 lru: #lru,
                 return_mode: #return_mode,
-                serializable: #serializable,
+                persist: #persist,
                 assert_return_type_is_update: { #assert_return_type_is_update },
                 #self_ty
                 unused_names: [

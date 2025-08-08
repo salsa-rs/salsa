@@ -44,8 +44,8 @@ pub trait Configuration: Sized + 'static {
     /// The relative indices of any tracked fields.
     const TRACKED_FIELD_INDICES: &'static [usize];
 
-    /// Whether this struct should be serialized with the database.
-    const SERIALIZABLE: bool;
+    /// Whether this struct should be persisted with the database.
+    const PERSIST: bool;
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>: Send + Sync;
@@ -105,7 +105,7 @@ pub trait Configuration: Sized + 'static {
 
     /// Serialize the fields using `serde`.
     ///
-    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
     fn serialize<S: serde::Serializer>(
         value: &Self::Fields<'_>,
         serializer: S,
@@ -113,7 +113,7 @@ pub trait Configuration: Sized + 'static {
 
     /// Deserialize the fields using `serde`.
     ///
-    /// Panics if the value is not serializable, i.e. `Configuration::SERIALIZABLE` is `false`.
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
     fn deserialize<'de, D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Self::Fields<'static>, D::Error>;
@@ -916,12 +916,12 @@ where
         Some(memory_usage)
     }
 
-    fn is_serializable(&self) -> bool {
-        C::SERIALIZABLE
+    fn is_persistable(&self) -> bool {
+        C::PERSIST
     }
 
     fn should_serialize(&self, zalsa: &Zalsa) -> bool {
-        C::SERIALIZABLE && self.entries(zalsa).next().is_some()
+        C::PERSIST && self.entries(zalsa).next().is_some()
     }
 
     #[cfg(not(feature = "shuttle"))]

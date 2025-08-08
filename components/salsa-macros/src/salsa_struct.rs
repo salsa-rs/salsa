@@ -30,7 +30,7 @@ use syn::parse::ParseStream;
 use syn::{ext::IdentExt, spanned::Spanned};
 
 use crate::db_lifetime;
-use crate::options::{AllowedOptions, Options, SerializeOptions};
+use crate::options::{AllowedOptions, Options};
 
 pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
     struct_item: &'s syn::ItemStruct,
@@ -414,36 +414,6 @@ where
         self.args.debug.is_some()
     }
 
-    pub fn serializable(&self) -> bool {
-        self.args.serde.is_some()
-    }
-
-    /// Returns the path to the `serialize` and `deserialize` functions as an optional iterator.
-    pub(crate) fn serde_fn(
-        &self,
-    ) -> syn::Result<impl Iterator<Item = proc_macro2::TokenStream> + '_> {
-        let path = match &self.args.serde {
-            None => None,
-            Some(SerializeOptions::Custom {
-                serialize_fn: Some(serialize_fn),
-                deserialize_fn: Some(deserialize_fn),
-            }) => Some(quote! { (#serialize_fn, #deserialize_fn) }),
-            // Fallback to the `{Serialize, Deserialize}` implementations tuples if only one of the
-            // two is provided.
-            Some(SerializeOptions::Custom {
-                serialize_fn: Some(serialize_fn),
-                deserialize_fn: None,
-            }) => Some(quote! { (#serialize_fn, serde::Deserialize::deserialize) }),
-            Some(SerializeOptions::Custom {
-                serialize_fn: None,
-                deserialize_fn: Some(deserialize_fn),
-            }) => Some(quote! { (serde::Serialize::serialize, #deserialize_fn) }),
-            _ => unreachable!(),
-        };
-
-        Ok(path.into_iter())
-    }
-
     pub fn generate_lifetime(&self) -> bool {
         self.args.no_lifetime.is_none()
     }
@@ -460,6 +430,40 @@ where
             .iter()
             .enumerate()
             .filter(|(_, f)| !f.has_tracked_attr)
+    }
+
+    pub fn persist(&self) -> bool {
+        self.args.persist.is_some()
+    }
+
+    /// Returns the path to the `serialize` function as an optional iterator.
+    ///
+    /// This will be `None` if `persistable` returns `false`.
+    pub(crate) fn serialize_fn(&self) -> impl Iterator<Item = syn::Path> + '_ {
+        self.args
+            .persist
+            .clone()
+            .map(|persist| {
+                persist
+                    .serialize_fn
+                    .unwrap_or(parse_quote! { serde::Serialize::serialize })
+            })
+            .into_iter()
+    }
+
+    /// Returns the path to the `deserialize` function as an optional iterator.
+    ///
+    /// This will be `None` if `persistable` returns `false`.
+    pub(crate) fn deserialize_fn(&self) -> impl Iterator<Item = syn::Path> + '_ {
+        self.args
+            .persist
+            .clone()
+            .map(|persist| {
+                persist
+                    .deserialize_fn
+                    .unwrap_or(parse_quote! { serde::Deserialize::deserialize })
+            })
+            .into_iter()
     }
 }
 

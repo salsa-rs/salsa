@@ -188,10 +188,15 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         None
     }
 
-    fn is_serializable(&self) -> bool {
+    /// Whether this ingredient will be persisted with the database.
+    fn is_persistable(&self) -> bool {
         false
     }
 
+    /// Whether there is data to serialize for this ingredient.
+    ///
+    /// If this returns `false`, the ingredient will not be serialized, even if `is_persistable`
+    /// returns `true`.
     fn should_serialize(&self, _zalsa: &Zalsa) -> bool {
         false
     }
@@ -211,7 +216,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         _zalsa: &'db Zalsa,
         _f: &mut dyn FnMut(&dyn erased_serde::Serialize),
     ) {
-        unimplemented!("called `serialize` on ingredient where `is_serializable` returns `false`")
+        unimplemented!("called `serialize` on ingredient where `is_persistable` returns `false`")
     }
 
     /// Deserialize the ingredient.
@@ -220,7 +225,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         _zalsa: &mut Zalsa,
         _deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
-        unimplemented!("called `deserialize` on ingredient where `is_serializable` returns `false`")
+        unimplemented!("called `deserialize` on ingredient where `is_persistable` returns `false`")
     }
 }
 

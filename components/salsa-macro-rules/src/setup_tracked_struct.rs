@@ -91,11 +91,14 @@ macro_rules! setup_tracked_struct {
         // The function used to implement `C::heap_size`.
         heap_size_fn: $($heap_size_fn:path)?,
 
-        // If `true`, a `serde_fn` has been provided.
-        serializable: $serializable:tt,
+        // If `true`, `serialize_fn` and `deserialize_fn` have been provided.
+        persist: $persist:tt,
 
-        // The path to the `serialize` and `deserialize` functions for the value's fields.
-        serde_fn: $(($serialize_fn:path, $deserialize_fn:path))?,
+        // The path to the `serialize` function for the value's fields.
+        serialize_fn: $($serialize_fn:path)?,
+
+        // The path to the `serialize` function for the value's fields.
+        deserialize_fn: $($deserialize_fn:path)?,
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -149,7 +152,7 @@ macro_rules! setup_tracked_struct {
                     $($relative_tracked_index,)*
                 ];
 
-                const SERIALIZABLE: bool = $serializable;
+                const PERSIST: bool = $persist;
 
                 type Fields<$db_lt> = ($($field_ty,)*);
 
@@ -208,10 +211,10 @@ macro_rules! setup_tracked_struct {
                     serializer: S,
                 ) -> Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
-                        if $serializable {
+                        if $persist {
                             $($serialize_fn(fields, serializer))?
                         } else {
-                            panic!("attempted to serialize value not marked with `serialize` attribute")
+                            panic!("attempted to serialize value not marked with `persist` attribute")
                         }
                     }
                 }
@@ -220,10 +223,10 @@ macro_rules! setup_tracked_struct {
                     deserializer: D,
                 ) -> Result<Self::Fields<'static>, D::Error> {
                     $zalsa::macro_if! {
-                        if $serializable {
+                        if $persist {
                             $($deserialize_fn(deserializer))?
                         } else {
-                            panic!("attempted to deserialize value not marked with `serialize` attribute")
+                            panic!("attempted to deserialize value not marked with `persist` attribute")
                         }
                     }
                 }
@@ -302,7 +305,7 @@ macro_rules! setup_tracked_struct {
                 }
             }
 
-            $zalsa::macro_if! { $serializable =>
+            $zalsa::macro_if! { $persist =>
                 impl $zalsa::serde::Serialize for $Struct<'_> {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where

@@ -64,8 +64,8 @@ macro_rules! setup_tracked_fn {
         // The return mode for the function, see `salsa_macros::options::Option::returns`
         return_mode: $return_mode:tt,
 
-        // If true, the return value implements `serde::{Serialize, Deserialize}`.
-        serializable: $serializable:tt,
+        // If true, the input and output values implement `serde::{Serialize, Deserialize}`.
+        persist: $persist:tt,
 
         assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
 
@@ -172,7 +172,7 @@ macro_rules! setup_tracked_fn {
                             line: line!(),
                         };
                         const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::",)? stringify!($fn_name), "::interned_arguments");
-                        const SERIALIZABLE: bool = true;
+                        const PERSIST: bool = true;
 
                         type Fields<$db_lt> = ($($interned_input_ty),*);
 
@@ -183,10 +183,10 @@ macro_rules! setup_tracked_fn {
                             serializer: S,
                         ) -> Result<S::Ok, S::Error> {
                             $zalsa::macro_if! {
-                                if $serializable {
+                                if $persist {
                                     $zalsa::serde::Serialize::serialize(fields, serializer)
                                 } else {
-                                    panic!("attempted to serialize value not marked with `serialize` attribute")
+                                    panic!("attempted to serialize value not marked with `persist` attribute")
                                 }
                             }
                         }
@@ -195,10 +195,10 @@ macro_rules! setup_tracked_fn {
                             deserializer: D,
                         ) -> Result<Self::Fields<'static>, D::Error> {
                             $zalsa::macro_if! {
-                                if $serializable {
+                                if $persist {
                                     $zalsa::serde::Deserialize::deserialize(deserializer)
                                 } else {
-                                    panic!("attempted to deserialize value not marked with `serialize` attribute")
+                                    panic!("attempted to deserialize value not marked with `persist` attribute")
                                 }
                             }
                         }
@@ -206,11 +206,11 @@ macro_rules! setup_tracked_fn {
                 } else {
                     type $InternedData<$db_lt> = ($($interned_input_ty),*);
 
-                    $zalsa::macro_if! { $serializable =>
-                        const fn query_input_is_serializable<T: $zalsa::serde::Serialize + $zalsa::serde::de::DeserializeOwned>() {}
+                    $zalsa::macro_if! { $persist =>
+                        const fn query_input_is_persistable<T: $zalsa::serde::Serialize + $zalsa::serde::de::DeserializeOwned>() {}
 
-                        fn assert_query_input_is_serializable<$db_lt>() {
-                            query_input_is_serializable::<$($interned_input_ty),*>();
+                        fn assert_query_input_is_persistable<$db_lt>() {
+                            query_input_is_persistable::<$($interned_input_ty),*>();
                         }
                     }
                 }
@@ -270,7 +270,7 @@ macro_rules! setup_tracked_fn {
                     line: line!(),
                 };
                 const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::", )? stringify!($fn_name));
-                const SERIALIZABLE: bool = $serializable;
+                const PERSIST: bool = $persist;
 
                 type DbView = dyn $Db;
 
@@ -326,10 +326,10 @@ macro_rules! setup_tracked_fn {
                     serializer: S,
                 ) -> Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
-                        if $serializable {
+                        if $persist {
                             $zalsa::serde::Serialize::serialize(value, serializer)
                         } else {
-                            panic!("attempted to serialize value not marked with `serialize` attribute")
+                            panic!("attempted to serialize value not marked with `persist` attribute")
                         }
                     }
                 }
@@ -338,10 +338,10 @@ macro_rules! setup_tracked_fn {
                     deserializer: D,
                 ) -> Result<Self::Output<'static>, D::Error> {
                     $zalsa::macro_if! {
-                        if $serializable {
+                        if $persist {
                             $zalsa::serde::Deserialize::deserialize(deserializer)
                         } else {
-                            panic!("attempted to deserialize value not marked with `serialize` attribute")
+                            panic!("attempted to deserialize value not marked with `persist` attribute")
                         }
                     }
                 }
