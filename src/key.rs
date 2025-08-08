@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::function::{MaybeChangeAfterCycleHeads, VerifyResult};
+use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::Id;
 
@@ -38,7 +38,7 @@ impl DatabaseKeyIndex {
         db: crate::database::RawDatabase<'_>,
         zalsa: &Zalsa,
         last_verified_at: crate::Revision,
-        cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {

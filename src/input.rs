@@ -8,7 +8,7 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
-use crate::function::{MaybeChangeAfterCycleHeads, VerifyResult};
+use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
@@ -230,7 +230,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.

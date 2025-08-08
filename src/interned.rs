@@ -11,7 +11,7 @@ use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, Unsaf
 use rustc_hash::FxBuildHasher;
 
 use crate::durability::Durability;
-use crate::function::{MaybeChangeAfterCycleHeads, VerifyResult};
+use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
 use crate::plumbing::{Jar, ZalsaLocal};
@@ -803,7 +803,7 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         _revision: Revision,
-        _cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();

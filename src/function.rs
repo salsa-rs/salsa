@@ -1,4 +1,4 @@
-pub(crate) use maybe_changed_after::{MaybeChangeAfterCycleHeads, VerifyResult};
+pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
@@ -265,7 +265,7 @@ where
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };

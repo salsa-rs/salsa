@@ -1,5 +1,5 @@
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
-use crate::function::maybe_changed_after::MaybeChangeAfterCycleHeads;
+use crate::function::maybe_changed_after::VerifyCycleHeads;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -182,7 +182,7 @@ where
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
 
-                let mut cycle_heads = MaybeChangeAfterCycleHeads::default();
+                let mut cycle_heads = VerifyCycleHeads::default();
                 let verify_result = self.deep_verify_memo(
                     db,
                     zalsa,

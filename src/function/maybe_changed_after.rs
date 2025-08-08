@@ -72,7 +72,7 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
-        cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
@@ -131,7 +131,7 @@ where
         key_index: Id,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
-        cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        cycle_heads: &mut VerifyCycleHeads,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
@@ -243,7 +243,7 @@ where
         &'db self,
         db: &'db C::DbView,
         database_key_index: DatabaseKeyIndex,
-        cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         match C::CYCLE_STRATEGY {
             // SAFETY: We do not access the query stack reentrantly.
@@ -498,7 +498,7 @@ where
         zalsa: &Zalsa,
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
-        cycle_heads: &mut MaybeChangeAfterCycleHeads,
+        cycle_heads: &mut VerifyCycleHeads,
         can_shallow_update: ShallowUpdate,
     ) -> VerifyResult {
         crate::tracing::debug!(
@@ -533,7 +533,7 @@ where
 
                             // The `MaybeChangeAfterCycleHeads` is used as an out parameter and it's
                             // the caller's responsibility to pass an empty `heads`, which is what we do here.
-                            let mut inner_cycle_heads = MaybeChangeAfterCycleHeads {
+                            let mut inner_cycle_heads = VerifyCycleHeads {
                                 heads: std::mem::take(&mut child_cycle_heads),
                                 has_outer_cycles: cycle_heads.has_any(),
                             };
@@ -691,7 +691,7 @@ impl ShallowUpdate {
 ///
 /// [`maybe_changed_after`]: crate::ingredient::Ingredient::maybe_changed_after
 #[derive(Debug, Default)]
-pub struct MaybeChangeAfterCycleHeads {
+pub struct VerifyCycleHeads {
     heads: Vec<DatabaseKeyIndex>,
 
     /// Whether the outer query (e.g. the parent query running `maybe_changed_after`) has encountered
@@ -699,7 +699,7 @@ pub struct MaybeChangeAfterCycleHeads {
     has_outer_cycles: bool,
 }
 
-impl MaybeChangeAfterCycleHeads {
+impl VerifyCycleHeads {
     #[inline]
     fn contains(&self, key: DatabaseKeyIndex) -> bool {
         self.heads.contains(&key)
