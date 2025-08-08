@@ -180,7 +180,6 @@ where
             return Some(VerifyResult::unchanged());
         }
 
-        // Check if the inputs are still valid. We can just compare `changed_at`.
         let deep_verify = self.deep_verify_memo(
             db,
             zalsa,
@@ -191,6 +190,7 @@ where
         );
 
         if deep_verify.is_unchanged() {
+            // Check if the inputs are still valid. We can just compare `changed_at`.
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {

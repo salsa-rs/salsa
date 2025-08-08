@@ -148,28 +148,7 @@ where
                     // initial provisional value from there.
                     let memo = self
                         .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                        .map(|memo| {
-                            if memo.may_be_provisional() {
-                                memo
-                            } else {
-                                // It's possible that we don't have a provisional value if we hit the cycle
-                                // in `maybe_changed_after`. There, we only return Changed/Unchanged but never insert
-                                // a memo.
-                                let revisions =
-                                    QueryRevisions::fixpoint_initial(database_key_index);
-                                let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
-                                self.insert_memo(
-                                    zalsa,
-                                    id,
-                                    Memo::new(
-                                        Some(initial_value),
-                                        zalsa.current_revision(),
-                                        revisions,
-                                    ),
-                                    memo_ingredient_index,
-                                )
-                            }
-                        })
+                        .filter(|memo| memo.verified_at.load() == zalsa.current_revision())
                         .unwrap_or_else(|| {
                             unreachable!(
                                 "{database_key_index:#?} is a cycle head, \
