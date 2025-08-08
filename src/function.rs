@@ -426,7 +426,7 @@ where
                 memo_ingredient_index,
             );
 
-            if memo.is_some_and(|memo| memo.value.is_some()) {
+            if memo.is_some_and(|memo| memo.should_serialize()) {
                 return true;
             }
         }
@@ -525,7 +525,7 @@ mod persistence {
                     memo_ingredient_index,
                 );
 
-                if let Some(memo) = memo.filter(|memo| memo.value.is_some()) {
+                if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
                     for edge in memo.revisions.origin.as_ref().edges() {
                         let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
 

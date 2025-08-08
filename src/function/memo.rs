@@ -114,6 +114,13 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
+    /// Returns `true` if this memo should be serialized.
+    pub(super) fn should_serialize(&self) -> bool {
+        // TODO: Serialization is a good opportunity to prune old query results based on
+        // the `verified_at` revision.
+        self.value.is_some() && !self.may_be_provisional()
+    }
+
     /// True if this may be a provisional cycle-iteration result.
     #[inline]
     pub(super) fn may_be_provisional(&self) -> bool {
