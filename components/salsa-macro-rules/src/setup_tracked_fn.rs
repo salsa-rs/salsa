@@ -125,11 +125,11 @@ macro_rules! setup_tracked_fn {
                             $zalsa::IngredientIndices::empty()
                         }
 
-                        fn instances(
+                        fn entries(
                             zalsa: &$zalsa::Zalsa
                         ) -> impl Iterator<Item = $zalsa::DatabaseKeyIndex> + '_ {
                             let ingredient_index = zalsa.lookup_jar_by_type::<$fn_name>().successor(0);
-                            <$Configuration>::intern_ingredient(zalsa).instances(zalsa)
+                            <$Configuration>::intern_ingredient(zalsa).entries(zalsa).map(|(key, _)| key)
                         }
 
                         #[inline]

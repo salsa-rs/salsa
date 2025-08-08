@@ -415,16 +415,11 @@ where
         }
 
         // We only serialize the query if there are any memos associated with it.
-        for instance_key in <C::SalsaStruct<'_> as SalsaStructInDb>::instances(zalsa) {
-            let memo_ingredient_index = self
-                .memo_ingredient_indices
-                .get(instance_key.ingredient_index());
+        for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
+            let memo_ingredient_index = self.memo_ingredient_indices.get(entry.ingredient_index());
 
-            let memo = self.get_memo_from_table_for(
-                zalsa,
-                instance_key.key_index(),
-                memo_ingredient_index,
-            );
+            let memo =
+                self.get_memo_from_table_for(zalsa, entry.key_index(), memo_ingredient_index);
 
             if memo.is_some_and(|memo| memo.should_serialize()) {
                 return true;
@@ -514,14 +509,14 @@ mod persistence {
                 );
             }
 
-            for instance_key in <C::SalsaStruct<'_> as SalsaStructInDb>::instances(zalsa) {
+            for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
                 let memo_ingredient_index = ingredient
                     .memo_ingredient_indices
-                    .get(instance_key.ingredient_index());
+                    .get(entry.ingredient_index());
 
                 let memo = ingredient.get_memo_from_table_for(
                     zalsa,
-                    instance_key.key_index(),
+                    entry.key_index(),
                     memo_ingredient_index,
                 );
 
@@ -542,8 +537,8 @@ mod persistence {
                     // TODO: Group structs by ingredient index into a nested map.
                     let key = format!(
                         "{}:{}",
-                        instance_key.ingredient_index().as_u32(),
-                        instance_key.key_index().as_bits()
+                        entry.ingredient_index().as_u32(),
+                        entry.key_index().as_bits()
                     );
 
                     map.serialize_entry(&key, memo)?;

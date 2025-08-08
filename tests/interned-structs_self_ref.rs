@@ -147,10 +147,12 @@ const _: () = {
                 .into()
         }
 
-        fn instances(zalsa: &zalsa_::Zalsa) -> impl Iterator<Item = zalsa_::DatabaseKeyIndex> + '_ {
+        fn entries(zalsa: &zalsa_::Zalsa) -> impl Iterator<Item = zalsa_::DatabaseKeyIndex> + '_ {
             let ingredient_index =
                 zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>();
-            <Configuration_>::ingredient(zalsa).instances(zalsa)
+            <Configuration_>::ingredient(zalsa)
+                .entries(zalsa)
+                .map(|(key, _)| key)
         }
 
         #[inline]

@@ -587,7 +587,7 @@ mod _memory_usage {
             unimplemented!()
         }
 
-        fn instances(_: &Zalsa) -> impl Iterator<Item = crate::DatabaseKeyIndex> + '_ {
+        fn entries(_: &Zalsa) -> impl Iterator<Item = crate::DatabaseKeyIndex> + '_ {
             std::iter::empty()
         }
     }

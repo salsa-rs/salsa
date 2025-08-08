@@ -337,14 +337,7 @@ impl Table {
         unsafe { page.memo_types.attach_memos_mut(memos) }
     }
 
-    pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = &T> + '_ {
-        self.pages
-            .iter()
-            .filter_map(|(_, page)| page.cast_type::<T>())
-            .flat_map(|view| view.data())
-    }
-
-    pub(crate) fn slot_entries_of<T: Slot>(&self) -> impl Iterator<Item = (Id, &T)> + '_ {
+    pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = (Id, &T)> + '_ {
         self.pages
             .iter()
             .filter_map(|(page_index, page)| Some((page_index, page.cast_type::<T>()?)))

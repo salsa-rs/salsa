@@ -824,19 +824,14 @@ where
     }
 
     /// Returns all data corresponding to the tracked struct.
-    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = &'db Value<C>> {
-        zalsa.table().slots_of::<Value<C>>()
-    }
-
-    /// Returns the IDs of all tracked structs of this type.
-    pub fn instances<'db>(
+    pub fn entries<'db>(
         &'db self,
         zalsa: &'db Zalsa,
-    ) -> impl Iterator<Item = DatabaseKeyIndex> + 'db {
+    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
         zalsa
             .table()
-            .slot_entries_of::<Value<C>>()
-            .map(|(id, _)| self.database_key_index(id))
+            .slots_of::<Value<C>>()
+            .map(|(id, value)| (self.database_key_index(id), value))
     }
 }
 
@@ -911,8 +906,9 @@ where
             .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
-            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
+            .map(|(_, value)| unsafe { value.memory_usage(&self.memo_table_types) })
             .collect();
+
         Some(memory_usage)
     }
 
@@ -1182,7 +1178,7 @@ mod persistence {
 
             let mut map = serializer.serialize_map(None)?;
 
-            for (id, value) in zalsa.table().slot_entries_of::<Value<C>>() {
+            for (id, value) in zalsa.table().slots_of::<Value<C>>() {
                 map.serialize_entry(&id.as_bits(), value)?;
             }
 

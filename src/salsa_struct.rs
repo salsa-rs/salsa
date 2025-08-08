@@ -20,7 +20,7 @@ pub trait SalsaStructInDb: Sized {
     fn lookup_ingredient_index(zalsa: &Zalsa) -> IngredientIndices;
 
     /// Returns the IDs of any instances of this struct in the database.
-    fn instances(zalsa: &Zalsa) -> impl Iterator<Item = DatabaseKeyIndex> + '_;
+    fn entries(zalsa: &Zalsa) -> impl Iterator<Item = DatabaseKeyIndex> + '_;
 
     /// Plumbing to support nested salsa supertypes.
     ///

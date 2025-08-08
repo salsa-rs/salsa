@@ -809,24 +809,38 @@ where
     }
 
     /// Returns all data corresponding to the interned struct.
-    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = &'db Value<C>> {
-        zalsa.table().slots_of::<Value<C>>()
-    }
-
-    /// Returns the IDs of all interned structs of this type.
-    pub fn instances<'db>(
+    pub fn entries<'db>(
         &'db self,
         zalsa: &'db Zalsa,
-    ) -> impl Iterator<Item = DatabaseKeyIndex> + 'db {
-        // TODO: Grab all locks eagerly.
-        zalsa.table().slots_of::<Value<C>>().map(|value| {
-            // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
-            let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
+    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
+        // SAFETY: `should_lock` is `true`
+        unsafe { self.entries_inner(true, zalsa) }
+    }
 
-            // SAFETY: We hold the lock for the shard containing the value.
+    /// Returns all data corresponding to the interned struct.
+    ///
+    /// # Safety
+    ///
+    /// If `should_lock` is `false`, the caller *must* hold the locks for all shards
+    /// of the key map.
+    unsafe fn entries_inner<'db>(
+        &'db self,
+        should_lock: bool,
+        zalsa: &'db Zalsa,
+    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
+        // TODO: Grab all locks eagerly.
+        zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
+            if should_lock {
+                // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
+                let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
+            }
+
+            // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
+            //
+            // Note that this ID includes the generation, unlike the ID provided by the table.
             let id = unsafe { (*value.shared.get()).id };
 
-            self.database_key_index(id)
+            (self.database_key_index(id), value)
         })
     }
 }
@@ -910,11 +924,13 @@ where
             unsafe { shard.raw().lock() };
         }
 
-        let memory_usage = self
-            .entries(db.zalsa())
+        // SAFETY: We hold the locks for all shards.
+        let entries = unsafe { self.entries_inner(false, db.zalsa()) };
+
+        let memory_usage = entries
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type. Additionally, we are holding the locks for all shards.
-            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
+            .map(|(_, value)| unsafe { value.memory_usage(&self.memo_table_types) })
             .collect();
 
         for shard in self.shards.iter() {
@@ -1310,7 +1326,7 @@ mod persistence {
 
             let mut map = serializer.serialize_map(None)?;
 
-            for value in zalsa.table().slots_of::<Value<C>>() {
+            for (_, value) in zalsa.table().slots_of::<Value<C>>() {
                 // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
                 // to the database.
                 let id = unsafe { (*value.shared.get()).id };
