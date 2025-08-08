@@ -122,7 +122,25 @@ pub mod plumbing {
         Zalsa, ZalsaDatabase,
     };
     pub use crate::zalsa_local::ZalsaLocal;
+
+    #[cfg(feature = "persistence")]
     pub use serde;
+
+    // A stub for `serde` used when persistence is disabled.
+    //
+    // We provide dummy types to avoid detecting features during macro expansion.
+    #[cfg(not(feature = "persistence"))]
+    pub mod serde {
+        pub trait Serializer {
+            type Ok;
+            type Error;
+        }
+
+        pub trait Deserializer<'de> {
+            type Ok;
+            type Error;
+        }
+    }
 
     #[cfg(feature = "accumulator")]
     pub mod accumulator {

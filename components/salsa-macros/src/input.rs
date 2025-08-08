@@ -116,7 +116,7 @@ impl Macro {
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let heap_size_fn = self.args.heap_size_fn.iter();
 
-        let persist = salsa_struct.persist();
+        let persist = self.args.persist();
         let serialize_fn = salsa_struct.serialize_fn();
         let deserialize_fn = salsa_struct.deserialize_fn();
 

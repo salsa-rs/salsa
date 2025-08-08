@@ -13,14 +13,12 @@ use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::{Jar, ZalsaLocal};
+use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::{Durability, Id, Revision, Runtime};
-
-use serde::de::DeserializeSeed;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -40,20 +38,28 @@ pub trait Configuration: Any {
     type Fields: Send + Sync;
 
     /// A array of [`Revision`], one per each of the value fields.
+    #[cfg(feature = "persistence")]
     type Revisions: Send
         + Sync
         + fmt::Debug
         + IndexMut<usize, Output = Revision>
-        + serde::Serialize
-        + serde::de::DeserializeOwned;
+        + plumbing::serde::Serialize
+        + for<'de> plumbing::serde::Deserialize<'de>;
+
+    #[cfg(not(feature = "persistence"))]
+    type Revisions: Send + Sync + fmt::Debug + IndexMut<usize, Output = Revision>;
 
     /// A array of [`Durability`], one per each of the value fields.
+    #[cfg(feature = "persistence")]
     type Durabilities: Send
         + Sync
         + fmt::Debug
         + IndexMut<usize, Output = Durability>
-        + serde::Serialize
-        + serde::de::DeserializeOwned;
+        + plumbing::serde::Serialize
+        + for<'de> plumbing::serde::Deserialize<'de>;
+
+    #[cfg(not(feature = "persistence"))]
+    type Durabilities: Send + Sync + fmt::Debug + IndexMut<usize, Output = Durability>;
 
     /// Returns the size of any heap allocations in the output value, in bytes.
     fn heap_size(_value: &Self::Fields) -> Option<usize> {
@@ -63,17 +69,16 @@ pub trait Configuration: Any {
     /// Serialize the fields using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn serialize<S: serde::Serializer>(
-        value: &Self::Fields,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>;
+    fn serialize<S>(value: &Self::Fields, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: plumbing::serde::Serializer;
 
     /// Deserialize the fields using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn deserialize<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self::Fields, D::Error>;
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self::Fields, D::Error>
+    where
+        D: plumbing::serde::Deserializer<'de>;
 }
 
 pub struct JarImpl<C: Configuration> {
@@ -313,7 +318,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         C::PERSIST && self.entries(zalsa).next().is_some()
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -325,17 +330,18 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         })
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     fn deserialize(
         &mut self,
         zalsa: &mut Zalsa,
         deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
-        persistence::DeserializeIngredient {
+        let deserialize = persistence::DeserializeIngredient {
             zalsa,
             ingredient: self,
-        }
-        .deserialize(deserializer)
+        };
+
+        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
 }
 
@@ -422,7 +428,7 @@ where
     }
 }
 
-#[cfg(not(feature = "shuttle"))]
+#[cfg(feature = "persistence")]
 mod persistence {
     use std::fmt;
 

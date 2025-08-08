@@ -17,9 +17,8 @@ use crate::zalsa::Zalsa;
 ///
 /// As an end-user of `Salsa` you will generally not use `Id` directly,
 /// it is wrapped in new types.
-#[derive(
-    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Id {
     index: NonZeroU32,
     generation: u32,

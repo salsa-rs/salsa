@@ -9,13 +9,12 @@ use std::path::{Path, PathBuf};
 use crossbeam_utils::CachePadded;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use rustc_hash::FxBuildHasher;
-use serde::de::DeserializeSeed;
 
 use crate::durability::Durability;
 use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
-use crate::plumbing::{Jar, ZalsaLocal};
+use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::revision::AtomicRevision;
 use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
@@ -55,17 +54,16 @@ pub trait Configuration: Sized + 'static {
     /// Serialize the fields using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn serialize<S: serde::Serializer>(
-        value: &Self::Fields<'_>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>;
+    fn serialize<S>(value: &Self::Fields<'_>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: plumbing::serde::Serializer;
 
     /// Deserialize the fields using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn deserialize<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self::Fields<'static>, D::Error>;
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self::Fields<'static>, D::Error>
+    where
+        D: plumbing::serde::Deserializer<'de>;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone + Sync + Send {}
@@ -934,7 +932,7 @@ where
         C::PERSIST && self.entries(zalsa).next().is_some()
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -946,17 +944,18 @@ where
         })
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     fn deserialize(
         &mut self,
         zalsa: &mut Zalsa,
         deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
-        persistence::DeserializeIngredient {
+        let deserialize = persistence::DeserializeIngredient {
             zalsa,
             ingredient: self,
-        }
-        .deserialize(deserializer)
+        };
+
+        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
 }
 
@@ -1274,7 +1273,7 @@ impl Lookup<PathBuf> for &Path {
     }
 }
 
-#[cfg(not(feature = "shuttle"))]
+#[cfg(feature = "persistence")]
 mod persistence {
     use std::cell::UnsafeCell;
     use std::fmt;

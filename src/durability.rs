@@ -16,7 +16,8 @@
 /// frequently editing. Medium or high durabilities are used for
 /// configuration, the source from library crates, or other things
 /// that are unlikely to be edited.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Durability(DurabilityVal);
 
 impl std::fmt::Debug for Durability {
@@ -36,7 +37,8 @@ impl std::fmt::Debug for Durability {
 }
 
 // We use an enum here instead of a u8 for niches.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 enum DurabilityVal {
     Low = 0,
     Medium = 1,

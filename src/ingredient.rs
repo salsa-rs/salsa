@@ -49,7 +49,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     unsafe fn maybe_changed_after(
         &self,
         zalsa: &crate::zalsa::Zalsa,
-        db: crate::database::RawDatabase<'_>,
+        db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
         cycle_heads: &mut VerifyCycleHeads,
@@ -211,6 +211,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// the serializer has exclusive access to the database.
     // See <https://github.com/dtolnay/erased-serde/issues/113> for why this callback signature is necessary, instead
     // of providing an `erased_serde::Serializer` directly.
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         _zalsa: &'db Zalsa,
@@ -220,6 +221,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     }
 
     /// Deserialize the ingredient.
+    #[cfg(feature = "persistence")]
     fn deserialize(
         &mut self,
         _zalsa: &mut Zalsa,

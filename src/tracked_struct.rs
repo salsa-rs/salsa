@@ -7,7 +7,6 @@ use std::ops::Index;
 use std::{fmt, mem};
 
 use crossbeam_queue::SegQueue;
-use serde::de::DeserializeSeed;
 use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
@@ -15,7 +14,7 @@ use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::ZalsaLocal;
+use crate::plumbing::{self, ZalsaLocal};
 use crate::revision::OptionalAtomicRevision;
 use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
@@ -54,11 +53,15 @@ pub trait Configuration: Sized + 'static {
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
+    #[cfg(feature = "persistence")]
     type Revisions: Send
         + Sync
         + Index<usize, Output = Revision>
-        + serde::Serialize
-        + serde::de::DeserializeOwned;
+        + plumbing::serde::Serialize
+        + for<'de> plumbing::serde::Deserialize<'de>;
+
+    #[cfg(not(feature = "persistence"))]
+    type Revisions: Send + Sync + Index<usize, Output = Revision>;
 
     type Struct<'db>: Copy + FromId + AsId;
 
@@ -106,17 +109,16 @@ pub trait Configuration: Sized + 'static {
     /// Serialize the fields using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn serialize<S: serde::Serializer>(
-        value: &Self::Fields<'_>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>;
+    fn serialize<S>(value: &Self::Fields<'_>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: plumbing::serde::Serializer;
 
     /// Deserialize the fields using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn deserialize<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self::Fields<'static>, D::Error>;
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self::Fields<'static>, D::Error>
+    where
+        D: plumbing::serde::Deserializer<'de>;
 }
 // ANCHOR_END: Configuration
 
@@ -201,9 +203,8 @@ where
 /// This is the key to a hashmap that is (initially)
 /// stored in the [`ActiveQuery`](`crate::active_query::ActiveQuery`)
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
-#[derive(
-    Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct Identity {
     // Conceptually, this contains an `IdentityHash`, but using `IdentityHash` directly will grow the size
     // of this struct struct by a `std::mem::size_of::<usize>()` due to unusable padding. To avoid this increase
@@ -345,9 +346,8 @@ where
 }
 // ANCHOR_END: ValueStruct
 
-#[derive(
-    Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Disambiguator(u32);
 
 #[derive(Default, Debug)]
@@ -924,7 +924,7 @@ where
         C::PERSIST && self.entries(zalsa).next().is_some()
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -936,17 +936,18 @@ where
         })
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     fn deserialize(
         &mut self,
         zalsa: &mut Zalsa,
         deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
-        persistence::DeserializeIngredient {
+        let deserialize = persistence::DeserializeIngredient {
             zalsa,
             ingredient: self,
-        }
-        .deserialize(deserializer)
+        };
+
+        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
 }
 
@@ -1147,7 +1148,7 @@ mod tests {
     }
 }
 
-#[cfg(not(feature = "shuttle"))]
+#[cfg(feature = "persistence")]
 mod persistence {
     use std::fmt;
 

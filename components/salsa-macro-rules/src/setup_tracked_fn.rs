@@ -207,7 +207,11 @@ macro_rules! setup_tracked_fn {
                     type $InternedData<$db_lt> = ($($interned_input_ty),*);
 
                     $zalsa::macro_if! { $persist =>
-                        const fn query_input_is_persistable<T: $zalsa::serde::Serialize + $zalsa::serde::de::DeserializeOwned>() {}
+                        const fn query_input_is_persistable<T>()
+                        where
+                            T: $zalsa::serde::Serialize + for<'de> $zalsa::serde::Deserialize<'de>,
+                        {
+                        }
 
                         fn assert_query_input_is_persistable<$db_lt>() {
                             query_input_is_persistable::<$($interned_input_ty),*>();

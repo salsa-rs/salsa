@@ -340,7 +340,7 @@ where
     }
 }
 
-#[cfg(not(feature = "shuttle"))]
+#[cfg(feature = "persistence")]
 mod persistence {
     use crate::function::memo::Memo;
     use crate::function::Configuration;
@@ -548,7 +548,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
 mod _memory_usage {
     use crate::cycle::CycleRecoveryStrategy;
     use crate::ingredient::Location;
-    use crate::plumbing::{IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
+    use crate::plumbing::{self, IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
     use crate::table::memo::MemoTableWithTypes;
     use crate::zalsa::Zalsa;
     use crate::{CycleRecoveryAction, Database, Id, Revision};
@@ -620,13 +620,17 @@ mod _memory_usage {
             unimplemented!()
         }
 
-        fn serialize<S: serde::Serializer>(_: &Self::Output<'_>, _: S) -> Result<S::Ok, S::Error> {
+        fn serialize<S>(_: &Self::Output<'_>, _: S) -> Result<S::Ok, S::Error>
+        where
+            S: plumbing::serde::Serializer,
+        {
             unimplemented!()
         }
 
-        fn deserialize<'de, D: serde::Deserializer<'de>>(
-            _: D,
-        ) -> Result<Self::Output<'static>, D::Error> {
+        fn deserialize<'de, D>(_: D) -> Result<Self::Output<'static>, D::Error>
+        where
+            D: plumbing::serde::Deserializer<'de>,
+        {
             unimplemented!()
         }
     }

@@ -72,9 +72,8 @@ static NONCE: crate::nonce::NonceGenerator<StorageNonce> = crate::nonce::NonceGe
 ///
 /// The database contains a number of jars, and each jar contains a number of ingredients.
 /// Each ingredient is given a unique index as the database is being created.
-#[derive(
-    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
@@ -239,6 +238,7 @@ impl Zalsa {
 
     /// Returns a mutable reference to the [`Table`] used to store the value of salsa structs
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn table_mut(&mut self) -> &mut Table {
         self.runtime.table_mut()
     }
@@ -281,6 +281,7 @@ impl Zalsa {
             [memo_ingredient_index.as_usize()]
     }
 
+    #[allow(unused)]
     pub(crate) fn ingredients(&self) -> impl Iterator<Item = &dyn Ingredient> {
         self.ingredients_vec
             .iter()

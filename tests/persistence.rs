@@ -1,4 +1,4 @@
-#![cfg(all(feature = "inventory", not(feature = "shuttle")))]
+#![cfg(all(feature = "persistence", feature = "inventory"))]
 
 mod common;
 use common::LogDatabase;

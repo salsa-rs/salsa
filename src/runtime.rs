@@ -11,12 +11,12 @@ use crate::{Cancelled, Event, EventKind, Revision};
 
 mod dependency_graph;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Runtime {
     /// Set to true when the current revision has been canceled.
     /// This is done when we an input is being changed. The flag
     /// is set back to false once the input has been changed.
-    #[serde(skip)]
+    #[cfg_attr(feature = "persistence", serde(skip))]
     revision_canceled: AtomicBool,
 
     /// Stores the "last change" revision for values of each duration.
@@ -32,11 +32,11 @@ pub struct Runtime {
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
-    #[serde(skip)]
+    #[cfg_attr(feature = "persistence", serde(skip))]
     dependency_graph: Mutex<DependencyGraph>,
 
     /// Data for instances
-    #[serde(skip)]
+    #[cfg_attr(feature = "persistence", serde(skip))]
     table: Table,
 }
 
@@ -268,6 +268,7 @@ impl Runtime {
             .unblock_runtimes_blocked_on(database_key, wait_result);
     }
 
+    #[cfg(feature = "persistence")]
     pub(crate) fn deserialize_from(&mut self, other: &mut Runtime) {
         // The only field that is serialized is `revisions`.
         self.revisions = other.revisions;

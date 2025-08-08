@@ -7,8 +7,6 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
-use serde::de::DeserializeSeed;
-
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
 };
@@ -17,7 +15,7 @@ use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::MemoIngredientMap;
+use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -104,17 +102,16 @@ pub trait Configuration: Any {
     /// Serialize the output type using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn serialize<S: serde::Serializer>(
-        value: &Self::Output<'_>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>;
+    fn serialize<S>(value: &Self::Output<'_>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: plumbing::serde::Serializer;
 
     /// Deserialize the output type using `serde`.
     ///
     /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
-    fn deserialize<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self::Output<'static>, D::Error>;
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self::Output<'static>, D::Error>
+    where
+        D: plumbing::serde::Deserializer<'de>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -437,7 +434,7 @@ where
         false
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -449,17 +446,18 @@ where
         })
     }
 
-    #[cfg(not(feature = "shuttle"))]
+    #[cfg(feature = "persistence")]
     fn deserialize(
         &mut self,
         zalsa: &mut Zalsa,
         deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
-        persistence::DeserializeIngredient {
+        let deserialize = persistence::DeserializeIngredient {
             zalsa,
             ingredient: self,
-        }
-        .deserialize(deserializer)
+        };
+
+        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
 }
 
@@ -474,7 +472,7 @@ where
     }
 }
 
-#[cfg(not(feature = "shuttle"))]
+#[cfg(feature = "persistence")]
 mod persistence {
     use super::{Configuration, IngredientImpl, Memo};
     use crate::plumbing::{Ingredient, MemoIngredientMap, SalsaStructInDb};

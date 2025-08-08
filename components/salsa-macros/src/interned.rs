@@ -133,7 +133,7 @@ impl Macro {
             (None, quote!(#struct_ident), static_lifetime)
         };
 
-        let persist = salsa_struct.persist();
+        let persist = self.args.persist();
         let serialize_fn = salsa_struct.serialize_fn();
         let deserialize_fn = salsa_struct.deserialize_fn();
 

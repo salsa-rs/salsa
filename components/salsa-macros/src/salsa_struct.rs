@@ -432,10 +432,6 @@ where
             .filter(|(_, f)| !f.has_tracked_attr)
     }
 
-    pub fn persist(&self) -> bool {
-        self.args.persist.is_some()
-    }
-
     /// Returns the path to the `serialize` function as an optional iterator.
     ///
     /// This will be `None` if `persistable` returns `false`.

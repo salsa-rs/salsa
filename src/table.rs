@@ -137,6 +137,7 @@ impl PageIndex {
         Self(idx)
     }
 
+    #[allow(dead_code)]
     pub fn as_usize(&self) -> usize {
         self.0
     }
@@ -222,6 +223,7 @@ impl Table {
     ///
     /// If `page` is out of bounds or the type `T` is incorrect.
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn force_page<T: Slot>(
         &mut self,
         page_idx: PageIndex,
@@ -267,6 +269,7 @@ impl Table {
 
     /// Allocate an uninitialized page.
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn push_uninit_page(&self) -> PageIndex {
         // Note that `DummySlot` is a ZST, so the memory wasted by any pages of ingredients
         // that were not serialized should be negligible.

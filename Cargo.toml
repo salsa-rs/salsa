@@ -38,17 +38,19 @@ compact_str = { version = "0.9", optional = true }
 shuttle = { version = "0.8.1", optional = true }
 
 # Persistent caching
-erased-serde = "0.4.6"
-serde = { version = "1.0.219", features = ["derive"] }
+erased-serde = { version = "0.4.6", optional = true }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
 inventory = ["dep:inventory"]
+persistence = ["dep:serde", "dep:erased-serde", "salsa-macros/persistence"]
 shuttle = ["dep:shuttle"]
 accumulator = ["salsa-macro-rules/accumulator"]
+macros = ["dep:salsa-macros"]
+
 # FIXME: remove `salsa_unstable` before 1.0.
 salsa_unstable = []
-macros = ["dep:salsa-macros"]
 
 # This interlocks the `salsa-macros` and `salsa` versions together
 # preventing scenarios where they could diverge in a given project

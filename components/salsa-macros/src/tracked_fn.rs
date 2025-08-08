@@ -185,7 +185,7 @@ impl Macro {
             ));
         }
 
-        let persist = self.args.persist.is_some();
+        let persist = self.args.persist();
 
         // The path expression is responsible for emitting the primary span in the diagnostic we
         // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted

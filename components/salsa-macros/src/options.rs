@@ -119,6 +119,12 @@ pub(crate) struct Options<A: AllowedOptions> {
     phantom: PhantomData<A>,
 }
 
+impl<A: AllowedOptions> Options<A> {
+    pub fn persist(&self) -> bool {
+        cfg!(feature = "persistence") && self.persist.is_some()
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct PersistOptions {
     /// Path to a custom serialize function.
@@ -281,51 +287,61 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     ));
                 }
             } else if ident == "persist" {
-                if A::PERSIST.allowed() {
-                    if options.persist.is_some() {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            "option `persist` provided twice",
-                        ));
-                    }
+                if !cfg!(feature = "persistence") {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "the `persist` option cannot be used when the `persistence` feature is disabled",
+                    ));
+                }
 
-                    let persist = options.persist.insert(PersistOptions::default());
+                if !A::PERSIST.allowed() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`persist` option not allowed here",
+                    ));
+                }
 
-                    if input.peek(token::Paren) {
-                        let content;
-                        parenthesized!(content in input);
+                if options.persist.is_some() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "option `persist` provided twice",
+                    ));
+                }
 
-                        let parse_argument = |content| {
-                            let ident = syn::Ident::parse(content)?;
-                            let _ = Equals::parse(content)?;
-                            let path = syn::Path::parse(content)?;
-                            Ok((ident, path))
-                        };
+                let persist = options.persist.insert(PersistOptions::default());
 
-                        for (ident, path) in
-                            content.parse_terminated(parse_argument, syn::Token![,])?
-                        {
-                            if !A::PERSIST.allowed_value() {
-                                return Err(syn::Error::new(ident.span(), "unexpected argument"));
+                if input.peek(token::Paren) {
+                    let content;
+                    parenthesized!(content in input);
+
+                    let parse_argument = |content| {
+                        let ident = syn::Ident::parse(content)?;
+                        let _ = Equals::parse(content)?;
+                        let path = syn::Path::parse(content)?;
+                        Ok((ident, path))
+                    };
+
+                    for (ident, path) in content.parse_terminated(parse_argument, syn::Token![,])? {
+                        if !A::PERSIST.allowed_value() {
+                            return Err(syn::Error::new(ident.span(), "unexpected argument"));
+                        }
+
+                        if ident == "serialize" {
+                            if persist.serialize_fn.replace(path).is_some() {
+                                return Err(syn::Error::new(
+                                    ident.span(),
+                                    "option `serialize` provided twice",
+                                ));
                             }
-
-                            if ident == "serialize" {
-                                if persist.serialize_fn.replace(path).is_some() {
-                                    return Err(syn::Error::new(
-                                        ident.span(),
-                                        "option `serialize` provided twice",
-                                    ));
-                                }
-                            } else if ident == "deserialize" {
-                                if persist.deserialize_fn.replace(path).is_some() {
-                                    return Err(syn::Error::new(
-                                        ident.span(),
-                                        "option `deserialize` provided twice",
-                                    ));
-                                }
-                            } else {
-                                return Err(syn::Error::new(ident.span(), "unexpected argument"));
+                        } else if ident == "deserialize" {
+                            if persist.deserialize_fn.replace(path).is_some() {
+                                return Err(syn::Error::new(
+                                    ident.span(),
+                                    "option `deserialize` provided twice",
+                                ));
                             }
+                        } else {
+                            return Err(syn::Error::new(ident.span(), "unexpected argument"));
                         }
                     }
                 }

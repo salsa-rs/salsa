@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::ptr::NonNull;
 
-use serde::de::DeserializeSeed;
-
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, ZalsaDatabase};
 use crate::{Durability, Revision};
@@ -154,31 +152,37 @@ pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
     db.zalsa().current_revision()
 }
 
-impl dyn Database {
-    pub fn as_serialize(&mut self) -> impl serde::Serialize + '_ {
-        persistence::SerializeDatabase {
-            runtime: self.zalsa().runtime(),
-            ingredients: persistence::SerializeIngredients(self.zalsa()),
-        }
-    }
-
-    pub fn deserialize<'db, D>(&mut self, deserializer: D) -> Result<(), D::Error>
-    where
-        D: serde::Deserializer<'db>,
-    {
-        persistence::DeserializeDatabase(self.zalsa_mut()).deserialize(deserializer)
-    }
-}
-
+#[cfg(feature = "persistence")]
 mod persistence {
     use crate::plumbing::Ingredient;
     use crate::zalsa::Zalsa;
-    use crate::Runtime;
+    use crate::{Database, Runtime};
 
     use std::fmt;
 
-    use serde::de;
+    use serde::de::{self, DeserializeSeed};
     use serde::ser::SerializeMap;
+
+    impl dyn Database {
+        /// Returns a type implementing [`serde::Serialize`], that can be used to serialize the
+        /// current state of the database.
+        pub fn as_serialize(&mut self) -> impl serde::Serialize + '_ {
+            SerializeDatabase {
+                runtime: self.zalsa().runtime(),
+                ingredients: SerializeIngredients(self.zalsa()),
+            }
+        }
+
+        /// Deserialize the database using a [`serde::Deserializer`].
+        ///
+        /// This method will modify the database in-place based on the serialized data.
+        pub fn deserialize<'db, D>(&mut self, deserializer: D) -> Result<(), D::Error>
+        where
+            D: serde::Deserializer<'db>,
+        {
+            DeserializeDatabase(self.zalsa_mut()).deserialize(deserializer)
+        }
+    }
 
     #[derive(serde::Serialize)]
     #[serde(rename = "Database")]
