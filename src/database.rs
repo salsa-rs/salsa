@@ -152,6 +152,225 @@ pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
     db.zalsa().current_revision()
 }
 
+#[cfg(feature = "persistence")]
+mod persistence {
+    use crate::plumbing::Ingredient;
+    use crate::zalsa::Zalsa;
+    use crate::{Database, IngredientIndex, Runtime};
+
+    use std::fmt;
+
+    use serde::de::{self, DeserializeSeed};
+    use serde::ser::SerializeMap;
+
+    impl dyn Database {
+        /// Returns a type implementing [`serde::Serialize`], that can be used to serialize the
+        /// current state of the database.
+        pub fn as_serialize(&mut self) -> impl serde::Serialize + '_ {
+            SerializeDatabase {
+                runtime: self.zalsa().runtime(),
+                ingredients: SerializeIngredients(self.zalsa()),
+            }
+        }
+
+        /// Deserialize the database using a [`serde::Deserializer`].
+        ///
+        /// This method will modify the database in-place based on the serialized data.
+        pub fn deserialize<'db, D>(&mut self, deserializer: D) -> Result<(), D::Error>
+        where
+            D: serde::Deserializer<'db>,
+        {
+            DeserializeDatabase(self.zalsa_mut()).deserialize(deserializer)
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "Database")]
+    pub struct SerializeDatabase<'db> {
+        pub runtime: &'db Runtime,
+        pub ingredients: SerializeIngredients<'db>,
+    }
+
+    pub struct SerializeIngredients<'db>(pub &'db Zalsa);
+
+    impl serde::Serialize for SerializeIngredients<'_> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let SerializeIngredients(zalsa) = self;
+
+            let mut ingredients = zalsa
+                .ingredients()
+                .filter(|ingredient| ingredient.should_serialize(zalsa))
+                .collect::<Vec<_>>();
+
+            // Ensure structs are serialized before tracked functions, as deserializing a
+            // memo requires its input struct to have been deserialized.
+            ingredients.sort_by_key(|ingredient| ingredient.jar_kind());
+
+            let mut map = serializer.serialize_map(Some(ingredients.len()))?;
+            for ingredient in ingredients {
+                map.serialize_entry(
+                    &ingredient.ingredient_index().as_u32(),
+                    &SerializeIngredient(ingredient, zalsa),
+                )?;
+            }
+
+            map.end()
+        }
+    }
+
+    struct SerializeIngredient<'db>(&'db dyn Ingredient, &'db Zalsa);
+
+    impl serde::Serialize for SerializeIngredient<'_> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let mut result = None;
+            let mut serializer = Some(serializer);
+
+            // SAFETY: `<dyn Database>::as_serialize` take `&mut self`.
+            unsafe {
+                self.0.serialize(self.1, &mut |serialize| {
+                    let serializer = serializer.take().expect(
+                        "`Ingredient::serialize` must invoke the serialization callback only once",
+                    );
+
+                    result = Some(erased_serde::serialize(&serialize, serializer))
+                })
+            };
+
+            result.expect("`Ingredient::serialize` must invoke the serialization callback")
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(field_identifier, rename_all = "lowercase")]
+    enum DatabaseField {
+        Runtime,
+        Ingredients,
+    }
+
+    pub struct DeserializeDatabase<'db>(pub &'db mut Zalsa);
+
+    impl<'de> de::DeserializeSeed<'de> for DeserializeDatabase<'_> {
+        type Value = ();
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: de::Deserializer<'de>,
+        {
+            // Note that we have to deserialize using a manual visitor here because the
+            // `Deserialize` derive does not support fields that use `DeserializeSeed`.
+            deserializer.deserialize_struct("Database", &["runtime", "ingredients"], self)
+        }
+    }
+
+    impl<'de> serde::de::Visitor<'de> for DeserializeDatabase<'_> {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("struct Database")
+        }
+
+        fn visit_map<V>(self, mut map: V) -> Result<(), V::Error>
+        where
+            V: serde::de::MapAccess<'de>,
+        {
+            let mut runtime = None;
+            let mut ingredients = None;
+
+            while let Some(key) = map.next_key()? {
+                match key {
+                    DatabaseField::Runtime => {
+                        if runtime.is_some() {
+                            return Err(serde::de::Error::duplicate_field("runtime"));
+                        }
+
+                        runtime = Some(map.next_value()?);
+                    }
+                    DatabaseField::Ingredients => {
+                        if ingredients.is_some() {
+                            return Err(serde::de::Error::duplicate_field("ingredients"));
+                        }
+
+                        ingredients = Some(map.next_value_seed(DeserializeIngredients(self.0))?);
+                    }
+                }
+            }
+
+            let mut runtime = runtime.ok_or_else(|| serde::de::Error::missing_field("runtime"))?;
+            let () = ingredients.ok_or_else(|| serde::de::Error::missing_field("ingredients"))?;
+
+            self.0.runtime_mut().deserialize_from(&mut runtime);
+
+            Ok(())
+        }
+    }
+
+    struct DeserializeIngredients<'db>(&'db mut Zalsa);
+
+    impl<'de> serde::de::Visitor<'de> for DeserializeIngredients<'_> {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map")
+        }
+
+        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+        where
+            M: serde::de::MapAccess<'de>,
+        {
+            let DeserializeIngredients(zalsa) = self;
+
+            while let Some(index) = access.next_key::<u32>()? {
+                let index = IngredientIndex::new(index);
+
+                // Remove the ingredient temporarily, to avoid holding an overlapping mutable borrow
+                // to the ingredient as well as the database.
+                let mut ingredient = zalsa.take_ingredient(index);
+
+                // Deserialize the ingredient.
+                access.next_value_seed(DeserializeIngredient(&mut *ingredient, zalsa))?;
+
+                zalsa.replace_ingredient(index, ingredient);
+            }
+
+            Ok(())
+        }
+    }
+
+    impl<'de> serde::de::DeserializeSeed<'de> for DeserializeIngredients<'_> {
+        type Value = ();
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_map(self)
+        }
+    }
+
+    struct DeserializeIngredient<'db>(&'db mut dyn Ingredient, &'db mut Zalsa);
+
+    impl<'de> serde::de::DeserializeSeed<'de> for DeserializeIngredient<'_> {
+        type Value = ();
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let deserializer = &mut <dyn erased_serde::Deserializer>::erase(deserializer);
+
+            self.0
+                .deserialize(self.1, deserializer)
+                .map_err(serde::de::Error::custom)
+        }
+    }
+}
+
 #[cfg(feature = "salsa_unstable")]
 pub use memory_usage::IngredientInfo;
 
@@ -160,8 +379,9 @@ pub(crate) use memory_usage::{MemoInfo, SlotInfo};
 
 #[cfg(feature = "salsa_unstable")]
 mod memory_usage {
-    use crate::Database;
     use hashbrown::HashMap;
+
+    use crate::Database;
 
     impl dyn Database {
         /// Returns memory usage information about ingredients in the database.

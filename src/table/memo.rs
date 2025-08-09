@@ -64,7 +64,7 @@ pub trait Memo: Any + Send + Sync {
 /// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
 /// when freeing `MemoEntryData` values to transmute things back. See the `Drop` impl for
 /// [`MemoEntry`][] for details.
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct MemoEntry {
     /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
     atomic_memo: AtomicPtr<DummyMemo>,

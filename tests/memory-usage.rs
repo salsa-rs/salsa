@@ -90,21 +90,21 @@ fn test() {
                 ),
             },
             IngredientInfo {
-                debug_name: "MyTracked",
-                count: 4,
-                size_of_metadata: 128,
-                size_of_fields: 96,
-                heap_size_of_fields: Some(
-                    300,
-                ),
-            },
-            IngredientInfo {
                 debug_name: "MyInterned",
                 count: 3,
                 size_of_metadata: 168,
                 size_of_fields: 72,
                 heap_size_of_fields: Some(
                     450,
+                ),
+            },
+            IngredientInfo {
+                debug_name: "MyTracked",
+                count: 4,
+                size_of_metadata: 128,
+                size_of_fields: 96,
+                heap_size_of_fields: Some(
+                    300,
                 ),
             },
             IngredientInfo {

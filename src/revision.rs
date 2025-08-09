@@ -54,6 +54,26 @@ impl Revision {
     }
 }
 
+#[cfg(feature = "persistence")]
+impl serde::Serialize for Revision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&self.as_usize(), serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for Revision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer).map(|generation| Self { generation })
+    }
+}
+
 impl std::fmt::Debug for Revision {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "R{}", self.generation)
@@ -63,6 +83,28 @@ impl std::fmt::Debug for Revision {
 #[derive(Debug)]
 pub(crate) struct AtomicRevision {
     data: AtomicUsize,
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for AtomicRevision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&self.data.load(Ordering::Relaxed), serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for AtomicRevision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer).map(|data| Self {
+            data: AtomicUsize::new(data),
+        })
+    }
 }
 
 impl From<Revision> for AtomicRevision {
@@ -96,6 +138,27 @@ impl AtomicRevision {
 #[derive(Debug)]
 pub(crate) struct OptionalAtomicRevision {
     data: AtomicUsize,
+}
+#[cfg(feature = "persistence")]
+impl serde::Serialize for OptionalAtomicRevision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&self.data.load(Ordering::Relaxed), serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for OptionalAtomicRevision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer).map(|data| Self {
+            data: AtomicUsize::new(data),
+        })
+    }
 }
 
 impl From<Revision> for OptionalAtomicRevision {

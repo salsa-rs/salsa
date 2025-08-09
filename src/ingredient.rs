@@ -10,7 +10,7 @@ use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
-use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa};
+use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
 use crate::{DatabaseKeyIndex, Id, Revision};
 
@@ -39,6 +39,7 @@ pub struct Location {
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     fn debug_name(&self) -> &'static str;
     fn location(&self) -> &'static Location;
+    fn jar_kind(&self) -> JarKind;
 
     /// Has the value for `input` in this ingredient changed after `revision`?
     ///
@@ -48,7 +49,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     unsafe fn maybe_changed_after(
         &self,
         zalsa: &crate::zalsa::Zalsa,
-        db: crate::database::RawDatabase<'_>,
+        db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
         cycle_heads: &mut VerifyCycleHeads,
@@ -185,6 +186,48 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self, _db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
         None
+    }
+
+    /// Whether this ingredient will be persisted with the database.
+    fn is_persistable(&self) -> bool {
+        false
+    }
+
+    /// Whether there is data to serialize for this ingredient.
+    ///
+    /// If this returns `false`, the ingredient will not be serialized, even if `is_persistable`
+    /// returns `true`.
+    fn should_serialize(&self, _zalsa: &Zalsa) -> bool {
+        false
+    }
+
+    /// Serialize the ingredient.
+    ///
+    /// This function should invoke the provided callback with a reference to an object implementing [`erased_serde::Serialize`].
+    ///
+    /// # Safety
+    ///
+    /// While this method takes an immutable reference to the database, it can only be called when a
+    /// the serializer has exclusive access to the database.
+    // See <https://github.com/dtolnay/erased-serde/issues/113> for why this callback signature is necessary, instead
+    // of providing an `erased_serde::Serializer` directly.
+    #[cfg(feature = "persistence")]
+    unsafe fn serialize<'db>(
+        &'db self,
+        _zalsa: &'db Zalsa,
+        _f: &mut dyn FnMut(&dyn erased_serde::Serialize),
+    ) {
+        unimplemented!("called `serialize` on ingredient where `is_persistable` returns `false`")
+    }
+
+    /// Deserialize the ingredient.
+    #[cfg(feature = "persistence")]
+    fn deserialize(
+        &mut self,
+        _zalsa: &mut Zalsa,
+        _deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<(), erased_serde::Error> {
+        unimplemented!("called `deserialize` on ingredient where `is_persistable` returns `false`")
     }
 }
 

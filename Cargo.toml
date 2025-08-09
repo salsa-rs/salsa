@@ -23,6 +23,7 @@ parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
 smallvec = "1"
+thin-vec = { version = "0.2.14", features = ["serde"] }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # Automatic ingredient registration.
@@ -33,18 +34,23 @@ rayon = { version = "1.10.0", optional = true }
 
 # Stuff we want Update impls for by default
 compact_str = { version = "0.9", optional = true }
-thin-vec = "0.2.14"
 
 shuttle = { version = "0.8.1", optional = true }
+
+# Persistent caching
+erased-serde = { version = "0.4.6", optional = true }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
 inventory = ["dep:inventory"]
+persistence = ["dep:serde", "dep:erased-serde", "salsa-macros/persistence"]
 shuttle = ["dep:shuttle"]
 accumulator = ["salsa-macro-rules/accumulator"]
+macros = ["dep:salsa-macros"]
+
 # FIXME: remove `salsa_unstable` before 1.0.
 salsa_unstable = []
-macros = ["dep:salsa-macros"]
 
 # This interlocks the `salsa-macros` and `salsa` versions together
 # preventing scenarios where they could diverge in a given project
@@ -68,6 +74,7 @@ expect-test = "1.5.1"
 rustversion = "1.0"
 test-log = { version = "0.2.18", features = ["trace"] }
 trybuild = "1.0"
+serde_json = "1.0.140"
 
 [target.'cfg(all(not(target_os = "windows"), not(target_os = "openbsd"), any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "powerpc64")))'.dev-dependencies]
 tikv-jemallocator = "0.6.0"

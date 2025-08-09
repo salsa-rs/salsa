@@ -16,3 +16,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "2.0.104", features = ["full", "visit-mut"] }
 synstructure = "0.13.2"
+
+[features]
+default = []
+persistence = []

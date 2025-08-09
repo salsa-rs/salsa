@@ -76,6 +76,13 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
                 zalsa::IngredientIndices::merge([ #( <#variant_types as zalsa::SalsaStructInDb>::lookup_ingredient_index(__zalsa) ),* ])
             }
 
+             fn entries(
+                zalsa: &zalsa::Zalsa
+            ) -> impl Iterator<Item = zalsa::DatabaseKeyIndex> + '_ {
+                 std::iter::empty()
+                     #( .chain(<#variant_types as zalsa::SalsaStructInDb>::entries(zalsa)) )*
+             }
+
             #[inline]
             fn cast(id: zalsa::Id, type_id: ::core::any::TypeId) -> Option<Self> {
                 #(

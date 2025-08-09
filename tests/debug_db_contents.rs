@@ -31,6 +31,7 @@ fn execute() {
     // test interned structs
     let interned = InternedStruct::ingredient(db.zalsa())
         .entries(db.zalsa())
+        .map(|(_, value)| value)
         .collect::<Vec<_>>();
 
     assert_eq!(interned.len(), 2);
@@ -42,6 +43,7 @@ fn execute() {
 
     let inputs = InputStruct::ingredient(&db)
         .entries(db.zalsa())
+        .map(|(_, value)| value)
         .collect::<Vec<_>>();
 
     assert_eq!(inputs.len(), 1);
@@ -52,6 +54,7 @@ fn execute() {
     assert_eq!(computed, 44);
     let tracked = TrackedStruct::ingredient(&db)
         .entries(db.zalsa())
+        .map(|(_, value)| value)
         .collect::<Vec<_>>();
 
     assert_eq!(tracked.len(), 1);

@@ -14,12 +14,12 @@ use crate::durability::Durability;
 use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
-use crate::plumbing::{Jar, ZalsaLocal};
+use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::revision::AtomicRevision;
 use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::Slot;
-use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 /// Trait that defines the key properties of an interned struct.
@@ -28,8 +28,10 @@ use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 /// a struct.
 pub trait Configuration: Sized + 'static {
     const LOCATION: crate::ingredient::Location;
-
     const DEBUG_NAME: &'static str;
+
+    /// Whether this struct should be persisted with the database.
+    const PERSIST: bool;
 
     // The minimum number of revisions that must pass before a stale value is garbage collected.
     #[cfg(test)]
@@ -48,6 +50,20 @@ pub trait Configuration: Sized + 'static {
     fn heap_size(_value: &Self::Fields<'_>) -> Option<usize> {
         None
     }
+
+    /// Serialize the fields using `serde`.
+    ///
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
+    fn serialize<S>(value: &Self::Fields<'_>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: plumbing::serde::Serializer;
+
+    /// Deserialize the fields using `serde`.
+    ///
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self::Fields<'static>, D::Error>
+    where
+        D: plumbing::serde::Deserializer<'de>;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone + Sync + Send {}
@@ -138,6 +154,7 @@ where
 
 /// Shared value data can only be read through the lock.
 #[repr(Rust, packed)] // Allow `durability` to be stored in the padding of the outer `Value` struct.
+#[derive(Clone, Copy)]
 struct ValueShared {
     /// The interned ID for this value.
     ///
@@ -604,6 +621,40 @@ where
             }),
         });
 
+        // Insert the newly allocated ID.
+        self.insert_id(id, zalsa, shard, hash, value);
+
+        let index = self.database_key_index(id);
+
+        // Record a dependency on the newly interned value.
+        //
+        // Note that the ID is unique to this use of the interned slot, so it seems logical to use
+        // `Revision::start()` here. However, it is possible that the ID we read is different from
+        // the previous execution of this query if the previous slot has been reused. In that case,
+        // the query has changed without a corresponding input changing. Using `current_revision`
+        // for dependencies on interned values encodes the fact that interned IDs are not stable
+        // across revisions.
+        zalsa_local.report_tracked_read_simple(index, durability, current_revision);
+
+        zalsa.event(&|| {
+            Event::new(EventKind::DidInternValue {
+                key: index,
+                revision: current_revision,
+            })
+        });
+
+        id
+    }
+
+    /// Inserts a newly interned value ID into the LRU list and key map.
+    fn insert_id(
+        &self,
+        id: Id,
+        zalsa: &Zalsa,
+        shard: &mut IngredientShard<C>,
+        hash: u64,
+        value: &Value<C>,
+    ) {
         // SAFETY: We hold the lock for the shard containing the value.
         let value_shared = unsafe { &mut *value.shared.get() };
 
@@ -627,27 +678,6 @@ where
             // SAFETY: We hold the lock for the shard containing the value.
             unsafe { self.hasher.hash_one(&*value.fields.get()) }
         });
-
-        let index = self.database_key_index(id);
-
-        // Record a dependency on the newly interned value.
-        //
-        // Note that the ID is unique to this use of the interned slot, so it seems logical to use
-        // `Revision::start()` here. However, it is possible that the ID we read is different from
-        // the previous execution of this query if the previous slot has been reused. In that case,
-        // the query has changed without a corresponding input changing. Using `current_revision`
-        // for dependencies on interned values encodes the fact that interned IDs are not stable
-        // across revisions.
-        zalsa_local.report_tracked_read_simple(index, durability, current_revision);
-
-        zalsa.event(&|| {
-            Event::new(EventKind::DidInternValue {
-                key: index,
-                revision: current_revision,
-            })
-        });
-
-        id
     }
 
     /// Clears the given memo table.
@@ -778,10 +808,40 @@ where
         }
     }
 
-    #[cfg(feature = "salsa_unstable")]
     /// Returns all data corresponding to the interned struct.
-    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = &'db Value<C>> {
-        zalsa.table().slots_of::<Value<C>>()
+    pub fn entries<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
+        // SAFETY: `should_lock` is `true`
+        unsafe { self.entries_inner(true, zalsa) }
+    }
+
+    /// Returns all data corresponding to the interned struct.
+    ///
+    /// # Safety
+    ///
+    /// If `should_lock` is `false`, the caller *must* hold the locks for all shards
+    /// of the key map.
+    unsafe fn entries_inner<'db>(
+        &'db self,
+        should_lock: bool,
+        zalsa: &'db Zalsa,
+    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
+        // TODO: Grab all locks eagerly.
+        zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
+            if should_lock {
+                // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
+                let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
+            }
+
+            // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
+            //
+            // Note that this ID includes the generation, unlike the ID provided by the table.
+            let id = unsafe { (*value.shared.get()).id };
+
+            (self.database_key_index(id), value)
+        })
     }
 }
 
@@ -842,6 +902,10 @@ where
         C::DEBUG_NAME
     }
 
+    fn jar_kind(&self) -> JarKind {
+        JarKind::Struct
+    }
+
     fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
         &self.memo_table_types
     }
@@ -860,11 +924,13 @@ where
             unsafe { shard.raw().lock() };
         }
 
-        let memory_usage = self
-            .entries(db.zalsa())
+        // SAFETY: We hold the locks for all shards.
+        let entries = unsafe { self.entries_inner(false, db.zalsa()) };
+
+        let memory_usage = entries
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type. Additionally, we are holding the locks for all shards.
-            .map(|value| unsafe { value.memory_usage(&self.memo_table_types) })
+            .map(|(_, value)| unsafe { value.memory_usage(&self.memo_table_types) })
             .collect();
 
         for shard in self.shards.iter() {
@@ -873,6 +939,40 @@ where
         }
 
         Some(memory_usage)
+    }
+
+    fn is_persistable(&self) -> bool {
+        C::PERSIST
+    }
+
+    fn should_serialize(&self, zalsa: &Zalsa) -> bool {
+        C::PERSIST && self.entries(zalsa).next().is_some()
+    }
+
+    #[cfg(feature = "persistence")]
+    unsafe fn serialize<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
+    ) {
+        f(&persistence::SerializeIngredient {
+            zalsa,
+            _ingredient: self,
+        })
+    }
+
+    #[cfg(feature = "persistence")]
+    fn deserialize(
+        &mut self,
+        zalsa: &mut Zalsa,
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<(), erased_serde::Error> {
+        let deserialize = persistence::DeserializeIngredient {
+            zalsa,
+            ingredient: self,
+        };
+
+        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
 }
 
@@ -1187,5 +1287,226 @@ impl HashEqLike<&Path> for PathBuf {
 impl Lookup<PathBuf> for &Path {
     fn into_owned(self) -> PathBuf {
         self.to_owned()
+    }
+}
+
+#[cfg(feature = "persistence")]
+mod persistence {
+    use std::cell::UnsafeCell;
+    use std::fmt;
+    use std::hash::BuildHasher;
+
+    use intrusive_collections::LinkedListLink;
+    use serde::ser::SerializeMap;
+    use serde::{de, Deserialize};
+
+    use super::{Configuration, IngredientImpl, Value, ValueShared};
+    use crate::plumbing::Ingredient;
+    use crate::table::memo::MemoTable;
+    use crate::zalsa::Zalsa;
+    use crate::{Durability, Id, Revision};
+
+    pub struct SerializeIngredient<'db, C>
+    where
+        C: Configuration,
+    {
+        pub zalsa: &'db Zalsa,
+        pub _ingredient: &'db IngredientImpl<C>,
+    }
+
+    impl<C> serde::Serialize for SerializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let Self { zalsa, .. } = self;
+
+            let mut map = serializer.serialize_map(None)?;
+
+            for (_, value) in zalsa.table().slots_of::<Value<C>>() {
+                // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
+                // to the database.
+                let id = unsafe { (*value.shared.get()).id };
+
+                map.serialize_entry(&id.as_bits(), value)?;
+            }
+
+            map.end()
+        }
+    }
+
+    impl<C> serde::Serialize for Value<C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let mut map = serializer.serialize_map(None)?;
+
+            struct SerializeFields<'db, C: Configuration>(&'db C::Fields<'static>);
+
+            impl<C> serde::Serialize for SerializeFields<'_, C>
+            where
+                C: Configuration,
+            {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    C::serialize(self.0, serializer)
+                }
+            }
+
+            let Value {
+                fields,
+                shared,
+                shard: _,
+                link: _,
+                memos: _,
+            } = self;
+
+            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
+            // to the database.
+            let fields = unsafe { &*fields.get() };
+
+            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
+            // to the database.
+            let ValueShared {
+                durability,
+                last_interned_at,
+                id: _,
+            } = unsafe { *shared.get() };
+
+            map.serialize_entry(&"durability", &durability)?;
+            map.serialize_entry(&"last_interned_at", &last_interned_at)?;
+            map.serialize_entry(&"fields", &SerializeFields::<C>(fields))?;
+
+            map.end()
+        }
+    }
+
+    pub struct DeserializeIngredient<'db, C>
+    where
+        C: Configuration,
+    {
+        pub zalsa: &'db mut Zalsa,
+        pub ingredient: &'db mut IngredientImpl<C>,
+    }
+
+    impl<'de, C> de::DeserializeSeed<'de> for DeserializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        type Value = ();
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_map(self)
+        }
+    }
+
+    impl<'de, C> de::Visitor<'de> for DeserializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map")
+        }
+
+        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let DeserializeIngredient { zalsa, ingredient } = self;
+
+            while let Some((id, value)) = access.next_entry::<u64, DeserializeValue<C>>()? {
+                let id = Id::from_bits(id);
+                let (page_idx, _) = crate::table::split_id(id);
+
+                // Determine the value shard.
+                let hash = ingredient.hasher.hash_one(&value.fields.0);
+                let shard_index = ingredient.shard(hash);
+
+                // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.
+                let shard = unsafe { &mut *ingredient.shards.get_unchecked(shard_index).lock() };
+
+                let value = Value::<C> {
+                    shard: shard_index as u16,
+                    link: LinkedListLink::new(),
+                    // SAFETY: We only ever access the memos of a value that we allocated through
+                    // our `MemoTableTypes`.
+                    memos: UnsafeCell::new(unsafe {
+                        MemoTable::new(ingredient.memo_table_types())
+                    }),
+                    fields: UnsafeCell::new(value.fields.0),
+                    shared: UnsafeCell::new(ValueShared {
+                        id,
+                        durability: value.durability,
+                        last_interned_at: value.last_interned_at,
+                    }),
+                };
+
+                // Force initialize the relevant page.
+                zalsa.table_mut().force_page::<Value<C>>(
+                    page_idx,
+                    ingredient.ingredient_index(),
+                    ingredient.memo_table_types(),
+                );
+
+                // Initialize the slot.
+                //
+                // SAFETY: We have a mutable reference to the database.
+                let (allocated_id, value) = unsafe {
+                    zalsa
+                        .table()
+                        .page(page_idx)
+                        .allocate(page_idx, |_| value)
+                        .unwrap_or_else(|_| panic!("serialized an invalid `Id`: {id:?}"))
+                };
+
+                assert_eq!(
+                    allocated_id, id,
+                    "values are serialized in allocation order"
+                );
+
+                // Insert the newly allocated ID into our ingredient.
+                ingredient.insert_id(id, zalsa, shard, hash, value);
+            }
+
+            Ok(())
+        }
+    }
+
+    #[derive(Deserialize)]
+    pub struct DeserializeValue<C: Configuration> {
+        durability: Durability,
+        last_interned_at: Revision,
+        #[serde(bound = "C: Configuration")]
+        fields: DeserializeFields<C>,
+    }
+
+    struct DeserializeFields<C: Configuration>(C::Fields<'static>);
+
+    impl<'de, C> serde::Deserialize<'de> for DeserializeFields<C>
+    where
+        C: Configuration,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            C::deserialize(deserializer)
+                .map(DeserializeFields)
+                .map_err(de::Error::custom)
+        }
     }
 }

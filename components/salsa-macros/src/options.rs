@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use syn::ext::IdentExt;
-use syn::parenthesized;
 use syn::spanned::Spanned;
+use syn::{parenthesized, token};
 
 /// "Options" are flags that can be supplied to the various salsa related
 /// macros. They are listed like `(ref, no_eq, foo=bar)` etc. The commas
@@ -49,6 +49,12 @@ pub(crate) struct Options<A: AllowedOptions> {
     ///
     /// If this is `Some`, the value is the `non_update_return_type` identifier.
     pub non_update_return_type: Option<syn::Ident>,
+
+    /// The `persist` options indicates that the ingredient should be persisted with the database.
+    ///
+    /// If this is `Some`, the value is optional paths to custom serialization/deserialization
+    /// functions, based on `serde::{Serialize, Deserialize}`.
+    pub persist: Option<PersistOptions>,
 
     /// The `db = <path>` option is used to indicate the db.
     ///
@@ -113,6 +119,21 @@ pub(crate) struct Options<A: AllowedOptions> {
     phantom: PhantomData<A>,
 }
 
+impl<A: AllowedOptions> Options<A> {
+    pub fn persist(&self) -> bool {
+        cfg!(feature = "persistence") && self.persist.is_some()
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PersistOptions {
+    /// Path to a custom serialize function.
+    pub serialize_fn: Option<syn::Path>,
+
+    /// Path to a custom serialize function.
+    pub deserialize_fn: Option<syn::Path>,
+}
+
 impl<A: AllowedOptions> Default for Options<A> {
     fn default() -> Self {
         Self {
@@ -135,6 +156,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             revisions: Default::default(),
             heap_size_fn: Default::default(),
             self_ty: Default::default(),
+            persist: Default::default(),
         }
     }
 }
@@ -159,6 +181,23 @@ pub(crate) trait AllowedOptions {
     const REVISIONS: bool;
     const HEAP_SIZE: bool;
     const SELF_TY: bool;
+    const PERSIST: AllowedPersistOptions;
+}
+
+pub(crate) enum AllowedPersistOptions {
+    AllowedIdent,
+    AllowedValue,
+    Invalid,
+}
+
+impl AllowedPersistOptions {
+    fn allowed(&self) -> bool {
+        matches!(self, Self::AllowedIdent | Self::AllowedValue)
+    }
+
+    fn allowed_value(&self) -> bool {
+        matches!(self, Self::AllowedValue)
+    }
 }
 
 type Equals = syn::Token![=];
@@ -246,6 +285,65 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         ident.span(),
                         "`unsafe` options not allowed here",
                     ));
+                }
+            } else if ident == "persist" {
+                if !cfg!(feature = "persistence") {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "the `persist` option cannot be used when the `persistence` feature is disabled",
+                    ));
+                }
+
+                if !A::PERSIST.allowed() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`persist` option not allowed here",
+                    ));
+                }
+
+                if options.persist.is_some() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "option `persist` provided twice",
+                    ));
+                }
+
+                let persist = options.persist.insert(PersistOptions::default());
+
+                if input.peek(token::Paren) {
+                    let content;
+                    parenthesized!(content in input);
+
+                    let parse_argument = |content| {
+                        let ident = syn::Ident::parse(content)?;
+                        let _ = Equals::parse(content)?;
+                        let path = syn::Path::parse(content)?;
+                        Ok((ident, path))
+                    };
+
+                    for (ident, path) in content.parse_terminated(parse_argument, syn::Token![,])? {
+                        if !A::PERSIST.allowed_value() {
+                            return Err(syn::Error::new(ident.span(), "unexpected argument"));
+                        }
+
+                        if ident == "serialize" {
+                            if persist.serialize_fn.replace(path).is_some() {
+                                return Err(syn::Error::new(
+                                    ident.span(),
+                                    "option `serialize` provided twice",
+                                ));
+                            }
+                        } else if ident == "deserialize" {
+                            if persist.deserialize_fn.replace(path).is_some() {
+                                return Err(syn::Error::new(
+                                    ident.span(),
+                                    "option `deserialize` provided twice",
+                                ));
+                            }
+                        } else {
+                            return Err(syn::Error::new(ident.span(), "unexpected argument"));
+                        }
+                    }
                 }
             } else if ident == "singleton" {
                 if A::SINGLETON {
@@ -476,6 +574,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             revisions,
             heap_size_fn,
             self_ty,
+            persist,
             phantom: _,
         } = self;
         if let Some(returns) = returns {
@@ -531,6 +630,23 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         }
         if let Some(self_ty) = self_ty {
             tokens.extend(quote::quote! { self_ty = #self_ty, });
+        }
+        if let Some(persist) = persist {
+            let mut args = proc_macro2::TokenStream::new();
+
+            if let Some(path) = &persist.serialize_fn {
+                args.extend(quote::quote! { serialize = #path, });
+            }
+
+            if let Some(path) = &persist.deserialize_fn {
+                args.extend(quote::quote! { deserialize = #path, });
+            }
+
+            if args.is_empty() {
+                tokens.extend(quote::quote! { persist, });
+            } else {
+                tokens.extend(quote::quote! { persist(#args), });
+            }
         }
     }
 }

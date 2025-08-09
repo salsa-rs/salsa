@@ -1,4 +1,4 @@
-#![cfg(feature = "inventory")]
+#![cfg(all(feature = "inventory", feature = "persistence"))]
 
 #[rustversion::all(stable, since(1.89))]
 #[test]
