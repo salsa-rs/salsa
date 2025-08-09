@@ -4,7 +4,9 @@ use std::mem;
 use std::ptr::{self, NonNull};
 
 use crate::sync::atomic::{AtomicPtr, Ordering};
-use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOriginRef};
+use crate::zalsa::MemoIngredientIndex;
+use crate::zalsa::Zalsa;
+use crate::DatabaseKeyIndex;
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -39,8 +41,9 @@ impl MemoTable {
 }
 
 pub trait Memo: Any + Send + Sync {
-    /// Returns the `origin` of this memo
-    fn origin(&self) -> QueryOriginRef<'_>;
+    /// Removes the outputs that were created when this query ran. This includes
+    /// tracked structs and specified queries.
+    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex);
 
     /// Returns memory usage information about the memoized value.
     #[cfg(feature = "salsa_unstable")]
@@ -115,9 +118,7 @@ impl MemoEntryType {
 struct DummyMemo;
 
 impl Memo for DummyMemo {
-    fn origin(&self) -> QueryOriginRef<'_> {
-        unreachable!("should not get here")
-    }
+    fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
 
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
