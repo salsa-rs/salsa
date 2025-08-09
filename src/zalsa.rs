@@ -1,7 +1,9 @@
 use std::any::{Any, TypeId};
 use std::hash::BuildHasherDefault;
+use std::mem::ManuallyDrop;
 use std::panic::RefUnwindSafe;
 
+use crossbeam_channel::{Receiver, Sender};
 use hashbrown::HashMap;
 use rustc_hash::FxHashMap;
 
@@ -10,7 +12,7 @@ use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::SalsaStructInDb;
 use crate::runtime::Runtime;
-use crate::table::memo::MemoTableWithTypes;
+use crate::table::memo::{DeletedEntries, MemoTableWithTypes};
 use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
@@ -168,6 +170,10 @@ pub struct Zalsa {
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
 
+    /// Contains either the channel primitives for user controlled dropping or double buffered
+    /// deleted entries for synchronous dropping.
+    deleted_entries_channel: MemoDropMode,
+
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
 }
 
@@ -180,6 +186,7 @@ impl RefUnwindSafe for Zalsa {}
 
 impl Zalsa {
     pub(crate) fn new<Db: Database>(
+        drop_channel_receiver: Option<DropChannelSender>,
         event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
         jars: Vec<ErasedJar>,
     ) -> Self {
@@ -191,6 +198,13 @@ impl Zalsa {
             ingredients_requiring_reset: boxcar::Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
+            deleted_entries_channel: match drop_channel_receiver {
+                Some(drop_chan_sender) => {
+                    let (sender, receiver) = crossbeam_channel::bounded(0);
+                    MemoDropMode::Channel(sender, receiver, drop_chan_sender)
+                }
+                None => MemoDropMode::Synchronous(None),
+            },
             event_callback,
             #[cfg(not(feature = "inventory"))]
             nonce: NONCE.nonce(),
@@ -416,30 +430,59 @@ impl Zalsa {
     pub fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
         let _span = crate::tracing::debug_span!("new_revision", ?new_revision).entered();
-
-        for (_, index) in self.ingredients_requiring_reset.iter() {
-            let index = index.as_u32() as usize;
-            let ingredient = self
-                .ingredients_vec
-                .get_mut(index)
-                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
-
-            ingredient.reset_for_new_revision(self.runtime.table_mut());
-        }
-
+        self.reset_for_new_revision();
         new_revision
     }
 
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
-    pub fn evict_lru(&mut self) {
-        let _span = crate::tracing::debug_span!("evict_lru").entered();
-        for (_, index) in self.ingredients_requiring_reset.iter() {
-            let index = index.as_u32() as usize;
-            self.ingredients_vec
-                .get_mut(index)
-                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
-                .reset_for_new_revision(self.runtime.table_mut());
+    pub fn reset_for_new_revision(&mut self) {
+        let _span = crate::tracing::debug_span!("reset_for_new_revision").entered();
+
+        match &mut self.deleted_entries_channel {
+            MemoDropMode::Channel(pool_sender, pool_receiver, drop_chan_sender) => {
+                let len = self.ingredients_requiring_reset.count();
+                if pool_receiver.capacity() != Some(len) {
+                    (*pool_sender, *pool_receiver) = crossbeam_channel::bounded(len);
+                }
+                for (_, index) in self.ingredients_requiring_reset.iter() {
+                    let index = index.as_u32() as usize;
+                    let ingredient = &mut **self
+                        .ingredients_vec
+                        .get_mut(index)
+                        .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+
+                    let new_buffer = pool_receiver.try_recv().unwrap_or_default();
+                    let deleted_entries = self
+                        .runtime
+                        .reset_ingredient_for_new_revision(ingredient, new_buffer);
+                    if deleted_entries.is_empty() {
+                        _ = pool_sender.try_send(deleted_entries);
+                    } else {
+                        // if the user dropped the receiver or if its bounded and full,
+                        // fall back to releasing the entries synchronously
+                        _ = drop_chan_sender.0.try_send(DeletedEntriesDropper {
+                            entries: ManuallyDrop::new(deleted_entries),
+                            sender: pool_sender.clone(),
+                        });
+                    }
+                }
+            }
+            MemoDropMode::Synchronous(buffer) => {
+                let mut new_buffer = buffer.take().unwrap_or_default();
+                for (_, index) in self.ingredients_requiring_reset.iter() {
+                    let index = index.as_u32() as usize;
+                    let ingredient = &mut **self
+                        .ingredients_vec
+                        .get_mut(index)
+                        .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+
+                    new_buffer = self
+                        .runtime
+                        .reset_ingredient_for_new_revision(ingredient, new_buffer);
+                }
+                *buffer = Some(new_buffer);
+            }
         }
     }
 
@@ -462,6 +505,86 @@ impl Zalsa {
         let event_callback = self.event_callback.as_ref().unwrap();
         event_callback(event());
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct DropChannelSender(Sender<DeletedEntriesDropper>);
+
+/// A channel receiver that receives [`DeletedEntriesDropper`] messages.
+#[derive(Debug)]
+pub struct DropChannelReceiver(Receiver<DeletedEntriesDropper>);
+
+impl DropChannelReceiver {
+    pub fn capacity(&self) -> Option<usize> {
+        self.0.capacity()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.0.is_full()
+    }
+
+    pub fn recv(&self) -> Option<DeletedEntriesDropper> {
+        self.0.recv().ok()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = DeletedEntriesDropper> + use<'_> {
+        self.0.iter()
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn into_iter(self) -> impl Iterator<Item = DeletedEntriesDropper> {
+        self.0.into_iter()
+    }
+
+    pub fn try_iter(&self) -> impl Iterator<Item = DeletedEntriesDropper> + use<'_> {
+        self.0.try_iter()
+    }
+
+    pub fn try_recv(&self) -> Option<DeletedEntriesDropper> {
+        self.0.try_recv().ok()
+    }
+}
+
+pub(crate) fn drop_channel(capacity: Option<usize>) -> (DropChannelSender, DropChannelReceiver) {
+    let (sender, receiver) = crossbeam_channel::bounded(capacity.unwrap_or(0));
+    (DropChannelSender(sender), DropChannelReceiver(receiver))
+}
+
+/// A drop struct that runs destructors for deleted memoized values.
+///
+/// This for example allows to flexibly drop memoized values in different threads.
+pub struct DeletedEntriesDropper {
+    entries: ManuallyDrop<DeletedEntries>,
+    sender: Sender<DeletedEntries>,
+}
+
+impl Drop for DeletedEntriesDropper {
+    fn drop(&mut self) {
+        // SAFETY: `DeletedEntriesDropper` only gets constructed once its safe to clear the entries.
+        unsafe { self.entries.clear() };
+        // SAFETY: We no longer use `self.entries` after this call.
+        let msg = unsafe { ManuallyDrop::take(&mut self.entries) };
+        // Either the receiver was dropped due to resizing or the channel is already
+        // full, discard the buffer
+        _ = self.sender.try_send(msg);
+    }
+}
+
+enum MemoDropMode {
+    Channel(
+        Sender<DeletedEntries>,
+        Receiver<DeletedEntries>,
+        DropChannelSender,
+    ),
+    Synchronous(Option<DeletedEntries>),
 }
 
 /// A type-erased `Jar`, used for ingredient registration.

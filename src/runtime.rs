@@ -2,9 +2,11 @@ use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
 use crate::function::SyncGuard;
 use crate::key::DatabaseKeyIndex;
+use crate::plumbing::Ingredient;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
 use crate::sync::Mutex;
+use crate::table::memo::DeletedEntries;
 use crate::table::Table;
 use crate::zalsa::Zalsa;
 use crate::{Cancelled, Event, EventKind, Revision};
@@ -194,10 +196,6 @@ impl Runtime {
         &self.table
     }
 
-    pub(crate) fn table_mut(&mut self) -> &mut Table {
-        &mut self.table
-    }
-
     /// Increments the "current revision" counter and clears
     /// the cancellation flag.
     ///
@@ -262,5 +260,13 @@ impl Runtime {
         self.dependency_graph
             .lock()
             .unblock_runtimes_blocked_on(database_key, wait_result);
+    }
+
+    pub(crate) fn reset_ingredient_for_new_revision(
+        &mut self,
+        ingredient: &mut (dyn Ingredient + 'static),
+        new_buffer: DeletedEntries,
+    ) -> DeletedEntries {
+        ingredient.reset_for_new_revision(&mut self.table, new_buffer)
     }
 }

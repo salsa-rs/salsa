@@ -15,6 +15,7 @@ salsa-macros = { version = "0.23.0", path = "components/salsa-macros", optional 
 boxcar = "0.2.13"
 crossbeam-queue = "0.3.12"
 crossbeam-utils = "0.8.21"
+crossbeam-channel = "0.5.15"
 hashbrown = "0.15"
 hashlink = "0.10"
 indexmap = "2"
@@ -55,7 +56,6 @@ salsa-macros = { version = "=0.23.0", path = "components/salsa-macros" }
 
 [dev-dependencies]
 # examples
-crossbeam-channel = "0.5.15"
 dashmap = { version = "6", features = ["raw-api"] }
 eyre = "0.6.12"
 notify-debouncer-mini = "0.4.1"
