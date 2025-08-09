@@ -208,7 +208,10 @@ impl Zalsa {
         let mut jars = jars;
 
         // Ensure structs are initialized before tracked functions.
-        jars.sort_by_key(|jar| jar.kind);
+        //
+        // We also further sort by debug name, to maintain a consistent ordering across
+        // builds.
+        jars.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.type_name().cmp(b.type_name())));
 
         for jar in jars {
             zalsa.insert_jar(jar);
@@ -490,6 +493,7 @@ impl Zalsa {
 pub struct ErasedJar {
     kind: JarKind,
     type_id: fn() -> TypeId,
+    type_name: fn() -> &'static str,
     id_struct_type_id: fn() -> TypeId,
     create_ingredients: fn(&mut Zalsa, IngredientIndex) -> Vec<Box<dyn Ingredient>>,
 }
@@ -514,9 +518,14 @@ impl ErasedJar {
         Self {
             kind: I::KIND,
             type_id: TypeId::of::<I::Jar>,
+            type_name: std::any::type_name::<I::Jar>,
             create_ingredients: <I::Jar>::create_ingredients,
             id_struct_type_id: <I::Jar>::id_struct_type_id,
         }
+    }
+
+    pub fn type_name(&self) -> &'static str {
+        (self.type_name)()
     }
 }
 

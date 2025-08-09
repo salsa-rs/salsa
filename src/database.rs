@@ -156,7 +156,7 @@ pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
 mod persistence {
     use crate::plumbing::Ingredient;
     use crate::zalsa::Zalsa;
-    use crate::{Database, Runtime};
+    use crate::{Database, IngredientIndex, Runtime};
 
     use std::fmt;
 
@@ -205,21 +205,14 @@ mod persistence {
                 .filter(|ingredient| ingredient.should_serialize(zalsa))
                 .collect::<Vec<_>>();
 
-            ingredients.sort_by(|a, b| {
-                // Ensure structs are serialized before tracked functions, as deserializing a
-                // memo requires its input struct to have been deserialized.
-                //
-                // We also further sort by debug name, to maintain a consistent ordering across
-                // builds.
-                a.jar_kind()
-                    .cmp(&b.jar_kind())
-                    .then(a.debug_name().cmp(b.debug_name()))
-            });
+            // Ensure structs are serialized before tracked functions, as deserializing a
+            // memo requires its input struct to have been deserialized.
+            ingredients.sort_by_key(|ingredient| ingredient.jar_kind());
 
             let mut map = serializer.serialize_map(Some(ingredients.len()))?;
             for ingredient in ingredients {
                 map.serialize_entry(
-                    &ingredient.debug_name(),
+                    &ingredient.ingredient_index().as_u32(),
                     &SerializeIngredient(ingredient, zalsa),
                 )?;
             }
@@ -332,21 +325,17 @@ mod persistence {
         {
             let DeserializeIngredients(zalsa) = self;
 
-            while let Some(name) = access.next_key::<&str>()? {
-                // TODO: Serialize the ingredient index directly.
-                let ingredient = zalsa
-                    .ingredients()
-                    .find(|ingredient| ingredient.debug_name() == name)
-                    .unwrap();
+            while let Some(index) = access.next_key::<u32>()? {
+                let index = IngredientIndex::new(index);
 
                 // Remove the ingredient temporarily, to avoid holding an overlapping mutable borrow
                 // to the ingredient as well as the database.
-                let mut ingredient = zalsa.take_ingredient(ingredient.ingredient_index());
+                let mut ingredient = zalsa.take_ingredient(index);
 
                 // Deserialize the ingredient.
                 access.next_value_seed(DeserializeIngredient(&mut *ingredient, zalsa))?;
 
-                zalsa.replace_ingredient(ingredient.ingredient_index(), ingredient);
+                zalsa.replace_ingredient(index, ingredient);
             }
 
             Ok(())

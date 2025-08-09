@@ -55,7 +55,7 @@ fn everything() {
             ]
           },
           "ingredients": {
-            "MyInput": {
+            "0": {
               "1": {
                 "durabilities": [
                   "Low"
@@ -104,7 +104,7 @@ fn everything() {
             ]
           },
           "ingredients": {
-            "MyInput": {
+            "0": {
               "1": {
                 "durabilities": [
                   "Low"
@@ -150,7 +150,7 @@ fn everything() {
                 ]
               }
             },
-            "MyInterned": {
+            "2": {
               "2049": {
                 "durability": "High",
                 "last_interned_at": 1,
@@ -159,7 +159,7 @@ fn everything() {
                 ]
               }
             },
-            "MyTracked": {
+            "4": {
               "3073": {
                 "durability": "Low",
                 "updated_at": 1,
@@ -169,7 +169,7 @@ fn everything() {
                 ]
               }
             },
-            "input_pair_to_string::interned_arguments": {
+            "6": {
               "4097": {
                 "durability": "High",
                 "last_interned_at": 18446744073709551615,
@@ -185,15 +185,15 @@ fn everything() {
                 ]
               }
             },
-            "unit_to_interned::interned_arguments": {
+            "11": {
               "1025": {
                 "durability": "High",
                 "last_interned_at": 18446744073709551615,
                 "fields": null
               }
             },
-            "input_pair_to_string": {
-              "9:4097": {
+            "5": {
+              "6:4097": {
                 "value": "aaa",
                 "verified_at": 1,
                 "revisions": {
@@ -226,7 +226,7 @@ fn everything() {
                 }
               }
             },
-            "input_to_tracked": {
+            "7": {
               "0:3": {
                 "value": {
                   "index": 3073,
@@ -253,7 +253,7 @@ fn everything() {
                             "index": 3073,
                             "generation": 0
                           },
-                          "ingredient_index": 2147483651
+                          "ingredient_index": 2147483652
                         }
                       }
                     ]
@@ -263,7 +263,7 @@ fn everything() {
                     "tracked_struct_ids": [
                       [
                         {
-                          "ingredient_index": 3,
+                          "ingredient_index": 4,
                           "hash": 6073466998405137972,
                           "disambiguator": 0
                         },
@@ -279,8 +279,8 @@ fn everything() {
                 }
               }
             },
-            "unit_to_interned": {
-              "6:1025": {
+            "10": {
+              "11:1025": {
                 "value": {
                   "index": 2049,
                   "generation": 0
