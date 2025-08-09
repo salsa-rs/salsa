@@ -7,6 +7,7 @@ use std::ops::Index;
 use std::{fmt, mem};
 
 use crossbeam_queue::SegQueue;
+use hashbrown::hash_table::Entry;
 use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
@@ -246,43 +247,65 @@ pub struct IdentityHash {
 pub(crate) struct IdentityMap {
     // we use a hashtable here as our key contains its own hash (`Identity::hash`)
     // so we do the hash wrangling ourselves
-    table: hashbrown::HashTable<(Identity, Id)>,
-}
-
-impl Clone for IdentityMap {
-    fn clone(&self) -> Self {
-        Self {
-            table: self.table.clone(),
-        }
-    }
+    table: hashbrown::HashTable<TrackedEntry>,
 }
 
 impl IdentityMap {
-    pub(crate) fn clone_from_slice(&mut self, source: &[(Identity, Id)]) {
+    /// Seeds the identity map with the ids from a previous revision.
+    pub(crate) fn seed(&mut self, source: &[(Identity, Id)]) {
         self.table.clear();
-        self.table.reserve(source.len(), |(k, _)| k.hash);
+        self.table
+            .reserve(source.len(), |entry| entry.identity.hash);
 
         for (key, id) in source {
-            self.insert(*key, *id);
+            self.insert_impl(*key, *id, false);
+        }
+    }
+
+    pub(crate) fn mark_all_recreated(&mut self) {
+        for entry in self.table.iter_mut() {
+            entry.create = true;
         }
     }
 
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
-        let entry = self.table.find_mut(key.hash, |&(k, _)| k == key);
+        self.insert_impl(key, id, true)
+    }
+
+    fn insert_impl(&mut self, key: Identity, id: Id, create: bool) -> Option<Id> {
+        let entry = self.table.entry(
+            key.hash,
+            |entry| entry.identity == key,
+            |entry| entry.identity.hash,
+        );
         match entry {
-            Some(occupied) => Some(mem::replace(&mut occupied.1, id)),
-            None => {
-                self.table
-                    .insert_unique(key.hash, (key, id), |(k, _)| k.hash);
+            Entry::Vacant(entry) => {
+                entry.insert(TrackedEntry {
+                    identity: key,
+                    id,
+                    create,
+                });
                 None
+            }
+            Entry::Occupied(mut occupied) => {
+                let tracked = occupied.get_mut();
+                tracked.create = create;
+
+                Some(std::mem::replace(&mut tracked.id, id))
             }
         }
     }
 
-    pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
+    /// Re-uses an existing identity if it already exists in this
+    /// [`IdentitiyMap`]. Returns the existing id or `None` if
+    /// no id for the given identity exists.
+    pub(crate) fn reuse(&mut self, key: &Identity) -> Option<Id> {
         self.table
-            .find(key.hash, |&(k, _)| k == *key)
-            .map(|&(_, v)| v)
+            .find_mut(key.hash, |entry| key == &entry.identity)
+            .map(|entry| {
+                entry.create = true;
+                entry.id
+            })
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -293,9 +316,46 @@ impl IdentityMap {
         self.table.clear()
     }
 
-    pub(crate) fn into_thin_vec(self) -> ThinVec<(Identity, Id)> {
-        self.table.into_iter().collect()
+    pub(crate) fn did_create(&self, key: DatabaseKeyIndex) -> bool {
+        self.table.iter().any(|entry| {
+            entry.id == key.key_index()
+                && entry.identity.ingredient_index() == key.ingredient_index()
+        })
     }
+
+    /// Drains the [`IdentityMap`] and returns a tuple where the first entry
+    /// are the identies and ids of the tracked struct that were created in this
+    /// revision, and the second entry are the tracked struct keys that were
+    /// created in a previous revision but not in the current one and that should be
+    /// collected.
+    pub(crate) fn drain(&mut self) -> (ThinVec<(Identity, Id)>, Vec<DatabaseKeyIndex>) {
+        let mut removed = Vec::new();
+        let mut recreated = ThinVec::with_capacity(self.table.len());
+
+        for entry in self.table.drain() {
+            if entry.create {
+                recreated.push((entry.identity, entry.id));
+            } else {
+                removed.push(DatabaseKeyIndex::new(
+                    entry.identity.ingredient_index(),
+                    entry.id,
+                ));
+            }
+        }
+
+        (recreated, removed)
+    }
+}
+
+#[derive(Debug)]
+struct TrackedEntry {
+    identity: Identity,
+    id: Id,
+    /// Whether this tracked struct was created or re-created
+    /// in this revision. Entries where `create` is false
+    /// are for tracked structs that were created in a previous
+    /// revision, but that are now no longer used (they can be collected).
+    create: bool,
 }
 
 // ANCHOR: ValueStruct
@@ -428,7 +488,6 @@ where
             // The struct already exists in the intern map.
             let index = self.database_key_index(id);
             crate::tracing::trace!("Reuse tracked struct {id:?}", id = index);
-            zalsa_local.add_output(index);
 
             // SAFETY: The `id` was present in the interned map, so the value must be initialized.
             let update_result =
@@ -454,7 +513,6 @@ where
         let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
         let key = self.database_key_index(id);
         crate::tracing::trace!("Allocated new tracked struct {key:?}");
-        zalsa_local.add_output(key);
         zalsa_local.store_tracked_struct_id(identity, id);
         FromId::from_id(id)
     }
@@ -750,9 +808,7 @@ where
 
                 zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
-                for stale_output in memo.origin().outputs() {
-                    stale_output.remove_stale_output(zalsa, executor);
-                }
+                memo.remove_outputs(zalsa, executor);
             })
         };
 
@@ -857,17 +913,6 @@ where
     ) -> VerifyResult {
         // Any change to a tracked struct results in a new ID generation.
         VerifyResult::unchanged()
-    }
-
-    fn mark_validated_output(
-        &self,
-        _zalsa: &Zalsa,
-        _executor: DatabaseKeyIndex,
-        _output_key: crate::Id,
-    ) {
-        // we used to update `update_at` field but now we do it lazilly when data is accessed
-        //
-        // FIXME: delete this method
     }
 
     fn remove_stale_output(
@@ -1132,14 +1177,14 @@ mod tests {
             assert_eq!(d.insert(i7, Id::from_index(6)), None);
             assert_eq!(d.insert(i8, Id::from_index(7)), None);
 
-            assert_eq!(d.get(&i1), Some(Id::from_index(0)));
-            assert_eq!(d.get(&i2), Some(Id::from_index(1)));
-            assert_eq!(d.get(&i3), Some(Id::from_index(2)));
-            assert_eq!(d.get(&i4), Some(Id::from_index(3)));
-            assert_eq!(d.get(&i5), Some(Id::from_index(4)));
-            assert_eq!(d.get(&i6), Some(Id::from_index(5)));
-            assert_eq!(d.get(&i7), Some(Id::from_index(6)));
-            assert_eq!(d.get(&i8), Some(Id::from_index(7)));
+            assert_eq!(d.reuse(&i1), Some(Id::from_index(0)));
+            assert_eq!(d.reuse(&i2), Some(Id::from_index(1)));
+            assert_eq!(d.reuse(&i3), Some(Id::from_index(2)));
+            assert_eq!(d.reuse(&i4), Some(Id::from_index(3)));
+            assert_eq!(d.reuse(&i5), Some(Id::from_index(4)));
+            assert_eq!(d.reuse(&i6), Some(Id::from_index(5)));
+            assert_eq!(d.reuse(&i7), Some(Id::from_index(6)));
+            assert_eq!(d.reuse(&i8), Some(Id::from_index(7)));
         };
     }
 }

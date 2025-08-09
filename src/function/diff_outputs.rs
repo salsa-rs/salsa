@@ -20,12 +20,24 @@ where
         key: DatabaseKeyIndex,
         old_memo: &Memo<'_, C>,
         revisions: &mut QueryRevisions,
+        mut removed_tracked_structs: Vec<DatabaseKeyIndex>,
     ) {
         let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
             old_memo.revisions.origin.as_ref()
         else {
             return;
         };
+
+        removed_tracked_structs.sort_unstable_by(|a, b| {
+            a.ingredient_index()
+                .cmp(&b.ingredient_index())
+                .then(a.key_index().cmp(&b.key_index()))
+        });
+
+        for removed_tracked in removed_tracked_structs {
+            Self::report_stale_output(zalsa, key, removed_tracked);
+        }
+
         // Iterate over the outputs of the `old_memo` and put them into a hashset
         //
         // Ignore key_generation here, because we use the same tracked struct allocation for
@@ -46,13 +58,6 @@ where
                 new_output.key_index().index(),
             ));
         }
-
-        // Remove the outputs that are no longer present in the current revision
-        // to prevent that the next revision is seeded with an id mapping that no longer exists.
-        if let Some(tracked_struct_ids) = revisions.tracked_struct_ids_mut() {
-            tracked_struct_ids
-                .retain(|(k, value)| !old_outputs.contains(&(k.ingredient_index(), value.index())));
-        };
 
         for (ingredient_index, key_index) in old_outputs {
             // SAFETY: key_index acquired from valid output

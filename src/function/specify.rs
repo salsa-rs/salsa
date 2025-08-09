@@ -39,7 +39,7 @@ where
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
         let database_key_index = <C::Input<'db>>::database_key_index(zalsa, key);
-        if !zalsa_local.is_output_of_active_query(database_key_index) {
+        if !zalsa_local.is_tracked_struct_of_active_query(database_key_index) {
             panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
 
@@ -76,7 +76,13 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
             self.backdate_if_appropriate(old_memo, database_key_index, &mut revisions, &value);
-            self.diff_outputs(zalsa, database_key_index, old_memo, &mut revisions);
+            self.diff_outputs(
+                zalsa,
+                database_key_index,
+                old_memo,
+                &mut revisions,
+                Vec::new(),
+            );
         }
 
         let memo = Memo {

@@ -10,14 +10,14 @@ use crate::accumulator::{
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
     Accumulator,
 };
-use crate::active_query::QueryStack;
+use crate::active_query::{CompletedQuery, QueryStack};
 use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::table::{PageIndex, Slot, Table};
-use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};
+use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Cancelled, Id, Revision};
 
@@ -243,16 +243,14 @@ impl ZalsaLocal {
         }
     }
 
-    /// Check whether `entity` is an output of the currently active query (if any)
-    pub(crate) fn is_output_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
+    /// Check whether `entity` is a tracked struct that was created by the currently active query (if any)
+    pub(crate) fn is_tracked_struct_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.is_output(entity)
-                } else {
-                    false
-                }
+                stack
+                    .last_mut()
+                    .is_some_and(|top_query| top_query.tracked_struct_ids().did_create(entity))
             })
         }
     }
@@ -379,11 +377,11 @@ impl ZalsaLocal {
     pub(crate) fn tracked_struct_id(&self, identity: &Identity) -> Option<Id> {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
-            self.with_query_stack_unchecked(|stack| {
+            self.with_query_stack_unchecked_mut(|stack| {
                 let top_query = stack
-                    .last()
+                    .last_mut()
                     .expect("cannot create a tracked struct ID outside of a tracked function");
-                top_query.tracked_struct_ids().get(identity)
+                top_query.tracked_struct_ids_mut().reuse(identity)
             })
         }
     }
@@ -514,7 +512,7 @@ pub(crate) struct QueryRevisionsExtra(Option<Box<QueryRevisionsExtraInner>>);
 impl QueryRevisionsExtra {
     pub fn new(
         #[cfg(feature = "accumulator")] accumulated: AccumulatedMap,
-        tracked_struct_ids: IdentityMap,
+        mut tracked_struct_ids: ThinVec<(Identity, Id)>,
         cycle_heads: CycleHeads,
         iteration: IterationCount,
     ) -> Self {
@@ -529,11 +527,13 @@ impl QueryRevisionsExtra {
         {
             None
         } else {
+            tracked_struct_ids.shrink_to_fit();
+
             Some(Box::new(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
                 accumulated,
                 cycle_heads,
-                tracked_struct_ids: tracked_struct_ids.into_thin_vec(),
+                tracked_struct_ids,
                 iteration,
             }))
         };
@@ -626,7 +626,7 @@ impl QueryRevisions {
             extra: QueryRevisionsExtra::new(
                 #[cfg(feature = "accumulator")]
                 AccumulatedMap::default(),
-                IdentityMap::default(),
+                ThinVec::default(),
                 CycleHeads::initial(query),
                 IterationCount::initial(),
             ),
@@ -668,7 +668,7 @@ impl QueryRevisions {
                 self.extra = QueryRevisionsExtra::new(
                     #[cfg(feature = "accumulator")]
                     AccumulatedMap::default(),
-                    IdentityMap::default(),
+                    ThinVec::default(),
                     cycle_heads,
                     IterationCount::default(),
                 );
@@ -1113,9 +1113,7 @@ impl ActiveQueryGuard<'_> {
                 assert_eq!(stack.len(), self.push_len);
                 let frame = stack.last_mut().unwrap();
                 assert!(frame.tracked_struct_ids().is_empty());
-                frame
-                    .tracked_struct_ids_mut()
-                    .clone_from_slice(tracked_struct_ids);
+                frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
             })
         }
     }
@@ -1142,7 +1140,7 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Invoked when the query has successfully completed execution.
-    fn complete(self) -> QueryRevisions {
+    fn complete(self) -> CompletedQuery {
         // SAFETY: We do not access the query stack reentrantly.
         let query = unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
@@ -1157,11 +1155,11 @@ impl ActiveQueryGuard<'_> {
         query
     }
 
-    /// Pops an active query from the stack. Returns the [`QueryRevisions`]
+    /// Pops an active query from the stack. Returns the [`CompletedQuery`]
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self) -> QueryRevisions {
+    pub(crate) fn pop(self) -> CompletedQuery {
         self.complete()
     }
 }

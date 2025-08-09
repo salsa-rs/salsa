@@ -30,7 +30,6 @@ pub(crate) struct ActiveQuery {
     /// Inputs: Set of subqueries that were accessed thus far.
     /// Outputs: Tracks values written by this query. Could be...
     ///
-    /// * tracked structs created
     /// * invocations of `specify`
     /// * accumulators pushed to
     input_outputs: FxIndexSet<QueryEdge>,
@@ -77,10 +76,14 @@ impl ActiveQuery {
         untracked_read: bool,
     ) {
         assert!(self.input_outputs.is_empty());
+
         self.input_outputs.extend(edges.iter().cloned());
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;
+
+        // Mark all tracked structs from the previous iteration as used.
+        self.tracked_struct_ids.mark_all_recreated();
     }
 
     pub(super) fn add_read(
@@ -139,10 +142,6 @@ impl ActiveQuery {
     }
 
     /// True if the given key was output by this query.
-    pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
-        self.input_outputs.contains(&QueryEdge::output(key))
-    }
-
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
         self.disambiguator_map.disambiguate(key)
     }
@@ -186,7 +185,7 @@ impl ActiveQuery {
         }
     }
 
-    fn top_into_revisions(&mut self) -> QueryRevisions {
+    fn top_into_revisions(&mut self) -> CompletedQuery {
         let &mut Self {
             database_key_index: _,
             durability,
@@ -213,15 +212,17 @@ impl ActiveQuery {
         #[cfg(feature = "accumulator")]
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
         let verified_final = cycle_heads.is_empty();
+        let (tracked_struct_ids, removed_tracked_structs) = tracked_struct_ids.drain();
+
         let extra = QueryRevisionsExtra::new(
             #[cfg(feature = "accumulator")]
             mem::take(accumulated),
-            mem::take(tracked_struct_ids),
+            tracked_struct_ids,
             mem::take(cycle_heads),
             iteration_count,
         );
 
-        QueryRevisions {
+        let revisions = QueryRevisions {
             changed_at,
             durability,
             origin,
@@ -229,6 +230,11 @@ impl ActiveQuery {
             accumulated_inputs,
             verified_final: AtomicBool::new(verified_final),
             extra,
+        };
+
+        CompletedQuery {
+            revisions,
+            removed_tracked_structs,
         }
     }
 
@@ -370,7 +376,7 @@ impl QueryStack {
         &mut self,
         key: DatabaseKeyIndex,
         #[cfg(debug_assertions)] push_len: usize,
-    ) -> QueryRevisions {
+    ) -> CompletedQuery {
         #[cfg(debug_assertions)]
         assert_eq!(push_len, self.len(), "unbalanced push/pop");
         debug_assert_ne!(self.len, 0, "too many pops");
@@ -392,6 +398,25 @@ impl QueryStack {
             "unbalanced push/pop"
         );
         self.stack[self.len].clear()
+    }
+}
+
+pub(crate) struct CompletedQuery {
+    pub(crate) revisions: QueryRevisions,
+    pub(crate) removed_tracked_structs: Vec<DatabaseKeyIndex>,
+}
+
+impl std::ops::Deref for CompletedQuery {
+    type Target = QueryRevisions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.revisions
+    }
+}
+
+impl std::ops::DerefMut for CompletedQuery {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.revisions
     }
 }
 

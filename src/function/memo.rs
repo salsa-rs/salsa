@@ -321,8 +321,21 @@ impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
 where
     C::Output<'static>: Send + Sync + Any,
 {
-    fn origin(&self) -> QueryOriginRef<'_> {
-        self.revisions.origin.as_ref()
+    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
+        for stale_output in self.revisions.origin.as_ref().outputs() {
+            stale_output.remove_stale_output(zalsa, executor);
+        }
+
+        for (identity, id) in self
+            .revisions
+            .tracked_struct_ids()
+            .iter()
+            .copied()
+            .flatten()
+        {
+            let key = DatabaseKeyIndex::new(identity.ingredient_index(), *id);
+            key.remove_stale_output(zalsa, executor);
+        }
     }
 
     #[cfg(feature = "salsa_unstable")]
