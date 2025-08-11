@@ -317,6 +317,7 @@ impl IdentityMap {
         self.table.iter().any(|entry| {
             entry.id == key.key_index()
                 && entry.identity.ingredient_index() == key.ingredient_index()
+                && entry.active
         })
     }
 
