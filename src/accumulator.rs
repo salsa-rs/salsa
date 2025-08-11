@@ -13,6 +13,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa_local::QueryEdge;
 use crate::{Database, Id, Revision};
 
 mod accumulated;
@@ -107,6 +108,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _revision: Revision,
         _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
+        panic!("nothing should ever depend on an accumulator directly")
+    }
+
+    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, _edge: QueryEdge) -> Vec<QueryEdge> {
         panic!("nothing should ever depend on an accumulator directly")
     }
 

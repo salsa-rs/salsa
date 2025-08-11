@@ -23,6 +23,7 @@ use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa_local::QueryEdge;
 use crate::{Durability, Event, EventKind, Id, Revision};
 
 pub mod tracked_field;
@@ -937,8 +938,13 @@ where
         _revision: Revision,
         _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
-        // Any change to a tracked struct results in a new ID generation.
-        VerifyResult::unchanged()
+        // Any change to a tracked struct results in a new ID generation, so there
+        // are no direct dependencies on the struct, only on its tracked fields.
+        panic!("nothing should ever depend on a tracked struct directly")
+    }
+
+    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, _edge: QueryEdge) -> Vec<QueryEdge> {
+        panic!("nothing should ever depend on a tracked struct directly")
     }
 
     fn remove_stale_output(

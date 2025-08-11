@@ -18,6 +18,7 @@ use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa_local::QueryEdge;
 use crate::{Durability, Id, Revision, Runtime};
 
 pub trait Configuration: Any {
@@ -274,7 +275,11 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        VerifyResult::unchanged()
+        panic!("nothing should ever depend on an input struct directly")
+    }
+
+    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, _edge: QueryEdge) -> Vec<QueryEdge> {
+        panic!("nothing should ever depend on an input struct directly")
     }
 
     fn debug_name(&self) -> &'static str {

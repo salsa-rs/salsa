@@ -20,6 +20,7 @@ use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 /// Trait that defines the key properties of an interned struct.
@@ -894,6 +895,20 @@ where
 
         // Any change to an interned value results in a new ID generation.
         VerifyResult::unchanged()
+    }
+
+    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, edge: QueryEdge) -> Vec<QueryEdge> {
+        if C::PERSIST {
+            // If the interned struct is being persisted, it may be reachable through transitive queries.
+            // Additionally, interned struct dependencies are impure in that garbage collection can
+            // invalidate a dependency without a base input necessarily being updated. Thus, we must
+            // preserve the transitive dependency on the interned struct.
+            Vec::from([edge])
+        } else {
+            // The dependency is covered by the base inputs, as the interned struct itself is
+            // not being persisted.
+            Vec::new()
+        }
     }
 
     fn debug_name(&self) -> &'static str {

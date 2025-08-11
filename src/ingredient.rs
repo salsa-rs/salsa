@@ -11,7 +11,7 @@ use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, JarKind, Zalsa};
-use crate::zalsa_local::QueryOriginRef;
+use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -54,6 +54,15 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         revision: Revision,
         cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult;
+
+    /// Returns the minimum edges necessary to serialize a given dependency edge on this ingredient,
+    /// without necessarily serializing the dependency edge itself.
+    ///
+    /// This generally only returns any transitive input dependencies, i.e. the leaves of the dependency
+    /// tree, as most other fine-grained dependencies are covered by the inputs.
+    ///
+    /// Note that any ingredients returned by this function must be persistable.
+    fn minimum_serialized_edges(&self, zalsa: &Zalsa, edge: QueryEdge) -> Vec<QueryEdge>;
 
     /// Returns information about the current provisional status of `input`.
     ///
@@ -217,7 +226,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         _zalsa: &'db Zalsa,
         _f: &mut dyn FnMut(&dyn erased_serde::Serialize),
     ) {
-        unimplemented!("called `serialize` on ingredient where `is_persistable` returns `false`")
+        unimplemented!("called `serialize` on ingredient where `should_serialize` returns `false`")
     }
 
     /// Deserialize the ingredient.
@@ -227,7 +236,9 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         _zalsa: &mut Zalsa,
         _deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
-        unimplemented!("called `deserialize` on ingredient where `is_persistable` returns `false`")
+        unimplemented!(
+            "called `deserialize` on ingredient where `should_serialize` returns `false`"
+        )
     }
 }
 

@@ -413,8 +413,7 @@ impl ZalsaLocal {
 // - neither can `query_stack` as we require the closures accessing it to be `UnwindSafe`
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
-/// Summarizes "all the inputs that a query used"
-/// and "all the outputs it has written to"
+/// Summarizes "all the inputs that a query used" and "all the outputs it has written to".
 #[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 // #[derive(Clone)] cloning this is expensive, so we don't derive
@@ -434,8 +433,7 @@ pub(crate) struct QueryRevisions {
     /// Note that this field could be in `QueryRevisionsExtra` as it is only relevant
     /// for accumulators, but we get it for free anyways due to padding.
     #[cfg(feature = "accumulator")]
-    // TODO: Support serializing accumulators.
-    #[cfg_attr(feature = "persistence", serde(skip))]
+    #[cfg_attr(feature = "persistence", serde(skip))] // TODO: Support serializing accumulators
     pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
 
     /// Are the `cycle_heads` verified to not be provisional anymore?
@@ -443,31 +441,11 @@ pub(crate) struct QueryRevisions {
     /// Note that this field could be in `QueryRevisionsExtra` as it is only
     /// relevant for queries that participate in a cycle, but we get it for
     /// free anyways due to padding.
-    #[cfg_attr(feature = "persistence", serde(with = "verified_final"))]
+    #[cfg_attr(feature = "persistence", serde(with = "persistence::verified_final"))]
     pub(super) verified_final: AtomicBool,
 
     /// Lazily allocated state.
     pub(super) extra: QueryRevisionsExtra,
-}
-
-#[cfg(feature = "persistence")]
-// A workaround the fact that `shuttle` atomic types do not implement `serde::{Serialize, Deserialize}`.
-mod verified_final {
-    use crate::sync::atomic::{AtomicBool, Ordering};
-
-    pub fn serialize<S>(value: &AtomicBool, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serde::Serialize::serialize(&value.load(Ordering::Relaxed), serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<AtomicBool, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
-    }
 }
 
 impl QueryRevisions {
@@ -1176,5 +1154,63 @@ impl Drop for ActiveQueryGuard<'_> {
                 );
             })
         };
+    }
+}
+
+#[cfg(feature = "persistence")]
+pub(crate) mod persistence {
+    use super::{QueryOrigin, QueryRevisions, QueryRevisionsExtra};
+    use crate::sync::atomic::{AtomicBool, Ordering};
+    use crate::{Durability, Revision};
+
+    /// A reference to the fields of [`QueryRevisions`], with its [`QueryOrigin`] transformed.
+    #[derive(serde::Serialize)]
+    pub(crate) struct MappedQueryRevisions<'a> {
+        changed_at: Revision,
+        durability: Durability,
+        origin: QueryOrigin,
+        #[serde(with = "verified_final")]
+        verified_final: AtomicBool,
+        extra: &'a QueryRevisionsExtra,
+    }
+
+    impl QueryRevisions {
+        pub(crate) fn with_origin(&self, origin: QueryOrigin) -> MappedQueryRevisions<'_> {
+            let QueryRevisions {
+                changed_at,
+                durability,
+                ref verified_final,
+                ref extra,
+                accumulated_inputs: _, // TODO: Support serializing accumulators
+                origin: _,
+            } = *self;
+
+            MappedQueryRevisions {
+                changed_at,
+                durability,
+                extra,
+                origin,
+                verified_final: AtomicBool::new(verified_final.load(Ordering::Relaxed)),
+            }
+        }
+    }
+
+    // A workaround the fact that `shuttle` atomic types do not implement `serde::{Serialize, Deserialize}`.
+    pub(super) mod verified_final {
+        use crate::sync::atomic::{AtomicBool, Ordering};
+
+        pub fn serialize<S>(value: &AtomicBool, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            serde::Serialize::serialize(&value.load(Ordering::Relaxed), serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<AtomicBool, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
+        }
     }
 }

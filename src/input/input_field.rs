@@ -7,6 +7,7 @@ use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa_local::QueryEdge;
 use crate::{Id, Revision};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
@@ -51,7 +52,7 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        zalsa: &crate::zalsa::Zalsa,
+        zalsa: &Zalsa,
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
@@ -59,6 +60,16 @@ where
     ) -> VerifyResult {
         let value = <IngredientImpl<C>>::data(zalsa, input);
         VerifyResult::changed_if(value.revisions[self.field_index] > revision)
+    }
+
+    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, edge: QueryEdge) -> Vec<QueryEdge> {
+        assert!(
+            C::PERSIST,
+            "the inputs of a persistable tracked function must be persistable"
+        );
+
+        // Input dependencies are the leaves of the minimum dependency tree.
+        Vec::from([edge])
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
