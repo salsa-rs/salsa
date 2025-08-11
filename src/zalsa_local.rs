@@ -418,6 +418,7 @@ impl std::panic::RefUnwindSafe for ZalsaLocal {}
 /// Summarizes "all the inputs that a query used"
 /// and "all the outputs it has written to"
 #[derive(Debug)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 // #[derive(Clone)] cloning this is expensive, so we don't derive
 pub(crate) struct QueryRevisions {
     /// The most revision in which some input changed.
@@ -435,6 +436,8 @@ pub(crate) struct QueryRevisions {
     /// Note that this field could be in `QueryRevisionsExtra` as it is only relevant
     /// for accumulators, but we get it for free anyways due to padding.
     #[cfg(feature = "accumulator")]
+    // TODO: Support serializing accumulators.
+    #[cfg_attr(feature = "persistence", serde(skip))]
     pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
 
     /// Are the `cycle_heads` verified to not be provisional anymore?
@@ -442,10 +445,31 @@ pub(crate) struct QueryRevisions {
     /// Note that this field could be in `QueryRevisionsExtra` as it is only
     /// relevant for queries that participate in a cycle, but we get it for
     /// free anyways due to padding.
+    #[cfg_attr(feature = "persistence", serde(with = "verified_final"))]
     pub(super) verified_final: AtomicBool,
 
     /// Lazily allocated state.
     pub(super) extra: QueryRevisionsExtra,
+}
+
+#[cfg(feature = "persistence")]
+// A workaround the fact that `shuttle` atomic types do not implement `serde::{Serialize, Deserialize}`.
+mod verified_final {
+    use crate::sync::atomic::{AtomicBool, Ordering};
+
+    pub fn serialize<S>(value: &AtomicBool, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&value.load(Ordering::Relaxed), serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<AtomicBool, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
+    }
 }
 
 impl QueryRevisions {
@@ -484,6 +508,7 @@ impl QueryRevisions {
 /// In particular, not all queries create tracked structs, participate
 /// in cycles, or create accumulators.
 #[derive(Debug, Default)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct QueryRevisionsExtra(Option<Box<QueryRevisionsExtraInner>>);
 
 impl QueryRevisionsExtra {
@@ -518,8 +543,11 @@ impl QueryRevisionsExtra {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 struct QueryRevisionsExtraInner {
     #[cfg(feature = "accumulator")]
+    // TODO: Support serializing accumulators.
+    #[cfg_attr(feature = "persistence", serde(skip))]
     accumulated: AccumulatedMap,
 
     /// The ids of tracked structs created by this query.
@@ -539,6 +567,10 @@ struct QueryRevisionsExtraInner {
     ///   previous revision. To handle this, `diff_outputs` compares
     ///   the structs from the old/new revision and retains
     ///   only entries that appeared in the new revision.
+    //
+    // TODO: We only need to serialize the IDs of tracked structs that
+    // are actually going to be serialized. Those that are not will
+    // be created with new IDs anyways.
     tracked_struct_ids: ThinVec<(Identity, Id)>,
 
     /// This result was computed based on provisional values from
@@ -680,8 +712,9 @@ impl QueryRevisions {
 /// Tracks the way that a memoized value for a query was created.
 ///
 /// This is a read-only reference to a `PackedQueryOrigin`.
-#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize))]
 pub enum QueryOriginRef<'a> {
     /// The value was assigned as the output of another query (e.g., using `specify`).
     /// The `DatabaseKeyIndex` is the identity of the assigning query.
@@ -909,6 +942,41 @@ impl QueryOrigin {
     }
 }
 
+#[cfg(feature = "persistence")]
+impl serde::Serialize for QueryOrigin {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.as_ref().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for QueryOrigin {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Matches the signature of `QueryOriginRef`.
+        #[derive(serde::Deserialize)]
+        #[repr(u8)]
+        pub enum QueryOriginOwned {
+            Assigned(DatabaseKeyIndex) = QueryOriginKind::Assigned as u8,
+            Derived(Box<[QueryEdge]>) = QueryOriginKind::Derived as u8,
+            DerivedUntracked(Box<[QueryEdge]>) = QueryOriginKind::DerivedUntracked as u8,
+            FixpointInitial = QueryOriginKind::FixpointInitial as u8,
+        }
+
+        Ok(match QueryOriginOwned::deserialize(deserializer)? {
+            QueryOriginOwned::Assigned(key) => QueryOrigin::assigned(key),
+            QueryOriginOwned::Derived(edges) => QueryOrigin::derived(edges),
+            QueryOriginOwned::DerivedUntracked(edges) => QueryOrigin::derived_untracked(edges),
+            QueryOriginOwned::FixpointInitial => QueryOrigin::fixpoint_initial(),
+        })
+    }
+}
+
 impl Drop for QueryOrigin {
     fn drop(&mut self) {
         match self.kind {
@@ -948,6 +1016,7 @@ impl std::fmt::Debug for QueryOrigin {
 /// the size of the type. Notably, this type is 12 bytes as opposed to the 16 byte
 /// `QueryEdgeKind`, which is meaningful as inputs and outputs are stored contiguously.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct QueryEdge {
     key: DatabaseKeyIndex,
 }
@@ -967,18 +1036,21 @@ impl QueryEdge {
         }
     }
 
-    /// Returns the kind of this query edge.
-    pub fn kind(self) -> QueryEdgeKind {
+    /// Return the key of this query edge.
+    pub fn key(self) -> DatabaseKeyIndex {
         // Clear the tag to restore the original index.
-        let untagged = DatabaseKeyIndex::new(
+        DatabaseKeyIndex::new(
             self.key.ingredient_index().with_tag(false),
             self.key.key_index(),
-        );
+        )
+    }
 
+    /// Returns the kind of this query edge.
+    pub fn kind(self) -> QueryEdgeKind {
         if self.key.ingredient_index().tag() {
-            QueryEdgeKind::Output(untagged)
+            QueryEdgeKind::Output(self.key())
         } else {
-            QueryEdgeKind::Input(untagged)
+            QueryEdgeKind::Input(self.key())
         }
     }
 }

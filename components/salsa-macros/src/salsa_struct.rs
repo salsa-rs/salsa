@@ -431,6 +431,36 @@ where
             .enumerate()
             .filter(|(_, f)| !f.has_tracked_attr)
     }
+
+    /// Returns the path to the `serialize` function as an optional iterator.
+    ///
+    /// This will be `None` if `persistable` returns `false`.
+    pub(crate) fn serialize_fn(&self) -> impl Iterator<Item = syn::Path> + '_ {
+        self.args
+            .persist
+            .clone()
+            .map(|persist| {
+                persist
+                    .serialize_fn
+                    .unwrap_or(parse_quote! { serde::Serialize::serialize })
+            })
+            .into_iter()
+    }
+
+    /// Returns the path to the `deserialize` function as an optional iterator.
+    ///
+    /// This will be `None` if `persistable` returns `false`.
+    pub(crate) fn deserialize_fn(&self) -> impl Iterator<Item = syn::Path> + '_ {
+        self.args
+            .persist
+            .clone()
+            .map(|persist| {
+                persist
+                    .deserialize_fn
+                    .unwrap_or(parse_quote! { serde::Deserialize::deserialize })
+            })
+            .into_iter()
+    }
 }
 
 impl<'s> SalsaField<'s> {

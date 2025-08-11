@@ -1,10 +1,11 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
+pub(crate) use sync::SyncGuard;
+
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
-pub(crate) use sync::SyncGuard;
 
 use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
@@ -14,13 +15,13 @@ use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::MemoIngredientMap;
+use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::views::DatabaseDownCaster;
-use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOriginRef;
 use crate::{Id, Revision};
 
@@ -43,6 +44,7 @@ pub type Memo<C> = memo::Memo<'static, C>;
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
+    const PERSIST: bool;
 
     /// The database that this function is associated with.
     type DbView: ?Sized + crate::Database;
@@ -96,6 +98,20 @@ pub trait Configuration: Any {
         count: u32,
         input: Self::Input<'db>,
     ) -> CycleRecoveryAction<Self::Output<'db>>;
+
+    /// Serialize the output type using `serde`.
+    ///
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
+    fn serialize<S>(value: &Self::Output<'_>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: plumbing::serde::Serializer;
+
+    /// Deserialize the output type using `serde`.
+    ///
+    /// Panics if the value is not persistable, i.e. `Configuration::PERSIST` is `false`.
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self::Output<'static>, D::Error>
+    where
+        D: plumbing::serde::Deserializer<'de>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -359,6 +375,10 @@ where
         C::DEBUG_NAME
     }
 
+    fn jar_kind(&self) -> JarKind {
+        JarKind::TrackedFn
+    }
+
     fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
         unreachable!("function does not allocate pages")
     }
@@ -384,6 +404,56 @@ where
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
         self.accumulated_map(db, key_index)
     }
+
+    fn is_persistable(&self) -> bool {
+        C::PERSIST
+    }
+
+    fn should_serialize(&self, zalsa: &Zalsa) -> bool {
+        if !C::PERSIST {
+            return false;
+        }
+
+        // We only serialize the query if there are any memos associated with it.
+        for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
+            let memo_ingredient_index = self.memo_ingredient_indices.get(entry.ingredient_index());
+
+            let memo =
+                self.get_memo_from_table_for(zalsa, entry.key_index(), memo_ingredient_index);
+
+            if memo.is_some_and(|memo| memo.should_serialize()) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    #[cfg(feature = "persistence")]
+    unsafe fn serialize<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
+    ) {
+        f(&persistence::SerializeIngredient {
+            zalsa,
+            ingredient: self,
+        })
+    }
+
+    #[cfg(feature = "persistence")]
+    fn deserialize(
+        &mut self,
+        zalsa: &mut Zalsa,
+        deserializer: &mut dyn erased_serde::Deserializer,
+    ) -> Result<(), erased_serde::Error> {
+        let deserialize = persistence::DeserializeIngredient {
+            zalsa,
+            ingredient: self,
+        };
+
+        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -394,5 +464,154 @@ where
         f.debug_struct(std::any::type_name::<Self>())
             .field("index", &self.index)
             .finish()
+    }
+}
+
+#[cfg(feature = "persistence")]
+mod persistence {
+    use super::{Configuration, IngredientImpl, Memo};
+    use crate::plumbing::{Ingredient, MemoIngredientMap, SalsaStructInDb};
+    use crate::zalsa::Zalsa;
+    use crate::{Id, IngredientIndex};
+
+    use serde::de;
+    use serde::ser::SerializeMap;
+
+    use std::ptr::NonNull;
+
+    pub struct SerializeIngredient<'db, C>
+    where
+        C: Configuration,
+    {
+        pub zalsa: &'db Zalsa,
+        pub ingredient: &'db IngredientImpl<C>,
+    }
+
+    impl<C> serde::Serialize for SerializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let Self { ingredient, zalsa } = self;
+
+            let mut map = serializer.serialize_map(None)?;
+
+            for struct_index in
+                <C::SalsaStruct<'_> as SalsaStructInDb>::lookup_ingredient_index(zalsa).iter()
+            {
+                let struct_ingredient = zalsa.lookup_ingredient(struct_index);
+                assert!(
+                    struct_ingredient.is_persistable(),
+                    "the input of a serialized tracked function must be serialized"
+                );
+            }
+
+            for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
+                let memo_ingredient_index = ingredient
+                    .memo_ingredient_indices
+                    .get(entry.ingredient_index());
+
+                let memo = ingredient.get_memo_from_table_for(
+                    zalsa,
+                    entry.key_index(),
+                    memo_ingredient_index,
+                );
+
+                if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
+                    for edge in memo.revisions.origin.as_ref().edges() {
+                        let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+
+                        // TODO: This is not strictly necessary, we only need the transitive input
+                        // dependencies of this query to serialize a valid memo.
+                        assert!(
+                            dependency.is_persistable(),
+                            "attempted to serialize query `{}`, but dependency `{}` is not persistable",
+                            ingredient.debug_name(),
+                            dependency.debug_name()
+                        );
+                    }
+
+                    // TODO: Group structs by ingredient index into a nested map.
+                    let key = format!(
+                        "{}:{}",
+                        entry.ingredient_index().as_u32(),
+                        entry.key_index().as_bits()
+                    );
+
+                    map.serialize_entry(&key, memo)?;
+                }
+            }
+
+            map.end()
+        }
+    }
+
+    pub struct DeserializeIngredient<'db, C>
+    where
+        C: Configuration,
+    {
+        pub zalsa: &'db Zalsa,
+        pub ingredient: &'db mut IngredientImpl<C>,
+    }
+
+    impl<'de, C> de::DeserializeSeed<'de> for DeserializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        type Value = ();
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_map(self)
+        }
+    }
+
+    impl<'de, C> de::Visitor<'de> for DeserializeIngredient<'_, C>
+    where
+        C: Configuration,
+    {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a map")
+        }
+
+        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let DeserializeIngredient { zalsa, ingredient } = self;
+
+            while let Some((key, memo)) = access.next_entry::<String, Memo<C>>()? {
+                let (ingredient_index, id) = key
+                    .split_once(':')
+                    .ok_or_else(|| de::Error::custom("invalid database key"))?;
+
+                let ingredient_index = IngredientIndex::new(
+                    ingredient_index.parse::<u32>().map_err(de::Error::custom)?,
+                );
+
+                let id = Id::from_bits(id.parse::<u64>().map_err(de::Error::custom)?);
+
+                let memo_ingredient_index =
+                    ingredient.memo_ingredient_indices.get(ingredient_index);
+
+                // SAFETY: We provide the current revision.
+                let memo_table = unsafe { zalsa.table().dyn_memos(id, zalsa.current_revision()) };
+
+                memo_table.insert(
+                    memo_ingredient_index,
+                    // FIXME: Use `Box::into_non_null` once stable.
+                    NonNull::from(Box::leak(Box::new(memo))),
+                );
+            }
+
+            Ok(())
+        }
     }
 }

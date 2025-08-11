@@ -64,6 +64,9 @@ macro_rules! setup_tracked_fn {
         // The return mode for the function, see `salsa_macros::options::Option::returns`
         return_mode: $return_mode:tt,
 
+        // If true, the input and output values implement `serde::{Serialize, Deserialize}`.
+        persist: $persist:tt,
+
         assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
 
         $(self_ty: $self_ty:ty,)?
@@ -122,6 +125,13 @@ macro_rules! setup_tracked_fn {
                             $zalsa::IngredientIndices::empty()
                         }
 
+                        fn entries(
+                            zalsa: &$zalsa::Zalsa
+                        ) -> impl Iterator<Item = $zalsa::DatabaseKeyIndex> + '_ {
+                            let ingredient_index = zalsa.lookup_jar_by_type::<$fn_name>().successor(0);
+                            <$Configuration>::intern_ingredient(zalsa).entries(zalsa).map(|(key, _)| key)
+                        }
+
                         #[inline]
                         fn cast(id: $zalsa::Id, type_id: ::core::any::TypeId) -> Option<Self> {
                             if type_id == ::core::any::TypeId::of::<$InternedData>() {
@@ -162,13 +172,51 @@ macro_rules! setup_tracked_fn {
                             line: line!(),
                         };
                         const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::",)? stringify!($fn_name), "::interned_arguments");
+                        const PERSIST: bool = true;
 
                         type Fields<$db_lt> = ($($interned_input_ty),*);
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
+
+                        fn serialize<S: $zalsa::serde::Serializer>(
+                            fields: &Self::Fields<'_>,
+                            serializer: S,
+                        ) -> Result<S::Ok, S::Error> {
+                            $zalsa::macro_if! {
+                                if $persist {
+                                    $zalsa::serde::Serialize::serialize(fields, serializer)
+                                } else {
+                                    panic!("attempted to serialize value not marked with `persist` attribute")
+                                }
+                            }
+                        }
+
+                        fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
+                            deserializer: D,
+                        ) -> Result<Self::Fields<'static>, D::Error> {
+                            $zalsa::macro_if! {
+                                if $persist {
+                                    $zalsa::serde::Deserialize::deserialize(deserializer)
+                                } else {
+                                    panic!("attempted to deserialize value not marked with `persist` attribute")
+                                }
+                            }
+                        }
                     }
                 } else {
                     type $InternedData<$db_lt> = ($($interned_input_ty),*);
+
+                    $zalsa::macro_if! { $persist =>
+                        const fn query_input_is_persistable<T>()
+                        where
+                            T: $zalsa::serde::Serialize + for<'de> $zalsa::serde::Deserialize<'de>,
+                        {
+                        }
+
+                        fn assert_query_input_is_persistable<$db_lt>() {
+                            query_input_is_persistable::<$($interned_input_ty),*>();
+                        }
+                    }
                 }
             }
 
@@ -200,11 +248,11 @@ macro_rules! setup_tracked_fn {
 
                 $zalsa::macro_if! { $needs_interner =>
                     fn intern_ingredient(
-                        db: &dyn $Db,
+                        zalsa: &$zalsa::Zalsa,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
-                        let zalsa = db.zalsa();
                         Self::intern_ingredient_(zalsa)
                     }
+
                     #[inline]
                     fn intern_ingredient_<'z>(
                         zalsa: &'z $zalsa::Zalsa
@@ -226,6 +274,7 @@ macro_rules! setup_tracked_fn {
                     line: line!(),
                 };
                 const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::", )? stringify!($fn_name));
+                const PERSIST: bool = $persist;
 
                 type DbView = dyn $Db;
 
@@ -272,6 +321,31 @@ macro_rules! setup_tracked_fn {
                             $Configuration::intern_ingredient_(zalsa).data(zalsa, key).clone()
                         } else {
                             $zalsa::FromIdWithDb::from_id(key, zalsa)
+                        }
+                    }
+                }
+
+                fn serialize<S: $zalsa::serde::Serializer>(
+                    value: &Self::Output<'_>,
+                    serializer: S,
+                ) -> Result<S::Ok, S::Error> {
+                    $zalsa::macro_if! {
+                        if $persist {
+                            $zalsa::serde::Serialize::serialize(value, serializer)
+                        } else {
+                            panic!("attempted to serialize value not marked with `persist` attribute")
+                        }
+                    }
+                }
+
+                fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
+                    deserializer: D,
+                ) -> Result<Self::Output<'static>, D::Error> {
+                    $zalsa::macro_if! {
+                        if $persist {
+                            $zalsa::serde::Deserialize::deserialize(deserializer)
+                        } else {
+                            panic!("attempted to deserialize value not marked with `persist` attribute")
                         }
                     }
                 }
@@ -352,7 +426,7 @@ macro_rules! setup_tracked_fn {
                         let key = $zalsa::macro_if! {
                             if $needs_interner {{
                                 let (zalsa, zalsa_local) = $db.zalsas();
-                                $Configuration::intern_ingredient($db).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
+                                $Configuration::intern_ingredient(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
                             }} else {
                                 $zalsa::AsId::as_id(&($($input_id),*))
                             }

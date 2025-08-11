@@ -12,7 +12,7 @@ use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
-use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::{Database, Id, Revision};
 
 mod accumulated;
@@ -112,6 +112,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn debug_name(&self) -> &'static str {
         A::DEBUG_NAME
+    }
+
+    fn jar_kind(&self) -> JarKind {
+        JarKind::Struct
     }
 
     fn memo_table_types(&self) -> &Arc<MemoTableTypes> {

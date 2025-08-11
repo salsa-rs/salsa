@@ -89,16 +89,27 @@ const _: () = {
         const DEBUG_NAME: &'static str = "InternedString";
         type Fields<'a> = StructData<'a>;
         type Struct<'a> = InternedString<'a>;
+
+        const PERSIST: bool = false;
+
+        fn serialize<S>(value: &Self::Fields<'_>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: zalsa_::serde::Serializer,
+        {
+            panic!("attempted to serialize value not marked with `persist` attribute")
+        }
+
+        fn deserialize<'de, D>(deserializer: D) -> Result<Self::Fields<'static>, D::Error>
+        where
+            D: zalsa_::serde::Deserializer<'de>,
+        {
+            panic!("attempted to deserialize value not marked with `persist` attribute")
+        }
     }
     impl Configuration_ {
-        pub fn ingredient<Db>(db: &Db) -> &zalsa_struct_::IngredientImpl<Self>
-        where
-            Db: ?Sized + zalsa_::Database,
-        {
+        pub fn ingredient(zalsa: &zalsa_::Zalsa) -> &zalsa_struct_::IngredientImpl<Self> {
             static CACHE: zalsa_::IngredientCache<zalsa_struct_::IngredientImpl<Configuration_>> =
                 zalsa_::IngredientCache::new();
-
-            let zalsa = db.zalsa();
 
             // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
             // ingredient created by our jar is the struct ingredient.
@@ -134,6 +145,14 @@ const _: () = {
         fn lookup_ingredient_index(aux: &Zalsa) -> salsa::plumbing::IngredientIndices {
             aux.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
                 .into()
+        }
+
+        fn entries(zalsa: &zalsa_::Zalsa) -> impl Iterator<Item = zalsa_::DatabaseKeyIndex> + '_ {
+            let ingredient_index =
+                zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>();
+            <Configuration_>::ingredient(zalsa)
+                .entries(zalsa)
+                .map(|(key, _)| key)
         }
 
         #[inline]
@@ -180,7 +199,7 @@ const _: () = {
             Db_: ?Sized + salsa::Database,
             String: zalsa_::interned::HashEqLike<T0>,
         {
-            Configuration_::ingredient(db).intern(
+            Configuration_::ingredient(db.zalsa()).intern(
                 db.zalsa(),
                 db.zalsa_local(),
                 StructKey::<'db>(data, std::marker::PhantomData::default()),
@@ -196,20 +215,20 @@ const _: () = {
         where
             Db_: ?Sized + zalsa_::Database,
         {
-            let fields = Configuration_::ingredient(db).fields(db.zalsa(), self);
+            let fields = Configuration_::ingredient(db.zalsa()).fields(db.zalsa(), self);
             std::clone::Clone::clone((&fields.0))
         }
         fn other<Db_>(self, db: &'db Db_) -> InternedString<'db>
         where
             Db_: ?Sized + zalsa_::Database,
         {
-            let fields = Configuration_::ingredient(db).fields(db.zalsa(), self);
+            let fields = Configuration_::ingredient(db.zalsa()).fields(db.zalsa(), self);
             std::clone::Clone::clone((&fields.1))
         }
         #[doc = r" Default debug formatting for this struct (may be useful if you define your own `Debug` impl)"]
         pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             zalsa_::with_attached_database(|db| {
-                let fields = Configuration_::ingredient(db).fields(db.zalsa(), this);
+                let fields = Configuration_::ingredient(db.zalsa()).fields(db.zalsa(), this);
                 let mut f = f.debug_struct("InternedString");
                 let f = f.field("data", &fields.0);
                 let f = f.field("other", &fields.1);

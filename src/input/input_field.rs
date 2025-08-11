@@ -6,7 +6,7 @@ use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
-use crate::zalsa::IngredientIndex;
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::{Id, Revision};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
@@ -75,12 +75,26 @@ where
         C::FIELD_DEBUG_NAMES[self.field_index]
     }
 
+    fn jar_kind(&self) -> JarKind {
+        JarKind::Struct
+    }
+
     fn memo_table_types(&self) -> &Arc<MemoTableTypes> {
         unreachable!("input fields do not allocate pages")
     }
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("input fields do not allocate pages")
+    }
+
+    fn is_persistable(&self) -> bool {
+        // Input field dependencies are valid as long as the input is persistable.
+        C::PERSIST
+    }
+
+    fn should_serialize(&self, _zalsa: &Zalsa) -> bool {
+        // However, they are never serialized directly.
+        false
     }
 }
 

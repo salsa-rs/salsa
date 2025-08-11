@@ -114,6 +114,13 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
+    /// Returns `true` if this memo should be serialized.
+    pub(super) fn should_serialize(&self) -> bool {
+        // TODO: Serialization is a good opportunity to prune old query results based on
+        // the `verified_at` revision.
+        self.value.is_some() && !self.may_be_provisional()
+    }
+
     /// True if this may be a provisional cycle-iteration result.
     #[inline]
     pub(super) fn may_be_provisional(&self) -> bool {
@@ -340,6 +347,97 @@ where
     }
 }
 
+#[cfg(feature = "persistence")]
+mod persistence {
+    use crate::function::memo::Memo;
+    use crate::function::Configuration;
+    use crate::revision::AtomicRevision;
+    use crate::zalsa_local::QueryRevisions;
+
+    use serde::ser::SerializeStruct;
+    use serde::Deserialize;
+
+    impl<C> serde::Serialize for Memo<'_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            struct SerializeValue<'me, 'db, C: Configuration>(&'me C::Output<'db>);
+
+            impl<C> serde::Serialize for SerializeValue<'_, '_, C>
+            where
+                C: Configuration,
+            {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    C::serialize(self.0, serializer)
+                }
+            }
+
+            let Memo {
+                value,
+                verified_at,
+                revisions,
+            } = self;
+
+            let value = value.as_ref().expect("attempted to serialize empty memo");
+
+            let mut s = serializer.serialize_struct("Memo", 3)?;
+            s.serialize_field("value", &SerializeValue::<C>(value))?;
+            s.serialize_field("verified_at", &verified_at)?;
+            s.serialize_field("revisions", &revisions)?;
+            s.end()
+        }
+    }
+
+    impl<'de, C> serde::Deserialize<'de> for Memo<'static, C>
+    where
+        C: Configuration,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            #[derive(Deserialize)]
+            pub struct DeserializeMemo<C: Configuration> {
+                #[serde(bound = "C: Configuration")]
+                value: DeserializeValue<C>,
+                verified_at: AtomicRevision,
+                revisions: QueryRevisions,
+            }
+
+            struct DeserializeValue<C: Configuration>(C::Output<'static>);
+
+            impl<'de, C> serde::Deserialize<'de> for DeserializeValue<C>
+            where
+                C: Configuration,
+            {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    C::deserialize(deserializer)
+                        .map(DeserializeValue)
+                        .map_err(serde::de::Error::custom)
+                }
+            }
+
+            let memo = DeserializeMemo::<C>::deserialize(deserializer)?;
+
+            Ok(Memo {
+                value: Some(memo.value.0),
+                verified_at: memo.verified_at,
+                revisions: memo.revisions,
+            })
+        }
+    }
+}
+
 pub(super) enum TryClaimHeadsResult<'me> {
     /// Claiming every cycle head results in a cycle head.
     Cycle,
@@ -460,7 +558,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
 mod _memory_usage {
     use crate::cycle::CycleRecoveryStrategy;
     use crate::ingredient::Location;
-    use crate::plumbing::{IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
+    use crate::plumbing::{self, IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
     use crate::table::memo::MemoTableWithTypes;
     use crate::zalsa::Zalsa;
     use crate::{CycleRecoveryAction, Database, Id, Revision};
@@ -488,6 +586,10 @@ mod _memory_usage {
         unsafe fn memo_table(_: &Zalsa, _: Id, _: Revision) -> MemoTableWithTypes<'_> {
             unimplemented!()
         }
+
+        fn entries(_: &Zalsa) -> impl Iterator<Item = crate::DatabaseKeyIndex> + '_ {
+            std::iter::empty()
+        }
     }
 
     struct DummyConfiguration;
@@ -495,11 +597,13 @@ mod _memory_usage {
     impl super::Configuration for DummyConfiguration {
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
+        const PERSIST: bool = false;
+        const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
         type DbView = dyn Database;
         type SalsaStruct<'db> = DummyStruct;
         type Input<'db> = ();
         type Output<'db> = NonZeroUsize;
-        const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
 
         fn values_equal<'db>(_: &Self::Output<'db>, _: &Self::Output<'db>) -> bool {
             unimplemented!()
@@ -523,6 +627,20 @@ mod _memory_usage {
             _: u32,
             _: Self::Input<'db>,
         ) -> CycleRecoveryAction<Self::Output<'db>> {
+            unimplemented!()
+        }
+
+        fn serialize<S>(_: &Self::Output<'_>, _: S) -> Result<S::Ok, S::Error>
+        where
+            S: plumbing::serde::Serializer,
+        {
+            unimplemented!()
+        }
+
+        fn deserialize<'de, D>(_: D) -> Result<Self::Output<'static>, D::Error>
+        where
+            D: plumbing::serde::Deserializer<'de>,
+        {
             unimplemented!()
         }
     }

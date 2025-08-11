@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 
 use crate::hygiene::Hygiene;
-use crate::options::Options;
+use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
 use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
 use crate::token_stream_with_error;
 
@@ -32,7 +32,7 @@ type InputArgs = Options<InputStruct>;
 
 struct InputStruct;
 
-impl crate::options::AllowedOptions for InputStruct {
+impl AllowedOptions for InputStruct {
     const RETURNS: bool = false;
 
     const SPECIFY: bool = false;
@@ -68,6 +68,8 @@ impl crate::options::AllowedOptions for InputStruct {
     const HEAP_SIZE: bool = true;
 
     const SELF_TY: bool = false;
+
+    const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedValue;
 }
 
 impl SalsaStructAllowedOptions for InputStruct {
@@ -114,6 +116,10 @@ impl Macro {
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let heap_size_fn = self.args.heap_size_fn.iter();
 
+        let persist = self.args.persist();
+        let serialize_fn = salsa_struct.serialize_fn();
+        let deserialize_fn = salsa_struct.deserialize_fn();
+
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
@@ -142,6 +148,9 @@ impl Macro {
                     is_singleton: #is_singleton,
                     generate_debug_impl: #generate_debug_impl,
                     heap_size_fn: #(#heap_size_fn)*,
+                    persist: #persist,
+                    serialize_fn: #(#serialize_fn)*,
+                    deserialize_fn: #(#deserialize_fn)*,
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

@@ -42,6 +42,10 @@ impl IngredientIndices {
             indices: indices.into_boxed_slice(),
         }
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = IngredientIndex> + '_ {
+        self.indices.iter().copied()
+    }
 }
 
 pub trait NewMemoIngredientIndices {

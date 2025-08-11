@@ -73,6 +73,7 @@ static NONCE: crate::nonce::NonceGenerator<StorageNonce> = crate::nonce::NonceGe
 /// The database contains a number of jars, and each jar contains a number of ingredients.
 /// Each ingredient is given a unique index as the database is being created.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
@@ -207,7 +208,10 @@ impl Zalsa {
         let mut jars = jars;
 
         // Ensure structs are initialized before tracked functions.
-        jars.sort_by_key(|jar| jar.kind);
+        //
+        // We also further sort by debug name, to maintain a consistent ordering across
+        // builds.
+        jars.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.type_name().cmp(b.type_name())));
 
         for jar in jars {
             zalsa.insert_jar(jar);
@@ -233,6 +237,13 @@ impl Zalsa {
     #[inline]
     pub fn table(&self) -> &Table {
         self.runtime.table()
+    }
+
+    /// Returns a mutable reference to the [`Table`] used to store the value of salsa structs
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn table_mut(&mut self) -> &mut Table {
+        self.runtime.table_mut()
     }
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
@@ -273,7 +284,7 @@ impl Zalsa {
             [memo_ingredient_index.as_usize()]
     }
 
-    #[cfg(feature = "salsa_unstable")]
+    #[allow(unused)]
     pub(crate) fn ingredients(&self) -> impl Iterator<Item = &dyn Ingredient> {
         self.ingredients_vec
             .iter()
@@ -398,6 +409,19 @@ impl Zalsa {
 
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
+    pub fn take_ingredient(&mut self, index: IngredientIndex) -> Box<dyn Ingredient> {
+        self.ingredients_vec.remove(index.as_u32() as usize)
+    }
+
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    pub fn replace_ingredient(&mut self, index: IngredientIndex, ingredient: Box<dyn Ingredient>) {
+        self.ingredients_vec
+            .insert(index.as_u32() as usize, ingredient);
+    }
+
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
     #[inline]
     pub fn current_revision(&self) -> Revision {
         self.runtime.current_revision()
@@ -469,6 +493,7 @@ impl Zalsa {
 pub struct ErasedJar {
     kind: JarKind,
     type_id: fn() -> TypeId,
+    type_name: fn() -> &'static str,
     id_struct_type_id: fn() -> TypeId,
     create_ingredients: fn(&mut Zalsa, IngredientIndex) -> Vec<Box<dyn Ingredient>>,
 }
@@ -493,9 +518,14 @@ impl ErasedJar {
         Self {
             kind: I::KIND,
             type_id: TypeId::of::<I::Jar>,
+            type_name: std::any::type_name::<I::Jar>,
             create_ingredients: <I::Jar>::create_ingredients,
             id_struct_type_id: <I::Jar>::id_struct_type_id,
         }
+    }
+
+    pub fn type_name(&self) -> &'static str {
+        (self.type_name)()
     }
 }
 

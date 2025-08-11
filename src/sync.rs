@@ -77,10 +77,6 @@ pub mod shim {
             self.get().unwrap()
         }
 
-        pub fn set(&self, value: T) -> Result<(), T> {
-            self.set_with(|| value).map_err(|f| f())
-        }
-
         fn set_with<F>(&self, f: F) -> Result<(), F>
         where
             F: FnOnce() -> T,

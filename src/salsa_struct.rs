@@ -3,7 +3,7 @@ use std::any::TypeId;
 use crate::memo_ingredient_indices::{IngredientIndices, MemoIngredientMap};
 use crate::table::memo::MemoTableWithTypes;
 use crate::zalsa::Zalsa;
-use crate::{Id, Revision};
+use crate::{DatabaseKeyIndex, Id, Revision};
 
 pub trait SalsaStructInDb: Sized {
     type MemoIngredientMap: MemoIngredientMap;
@@ -18,6 +18,9 @@ pub trait SalsaStructInDb: Sized {
     /// to create the ingredient, they aren't required to. For example, supertypes recursively
     /// call [`crate::zalsa::JarEntry::get_or_create`] for their variants and combine them.
     fn lookup_ingredient_index(zalsa: &Zalsa) -> IngredientIndices;
+
+    /// Returns the IDs of any instances of this struct in the database.
+    fn entries(zalsa: &Zalsa) -> impl Iterator<Item = DatabaseKeyIndex> + '_;
 
     /// Plumbing to support nested salsa supertypes.
     ///

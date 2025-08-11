@@ -96,12 +96,14 @@ pub enum CycleRecoveryStrategy {
 /// fixpoint iteration is enabled for that query), and then is responsible for re-iterating the
 /// cycle until it converges.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct CycleHead {
     pub(crate) database_key_index: DatabaseKeyIndex,
     pub(crate) iteration_count: IterationCount,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct IterationCount(u8);
 
 impl IterationCount {
@@ -131,6 +133,7 @@ impl IterationCount {
 /// plural in case of nested cycles) representing the cycles it is part of, and the current
 /// iteration count for each cycle head. This struct tracks these cycle heads.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct CycleHeads(ThinVec<CycleHead>);
 
 impl CycleHeads {

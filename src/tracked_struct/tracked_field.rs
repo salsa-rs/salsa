@@ -5,7 +5,7 @@ use crate::ingredient::Ingredient;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
-use crate::zalsa::IngredientIndex;
+use crate::zalsa::{IngredientIndex, JarKind};
 use crate::Id;
 
 /// Created for each tracked struct.
@@ -79,6 +79,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::TRACKED_FIELD_NAMES[self.field_index]
+    }
+
+    fn jar_kind(&self) -> JarKind {
+        JarKind::Struct
     }
 
     fn memo_table_types(&self) -> &Arc<MemoTableTypes> {

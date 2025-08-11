@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 
 use crate::hygiene::Hygiene;
-use crate::options::{AllowedOptions, Options};
+use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
 use crate::token_stream_with_error;
 
 // #[salsa::accumulator(jar = Jar0)]
@@ -47,6 +47,8 @@ impl AllowedOptions for Accumulator {
     const REVISIONS: bool = false;
     const HEAP_SIZE: bool = false;
     const SELF_TY: bool = false;
+    // TODO: Support serializing accumulators.
+    const PERSIST: AllowedPersistOptions = AllowedPersistOptions::Invalid;
 }
 
 struct StructMacro {

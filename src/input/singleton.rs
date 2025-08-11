@@ -35,7 +35,7 @@ impl SingletonChoice for Singleton {
             0 => None,
 
             // SAFETY: Our u64 is derived from an ID and thus safe to convert back.
-            id => Some(unsafe { Id::from_bits(id) }),
+            id => Some(unsafe { Id::from_bits_unchecked(id) }),
         }
     }
 }
