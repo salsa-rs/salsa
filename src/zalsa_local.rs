@@ -250,7 +250,7 @@ impl ZalsaLocal {
             self.with_query_stack_unchecked_mut(|stack| {
                 stack
                     .last_mut()
-                    .is_some_and(|top_query| top_query.tracked_struct_ids().did_create(entity))
+                    .is_some_and(|top_query| top_query.tracked_struct_ids().is_active(entity))
             })
         }
     }

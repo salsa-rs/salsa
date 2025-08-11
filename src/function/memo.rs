@@ -326,13 +326,7 @@ where
             stale_output.remove_stale_output(zalsa, executor);
         }
 
-        for (identity, id) in self
-            .revisions
-            .tracked_struct_ids()
-            .iter()
-            .copied()
-            .flatten()
-        {
+        for (identity, id) in self.revisions.tracked_struct_ids().into_iter().flatten() {
             let key = DatabaseKeyIndex::new(identity.ingredient_index(), *id);
             key.remove_stale_output(zalsa, executor);
         }

@@ -76,13 +76,7 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
             self.backdate_if_appropriate(old_memo, database_key_index, &mut revisions, &value);
-            self.diff_outputs(
-                zalsa,
-                database_key_index,
-                old_memo,
-                &mut revisions,
-                Vec::new(),
-            );
+            self.diff_outputs(zalsa, database_key_index, old_memo, &revisions, Vec::new());
         }
 
         let memo = Memo {

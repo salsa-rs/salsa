@@ -228,10 +228,11 @@ impl Identity {
 }
 
 /// Stores the data that (almost) uniquely identifies a tracked struct.
-/// This includes the ingredient index of that struct type plus the hash of its untracked fields.
-/// This is mapped to a disambiguator -- a value that starts as 0 but increments each round,
-/// allowing for multiple tracked structs with the same hash and ingredient_index
-/// created within the query to each have a unique id.
+///
+/// This includes the ingredient index of that struct type plus the hash of its untracked
+/// fields. This is mapped to a disambiguator -- a value that starts as 0 but increments
+/// each round, allowing for multiple tracked structs with the same hash and `IngredientIndex`
+/// created within the query to each have a unique ID.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct IdentityHash {
     /// Index of the tracked struct ingredient.
@@ -241,71 +242,105 @@ pub struct IdentityHash {
     hash: u64,
 }
 
-/// A map from tracked struct keys (which include the hash + [Disambiguator]) to their
-/// final [Id].
+/// A map from tracked struct [`Identity`] to their final [`Id`].
 #[derive(Default, Debug)]
 pub(crate) struct IdentityMap {
-    // we use a hashtable here as our key contains its own hash (`Identity::hash`)
-    // so we do the hash wrangling ourselves
+    // We use a `HashTable` here as our key contains its own hash (`Identity::hash`),
+    // so we do the hash wrangling ourselves.
     table: hashbrown::HashTable<TrackedEntry>,
 }
 
 impl IdentityMap {
-    /// Seeds the identity map with the ids from a previous revision.
+    /// Seeds the identity map with the IDs from a previous revision.
     pub(crate) fn seed(&mut self, source: &[(Identity, Id)]) {
         self.table.clear();
         self.table
             .reserve(source.len(), |entry| entry.identity.hash);
 
-        for (key, id) in source {
-            self.insert_impl(*key, *id, false);
+        for &(key, id) in source {
+            self.insert_entry(key, id, false);
         }
     }
 
-    pub(crate) fn mark_all_recreated(&mut self) {
+    // Mark all tracked structs in the map as created by the current query.
+    pub(crate) fn mark_all_active(&mut self) {
         for entry in self.table.iter_mut() {
-            entry.create = true;
+            entry.active = true;
         }
     }
 
+    /// Insert a tracked struct identity into the map with the given ID.
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
-        self.insert_impl(key, id, true)
+        self.insert_entry(key, id, true)
     }
 
-    fn insert_impl(&mut self, key: Identity, id: Id, create: bool) -> Option<Id> {
+    fn insert_entry(&mut self, key: Identity, id: Id, active: bool) -> Option<Id> {
         let entry = self.table.entry(
             key.hash,
             |entry| entry.identity == key,
             |entry| entry.identity.hash,
         );
+
         match entry {
             Entry::Vacant(entry) => {
                 entry.insert(TrackedEntry {
                     identity: key,
                     id,
-                    create,
+                    active,
                 });
+
                 None
             }
-            Entry::Occupied(mut occupied) => {
-                let tracked = occupied.get_mut();
-                tracked.create = create;
+            Entry::Occupied(mut entry) => {
+                let tracked = entry.get_mut();
+                tracked.active = active;
 
                 Some(std::mem::replace(&mut tracked.id, id))
             }
         }
     }
 
-    /// Re-uses an existing identity if it already exists in this
-    /// [`IdentitiyMap`]. Returns the existing id or `None` if
-    /// no id for the given identity exists.
+    /// Reuses an existing identity if it already exists in the map, marking it as active.
+    ///
+    /// Returns the existing ID, or `None` if no ID for the given identity exists.
     pub(crate) fn reuse(&mut self, key: &Identity) -> Option<Id> {
         self.table
             .find_mut(key.hash, |entry| key == &entry.identity)
             .map(|entry| {
-                entry.create = true;
+                entry.active = true;
                 entry.id
             })
+    }
+
+    /// Returns `true` if the given tracked struct key was created in the current query execution.
+    pub(crate) fn is_active(&self, key: DatabaseKeyIndex) -> bool {
+        self.table.iter().any(|entry| {
+            entry.id == key.key_index()
+                && entry.identity.ingredient_index() == key.ingredient_index()
+        })
+    }
+
+    /// Drains the [`IdentityMap`] into a tuple of active and stale tracked structs.
+    ///
+    /// The first entry contains the identity and IDs of any tracked structs that were
+    /// created by the current execution of the query, while the second entry contains any
+    /// tracked structs that were created in a previous execution but not the current one.
+    pub(crate) fn drain(&mut self) -> (ThinVec<(Identity, Id)>, Vec<DatabaseKeyIndex>) {
+        let mut stale = Vec::new();
+        let mut active = ThinVec::with_capacity(self.table.len());
+
+        for entry in self.table.drain() {
+            if entry.active {
+                active.push((entry.identity, entry.id));
+            } else {
+                stale.push(DatabaseKeyIndex::new(
+                    entry.identity.ingredient_index(),
+                    entry.id,
+                ));
+            }
+        }
+
+        (active, stale)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -315,47 +350,23 @@ impl IdentityMap {
     pub(crate) fn clear(&mut self) {
         self.table.clear()
     }
-
-    pub(crate) fn did_create(&self, key: DatabaseKeyIndex) -> bool {
-        self.table.iter().any(|entry| {
-            entry.id == key.key_index()
-                && entry.identity.ingredient_index() == key.ingredient_index()
-        })
-    }
-
-    /// Drains the [`IdentityMap`] and returns a tuple where the first entry
-    /// are the identies and ids of the tracked struct that were created in this
-    /// revision, and the second entry are the tracked struct keys that were
-    /// created in a previous revision but not in the current one and that should be
-    /// collected.
-    pub(crate) fn drain(&mut self) -> (ThinVec<(Identity, Id)>, Vec<DatabaseKeyIndex>) {
-        let mut removed = Vec::new();
-        let mut recreated = ThinVec::with_capacity(self.table.len());
-
-        for entry in self.table.drain() {
-            if entry.create {
-                recreated.push((entry.identity, entry.id));
-            } else {
-                removed.push(DatabaseKeyIndex::new(
-                    entry.identity.ingredient_index(),
-                    entry.id,
-                ));
-            }
-        }
-
-        (recreated, removed)
-    }
 }
 
+/// A tracked struct entry stored in an [`IdentityMap`].
 #[derive(Debug)]
 struct TrackedEntry {
+    /// The identity of the tracked struct.
     identity: Identity,
+
+    /// The current ID of the tracked struct.
     id: Id,
-    /// Whether this tracked struct was created or re-created
-    /// in this revision. Entries where `create` is false
-    /// are for tracked structs that were created in a previous
-    /// revision, but that are now no longer used (they can be collected).
-    create: bool,
+
+    /// Whether or not this tracked struct was created by the current query.
+    ///
+    /// Entries where `active` is `false` represent tracked structs that were created
+    /// by a previous execution of the query, but not in the current one, and hence can
+    /// be collected.
+    active: bool,
 }
 
 // ANCHOR: ValueStruct

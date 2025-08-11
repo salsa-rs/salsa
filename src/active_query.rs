@@ -82,8 +82,8 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;
 
-        // Mark all tracked structs from the previous iteration as used.
-        self.tracked_struct_ids.mark_all_recreated();
+        // Mark all tracked structs from the previous iteration as active.
+        self.tracked_struct_ids.mark_all_active();
     }
 
     pub(super) fn add_read(
@@ -212,12 +212,12 @@ impl ActiveQuery {
         #[cfg(feature = "accumulator")]
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
         let verified_final = cycle_heads.is_empty();
-        let (tracked_struct_ids, removed_tracked_structs) = tracked_struct_ids.drain();
+        let (active_tracked_structs, stale_tracked_structs) = tracked_struct_ids.drain();
 
         let extra = QueryRevisionsExtra::new(
             #[cfg(feature = "accumulator")]
             mem::take(accumulated),
-            tracked_struct_ids,
+            active_tracked_structs,
             mem::take(cycle_heads),
             iteration_count,
         );
@@ -234,7 +234,7 @@ impl ActiveQuery {
 
         CompletedQuery {
             revisions,
-            removed_tracked_structs,
+            stale_tracked_structs,
         }
     }
 
@@ -401,9 +401,14 @@ impl QueryStack {
     }
 }
 
+/// The state of a completed query.
 pub(crate) struct CompletedQuery {
+    /// Inputs and outputs accumulated during query execution.
     pub(crate) revisions: QueryRevisions,
-    pub(crate) removed_tracked_structs: Vec<DatabaseKeyIndex>,
+
+    /// The keys of any tracked structs that were created in a previous execution of the
+    /// query but not the current one, and should be marked as stale.
+    pub(crate) stale_tracked_structs: Vec<DatabaseKeyIndex>,
 }
 
 impl std::ops::Deref for CompletedQuery {

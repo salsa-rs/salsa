@@ -40,7 +40,7 @@ where
         });
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
-        let (new_value, mut completd_query) = match C::CYCLE_STRATEGY {
+        let (new_value, mut completed_query) = match C::CYCLE_STRATEGY {
             CycleRecoveryStrategy::Panic => {
                 Self::execute_query(db, zalsa, active_query, opt_old_memo, id)
             }
@@ -101,7 +101,7 @@ where
             self.backdate_if_appropriate(
                 old_memo,
                 database_key_index,
-                &mut completd_query,
+                &mut completed_query,
                 &new_value,
             );
 
@@ -111,8 +111,8 @@ where
                 zalsa,
                 database_key_index,
                 old_memo,
-                &mut completd_query.revisions,
-                completd_query.removed_tracked_structs,
+                &completed_query.revisions,
+                completed_query.stale_tracked_structs,
             );
         }
         self.insert_memo(
@@ -121,7 +121,7 @@ where
             Memo::new(
                 Some(new_value),
                 zalsa.current_revision(),
-                completd_query.revisions,
+                completed_query.revisions,
             ),
             memo_ingredient_index,
         )
