@@ -330,22 +330,58 @@ macro_rules! setup_interned_struct {
                         )
                     }
                 )*
+            }
 
-                /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
-                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    $zalsa::with_attached_database(|db| {
-                        let zalsa = db.zalsa();
-                        let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
-                        let mut f = f.debug_struct(stringify!($Struct));
-                        $(
-                            let f = f.field(stringify!($field_id), &fields.$field_index);
-                        )*
-                        f.finish()
-                    }).unwrap_or_else(|| {
-                        f.debug_tuple(stringify!($Struct))
-                            .field(&$zalsa::AsId::as_id(&this))
-                            .finish()
-                    })
+            // Duplication can be dropped here once we no longer allow the `no_lifetime` hack
+            $zalsa::macro_if! {
+                iftt ($($db_lt_arg)?) {
+                    impl $Struct<'_> {
+                        /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
+                        pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+                        where
+                            // rustc rejects trivial bounds, but it cannot see through higher-ranked bounds
+                            // with its check :^)
+                            $(for<$db_lt> $field_ty: std::fmt::Debug),*
+                        {
+                            $zalsa::with_attached_database(|db| {
+                                let zalsa = db.zalsa();
+                                let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
+                                let mut f = f.debug_struct(stringify!($Struct));
+                                $(
+                                    let f = f.field(stringify!($field_id), &fields.$field_index);
+                                )*
+                                f.finish()
+                            }).unwrap_or_else(|| {
+                                f.debug_tuple(stringify!($Struct))
+                                    .field(&$zalsa::AsId::as_id(&this))
+                                    .finish()
+                            })
+                        }
+                    }
+                } else {
+                    impl $Struct {
+                        /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
+                        pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+                        where
+                            // rustc rejects trivial bounds, but it cannot see through higher-ranked bounds
+                            // with its check :^)
+                            $(for<$db_lt> $field_ty: std::fmt::Debug),*
+                        {
+                            $zalsa::with_attached_database(|db| {
+                                let zalsa = db.zalsa();
+                                let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
+                                let mut f = f.debug_struct(stringify!($Struct));
+                                $(
+                                    let f = f.field(stringify!($field_id), &fields.$field_index);
+                                )*
+                                f.finish()
+                            }).unwrap_or_else(|| {
+                                f.debug_tuple(stringify!($Struct))
+                                    .field(&$zalsa::AsId::as_id(&this))
+                                    .finish()
+                            })
+                        }
+                    }
                 }
             }
         };

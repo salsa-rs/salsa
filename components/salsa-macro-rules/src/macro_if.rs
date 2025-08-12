@@ -22,4 +22,12 @@ macro_rules! macro_if {
     (if0 $n:literal { $($t:tt)* } else { $($f:tt)*}) => {
         $($f)*
     };
+
+    (iftt () { $($t:tt)* } else { $($f:tt)*}) => {
+        $($f)*
+    };
+
+    (iftt ($($tt:tt)+) { $($t:tt)* } else { $($f:tt)*}) => {
+        $($t)*
+    };
 }
