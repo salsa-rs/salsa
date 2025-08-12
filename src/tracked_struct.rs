@@ -314,11 +314,13 @@ impl IdentityMap {
 
     /// Returns `true` if the given tracked struct key was created in the current query execution.
     pub(crate) fn is_active(&self, key: DatabaseKeyIndex) -> bool {
-        self.table.iter().any(|entry| {
-            entry.id == key.key_index()
-                && entry.identity.ingredient_index() == key.ingredient_index()
-                && entry.active
-        })
+        self.table
+            .iter()
+            .find(|entry| {
+                entry.id == key.key_index()
+                    && entry.identity.ingredient_index() == key.ingredient_index()
+            })
+            .is_some_and(|entry| entry.active)
     }
 
     /// Drains the [`IdentityMap`] into a tuple of active and stale tracked structs.
