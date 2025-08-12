@@ -1,63 +1,50 @@
+use crate::active_query::CompletedQuery;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
-use crate::zalsa_local::{output_edges, QueryOriginRef, QueryRevisions};
-use crate::{DatabaseKeyIndex, Event, EventKind, Id};
+use crate::zalsa_local::{output_edges, QueryOriginRef};
+use crate::{DatabaseKeyIndex, Event, EventKind};
 
 impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    /// Compute the old and new outputs and invoke `remove_stale_output`
-    /// for each output that was generated before but is not generated now.
-    ///
-    /// This function takes a `&mut` reference to `revisions` to remove outputs
-    /// that no longer exist in this revision from [`QueryRevisions::tracked_struct_ids`].
+    /// Compute the old and new outputs and invoke `remove_stale_output` for each output that
+    /// was generated before but is not generated now.
     pub(super) fn diff_outputs(
         &self,
         zalsa: &Zalsa,
         key: DatabaseKeyIndex,
         old_memo: &Memo<'_, C>,
-        revisions: &mut QueryRevisions,
+        completed_query: &CompletedQuery,
     ) {
         let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
             old_memo.revisions.origin.as_ref()
         else {
             return;
         };
-        // Iterate over the outputs of the `old_memo` and put them into a hashset
-        //
-        // Ignore key_generation here, because we use the same tracked struct allocation for
-        // all generations with the same key_index and can't report it as stale
-        let mut old_outputs: FxIndexSet<_> = output_edges(edges)
-            .map(|a| (a.ingredient_index(), a.key_index().index()))
-            .collect();
 
-        if old_outputs.is_empty() {
+        // Note that tracked structs are not stored as direct query outputs, but they are still outputs
+        // that need to be reported as stale.
+        for output in &completed_query.stale_tracked_structs {
+            Self::report_stale_output(zalsa, key, *output);
+        }
+
+        let mut stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
+
+        if stale_outputs.is_empty() {
             return;
         }
 
-        // Iterate over the outputs of the current query
-        // and remove elements from `old_outputs` when we find them
-        for new_output in revisions.origin.as_ref().outputs() {
-            old_outputs.swap_remove(&(
-                new_output.ingredient_index(),
-                new_output.key_index().index(),
-            ));
+        // Preserve any outputs that were recreated in the current revision.
+        for new_output in completed_query.revisions.origin.as_ref().outputs() {
+            stale_outputs.swap_remove(&new_output);
         }
 
-        // Remove the outputs that are no longer present in the current revision
-        // to prevent that the next revision is seeded with an id mapping that no longer exists.
-        if let Some(tracked_struct_ids) = revisions.tracked_struct_ids_mut() {
-            tracked_struct_ids
-                .retain(|(k, value)| !old_outputs.contains(&(k.ingredient_index(), value.index())));
-        };
-
-        for (ingredient_index, key_index) in old_outputs {
-            // SAFETY: key_index acquired from valid output
-            let id = unsafe { Id::from_index(key_index) };
-            Self::report_stale_output(zalsa, key, DatabaseKeyIndex::new(ingredient_index, id));
+        // Any outputs that were created in a previous revision but not the current one are stale.
+        for output in stale_outputs {
+            Self::report_stale_output(zalsa, key, output);
         }
     }
 
@@ -68,6 +55,7 @@ where
                 output_key: output,
             })
         });
+
         output.remove_stale_output(zalsa, key);
     }
 }

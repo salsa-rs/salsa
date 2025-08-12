@@ -1,5 +1,6 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::active_query::CompletedQuery;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::revision::AtomicRevision;
@@ -39,7 +40,7 @@ where
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
         let database_key_index = <C::Input<'db>>::database_key_index(zalsa, key);
-        if !zalsa_local.is_output_of_active_query(database_key_index) {
+        if !zalsa_local.is_tracked_struct_of_active_query(database_key_index) {
             panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
 
@@ -63,26 +64,34 @@ where
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
 
         let revision = zalsa.current_revision();
-        let mut revisions = QueryRevisions {
-            changed_at: current_deps.changed_at,
-            durability: current_deps.durability,
-            origin: QueryOrigin::assigned(active_query_key),
-            #[cfg(feature = "accumulator")]
-            accumulated_inputs: Default::default(),
-            verified_final: AtomicBool::new(true),
-            extra: QueryRevisionsExtra::default(),
+        let mut completed_query = CompletedQuery {
+            revisions: QueryRevisions {
+                changed_at: current_deps.changed_at,
+                durability: current_deps.durability,
+                origin: QueryOrigin::assigned(active_query_key),
+                #[cfg(feature = "accumulator")]
+                accumulated_inputs: Default::default(),
+                verified_final: AtomicBool::new(true),
+                extra: QueryRevisionsExtra::default(),
+            },
+            stale_tracked_structs: Vec::new(),
         };
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
-            self.backdate_if_appropriate(old_memo, database_key_index, &mut revisions, &value);
-            self.diff_outputs(zalsa, database_key_index, old_memo, &mut revisions);
+            self.backdate_if_appropriate(
+                old_memo,
+                database_key_index,
+                &mut completed_query.revisions,
+                &value,
+            );
+            self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
 
         let memo = Memo {
             value: Some(value),
             verified_at: AtomicRevision::from(revision),
-            revisions,
+            revisions: completed_query.revisions,
         };
 
         crate::tracing::debug!(

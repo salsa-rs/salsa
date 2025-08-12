@@ -297,14 +297,20 @@ where
                 let active_query =
                     zalsa_local.push_query(database_key_index, IterationCount::initial());
                 let fallback_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
-                let mut revisions = active_query.pop();
-                revisions.set_cycle_heads(CycleHeads::initial(database_key_index));
+                let mut completed_query = active_query.pop();
+                completed_query
+                    .revisions
+                    .set_cycle_heads(CycleHeads::initial(database_key_index));
                 // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
-                *revisions.verified_final.get_mut() = false;
+                *completed_query.revisions.verified_final.get_mut() = false;
                 self.insert_memo(
                     zalsa,
                     id,
-                    Memo::new(Some(fallback_value), zalsa.current_revision(), revisions),
+                    Memo::new(
+                        Some(fallback_value),
+                        zalsa.current_revision(),
+                        completed_query.revisions,
+                    ),
                     memo_ingredient_index,
                 )
             }

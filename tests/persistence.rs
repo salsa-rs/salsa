@@ -246,15 +246,6 @@ fn everything() {
                           },
                           "ingredient_index": 1
                         }
-                      },
-                      {
-                        "key": {
-                          "key_index": {
-                            "index": 3073,
-                            "generation": 0
-                          },
-                          "ingredient_index": 2147483652
-                        }
                       }
                     ]
                   },
