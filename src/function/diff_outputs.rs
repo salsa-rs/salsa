@@ -17,7 +17,7 @@ where
         key: DatabaseKeyIndex,
         old_memo: &Memo<'_, C>,
         revisions: &QueryRevisions,
-        mut stale_tracked_structs: Vec<DatabaseKeyIndex>,
+        stale_tracked_structs: Vec<DatabaseKeyIndex>,
     ) {
         let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
             old_memo.revisions.origin.as_ref()
@@ -25,24 +25,45 @@ where
             return;
         };
 
-        let mut stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
+        let stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
 
         if stale_tracked_structs.is_empty() && stale_outputs.is_empty() {
             return;
         }
 
-        // Removing a stale tracked struct ID shows up in the event logs, so make sure
-        // the order is stable here.
-        stale_tracked_structs.sort_unstable_by(|a, b| {
-            a.ingredient_index()
-                .cmp(&b.ingredient_index())
-                .then(a.key_index().cmp(&b.key_index()))
-        });
+        Self::diff_outputs_cold(
+            &self,
+            zalsa,
+            key,
+            revisions,
+            stale_outputs,
+            stale_tracked_structs,
+        );
+    }
 
-        // Note that tracked structs are not stored as direct query outputs, but they are still outputs
-        // that need to be reported as stale.
-        for output in stale_tracked_structs {
-            Self::report_stale_output(zalsa, key, output);
+    #[cold]
+    fn diff_outputs_cold(
+        &self,
+        zalsa: &Zalsa,
+        key: DatabaseKeyIndex,
+        revisions: &QueryRevisions,
+        mut stale_outputs: FxIndexSet<DatabaseKeyIndex>,
+        mut stale_tracked_structs: Vec<DatabaseKeyIndex>,
+    ) {
+        if !stale_tracked_structs.is_empty() {
+            // Removing a stale tracked struct ID shows up in the event logs, so make sure
+            // the order is stable here.
+            stale_tracked_structs.sort_unstable_by(|a, b| {
+                a.ingredient_index()
+                    .cmp(&b.ingredient_index())
+                    .then(a.key_index().cmp(&b.key_index()))
+            });
+
+            // Note that tracked structs are not stored as direct query outputs, but they are still outputs
+            // that need to be reported as stale.
+            for output in stale_tracked_structs {
+                Self::report_stale_output(zalsa, key, output);
+            }
         }
 
         if stale_outputs.is_empty() {
