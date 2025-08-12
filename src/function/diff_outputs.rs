@@ -25,6 +25,12 @@ where
             return;
         };
 
+        let mut stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
+
+        if stale_tracked_structs.is_empty() && stale_outputs.is_empty() {
+            return;
+        }
+
         // Removing a stale tracked struct ID shows up in the event logs, so make sure
         // the order is stable here.
         stale_tracked_structs.sort_unstable_by(|a, b| {
@@ -39,7 +45,6 @@ where
             Self::report_stale_output(zalsa, key, output);
         }
 
-        let mut stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
         if stale_outputs.is_empty() {
             return;
         }
