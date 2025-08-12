@@ -347,6 +347,14 @@ impl IdentityMap {
             }
         }
 
+        // Removing a stale tracked struct ID shows up in the event logs, so make sure
+        // the order is stable here.
+        stale.sort_unstable_by(|a, b| {
+            a.ingredient_index()
+                .cmp(&b.ingredient_index())
+                .then(a.key_index().cmp(&b.key_index()))
+        });
+
         (active, stale)
     }
 

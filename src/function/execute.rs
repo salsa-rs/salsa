@@ -107,13 +107,7 @@ where
 
             // Diff the new outputs with the old, to discard any no-longer-emitted
             // outputs and update the tracked struct IDs for seeding the next revision.
-            self.diff_outputs(
-                zalsa,
-                database_key_index,
-                old_memo,
-                &completed_query.revisions,
-                completed_query.stale_tracked_structs,
-            );
+            self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
         self.insert_memo(
             zalsa,
