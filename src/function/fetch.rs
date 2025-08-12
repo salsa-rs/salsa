@@ -298,9 +298,11 @@ where
                     zalsa_local.push_query(database_key_index, IterationCount::initial());
                 let fallback_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                 let mut completed_query = active_query.pop();
-                completed_query.set_cycle_heads(CycleHeads::initial(database_key_index));
+                completed_query
+                    .revisions
+                    .set_cycle_heads(CycleHeads::initial(database_key_index));
                 // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
-                *completed_query.verified_final.get_mut() = false;
+                *completed_query.revisions.verified_final.get_mut() = false;
                 self.insert_memo(
                     zalsa,
                     id,

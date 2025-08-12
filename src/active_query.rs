@@ -411,20 +411,6 @@ pub(crate) struct CompletedQuery {
     pub(crate) stale_tracked_structs: Vec<DatabaseKeyIndex>,
 }
 
-impl std::ops::Deref for CompletedQuery {
-    type Target = QueryRevisions;
-
-    fn deref(&self) -> &Self::Target {
-        &self.revisions
-    }
-}
-
-impl std::ops::DerefMut for CompletedQuery {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.revisions
-    }
-}
-
 struct CapturedQuery {
     database_key_index: DatabaseKeyIndex,
     durability: Durability,

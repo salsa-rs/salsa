@@ -45,10 +45,10 @@ where
                 Self::execute_query(db, zalsa, active_query, opt_old_memo, id)
             }
             CycleRecoveryStrategy::FallbackImmediate => {
-                let (mut new_value, mut revisions) =
+                let (mut new_value, mut completed_query) =
                     Self::execute_query(db, zalsa, active_query, opt_old_memo, id);
 
-                if let Some(cycle_heads) = revisions.cycle_heads_mut() {
+                if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
                     if cycle_heads.contains(&database_key_index) {
                         // Ignore the computed value, leave the fallback value there.
@@ -74,14 +74,14 @@ where
                         .zalsa_local()
                         .push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
-                    revisions = active_query.pop();
+                    completed_query = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
                     // When verifying this, we will see we have fallback and mark ourselves verified.
-                    revisions.set_cycle_heads(cycle_heads);
-                    revisions.verified_final = AtomicBool::new(false);
+                    completed_query.revisions.set_cycle_heads(cycle_heads);
+                    completed_query.revisions.verified_final = AtomicBool::new(false);
                 }
 
-                (new_value, revisions)
+                (new_value, completed_query)
             }
             CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
                 db,
@@ -101,7 +101,7 @@ where
             self.backdate_if_appropriate(
                 old_memo,
                 database_key_index,
-                &mut completed_query,
+                &mut completed_query.revisions,
                 &new_value,
             );
 
@@ -152,6 +152,7 @@ where
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if let Some(cycle_heads) = completed_query
+                .revisions
                 .cycle_heads_mut()
                 .filter(|cycle_heads| cycle_heads.contains(&database_key_index))
             {
@@ -227,7 +228,9 @@ where
                         })
                     });
                     cycle_heads.update_iteration_count(database_key_index, iteration_count);
-                    completed_query.update_iteration_count(iteration_count);
+                    completed_query
+                        .revisions
+                        .update_iteration_count(iteration_count);
                     crate::tracing::debug!(
                         "{database_key_index:?}: execute: iterate again, revisions: {revisions:#?}",
                         revisions = &completed_query.revisions
@@ -257,6 +260,7 @@ where
                 if cycle_heads.is_empty() {
                     // If there are no more cycle heads, we can mark this as verified.
                     completed_query
+                        .revisions
                         .verified_final
                         .store(true, Ordering::Relaxed);
                 }
