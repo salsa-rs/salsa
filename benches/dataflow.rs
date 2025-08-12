@@ -8,8 +8,6 @@ use std::iter::IntoIterator;
 use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
 use salsa::{CycleRecoveryAction, Database as Db, Setter};
 
-include!("shims/global_alloc_overwrite.rs");
-
 /// A Use of a symbol.
 #[salsa::input]
 struct Use {
