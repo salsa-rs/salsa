@@ -55,7 +55,7 @@ where
         };
 
         for (ingredient_index, key_index) in old_outputs {
-            // SAFETY: key_index acquired from valid output
+            // SAFETY: key_index acquired from valid output (no op change)
             let id = unsafe { Id::from_index(key_index) };
             Self::report_stale_output(zalsa, key, DatabaseKeyIndex::new(ingredient_index, id));
         }
