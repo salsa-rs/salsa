@@ -23,7 +23,7 @@ parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
 smallvec = "1"
-thin-vec = { version = "0.2.14", features = ["serde"] }
+thin-vec = { version = "0.2.14" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # Automatic ingredient registration.
@@ -44,7 +44,12 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
 inventory = ["dep:inventory"]
-persistence = ["dep:serde", "dep:erased-serde", "salsa-macros/persistence"]
+persistence = [
+    "dep:serde",
+    "dep:erased-serde",
+    "salsa-macros/persistence",
+    "thin-vec/serde",
+]
 shuttle = ["dep:shuttle"]
 accumulator = ["salsa-macro-rules/accumulator"]
 macros = ["dep:salsa-macros"]
