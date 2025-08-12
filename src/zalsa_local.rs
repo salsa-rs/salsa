@@ -527,7 +527,7 @@ impl QueryRevisionsExtra {
         {
             None
         } else {
-            tracked_struct_ids.shrink_to_fit();
+            // tracked_struct_ids.shrink_to_fit();
 
             Some(Box::new(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
