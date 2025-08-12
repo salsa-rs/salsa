@@ -329,6 +329,10 @@ impl IdentityMap {
     /// created by the current execution of the query, while the second entry contains any
     /// tracked structs that were created in a previous execution but not the current one.
     pub(crate) fn drain(&mut self) -> (ThinVec<(Identity, Id)>, Vec<DatabaseKeyIndex>) {
+        if self.table.is_empty() {
+            return (ThinVec::new(), Vec::new());
+        }
+
         let mut stale = Vec::new();
         let mut active = ThinVec::with_capacity(self.table.len());
 

@@ -31,19 +31,11 @@ where
             return;
         }
 
-        Self::diff_outputs_cold(
-            &self,
-            zalsa,
-            key,
-            revisions,
-            stale_outputs,
-            stale_tracked_structs,
-        );
+        Self::diff_outputs_cold(zalsa, key, revisions, stale_outputs, stale_tracked_structs);
     }
 
     #[cold]
     fn diff_outputs_cold(
-        &self,
         zalsa: &Zalsa,
         key: DatabaseKeyIndex,
         revisions: &QueryRevisions,

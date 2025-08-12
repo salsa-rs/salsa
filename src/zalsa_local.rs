@@ -638,7 +638,7 @@ impl QueryRevisions {
     pub(crate) fn accumulated(&self) -> Option<&AccumulatedMap> {
         self.extra
             .0
-            .as_ref()
+            .as_deref()
             .map(|extra| &extra.accumulated)
             .filter(|map| !map.is_empty())
     }
