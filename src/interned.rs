@@ -1492,7 +1492,8 @@ mod persistence {
                 };
 
                 assert_eq!(
-                    allocated_id, id,
+                    allocated_id.index(),
+                    id.index(),
                     "values are serialized in allocation order"
                 );
 
