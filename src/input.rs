@@ -9,6 +9,7 @@ pub mod singleton;
 use input_field::FieldIngredientImpl;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
@@ -278,7 +279,12 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("nothing should ever depend on an input struct directly")
     }
 
-    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, _edge: QueryEdge) -> Vec<QueryEdge> {
+    fn collect_minimum_serialized_edges(
+        &self,
+        _zalsa: &Zalsa,
+        _edge: QueryEdge,
+        _serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
         panic!("nothing should ever depend on an input struct directly")
     }
 

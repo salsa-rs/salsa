@@ -6,6 +6,7 @@ use crate::cycle::{
 };
 use crate::database::RawDatabase;
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -55,14 +56,19 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult;
 
-    /// Returns the minimum edges necessary to serialize a given dependency edge on this ingredient,
+    /// Collects the minimum edges necessary to serialize a given dependency edge on this ingredient,
     /// without necessarily serializing the dependency edge itself.
     ///
     /// This generally only returns any transitive input dependencies, i.e. the leaves of the dependency
     /// tree, as most other fine-grained dependencies are covered by the inputs.
     ///
     /// Note that any ingredients returned by this function must be persistable.
-    fn minimum_serialized_edges(&self, zalsa: &Zalsa, edge: QueryEdge) -> Vec<QueryEdge>;
+    fn collect_minimum_serialized_edges(
+        &self,
+        zalsa: &Zalsa,
+        edge: QueryEdge,
+        serialized_edges: &mut FxIndexSet<QueryEdge>,
+    );
 
     /// Returns information about the current provisional status of `input`.
     ///

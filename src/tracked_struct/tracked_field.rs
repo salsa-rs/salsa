@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::ingredient::Ingredient;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -68,10 +69,14 @@ where
         VerifyResult::changed_if(field_changed_at > revision)
     }
 
-    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, _edge: QueryEdge) -> Vec<QueryEdge> {
-        // Tracked structs do not have transitive dependencies, and their dependencies are covered by
+    fn collect_minimum_serialized_edges(
+        &self,
+        _zalsa: &Zalsa,
+        _edge: QueryEdge,
+        _serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
+        // Tracked fields do not have transitive dependencies, and their dependencies are covered by
         // the base inputs.
-        Vec::new()
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

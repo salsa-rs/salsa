@@ -12,6 +12,7 @@ use rustc_hash::FxBuildHasher;
 
 use crate::durability::Durability;
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
 use crate::plumbing::{self, Jar, ZalsaLocal};
@@ -897,18 +898,22 @@ where
         VerifyResult::unchanged()
     }
 
-    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, edge: QueryEdge) -> Vec<QueryEdge> {
+    fn collect_minimum_serialized_edges(
+        &self,
+        _zalsa: &Zalsa,
+        edge: QueryEdge,
+        serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
         if C::PERSIST {
             // If the interned struct is being persisted, it may be reachable through transitive queries.
             // Additionally, interned struct dependencies are impure in that garbage collection can
             // invalidate a dependency without a base input necessarily being updated. Thus, we must
             // preserve the transitive dependency on the interned struct.
-            Vec::from([edge])
-        } else {
-            // The dependency is covered by the base inputs, as the interned struct itself is
-            // not being persisted.
-            Vec::new()
+            serialized_edges.insert(edge);
         }
+
+        // Otherwise, the dependency is covered by the base inputs, as the interned struct itself is
+        // not being persisted.
     }
 
     fn debug_name(&self) -> &'static str {

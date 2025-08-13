@@ -12,6 +12,7 @@ use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
@@ -943,7 +944,19 @@ where
         panic!("nothing should ever depend on a tracked struct directly")
     }
 
-    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, _edge: QueryEdge) -> Vec<QueryEdge> {
+    fn collect_minimum_serialized_edges(
+        &self,
+        _zalsa: &Zalsa,
+        _edge: QueryEdge,
+        _serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
+        // Note that tracked structs are referenced by the identity map, but that
+        // only matters if we are serializing the creating query, in which case
+        // the dependency edge will be serialized directly.
+        //
+        // TODO: We could flatten the identity map here if the tracked struct is being
+        // persisted, in order to more aggressively preserve the tracked struct IDs if
+        // the transitive query is re-executed.
         panic!("nothing should ever depend on a tracked struct directly")
     }
 

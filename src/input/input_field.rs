@@ -2,6 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
@@ -62,14 +63,19 @@ where
         VerifyResult::changed_if(value.revisions[self.field_index] > revision)
     }
 
-    fn minimum_serialized_edges(&self, _zalsa: &Zalsa, edge: QueryEdge) -> Vec<QueryEdge> {
+    fn collect_minimum_serialized_edges(
+        &self,
+        _zalsa: &Zalsa,
+        edge: QueryEdge,
+        serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
         assert!(
             C::PERSIST,
             "the inputs of a persistable tracked function must be persistable"
         );
 
         // Input dependencies are the leaves of the minimum dependency tree.
-        Vec::from([edge])
+        serialized_edges.insert(edge);
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -1181,7 +1181,8 @@ pub(crate) mod persistence {
                 durability,
                 ref verified_final,
                 ref extra,
-                accumulated_inputs: _, // TODO: Support serializing accumulators
+                #[cfg(feature = "accumulator")]
+                    accumulated_inputs: _, // TODO: Support serializing accumulators
                 origin: _,
             } = *self;
 

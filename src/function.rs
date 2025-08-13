@@ -13,6 +13,7 @@ use crate::cycle::{
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
+use crate::hash::FxIndexSet;
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
@@ -288,26 +289,27 @@ where
         self.maybe_changed_after(db, input, revision, cycle_heads)
     }
 
-    fn minimum_serialized_edges(&self, zalsa: &Zalsa, edge: QueryEdge) -> Vec<QueryEdge> {
+    fn collect_minimum_serialized_edges(
+        &self,
+        zalsa: &Zalsa,
+        edge: QueryEdge,
+        serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
         let input = edge.key().key_index();
 
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
-            return Vec::new();
+            return;
         };
 
         let origin = memo.revisions.origin.as_ref();
 
         // Collect the minimum dependency tree.
-        origin
-            .edges()
-            .iter()
-            .flat_map(|&edge| {
-                let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
-                dependency.minimum_serialized_edges(zalsa, edge)
-            })
-            .collect()
+        for edge in origin.edges() {
+            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+            dependency.collect_minimum_serialized_edges(zalsa, *edge, serialized_edges)
+        }
     }
 
     /// Returns `final` only if the memo has the `verified_final` flag set and the cycle recovery strategy is not `FallbackImmediate`.
@@ -588,7 +590,7 @@ mod persistence {
                 flattened_edges.insert(edge);
             } else {
                 // Otherwise, serialize the minimum edges necessary to cover the dependency.
-                flattened_edges.extend(dependency.minimum_serialized_edges(zalsa, edge));
+                dependency.collect_minimum_serialized_edges(zalsa, edge, &mut flattened_edges);
             }
         }
 
