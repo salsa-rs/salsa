@@ -1,4 +1,4 @@
-use core::fmt;
+use std::fmt;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::zalsa::{IngredientIndex, Zalsa};

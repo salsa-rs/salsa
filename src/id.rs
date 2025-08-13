@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
 
 use crate::zalsa::Zalsa;
@@ -17,7 +17,7 @@ use crate::zalsa::Zalsa;
 ///
 /// As an end-user of `Salsa` you will generally not use `Id` directly,
 /// it is wrapped in new types.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Id {
     index: NonZeroU32,
@@ -123,6 +123,13 @@ impl Id {
     #[inline]
     pub const fn generation(self) -> u32 {
         self.generation
+    }
+}
+
+impl Hash for Id {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Convert to a `u64` to avoid dispatching multiple calls to `H::write`.
+        state.write_u64(self.as_bits());
     }
 }
 
