@@ -8,11 +8,13 @@ use std::panic::UnwindSafe;
 use accumulated::{Accumulated, AnyAccumulated};
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa_local::QueryEdge;
 use crate::{Database, Id, Revision};
 
 mod accumulated;
@@ -107,6 +109,15 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _revision: Revision,
         _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
+        panic!("nothing should ever depend on an accumulator directly")
+    }
+
+    fn collect_minimum_serialized_edges(
+        &self,
+        _zalsa: &Zalsa,
+        _edge: QueryEdge,
+        _serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
         panic!("nothing should ever depend on an accumulator directly")
     }
 

@@ -172,7 +172,7 @@ macro_rules! setup_tracked_fn {
                             line: line!(),
                         };
                         const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::",)? stringify!($fn_name), "::interned_arguments");
-                        const PERSIST: bool = true;
+                        const PERSIST: bool = $persist;
 
                         type Fields<$db_lt> = ($($interned_input_ty),*);
 

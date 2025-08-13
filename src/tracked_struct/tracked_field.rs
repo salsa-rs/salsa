@@ -1,11 +1,13 @@
 use std::marker::PhantomData;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::hash::FxIndexSet;
 use crate::ingredient::Ingredient;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
-use crate::zalsa::{IngredientIndex, JarKind};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa_local::QueryEdge;
 use crate::Id;
 
 /// Created for each tracked struct.
@@ -67,6 +69,16 @@ where
         VerifyResult::changed_if(field_changed_at > revision)
     }
 
+    fn collect_minimum_serialized_edges(
+        &self,
+        _zalsa: &Zalsa,
+        _edge: QueryEdge,
+        _serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
+        // Tracked fields do not have transitive dependencies, and their dependencies are covered by
+        // the base inputs.
+    }
+
     fn fmt_index(&self, index: crate::Id, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             fmt,
@@ -91,6 +103,16 @@ where
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("tracked field does not allocate pages")
+    }
+
+    fn is_persistable(&self) -> bool {
+        // Tracked field dependencies are valid as long as the tracked struct is persistable.
+        C::PERSIST
+    }
+
+    fn should_serialize(&self, _zalsa: &Zalsa) -> bool {
+        // However, they are never serialized directly.
+        false
     }
 }
 

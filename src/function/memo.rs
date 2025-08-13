@@ -359,12 +359,36 @@ mod persistence {
     use crate::function::memo::Memo;
     use crate::function::Configuration;
     use crate::revision::AtomicRevision;
-    use crate::zalsa_local::QueryRevisions;
+    use crate::zalsa_local::persistence::MappedQueryRevisions;
+    use crate::zalsa_local::{QueryOrigin, QueryRevisions};
 
     use serde::ser::SerializeStruct;
     use serde::Deserialize;
 
-    impl<C> serde::Serialize for Memo<'_, C>
+    /// A reference to the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
+    pub(crate) struct MappedMemo<'memo, 'db, C: Configuration> {
+        value: Option<&'memo C::Output<'db>>,
+        verified_at: AtomicRevision,
+        revisions: MappedQueryRevisions<'memo>,
+    }
+
+    impl<'db, C: Configuration> Memo<'db, C> {
+        pub(crate) fn with_origin(&self, origin: QueryOrigin) -> MappedMemo<'_, 'db, C> {
+            let Memo {
+                ref verified_at,
+                ref value,
+                ref revisions,
+            } = *self;
+
+            MappedMemo {
+                value: value.as_ref(),
+                verified_at: AtomicRevision::from(verified_at.load()),
+                revisions: revisions.with_origin(origin),
+            }
+        }
+    }
+
+    impl<C> serde::Serialize for MappedMemo<'_, '_, C>
     where
         C: Configuration,
     {
@@ -386,13 +410,15 @@ mod persistence {
                 }
             }
 
-            let Memo {
+            let MappedMemo {
                 value,
                 verified_at,
                 revisions,
             } = self;
 
-            let value = value.as_ref().expect("attempted to serialize empty memo");
+            let value = value.expect(
+                "attempted to serialize memo where `Memo::should_serialize` returned `false`",
+            );
 
             let mut s = serializer.serialize_struct("Memo", 3)?;
             s.serialize_field("value", &SerializeValue::<C>(value))?;

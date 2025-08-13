@@ -139,6 +139,7 @@ impl AtomicRevision {
 pub(crate) struct OptionalAtomicRevision {
     data: AtomicUsize,
 }
+
 #[cfg(feature = "persistence")]
 impl serde::Serialize for OptionalAtomicRevision {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

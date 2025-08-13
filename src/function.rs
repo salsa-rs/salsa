@@ -13,6 +13,7 @@ use crate::cycle::{
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
+use crate::hash::FxIndexSet;
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
@@ -22,7 +23,7 @@ use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::QueryOriginRef;
+use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -277,7 +278,7 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        _zalsa: &crate::zalsa::Zalsa,
+        _zalsa: &Zalsa,
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
@@ -286,6 +287,29 @@ where
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision, cycle_heads)
+    }
+
+    fn collect_minimum_serialized_edges(
+        &self,
+        zalsa: &Zalsa,
+        edge: QueryEdge,
+        serialized_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
+        let input = edge.key().key_index();
+
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return;
+        };
+
+        let origin = memo.revisions.origin.as_ref();
+
+        // Collect the minimum dependency tree.
+        for edge in origin.edges() {
+            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+            dependency.collect_minimum_serialized_edges(zalsa, *edge, serialized_edges)
+        }
     }
 
     /// Returns `final` only if the memo has the `verified_final` flag set and the cycle recovery strategy is not `FallbackImmediate`.
@@ -470,8 +494,10 @@ where
 #[cfg(feature = "persistence")]
 mod persistence {
     use super::{Configuration, IngredientImpl, Memo};
-    use crate::plumbing::{Ingredient, MemoIngredientMap, SalsaStructInDb};
+    use crate::hash::FxIndexSet;
+    use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
     use crate::zalsa::Zalsa;
+    use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryOriginRef};
     use crate::{Id, IngredientIndex};
 
     use serde::de;
@@ -499,16 +525,6 @@ mod persistence {
 
             let mut map = serializer.serialize_map(None)?;
 
-            for struct_index in
-                <C::SalsaStruct<'_> as SalsaStructInDb>::lookup_ingredient_index(zalsa).iter()
-            {
-                let struct_ingredient = zalsa.lookup_ingredient(struct_index);
-                assert!(
-                    struct_ingredient.is_persistable(),
-                    "the input of a serialized tracked function must be serialized"
-                );
-            }
-
             for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
                 let memo_ingredient_index = ingredient
                     .memo_ingredient_indices
@@ -521,18 +537,30 @@ mod persistence {
                 );
 
                 if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
-                    for edge in memo.revisions.origin.as_ref().edges() {
-                        let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+                    // Flatten the dependencies of this query down to the base inputs.
+                    let flattened_origin = match memo.revisions.origin.as_ref() {
+                        QueryOriginRef::Derived(edges) => {
+                            QueryOrigin::derived(flatten_edges(zalsa, edges))
+                        }
+                        QueryOriginRef::DerivedUntracked(edges) => {
+                            QueryOrigin::derived_untracked(flatten_edges(zalsa, edges))
+                        }
+                        QueryOriginRef::Assigned(key) => {
+                            let dependency = zalsa.lookup_ingredient(key.ingredient_index());
+                            assert!(
+                                dependency.is_persistable(),
+                                "specified query `{}` must be persistable",
+                                dependency.debug_name()
+                            );
 
-                        // TODO: This is not strictly necessary, we only need the transitive input
-                        // dependencies of this query to serialize a valid memo.
-                        assert!(
-                            dependency.is_persistable(),
-                            "attempted to serialize query `{}`, but dependency `{}` is not persistable",
-                            ingredient.debug_name(),
-                            dependency.debug_name()
-                        );
-                    }
+                            QueryOrigin::assigned(key)
+                        }
+                        QueryOriginRef::FixpointInitial => unreachable!(
+                            "`should_serialize` returns `false` for provisional queries"
+                        ),
+                    };
+
+                    let memo = memo.with_origin(flattened_origin);
 
                     // TODO: Group structs by ingredient index into a nested map.
                     let key = format!(
@@ -541,12 +569,32 @@ mod persistence {
                         entry.key_index().as_bits()
                     );
 
-                    map.serialize_entry(&key, memo)?;
+                    map.serialize_entry(&key, &memo)?;
                 }
             }
 
             map.end()
         }
+    }
+
+    // Flatten the dependency edges before serialization.
+    fn flatten_edges(zalsa: &Zalsa, edges: &[QueryEdge]) -> FxIndexSet<QueryEdge> {
+        let mut flattened_edges =
+            FxIndexSet::with_capacity_and_hasher(edges.len(), Default::default());
+
+        for &edge in edges {
+            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+
+            if dependency.is_persistable() {
+                // If the dependency will be serialized, we can serialize the edge directly.
+                flattened_edges.insert(edge);
+            } else {
+                // Otherwise, serialize the minimum edges necessary to cover the dependency.
+                dependency.collect_minimum_serialized_edges(zalsa, edge, &mut flattened_edges);
+            }
+        }
+
+        flattened_edges
     }
 
     pub struct DeserializeIngredient<'db, C>

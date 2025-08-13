@@ -273,7 +273,7 @@ fn test_reuse_indirect() {
 
     #[salsa::tracked]
     fn intern_inner<'db>(db: &'db dyn Database, input: Input, value: usize) -> Interned<'db> {
-        let _i = input.field1(db);
+        let _i = input.field1(db); // Only low durability interned values are garbage collected.
         Interned::new(db, BadHash(value))
     }
 

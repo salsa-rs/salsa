@@ -18,7 +18,6 @@ use crate::zalsa::Zalsa;
 /// As an end-user of `Salsa` you will generally not use `Id` directly,
 /// it is wrapped in new types.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Id {
     index: NonZeroU32,
     generation: u32,
@@ -130,6 +129,26 @@ impl Hash for Id {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Convert to a `u64` to avoid dispatching multiple calls to `H::write`.
         state.write_u64(self.as_bits());
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for Id {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&self.as_bits(), serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for Id {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer).map(Self::from_bits)
     }
 }
 
