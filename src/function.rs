@@ -13,7 +13,7 @@ use crate::cycle::{
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
@@ -294,6 +294,7 @@ where
         zalsa: &Zalsa,
         edge: QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
+        visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         let input = edge.key().key_index();
 
@@ -305,10 +306,27 @@ where
 
         let origin = memo.revisions.origin.as_ref();
 
+        visited_edges.insert(edge);
+
         // Collect the minimum dependency tree.
         for edge in origin.edges() {
+            // Avoid forming cycles.
+            if visited_edges.contains(edge) {
+                continue;
+            }
+
+            // Avoid flattening edges that we're going to serialize directly.
+            if serialized_edges.contains(edge) {
+                continue;
+            }
+
             let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
-            dependency.collect_minimum_serialized_edges(zalsa, *edge, serialized_edges)
+            dependency.collect_minimum_serialized_edges(
+                zalsa,
+                *edge,
+                serialized_edges,
+                visited_edges,
+            )
         }
     }
 
@@ -494,7 +512,7 @@ where
 #[cfg(feature = "persistence")]
 mod persistence {
     use super::{Configuration, IngredientImpl, Memo};
-    use crate::hash::FxIndexSet;
+    use crate::hash::{FxHashSet, FxIndexSet};
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
     use crate::zalsa::Zalsa;
     use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryOriginRef};
@@ -579,6 +597,7 @@ mod persistence {
 
     // Flatten the dependency edges before serialization.
     fn flatten_edges(zalsa: &Zalsa, edges: &[QueryEdge]) -> FxIndexSet<QueryEdge> {
+        let mut visited_edges = FxHashSet::default();
         let mut flattened_edges =
             FxIndexSet::with_capacity_and_hasher(edges.len(), Default::default());
 
@@ -590,7 +609,12 @@ mod persistence {
                 flattened_edges.insert(edge);
             } else {
                 // Otherwise, serialize the minimum edges necessary to cover the dependency.
-                dependency.collect_minimum_serialized_edges(zalsa, edge, &mut flattened_edges);
+                dependency.collect_minimum_serialized_edges(
+                    zalsa,
+                    edge,
+                    &mut flattened_edges,
+                    &mut visited_edges,
+                );
             }
         }
 

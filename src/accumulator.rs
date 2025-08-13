@@ -8,7 +8,7 @@ use std::panic::UnwindSafe;
 use accumulated::{Accumulated, AnyAccumulated};
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::Arc;
@@ -117,6 +117,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _zalsa: &Zalsa,
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         panic!("nothing should ever depend on an accumulator directly")
     }

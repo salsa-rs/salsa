@@ -6,7 +6,7 @@ use crate::cycle::{
 };
 use crate::database::RawDatabase;
 use crate::function::{VerifyCycleHeads, VerifyResult};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -68,6 +68,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         zalsa: &Zalsa,
         edge: QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
+        visited_edges: &mut FxHashSet<QueryEdge>,
     );
 
     /// Returns information about the current provisional status of `input`.

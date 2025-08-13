@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::Ingredient;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -74,6 +74,7 @@ where
         _zalsa: &Zalsa,
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         // Tracked fields do not have transitive dependencies, and their dependencies are covered by
         // the base inputs.
