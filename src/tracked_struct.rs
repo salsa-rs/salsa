@@ -12,7 +12,7 @@ use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
@@ -949,6 +949,7 @@ where
         _zalsa: &Zalsa,
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         // Note that tracked structs are referenced by the identity map, but that
         // only matters if we are serializing the creating query, in which case

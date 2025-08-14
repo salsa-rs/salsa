@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
@@ -68,10 +68,12 @@ where
         _zalsa: &Zalsa,
         edge: QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         assert!(
             C::PERSIST,
-            "the inputs of a persistable tracked function must be persistable"
+            "the inputs of a persistable tracked function must be persistable: `{}` is not persistable",
+            C::DEBUG_NAME
         );
 
         // Input dependencies are the leaves of the minimum dependency tree.

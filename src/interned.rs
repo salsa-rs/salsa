@@ -12,7 +12,7 @@ use rustc_hash::FxBuildHasher;
 
 use crate::durability::Durability;
 use crate::function::{VerifyCycleHeads, VerifyResult};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
 use crate::plumbing::{self, Jar, ZalsaLocal};
@@ -903,6 +903,7 @@ where
         _zalsa: &Zalsa,
         edge: QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         if C::PERSIST {
             // If the interned struct is being persisted, it may be reachable through transitive queries.

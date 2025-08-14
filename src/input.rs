@@ -9,7 +9,7 @@ pub mod singleton;
 use input_field::FieldIngredientImpl;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
-use crate::hash::FxIndexSet;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
@@ -284,6 +284,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _zalsa: &Zalsa,
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         panic!("nothing should ever depend on an input struct directly")
     }
