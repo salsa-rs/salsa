@@ -1105,6 +1105,11 @@ impl ActiveQueryGuard<'_> {
             previous.origin.as_ref(),
             QueryOriginRef::DerivedUntracked(_)
         );
+        let tracked_ids = previous
+            .extra
+            .0
+            .as_ref()
+            .map(|extra| &*extra.tracked_struct_ids);
 
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
@@ -1112,7 +1117,7 @@ impl ActiveQueryGuard<'_> {
                 #[cfg(debug_assertions)]
                 assert_eq!(stack.len(), self.push_len);
                 let frame = stack.last_mut().unwrap();
-                frame.seed_iteration(durability, changed_at, edges, untracked_read);
+                frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
             })
         }
     }

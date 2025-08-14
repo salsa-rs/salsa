@@ -265,9 +265,9 @@ impl IdentityMap {
     }
 
     // Mark all tracked structs in the map as created by the current query.
-    pub(crate) fn mark_all_active(&mut self) {
-        for entry in self.table.iter_mut() {
-            entry.active = true;
+    pub(crate) fn mark_all_active(&mut self, items: impl IntoIterator<Item = (Identity, Id)>) {
+        for (key, id) in items {
+            self.insert_entry(key, id, true);
         }
     }
 
