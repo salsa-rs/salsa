@@ -77,7 +77,7 @@ impl ActiveQuery {
         changed_at: Revision,
         edges: &[QueryEdge],
         untracked_read: bool,
-        tracked_ids: Option<&[(Identity, Id)]>,
+        active_tracked_ids: &[(Identity, Id)],
     ) {
         assert!(self.input_outputs.is_empty());
 
@@ -87,10 +87,8 @@ impl ActiveQuery {
         self.untracked_read |= untracked_read;
 
         // Mark all tracked structs from the previous iteration as active.
-        if let Some(tracked_ids) = tracked_ids {
-            self.tracked_struct_ids
-                .mark_all_active(tracked_ids.iter().copied());
-        }
+        self.tracked_struct_ids
+            .mark_all_active(active_tracked_ids.iter().copied());
     }
 
     pub(super) fn add_read(
@@ -415,7 +413,7 @@ pub(crate) struct CompletedQuery {
 
     /// The keys of any tracked structs that were created in a previous execution of the
     /// query but not the current one, and should be marked as stale.
-    pub(crate) stale_tracked_structs: Vec<DatabaseKeyIndex>,
+    pub(crate) stale_tracked_structs: Vec<(Identity, Id)>,
 }
 
 struct CapturedQuery {

@@ -3,6 +3,7 @@ use crate::cycle::{CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::ActiveQueryGuard;
 use crate::{Event, EventKind, Id};
@@ -139,8 +140,18 @@ where
         // Initially it's set to None, because the initial provisional value is created lazily,
         // only when a cycle is actually encountered.
         let mut opt_last_provisional: Option<&Memo<'db, C>> = None;
+        let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
+
         loop {
             let previous_memo = opt_last_provisional.or(opt_old_memo);
+
+            // Tracked struct ids that existed in the previous revision
+            // but weren't recreated in the last iteration. They still need to be copied
+            // over because we might re-create them in a later iteration
+            // and the cycle head might get backdate, in which case dependent queries
+            // won't re-run (so it's important that we don't create new ids).
+            active_query.seed_tracked_struct_ids(&last_stale_tracked_ids);
+
             let (mut new_value, mut completed_query) =
                 Self::execute_query(db, zalsa, active_query, previous_memo, id);
 
@@ -239,6 +250,7 @@ where
                         ),
                         memo_ingredient_index,
                     ));
+                    last_stale_tracked_ids = completed_query.stale_tracked_structs;
 
                     active_query = db
                         .zalsa_local()
@@ -280,9 +292,7 @@ where
         if let Some(old_memo) = opt_old_memo {
             // If we already executed this query once, then use the tracked-struct ids from the
             // previous execution as the starting point for the new one.
-            if let Some(tracked_struct_ids) = old_memo.revisions.tracked_struct_ids() {
-                active_query.seed_tracked_struct_ids(tracked_struct_ids);
-            }
+            active_query.seed_tracked_struct_ids(old_memo.revisions.tracked_struct_ids());
 
             // Copy over all inputs and outputs from a previous iteration.
             // This is necessary to:
