@@ -506,7 +506,7 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        assert!(!cycle_heads.contains(database_key_index));
+        debug_assert!(!cycle_heads.contains(database_key_index));
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
