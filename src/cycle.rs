@@ -104,6 +104,7 @@ pub struct CycleHead {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "persistence", serde(transparent))]
 pub struct IterationCount(u8);
 
 impl IterationCount {

@@ -17,8 +17,27 @@
 /// configuration, the source from library crates, or other things
 /// that are unlikely to be edited.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Durability(DurabilityVal);
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for Durability {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&(self.0 as u8), serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for Durability {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        u8::deserialize(deserializer).map(|value| Self(DurabilityVal::from(value)))
+    }
+}
 
 impl std::fmt::Debug for Durability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -38,7 +57,6 @@ impl std::fmt::Debug for Durability {
 
 // We use an enum here instead of a u8 for niches.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 enum DurabilityVal {
     Low = 0,
     Medium = 1,

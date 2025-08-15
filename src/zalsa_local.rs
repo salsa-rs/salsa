@@ -485,6 +485,7 @@ impl QueryRevisions {
 /// in cycles, or create accumulators.
 #[derive(Debug, Default)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "persistence", serde(transparent))]
 pub(crate) struct QueryRevisionsExtra(Option<Box<QueryRevisionsExtraInner>>);
 
 impl QueryRevisionsExtra {
@@ -995,6 +996,7 @@ impl std::fmt::Debug for QueryOrigin {
 /// `QueryEdgeKind`, which is meaningful as inputs and outputs are stored contiguously.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "persistence", serde(transparent))]
 pub struct QueryEdge {
     key: DatabaseKeyIndex,
 }

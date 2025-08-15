@@ -10,7 +10,6 @@ use crate::Id;
 /// ordered and equatable but those orderings are arbitrary, and meant to be used
 /// only for inserting into maps and the like.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct DatabaseKeyIndex {
     key_index: Id,
     ingredient_index: IngredientIndex,
@@ -65,6 +64,31 @@ impl DatabaseKeyIndex {
         zalsa
             .lookup_ingredient(self.ingredient_index())
             .mark_validated_output(zalsa, database_key_index, self.key_index())
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for DatabaseKeyIndex {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&(self.key_index, self.ingredient_index), serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for DatabaseKeyIndex {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (key_index, ingredient_index) = serde::Deserialize::deserialize(deserializer)?;
+
+        Ok(DatabaseKeyIndex {
+            key_index,
+            ingredient_index,
+        })
     }
 }
 
