@@ -326,6 +326,7 @@ impl IdentityMap {
     /// The first entry contains the identity and IDs of any tracked structs that were
     /// created by the current execution of the query, while the second entry contains any
     /// tracked structs that were created in a previous execution but not the current one.
+    #[expect(clippy::type_complexity)]
     pub(crate) fn drain(&mut self) -> (ThinVec<(Identity, Id)>, Vec<(Identity, Id)>) {
         if self.table.is_empty() {
             return (ThinVec::new(), Vec::new());
