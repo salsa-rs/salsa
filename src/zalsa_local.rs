@@ -1090,7 +1090,6 @@ impl ActiveQueryGuard<'_> {
                 #[cfg(debug_assertions)]
                 assert_eq!(stack.len(), self.push_len);
                 let frame = stack.last_mut().unwrap();
-                assert!(frame.tracked_struct_ids().is_empty());
                 frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
             })
         }

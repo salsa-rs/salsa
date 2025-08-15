@@ -135,6 +135,7 @@ where
         let database_key_index = active_query.database_key_index;
         let mut iteration_count = IterationCount::initial();
         let mut fell_back = false;
+        let zalsa_local = db.zalsa_local();
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // Initially it's set to None, because the initial provisional value is created lazily,
@@ -252,9 +253,7 @@ where
                     ));
                     last_stale_tracked_ids = completed_query.stale_tracked_structs;
 
-                    active_query = db
-                        .zalsa_local()
-                        .push_query(database_key_index, iteration_count);
+                    active_query = zalsa_local.push_query(database_key_index, iteration_count);
 
                     continue;
                 }
