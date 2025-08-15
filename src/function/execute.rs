@@ -147,10 +147,11 @@ where
             let previous_memo = opt_last_provisional.or(opt_old_memo);
 
             // Tracked struct ids that existed in the previous revision
-            // but weren't recreated in the last iteration. They still need to be copied
-            // over because we might re-create them in a later iteration
-            // and the cycle head might get backdate, in which case dependent queries
-            // won't re-run (so it's important that we don't create new ids).
+            // but weren't recreated in the last iteration. It's important that we seed the next
+            // query with these ids because the query might re-create them as part of the next iteration.
+            // This is not only important to ensure that the re-created tracked structs have the same ids,
+            // it's also important to ensure that these tracked structs get removed
+            // if they aren't recreated when reaching the final iteration.
             active_query.seed_tracked_struct_ids(&last_stale_tracked_ids);
 
             let (mut new_value, mut completed_query) =
