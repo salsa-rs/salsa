@@ -525,8 +525,7 @@ impl QueryRevisionsExtra {
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 struct QueryRevisionsExtraInner {
     #[cfg(feature = "accumulator")]
-    // TODO: Support serializing accumulators.
-    #[cfg_attr(feature = "persistence", serde(skip))]
+    #[cfg_attr(feature = "persistence", serde(skip))] // TODO: Support serializing accumulators
     accumulated: AccumulatedMap,
 
     /// The ids of tracked structs created by this query.
@@ -694,6 +693,7 @@ impl QueryRevisions {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize))]
+#[cfg_attr(feature = "persistence", serde(rename = "QueryOrigin"))]
 pub enum QueryOriginRef<'a> {
     /// The value was assigned as the output of another query (e.g., using `specify`).
     /// The `DatabaseKeyIndex` is the identity of the assigning query.
@@ -938,8 +938,9 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
         D: serde::Deserializer<'de>,
     {
         // Matches the signature of `QueryOriginRef`.
-        #[derive(serde::Deserialize)]
         #[repr(u8)]
+        #[derive(serde::Deserialize)]
+        #[serde(rename = "QueryOrigin")]
         pub enum QueryOriginOwned {
             Assigned(DatabaseKeyIndex) = QueryOriginKind::Assigned as u8,
             Derived(Box<[QueryEdge]>) = QueryOriginKind::Derived as u8,

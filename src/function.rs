@@ -541,7 +541,23 @@ mod persistence {
         {
             let Self { ingredient, zalsa } = self;
 
-            let mut map = serializer.serialize_map(None)?;
+            let count = <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa)
+                .filter(|entry| {
+                    let memo_ingredient_index = ingredient
+                        .memo_ingredient_indices
+                        .get(entry.ingredient_index());
+
+                    let memo = ingredient.get_memo_from_table_for(
+                        zalsa,
+                        entry.key_index(),
+                        memo_ingredient_index,
+                    );
+
+                    memo.is_some_and(|memo| memo.should_serialize())
+                })
+                .count();
+
+            let mut map = serializer.serialize_map(Some(count))?;
 
             for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
                 let memo_ingredient_index = ingredient
@@ -659,7 +675,7 @@ mod persistence {
         {
             let DeserializeIngredient { zalsa, ingredient } = self;
 
-            while let Some((key, memo)) = access.next_entry::<String, Memo<C>>()? {
+            while let Some((key, memo)) = access.next_entry::<&str, Memo<C>>()? {
                 let (ingredient_index, id) = key
                     .split_once(':')
                     .ok_or_else(|| de::Error::custom("invalid database key"))?;

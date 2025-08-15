@@ -802,9 +802,9 @@ where
     pub fn reset(&mut self, zalsa_mut: &mut Zalsa) {
         _ = zalsa_mut;
 
-        for shard in self.shards.iter() {
+        for shard in self.shards.iter_mut() {
             // We can clear the key maps now that we have cancelled all other handles.
-            shard.lock().key_map.clear();
+            shard.get_mut().key_map.clear();
         }
     }
 
@@ -976,7 +976,7 @@ where
     ) {
         f(&persistence::SerializeIngredient {
             zalsa,
-            _ingredient: self,
+            ingredient: self,
         })
     }
 
@@ -1316,7 +1316,7 @@ mod persistence {
     use std::hash::BuildHasher;
 
     use intrusive_collections::LinkedListLink;
-    use serde::ser::SerializeMap;
+    use serde::ser::{SerializeMap, SerializeStruct};
     use serde::{de, Deserialize};
 
     use super::{Configuration, IngredientImpl, Value, ValueShared};
@@ -1330,7 +1330,7 @@ mod persistence {
         C: Configuration,
     {
         pub zalsa: &'db Zalsa,
-        pub _ingredient: &'db IngredientImpl<C>,
+        pub ingredient: &'db IngredientImpl<C>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>
@@ -1341,9 +1341,15 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            let Self { zalsa, .. } = self;
+            let Self { zalsa, ingredient } = *self;
 
-            let mut map = serializer.serialize_map(None)?;
+            let count = ingredient
+                .shards
+                .iter()
+                .map(|shard| shard.lock().key_map.len())
+                .sum();
+
+            let mut map = serializer.serialize_map(Some(count))?;
 
             for (_, value) in zalsa.table().slots_of::<Value<C>>() {
                 // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
@@ -1365,21 +1371,7 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            let mut map = serializer.serialize_map(None)?;
-
-            struct SerializeFields<'db, C: Configuration>(&'db C::Fields<'static>);
-
-            impl<C> serde::Serialize for SerializeFields<'_, C>
-            where
-                C: Configuration,
-            {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: serde::Serializer,
-                {
-                    C::serialize(self.0, serializer)
-                }
-            }
+            let mut value = serializer.serialize_struct("Value,", 3)?;
 
             let Value {
                 fields,
@@ -1401,11 +1393,25 @@ mod persistence {
                 id: _,
             } = unsafe { *shared.get() };
 
-            map.serialize_entry(&"durability", &durability)?;
-            map.serialize_entry(&"last_interned_at", &last_interned_at)?;
-            map.serialize_entry(&"fields", &SerializeFields::<C>(fields))?;
+            value.serialize_field("durability", &durability)?;
+            value.serialize_field("last_interned_at", &last_interned_at)?;
+            value.serialize_field("fields", &SerializeFields::<C>(fields))?;
 
-            map.end()
+            value.end()
+        }
+    }
+
+    struct SerializeFields<'db, C: Configuration>(&'db C::Fields<'static>);
+
+    impl<C> serde::Serialize for SerializeFields<'_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            C::serialize(self.0, serializer)
         }
     }
 
@@ -1507,6 +1513,7 @@ mod persistence {
     }
 
     #[derive(Deserialize)]
+    #[serde(rename = "Value")]
     pub struct DeserializeValue<C: Configuration> {
         durability: Durability,
         last_interned_at: Revision,
