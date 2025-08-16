@@ -314,3 +314,141 @@ fn test_cycle_with_fixpoint_structs() {
             "DidDiscard { key: IterationNode(Id(402)) }",
         ]"#]]);
 }
+
+// Additional test structures for the new scenario
+#[salsa::tracked]
+struct TrackedValue<'db> {
+    value: u32,
+}
+
+#[salsa::input]
+struct InputValue {
+    value: u32,
+}
+
+#[salsa::input]
+struct IterationCounter {
+    count: std::sync::Arc<std::sync::atomic::AtomicU32>,
+}
+
+#[salsa::tracked]
+fn query_c<'db>(db: &'db dyn Database, tracked: TrackedValue<'db>) -> u32 {
+    tracked.value(db)
+}
+
+#[salsa::tracked(cycle_fn=cycle_recover_b, cycle_initial=initial_b)]
+fn query_b<'db>(db: &'db dyn Database, input: InputValue, counter: IterationCounter) -> u32 {
+    let iteration = counter
+        .count(db)
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    
+    // Only create tracked struct in second iteration
+    if iteration == 1 {
+        let tracked = TrackedValue::new(db, 42);
+        let c_result = query_c(db, tracked);
+        // Call query_a to create cycle, and combine with c_result
+        let a_result = query_a(db, input, counter);
+        a_result.min(c_result)
+    } else {
+        // First and subsequent iterations: just call query_a
+        query_a(db, input, counter)
+    }
+}
+
+fn initial_b(_db: &dyn Database, _input: InputValue, _counter: IterationCounter) -> u32 {
+    u32::MAX
+}
+
+fn cycle_recover_b(
+    _db: &dyn Database,
+    _value: &u32,
+    _count: u32,
+    _input: InputValue,
+    _counter: IterationCounter,
+) -> CycleRecoveryAction<u32> {
+    CycleRecoveryAction::Iterate
+}
+
+#[salsa::tracked(cycle_fn=cycle_recover_a, cycle_initial=initial_a)]
+fn query_a<'db>(db: &'db dyn Database, input: InputValue, counter: IterationCounter) -> u32 {
+    let input_val = input.value(db);
+    // Call query_b to create the cycle
+    let b_result = query_b(db, input, counter);
+    b_result.min(input_val)
+}
+
+fn initial_a(_db: &dyn Database, _input: InputValue, _counter: IterationCounter) -> u32 {
+    u32::MAX
+}
+
+fn cycle_recover_a(
+    _db: &dyn Database,
+    _value: &u32,
+    _count: u32,
+    _input: InputValue,
+    _counter: IterationCounter,
+) -> CycleRecoveryAction<u32> {
+    CycleRecoveryAction::Iterate
+}
+
+/// Test scenario with tracked struct created during cycle iteration.
+///
+/// a -> b -> a (cycle)
+///        -> c(tracked_struct)
+///
+/// - a is the cycle head
+/// - b participates in the cycle and creates a tracked struct in the second iteration
+/// - When input changes, a must rerun
+#[test]
+// #[should_panic(expected = "cannot delete read-locked id")]
+fn cycle_with_tracked_struct_creation_during_iteration() {
+    let mut db = EventLoggerDatabase::default();
+    
+    // Set up inputs
+    let input = InputValue::new(&db, 50);
+    let counter = IterationCounter::new(
+        &db,
+        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+    );
+    
+    // Execute query_a which triggers the cycle
+    let result = query_a(&db, input, counter);
+    
+    // First iteration: a and b use initial value MAX
+    // Second iteration: b creates tracked struct with value 42
+    // Result should be min(50, 42) = 42
+    assert_eq!(result, 42);
+    
+    // Clear logs for the next part
+    db.clear_logs();
+    
+    // Change the input to force recomputation
+    input.set_value(&mut db).to(30);
+    
+    // Reset counter for new execution
+    counter
+        .count(&db)
+        .store(0, std::sync::atomic::Ordering::SeqCst);
+    
+    // Re-execute, should see appropriate logs
+    let result2 = query_a(&db, input, counter);
+    
+    // New result should be min(30, 42) = 30
+    assert_eq!(result2, 30);
+    
+    // Verify we see the expected execution pattern in logs
+    db.assert_logs(expect![[r#"
+        [
+            "WillCheckCancellation",
+            "WillExecute { database_key: query_a(Id(1), Id(2)) }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: query_b(Id(1), Id(2)) }",
+            "WillCheckCancellation",
+            "WillIterateCycle { database_key: query_a(Id(1), Id(2)), iteration_count: IterationCount(1), fell_back: false }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: query_b(Id(1), Id(2)) }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: query_c(Id(600)) }",
+            "WillCheckCancellation",
+        ]"#]]);
+}

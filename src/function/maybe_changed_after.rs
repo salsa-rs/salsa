@@ -161,11 +161,12 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
+        let zalsa_local = db.zalsa_local();
         let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
         if can_shallow_update.yes()
             && self.validate_may_be_provisional(
                 zalsa,
-                db.zalsa_local(),
+                zalsa_local,
                 database_key_index,
                 old_memo,
                 // Don't conclude that the query is unchanged if the memo itself is still
@@ -506,7 +507,7 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        debug_assert!(!cycle_heads.contains(database_key_index));
+        assert!(!cycle_heads.contains(database_key_index));
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
