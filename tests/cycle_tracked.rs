@@ -337,25 +337,22 @@ fn query_c<'db>(db: &'db dyn Database, tracked: TrackedValue<'db>) -> u32 {
 }
 
 #[salsa::tracked(cycle_fn=cycle_recover_b, cycle_initial=initial_b)]
-fn query_b<'db>(db: &'db dyn Database, input: InputValue, counter: IterationCounter) -> u32 {
-    let iteration = counter
-        .count(db)
-        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+fn query_b<'db>(db: &'db dyn Database, input: InputValue) -> u32 {
+    // Call query_a to create the cycle
+    let a_result = query_a(db, input);
     
-    // Only create tracked struct in second iteration
-    if iteration == 1 {
+    // Only create tracked struct when a_result reaches a certain threshold
+    // This creates an internal condition for when to create the tracked struct
+    if a_result <= 50 {
         let tracked = TrackedValue::new(db, 42);
         let c_result = query_c(db, tracked);
-        // Call query_a to create cycle, and combine with c_result
-        let a_result = query_a(db, input, counter);
-        a_result.min(c_result)
+        c_result
     } else {
-        // First and subsequent iterations: just call query_a
-        query_a(db, input, counter)
+        a_result - 10  // Reduce by 10 to force iteration
     }
 }
 
-fn initial_b(_db: &dyn Database, _input: InputValue, _counter: IterationCounter) -> u32 {
+fn initial_b(_db: &dyn Database, _input: InputValue) -> u32 {
     u32::MAX
 }
 
@@ -364,20 +361,19 @@ fn cycle_recover_b(
     _value: &u32,
     _count: u32,
     _input: InputValue,
-    _counter: IterationCounter,
 ) -> CycleRecoveryAction<u32> {
     CycleRecoveryAction::Iterate
 }
 
 #[salsa::tracked(cycle_fn=cycle_recover_a, cycle_initial=initial_a)]
-fn query_a<'db>(db: &'db dyn Database, input: InputValue, counter: IterationCounter) -> u32 {
+fn query_a<'db>(db: &'db dyn Database, input: InputValue) -> u32 {
     let input_val = input.value(db);
     // Call query_b to create the cycle
-    let b_result = query_b(db, input, counter);
+    let b_result = query_b(db, input);
     b_result.min(input_val)
 }
 
-fn initial_a(_db: &dyn Database, _input: InputValue, _counter: IterationCounter) -> u32 {
+fn initial_a(_db: &dyn Database, _input: InputValue) -> u32 {
     u32::MAX
 }
 
@@ -386,7 +382,6 @@ fn cycle_recover_a(
     _value: &u32,
     _count: u32,
     _input: InputValue,
-    _counter: IterationCounter,
 ) -> CycleRecoveryAction<u32> {
     CycleRecoveryAction::Iterate
 }
@@ -397,26 +392,23 @@ fn cycle_recover_a(
 ///        -> c(tracked_struct)
 ///
 /// - a is the cycle head
-/// - b participates in the cycle and creates a tracked struct in the second iteration
-/// - When input changes, a must rerun
+/// - b participates in the cycle and creates a tracked struct based on internal condition
+/// - The tracked struct is created when a_result <= 50 (internal condition, not explicit counter)
+/// - When input changes, a must rerun and should panic due to tracked struct cleanup issue
 #[test]
-// #[should_panic(expected = "cannot delete read-locked id")]
+#[should_panic(expected = "cannot delete read-locked id")]
 fn cycle_with_tracked_struct_creation_during_iteration() {
     let mut db = EventLoggerDatabase::default();
     
     // Set up inputs
     let input = InputValue::new(&db, 50);
-    let counter = IterationCounter::new(
-        &db,
-        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
-    );
     
     // Execute query_a which triggers the cycle
-    let result = query_a(&db, input, counter);
+    let result = query_a(&db, input);
     
-    // First iteration: a and b use initial value MAX
-    // Second iteration: b creates tracked struct with value 42
-    // Result should be min(50, 42) = 42
+    // First iteration: a returns input (50), b returns a_result - 10 = 40
+    // Second iteration: a returns min(50, 40) = 40, b sees a_result <= 50, creates tracked struct
+    // Result should be the tracked struct value (42)
     assert_eq!(result, 42);
     
     // Clear logs for the next part
@@ -425,30 +417,25 @@ fn cycle_with_tracked_struct_creation_during_iteration() {
     // Change the input to force recomputation
     input.set_value(&mut db).to(30);
     
-    // Reset counter for new execution
-    counter
-        .count(&db)
-        .store(0, std::sync::atomic::Ordering::SeqCst);
-    
     // Re-execute, should see appropriate logs
-    let result2 = query_a(&db, input, counter);
+    let result2 = query_a(&db, input);
     
-    // New result should be min(30, 42) = 30
-    assert_eq!(result2, 30);
+    // New result should be 42 (tracked struct value), but this should panic first
+    assert_eq!(result2, 42);
     
     // Verify we see the expected execution pattern in logs
     db.assert_logs(expect![[r#"
         [
+            "DidSetCancellationFlag",
             "WillCheckCancellation",
-            "WillExecute { database_key: query_a(Id(1), Id(2)) }",
+            "WillExecute { database_key: query_a(Id(0)) }",
             "WillCheckCancellation",
-            "WillExecute { database_key: query_b(Id(1), Id(2)) }",
             "WillCheckCancellation",
-            "WillIterateCycle { database_key: query_a(Id(1), Id(2)), iteration_count: IterationCount(1), fell_back: false }",
+            "WillExecute { database_key: query_b(Id(0)) }",
             "WillCheckCancellation",
-            "WillExecute { database_key: query_b(Id(1), Id(2)) }",
+            "WillIterateCycle { database_key: query_a(Id(0)), iteration_count: IterationCount(1), fell_back: false }",
             "WillCheckCancellation",
-            "WillExecute { database_key: query_c(Id(600)) }",
+            "WillExecute { database_key: query_b(Id(0)) }",
             "WillCheckCancellation",
         ]"#]]);
 }
