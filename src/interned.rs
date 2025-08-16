@@ -905,16 +905,16 @@ where
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
-        if C::PERSIST {
+        if C::PERSIST && C::REVISIONS != IMMORTAL {
             // If the interned struct is being persisted, it may be reachable through transitive queries.
             // Additionally, interned struct dependencies are impure in that garbage collection can
             // invalidate a dependency without a base input necessarily being updated. Thus, we must
-            // preserve the transitive dependency on the interned struct.
+            // preserve the transitive dependency on the interned struct, if garbage collection is
+            // enabled.
             serialized_edges.insert(edge);
         }
 
-        // Otherwise, the dependency is covered by the base inputs, as the interned struct itself is
-        // not being persisted.
+        // Otherwise, the dependency is covered by the base inputs.
     }
 
     fn debug_name(&self) -> &'static str {
