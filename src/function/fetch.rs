@@ -23,7 +23,7 @@ where
         let database_key_index = self.database_key_index(id);
 
         #[cfg(debug_assertions)]
-        let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
+        let _span = tracing::warn_span!("fetch", query = ?database_key_index).entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
 
