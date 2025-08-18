@@ -152,16 +152,16 @@ impl<C: Configuration> IngredientImpl<C> {
         durabilities: C::Durabilities,
     ) -> C::Struct {
         let id = self.singleton.with_scope(|| {
-            let (id, _) = zalsa_local.allocate(zalsa, self.ingredient_index, |_| Value::<C> {
-                fields,
-                revisions,
-                durabilities,
-                // SAFETY: We only ever access the memos of a value that we allocated through
-                // our `MemoTableTypes`.
-                memos: unsafe { MemoTable::new(self.memo_table_types()) },
-            });
-
-            id
+            zalsa_local
+                .allocate(zalsa, self.ingredient_index, |_| Value::<C> {
+                    fields,
+                    revisions,
+                    durabilities,
+                    // SAFETY: We only ever access the memos of a value that we allocated through
+                    // our `MemoTableTypes`.
+                    memos: unsafe { MemoTable::new(self.memo_table_types()) },
+                })
+                .0
         });
 
         FromIdWithDb::from_id(id, zalsa)
@@ -444,6 +444,7 @@ mod persistence {
     use serde::{de, Deserialize};
 
     use super::{Configuration, IngredientImpl, Value};
+    use crate::input::singleton::SingletonChoice;
     use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
     use crate::zalsa::Zalsa;
@@ -578,13 +579,14 @@ mod persistence {
                 // Initialize the slot.
                 //
                 // SAFETY: We have a mutable reference to the database.
-                let (allocated_id, _) = unsafe {
+                let allocated_id = ingredient.singleton.with_scope(|| unsafe {
                     zalsa
                         .table()
                         .page(page_idx)
                         .allocate(page_idx, |_| value)
                         .unwrap_or_else(|_| panic!("serialized an invalid `Id`: {id:?}"))
-                };
+                        .0
+                });
 
                 assert_eq!(
                     allocated_id, id,
