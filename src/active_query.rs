@@ -208,9 +208,9 @@ impl ActiveQuery {
         } = self;
 
         let origin = if untracked_read {
-            QueryOrigin::derived_untracked(input_outputs.drain(..))
+            QueryOrigin::derived_untracked(input_outputs.drain(..).collect())
         } else {
-            QueryOrigin::derived(input_outputs.drain(..))
+            QueryOrigin::derived(input_outputs.drain(..).collect())
         };
         disambiguator_map.clear();
 

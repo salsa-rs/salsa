@@ -559,6 +559,9 @@ mod persistence {
 
             let mut map = serializer.serialize_map(Some(count))?;
 
+            let mut visited_edges = FxHashSet::default();
+            let mut flattened_edges = FxIndexSet::default();
+
             for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
                 let memo_ingredient_index = ingredient
                     .memo_ingredient_indices
@@ -574,10 +577,24 @@ mod persistence {
                     // Flatten the dependencies of this query down to the base inputs.
                     let flattened_origin = match memo.revisions.origin.as_ref() {
                         QueryOriginRef::Derived(edges) => {
-                            QueryOrigin::derived(flatten_edges(zalsa, edges))
+                            collect_minimum_serialized_edges(
+                                zalsa,
+                                edges,
+                                &mut visited_edges,
+                                &mut flattened_edges,
+                            );
+
+                            QueryOrigin::derived(flattened_edges.drain(..).collect())
                         }
                         QueryOriginRef::DerivedUntracked(edges) => {
-                            QueryOrigin::derived_untracked(flatten_edges(zalsa, edges))
+                            collect_minimum_serialized_edges(
+                                zalsa,
+                                edges,
+                                &mut visited_edges,
+                                &mut flattened_edges,
+                            );
+
+                            QueryOrigin::derived_untracked(flattened_edges.drain(..).collect())
                         }
                         QueryOriginRef::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
@@ -604,6 +621,8 @@ mod persistence {
                     );
 
                     map.serialize_entry(&key, &memo)?;
+
+                    visited_edges.clear();
                 }
             }
 
@@ -612,11 +631,12 @@ mod persistence {
     }
 
     // Flatten the dependency edges before serialization.
-    fn flatten_edges(zalsa: &Zalsa, edges: &[QueryEdge]) -> FxIndexSet<QueryEdge> {
-        let mut visited_edges = FxHashSet::default();
-        let mut flattened_edges =
-            FxIndexSet::with_capacity_and_hasher(edges.len(), Default::default());
-
+    fn collect_minimum_serialized_edges(
+        zalsa: &Zalsa,
+        edges: &[QueryEdge],
+        visited_edges: &mut FxHashSet<QueryEdge>,
+        flattened_edges: &mut FxIndexSet<QueryEdge>,
+    ) {
         for &edge in edges {
             let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
 
@@ -628,13 +648,11 @@ mod persistence {
                 dependency.collect_minimum_serialized_edges(
                     zalsa,
                     edge,
-                    &mut flattened_edges,
-                    &mut visited_edges,
+                    flattened_edges,
+                    visited_edges,
                 );
             }
         }
-
-        flattened_edges
     }
 
     pub struct DeserializeIngredient<'db, C>

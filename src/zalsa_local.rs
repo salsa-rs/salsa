@@ -840,9 +840,7 @@ impl QueryOrigin {
     }
 
     /// Create a query origin of type `QueryOriginKind::Derived`, with the given edges.
-    pub fn derived(input_outputs: impl IntoIterator<Item = QueryEdge>) -> QueryOrigin {
-        let input_outputs = input_outputs.into_iter().collect::<Box<[_]>>();
-
+    pub fn derived(input_outputs: Box<[QueryEdge]>) -> QueryOrigin {
         // Exceeding `u32::MAX` query edges should never happen in real-world usage.
         let length = u32::try_from(input_outputs.len())
             .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
@@ -859,7 +857,7 @@ impl QueryOrigin {
     }
 
     /// Create a query origin of type `QueryOriginKind::DerivedUntracked`, with the given edges.
-    pub fn derived_untracked(input_outputs: impl IntoIterator<Item = QueryEdge>) -> QueryOrigin {
+    pub fn derived_untracked(input_outputs: Box<[QueryEdge]>) -> QueryOrigin {
         let mut origin = QueryOrigin::derived(input_outputs);
         origin.kind = QueryOriginKind::DerivedUntracked;
         origin
@@ -966,9 +964,9 @@ impl Drop for QueryOrigin {
                 let input_outputs = unsafe { self.data.input_outputs };
                 let length = self.metadata as usize;
 
-                // SAFETY: `input_outputs` and `self.metadata` form a valid slice when the
-                // tag is `QueryOriginKind::DerivedUntracked` or `QueryOriginKind::DerivedUntracked`,
-                // and we have `&mut self`.
+                // SAFETY: `input_outputs` and `self.metadata` form a valid slice when the tag is
+                // `QueryOriginKind::DerivedUntracked` or `QueryOriginKind::DerivedUntracked`, and
+                // we have `&mut self`.
                 let _input_outputs: Box<[QueryEdge]> = unsafe {
                     Box::from_raw(ptr::slice_from_raw_parts_mut(
                         input_outputs.as_ptr(),
