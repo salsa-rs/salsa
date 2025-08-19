@@ -84,8 +84,9 @@ where
         loop {
             let database_key_index = self.database_key_index(id);
 
-            let _entered =
-                tracing::warn_span!("maybe_changed_after", query=?database_key_index).entered();
+            crate::tracing::debug!(
+                "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
+            );
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
@@ -619,11 +620,6 @@ where
                 //    future iteration; first the outer cycle head needs to verify itself.
 
                 cycle_heads.remove_head(database_key_index);
-
-                tracing::warn!(
-                    "Cycle heads after maybe_changed_after: {:?} for {database_key_index:?}",
-                    cycle_heads
-                );
 
                 let result = VerifyResult::unchanged_with_accumulated(
                     #[cfg(feature = "accumulator")]
