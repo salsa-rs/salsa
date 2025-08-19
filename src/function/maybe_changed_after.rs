@@ -626,11 +626,14 @@ where
                     inputs,
                 );
 
+                // This value is only read once the memo is verified. It's therefore safe
+                // to write a non-final value here.
+                #[cfg(feature = "accumulator")]
+                old_memo.revisions.accumulated_inputs.store(inputs);
+
                 // 1 and 3
                 if !cycle_heads.has_own() {
                     old_memo.mark_as_verified(zalsa, database_key_index);
-                    #[cfg(feature = "accumulator")]
-                    old_memo.revisions.accumulated_inputs.store(inputs);
                     old_memo
                         .revisions
                         .verified_final
