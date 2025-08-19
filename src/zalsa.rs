@@ -255,11 +255,7 @@ impl Zalsa {
     /// Returns the ingredient at the given index, or panics if it is out-of-bounds.
     #[inline]
     pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        let index = index.as_u32() as usize;
-        self.ingredients_vec
-            .get(index)
-            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
-            .as_ref()
+        self.ingredients_vec[index.as_u32() as usize].as_ref()
     }
 
     /// Returns the ingredient at the given index.
@@ -269,10 +265,12 @@ impl Zalsa {
     /// The index must be in-bounds.
     #[inline]
     pub unsafe fn lookup_ingredient_unchecked(&self, index: IngredientIndex) -> &dyn Ingredient {
-        let index = index.as_u32() as usize;
-
         // SAFETY: Guaranteed by caller.
-        unsafe { self.ingredients_vec.get_unchecked(index).as_ref() }
+        unsafe {
+            self.ingredients_vec
+                .get_unchecked(index.as_u32() as usize)
+                .as_ref()
+        }
     }
 
     pub(crate) fn ingredient_index_for_memo(
