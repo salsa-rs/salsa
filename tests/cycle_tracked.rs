@@ -259,6 +259,7 @@ fn initial_with_structs(_db: &dyn Database, _input: GraphInput) -> Vec<Iteration
     vec![]
 }
 
+#[allow(clippy::ptr_arg)]
 fn cycle_recover_with_structs<'db>(
     _db: &'db dyn Database,
     _value: &Vec<IterationNode<'db>>,
