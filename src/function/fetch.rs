@@ -172,7 +172,6 @@ where
                         zalsa_local,
                         database_key_index,
                         old_memo,
-                        true,
                     )
                 {
                     self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);

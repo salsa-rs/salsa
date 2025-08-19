@@ -113,6 +113,7 @@ where
 
             if let Some(mcs) = self.maybe_changed_after_cold(
                 zalsa,
+                zalsa_local,
                 db,
                 id,
                 revision,
@@ -127,9 +128,11 @@ where
     }
 
     #[inline(never)]
+    #[expect(clippy::too_many_arguments)]
     fn maybe_changed_after_cold<'db>(
         &'db self,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
@@ -146,7 +149,7 @@ where
             }
             ClaimResult::Cycle { .. } => {
                 return Some(self.maybe_changed_after_cold_cycle(
-                    db,
+                    zalsa_local,
                     database_key_index,
                     cycle_heads,
                 ))
@@ -166,21 +169,28 @@ where
 
         let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
         if can_shallow_update.yes()
-            && self.validate_may_be_provisional(
-                zalsa,
-                db.zalsa_local(),
-                database_key_index,
-                old_memo,
-                // Don't conclude that the query is unchanged if the memo itself is still
-                // provisional (because all its cycle heads have the same iteration count
-                // as the cycle head memos in the database).
-                // See https://github.com/salsa-rs/salsa/pull/961
-                false,
-            )
+            && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, old_memo)
         {
             self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
 
-            return Some(VerifyResult::unchanged());
+            // If `validate_maybe_provisional` returns `true`, but only because all cycle heads are from the same iteration,
+            // carry over the cycle heads so that the caller verifies them.
+            if old_memo.may_be_provisional() {
+                for head in old_memo.cycle_heads() {
+                    cycle_heads.insert_head(head.database_key_index);
+                }
+            }
+
+            return Some(if old_memo.revisions.changed_at > revision {
+                VerifyResult::changed()
+            } else {
+                VerifyResult::unchanged_with_accumulated(
+                    #[cfg(feature = "accumulator")]
+                    {
+                        old_memo.revisions.accumulated_inputs.load()
+                    },
+                )
+            });
         }
 
         if let Some(cached) = cycle_heads.get_result(database_key_index) {
@@ -217,9 +227,8 @@ where
         // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && !cycle_heads.has_any() {
-            let active_query = db
-                .zalsa_local()
-                .push_query(database_key_index, IterationCount::initial());
+            let active_query =
+                zalsa_local.push_query(database_key_index, IterationCount::initial());
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
@@ -246,16 +255,16 @@ where
 
     #[cold]
     #[inline(never)]
-    fn maybe_changed_after_cold_cycle<'db>(
-        &'db self,
-        db: &'db C::DbView,
+    fn maybe_changed_after_cold_cycle(
+        &self,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         match C::CYCLE_STRATEGY {
             // SAFETY: We do not access the query stack reentrantly.
             CycleRecoveryStrategy::Panic => unsafe {
-                db.zalsa_local().with_query_stack_unchecked(|stack| {
+                zalsa_local.with_query_stack_unchecked(|stack| {
                     panic!(
                         "dependency graph cycle when validating {database_key_index:#?}, \
                     set cycle_fn/cycle_initial to fixpoint iterate.\n\
@@ -272,7 +281,7 @@ where
 
                 // SAFETY: We don't access the query stack reentrantly.
                 let running = unsafe {
-                    db.zalsa_local().with_query_stack_unchecked(|stack| {
+                    zalsa_local.with_query_stack_unchecked(|stack| {
                         stack
                             .iter()
                             .any(|query| query.database_key_index == database_key_index)
@@ -350,7 +359,6 @@ where
     /// * provisional memos that have been successfully marked as verified final, that is, its
     ///   cycle heads have all been finalized.
     /// * provisional memos that have been created in the same revision and iteration and are part of the same cycle.
-    ///   This check is skipped if `allow_non_finalized` is `false` as the memo itself is still not finalized. It's a provisional value.
     #[inline]
     pub(super) fn validate_may_be_provisional(
         &self,
@@ -358,12 +366,10 @@ where
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
-        allow_non_finalized: bool,
     ) -> bool {
         !memo.may_be_provisional()
             || self.validate_provisional(zalsa, database_key_index, memo)
-            || (allow_non_finalized
-                && self.validate_same_iteration(zalsa, zalsa_local, database_key_index, memo))
+            || self.validate_same_iteration(zalsa, zalsa_local, database_key_index, memo)
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
@@ -379,6 +385,9 @@ where
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
+
+        let memo_verified_at = memo.verified_at.load();
+
         for cycle_head in memo.revisions.cycle_heads() {
             // Test if our cycle heads (with the same revision) are now finalized.
             let Some(kind) = zalsa
@@ -387,15 +396,24 @@ where
             else {
                 return false;
             };
+
             match kind {
                 ProvisionalStatus::Provisional { .. } => return false,
-                ProvisionalStatus::Final { iteration } => {
-                    // It's important to also account for the revision for the case where:
+                ProvisionalStatus::Final {
+                    iteration,
+                    verified_at,
+                } => {
+                    // Only consider the cycle head if it is from the same revision as the memo
+                    if verified_at != memo_verified_at {
+                        return false;
+                    }
+
+                    // It's important to also account for the iteration for the case where:
                     // thread 1: `b` -> `a` (but only in the first iteration)
                     //               -> `c` -> `b`
                     // thread 2: `a` -> `b`
                     //
-                    // If we don't account for the revision, then `a` (from iteration 0) will be finalized
+                    // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
                     // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
                     if iteration != cycle_head.iteration_count {
                         return false;
@@ -446,62 +464,74 @@ where
             return true;
         }
 
+        let verified_at = memo.verified_at.load();
+        let current_revision = zalsa.current_revision();
+
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             zalsa_local.with_query_stack_unchecked(|stack| {
                 cycle_heads.iter().all(|cycle_head| {
-                    stack
-                        .iter()
-                        .rev()
-                        .find(|query| query.database_key_index == cycle_head.database_key_index)
-                        .map(|query| query.iteration_count())
-                        .or_else(|| {
-                            // If the cycle head isn't on our stack because:
-                            //
-                            // * another thread holds the lock on the cycle head (but it waits for the current query to complete)
-                            // * we're in `maybe_changed_after` because `maybe_changed_after` doesn't modify the cycle stack
-                            //
-                            // check if the latest memo has the same iteration count.
+                    // If the memo was verified in the current revision, check if it has the same iteration count as any query on the stack.
+                    // We skip this check for memo's from past revisions because we want to re-execute them if the cycle heads re-execute.
+                    if current_revision == verified_at {
+                        if let Some(query) = stack
+                            .iter()
+                            .rev()
+                            .find(|query| query.database_key_index == cycle_head.database_key_index)
+                        {
+                            return query.iteration_count() == cycle_head.iteration_count;
+                        }
+                    }
 
-                            // However, we've to be careful to skip over fixpoint initial values:
-                            // If the head is the memo we're trying to validate, always return `None`
-                            // to force a re-execution of the query. This is necessary because the query
-                            // has obviously not completed its iteration yet.
-                            //
-                            // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
-                            // without this check. What happens there is that:
-                            //
-                            // * query a blocks on query b
-                            // * query b tries to claim a, fails to do so and inserts the fixpoint initial value
-                            // * query b completes and has `a` as head. It returns its query result Salsa blocks query b from
-                            //   exiting inside `block_on` (or the thread would complete before the cycle iteration is complete)
-                            // * query a resumes but panics because of the fixpoint iteration function
-                            // * query b resumes. It rexecutes its own query which then tries to fetch a (which depends on itself because it's a fixpoint initial value).
-                            //   Without this check, `validate_same_iteration` would return `true` because the latest memo for `a` is the fixpoint initial value.
-                            //   But it should return `false` so that query b's thread re-executes `a` (which then also causes the panic).
-                            //
-                            // That's why we always return `None` if the cycle head is the same as the current database key index.
-                            if cycle_head.database_key_index == database_key_index {
-                                return None;
-                            }
+                    // If the cycle head isn't on our stack because:
+                    //
+                    // * another thread holds the lock on the cycle head (but it waits for the current query to complete)
+                    // * we're in `maybe_changed_after` because `maybe_changed_after` doesn't modify the cycle stack
+                    //
+                    // check if the latest memo has the same iteration count.
 
-                            let ingredient = zalsa.lookup_ingredient(
-                                cycle_head.database_key_index.ingredient_index(),
-                            );
-                            let wait_result = ingredient
-                                .wait_for(zalsa, cycle_head.database_key_index.key_index());
+                    // However, we've to be careful to skip over fixpoint initial values:
+                    // If the head is the memo we're trying to validate, always return `None`
+                    // to force a re-execution of the query. This is necessary because the query
+                    // has obviously not completed its iteration yet.
+                    //
+                    // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
+                    // without this check. What happens there is that:
+                    //
+                    // * query a blocks on query b
+                    // * query b tries to claim a, fails to do so and inserts the fixpoint initial value
+                    // * query b completes and has `a` as head. It returns its query result Salsa blocks query b from
+                    //   exiting inside `block_on` (or the thread would complete before the cycle iteration is complete)
+                    // * query a resumes but panics because of the fixpoint iteration function
+                    // * query b resumes. It rexecutes its own query which then tries to fetch a (which depends on itself because it's a fixpoint initial value).
+                    //   Without this check, `validate_same_iteration` would return `true` because the latest memo for `a` is the fixpoint initial value.
+                    //   But it should return `false` so that query b's thread re-executes `a` (which then also causes the panic).
+                    //
+                    // That's why we always return `None` if the cycle head is the same as the current database key index.
+                    if cycle_head.database_key_index == database_key_index {
+                        return false;
+                    }
 
-                            if !wait_result.is_cycle() {
-                                return None;
-                            }
+                    let ingredient =
+                        zalsa.lookup_ingredient(cycle_head.database_key_index.ingredient_index());
+                    let wait_result =
+                        ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index());
 
-                            let provisional_status = ingredient.provisional_status(
-                                zalsa,
-                                cycle_head.database_key_index.key_index(),
-                            )?;
-                            provisional_status.iteration()
-                        })
-                        == Some(cycle_head.iteration_count)
+                    if !wait_result.is_cycle() {
+                        return false;
+                    }
+
+                    let Some(provisional_status) = ingredient
+                        .provisional_status(zalsa, cycle_head.database_key_index.key_index())
+                    else {
+                        return false;
+                    };
+
+                    if provisional_status.verified_at() != Some(verified_at) {
+                        false
+                    } else {
+                        provisional_status.iteration() == Some(cycle_head.iteration_count)
+                    }
                 })
             })
         }

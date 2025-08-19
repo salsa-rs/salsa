@@ -526,6 +526,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
             .provisional_status(self.zalsa, head_key_index)
             .unwrap_or(ProvisionalStatus::Provisional {
                 iteration: IterationCount::initial(),
+                verified_at: Revision::start(),
             });
 
         match cycle_head_kind {
