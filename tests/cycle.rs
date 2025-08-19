@@ -1129,11 +1129,12 @@ fn repeat_provisional_query_incremental() {
     // `validate_same_iteration` incorrectly returns `false`.
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
-            "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
             "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration_count: IterationCount(1), fell_back: false })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
         ]"#]]);
 }
+

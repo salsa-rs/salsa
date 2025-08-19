@@ -668,13 +668,13 @@ impl QueryRevisions {
         }
     }
 
-    /// Returns a reference to the `IdentityMap` for this query, or `None` if the map is empty.
-    pub fn tracked_struct_ids(&self) -> Option<&[(Identity, Id)]> {
+    /// Returns the ids of the tracked structs created when running this query.
+    pub fn tracked_struct_ids(&self) -> &[(Identity, Id)] {
         self.extra
             .0
             .as_ref()
             .map(|extra| &*extra.tracked_struct_ids)
-            .filter(|tracked_struct_ids| !tracked_struct_ids.is_empty())
+            .unwrap_or_default()
     }
 
     /// Returns a mutable reference to the `IdentityMap` for this query, or `None` if the map is empty.
@@ -1090,7 +1090,6 @@ impl ActiveQueryGuard<'_> {
                 #[cfg(debug_assertions)]
                 assert_eq!(stack.len(), self.push_len);
                 let frame = stack.last_mut().unwrap();
-                assert!(frame.tracked_struct_ids().is_empty());
                 frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
             })
         }
@@ -1105,6 +1104,7 @@ impl ActiveQueryGuard<'_> {
             previous.origin.as_ref(),
             QueryOriginRef::DerivedUntracked(_)
         );
+        let tracked_ids = previous.tracked_struct_ids();
 
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
@@ -1112,7 +1112,7 @@ impl ActiveQueryGuard<'_> {
                 #[cfg(debug_assertions)]
                 assert_eq!(stack.len(), self.push_len);
                 let frame = stack.last_mut().unwrap();
-                frame.seed_iteration(durability, changed_at, edges, untracked_read);
+                frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
             })
         }
     }
