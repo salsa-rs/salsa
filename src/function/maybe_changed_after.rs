@@ -786,7 +786,17 @@ impl VerifyCycleHeads {
         }
     }
 
+    #[inline]
     fn remove_head(&mut self, key: DatabaseKeyIndex) -> bool {
+        if self.heads.is_empty() {
+            return false;
+        }
+
+        self.remove_head_slow(key)
+    }
+
+    #[cold]
+    fn remove_head_slow(&mut self, key: DatabaseKeyIndex) -> bool {
         let found = self.heads.iter().position(|&head| head == key);
         let Some(found) = found else { return false };
 
@@ -803,6 +813,7 @@ impl VerifyCycleHeads {
         self.append_heads_slow(heads);
     }
 
+    #[cold]
     fn append_heads_slow(&mut self, other: &mut Vec<DatabaseKeyIndex>) {
         for key in other.drain(..) {
             self.insert_head(key);
