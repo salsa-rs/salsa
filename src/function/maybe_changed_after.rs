@@ -10,7 +10,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
+use crate::zalsa_local::{self, QueryEdgeKind, QueryOriginRef, ZalsaLocal};
 use crate::{Id, Revision};
 
 /// Result of memo validation.
@@ -269,7 +269,22 @@ where
                     "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
                 );
                 cycle_heads.insert_head(database_key_index);
-                VerifyResult::unchanged()
+
+                // SAFETY: We don't access the query stack reentrantly.
+                let running = unsafe {
+                    db.zalsa_local().with_query_stack_unchecked(|stack| {
+                        stack
+                            .iter()
+                            .any(|query| query.database_key_index == database_key_index)
+                    })
+                };
+
+                // If the cycle head is being executed, consider this query as changed.
+                if running {
+                    VerifyResult::changed()
+                } else {
+                    VerifyResult::unchanged()
+                }
             }
         }
     }
