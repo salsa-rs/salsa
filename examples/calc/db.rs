@@ -48,6 +48,7 @@ impl CalcDatabaseImpl {
     }
 
     #[cfg(test)]
+    #[allow(unused)]
     pub fn take_logs(&self) -> Vec<String> {
         let mut logs = self.logs.lock().unwrap();
         if let Some(logs) = &mut *logs {

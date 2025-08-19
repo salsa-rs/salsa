@@ -5,8 +5,6 @@ use crate::accumulator::{
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
     Accumulator,
 };
-use crate::cycle::{CycleHeads, IterationCount};
-use crate::durability::Durability;
 use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -14,6 +12,11 @@ use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
 use crate::Revision;
+use crate::{
+    cycle::{CycleHeads, IterationCount},
+    Id,
+};
+use crate::{durability::Durability, tracked_struct::Identity};
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {
@@ -74,6 +77,7 @@ impl ActiveQuery {
         changed_at: Revision,
         edges: &[QueryEdge],
         untracked_read: bool,
+        active_tracked_ids: &[(Identity, Id)],
     ) {
         assert!(self.input_outputs.is_empty());
 
@@ -83,7 +87,8 @@ impl ActiveQuery {
         self.untracked_read |= untracked_read;
 
         // Mark all tracked structs from the previous iteration as active.
-        self.tracked_struct_ids.mark_all_active();
+        self.tracked_struct_ids
+            .mark_all_active(active_tracked_ids.iter().copied());
     }
 
     pub(super) fn add_read(
@@ -408,7 +413,7 @@ pub(crate) struct CompletedQuery {
 
     /// The keys of any tracked structs that were created in a previous execution of the
     /// query but not the current one, and should be marked as stale.
-    pub(crate) stale_tracked_structs: Vec<DatabaseKeyIndex>,
+    pub(crate) stale_tracked_structs: Vec<(Identity, Id)>,
 }
 
 struct CapturedQuery {

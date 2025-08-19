@@ -1,8 +1,5 @@
 #![cfg(feature = "inventory")]
 
-//! Tests for cycles where the cycle head is stored on a tracked struct
-//! and that tracked struct is freed in a later revision.
-
 mod common;
 
 use crate::common::{EventLoggerDatabase, LogDatabase};
@@ -45,6 +42,7 @@ struct Node<'db> {
 #[salsa::input(debug)]
 struct GraphInput {
     simple: bool,
+    fixpoint_variant: usize,
 }
 
 #[salsa::tracked(returns(ref))]
@@ -125,11 +123,13 @@ fn cycle_recover(
     CycleRecoveryAction::Iterate
 }
 
+/// Tests for cycles where the cycle head is stored on a tracked struct
+/// and that tracked struct is freed in a later revision.
 #[test]
 fn main() {
     let mut db = EventLoggerDatabase::default();
 
-    let input = GraphInput::new(&db, false);
+    let input = GraphInput::new(&db, false, 0);
     let graph = create_graph(&db, input);
     let c = graph.find_node(&db, "c").unwrap();
 
@@ -190,5 +190,128 @@ fn main() {
             "WillCheckCancellation",
             "WillExecute { database_key: cost_to_start(Id(400)) }",
             "WillCheckCancellation",
+        ]"#]]);
+}
+
+#[salsa::tracked]
+struct IterationNode<'db> {
+    #[returns(ref)]
+    name: String,
+    iteration: usize,
+}
+
+/// A cyclic query that creates more tracked structs in later fixpoint iterations.
+///
+/// The output depends on the input's fixpoint_variant:
+/// - variant=0: Returns `[base]` (1 struct, no cycle)
+/// - variant=1: Through fixpoint iteration, returns `[iter_0, iter_1, iter_2]` (3 structs)
+/// - variant=2: Through fixpoint iteration, returns `[iter_0, iter_1]` (2 structs)
+/// - variant>2: Through fixpoint iteration, returns `[iter_0, iter_1]` (2 structs, same as variant=2)
+///
+/// When variant > 0, the query creates a cycle by calling itself. The fixpoint iteration
+/// proceeds as follows:
+/// 1. Initial: returns empty vector
+/// 2. First iteration: returns `[iter_0]`
+/// 3. Second iteration: returns `[iter_0, iter_1]`
+/// 4. Third iteration (only for variant=1): returns `[iter_0, iter_1, iter_2]`
+/// 5. Further iterations: no change, fixpoint reached
+#[salsa::tracked(cycle_fn=cycle_recover_with_structs, cycle_initial=initial_with_structs)]
+fn create_tracked_in_cycle<'db>(
+    db: &'db dyn Database,
+    input: GraphInput,
+) -> Vec<IterationNode<'db>> {
+    // Check if we should create more nodes based on the input.
+    let variant = input.fixpoint_variant(db);
+
+    if variant == 0 {
+        // Base case - no cycle, just return a single node.
+        vec![IterationNode::new(db, "base".to_string(), 0)]
+    } else {
+        // Create a cycle by calling ourselves.
+        let previous = create_tracked_in_cycle(db, input);
+
+        // In later iterations, create additional tracked structs.
+        if previous.is_empty() {
+            // First iteration - initial returns empty.
+            vec![IterationNode::new(db, "iter_0".to_string(), 0)]
+        } else {
+            // Limit based on variant: variant=1 allows 3 nodes, variant=2 allows 2 nodes.
+            let limit = if variant == 1 { 3 } else { 2 };
+
+            if previous.len() < limit {
+                // Subsequent iterations - add more nodes.
+                let mut nodes = previous;
+                nodes.push(IterationNode::new(
+                    db,
+                    format!("iter_{}", nodes.len()),
+                    nodes.len(),
+                ));
+                nodes
+            } else {
+                // Reached the limit.
+                previous
+            }
+        }
+    }
+}
+
+fn initial_with_structs(_db: &dyn Database, _input: GraphInput) -> Vec<IterationNode<'_>> {
+    vec![]
+}
+
+#[allow(clippy::ptr_arg)]
+fn cycle_recover_with_structs<'db>(
+    _db: &'db dyn Database,
+    _value: &Vec<IterationNode<'db>>,
+    _iteration: u32,
+    _input: GraphInput,
+) -> CycleRecoveryAction<Vec<IterationNode<'db>>> {
+    CycleRecoveryAction::Iterate
+}
+
+#[test]
+fn test_cycle_with_fixpoint_structs() {
+    let mut db = EventLoggerDatabase::default();
+
+    // Create an input that will trigger the cyclic behavior.
+    let input = GraphInput::new(&db, false, 1);
+
+    // Initial query - this will create structs across multiple iterations.
+    let nodes = create_tracked_in_cycle(&db, input);
+    assert_eq!(nodes.len(), 3);
+    // First iteration: previous is empty [], so we get [iter_0]
+    // Second iteration: previous is [iter_0], so we get [iter_0, iter_1]
+    // Third iteration: previous is [iter_0, iter_1], so we get [iter_0, iter_1, iter_2]
+    assert_eq!(nodes[0].name(&db), "iter_0");
+    assert_eq!(nodes[1].name(&db), "iter_1");
+    assert_eq!(nodes[2].name(&db), "iter_2");
+
+    // Clear logs to focus on the change.
+    db.clear_logs();
+
+    // Change the input to force re-execution with a different variant.
+    // This will create 2 tracked structs instead of 3 (one fewer than before).
+    input.set_fixpoint_variant(&mut db).to(2);
+
+    // Re-query - this should handle the tracked struct changes properly.
+    let nodes = create_tracked_in_cycle(&db, input);
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].name(&db), "iter_0");
+    assert_eq!(nodes[1].name(&db), "iter_1");
+
+    // Check the logs to ensure proper execution and struct management.
+    // We should see the third struct (iter_2) being discarded.
+    db.assert_logs(expect![[r#"
+        [
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "WillExecute { database_key: create_tracked_in_cycle(Id(0)) }",
+            "WillCheckCancellation",
+            "WillIterateCycle { database_key: create_tracked_in_cycle(Id(0)), iteration_count: IterationCount(1), fell_back: false }",
+            "WillCheckCancellation",
+            "WillIterateCycle { database_key: create_tracked_in_cycle(Id(0)), iteration_count: IterationCount(2), fell_back: false }",
+            "WillCheckCancellation",
+            "WillDiscardStaleOutput { execute_key: create_tracked_in_cycle(Id(0)), output_key: IterationNode(Id(402)) }",
+            "DidDiscard { key: IterationNode(Id(402)) }",
         ]"#]]);
 }

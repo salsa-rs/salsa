@@ -255,19 +255,15 @@ pub(crate) struct IdentityMap {
 impl IdentityMap {
     /// Seeds the identity map with the IDs from a previous revision.
     pub(crate) fn seed(&mut self, source: &[(Identity, Id)]) {
-        self.table.clear();
-        self.table
-            .reserve(source.len(), |entry| entry.identity.hash);
-
         for &(key, id) in source {
             self.insert_entry(key, id, false);
         }
     }
 
     // Mark all tracked structs in the map as created by the current query.
-    pub(crate) fn mark_all_active(&mut self) {
-        for entry in self.table.iter_mut() {
-            entry.active = true;
+    pub(crate) fn mark_all_active(&mut self, items: impl IntoIterator<Item = (Identity, Id)>) {
+        for (key, id) in items {
+            self.insert_entry(key, id, true);
         }
     }
 
@@ -330,7 +326,8 @@ impl IdentityMap {
     /// The first entry contains the identity and IDs of any tracked structs that were
     /// created by the current execution of the query, while the second entry contains any
     /// tracked structs that were created in a previous execution but not the current one.
-    pub(crate) fn drain(&mut self) -> (ThinVec<(Identity, Id)>, Vec<DatabaseKeyIndex>) {
+    #[expect(clippy::type_complexity)]
+    pub(crate) fn drain(&mut self) -> (ThinVec<(Identity, Id)>, Vec<(Identity, Id)>) {
         if self.table.is_empty() {
             return (ThinVec::new(), Vec::new());
         }
@@ -342,19 +339,14 @@ impl IdentityMap {
             if entry.active {
                 active.push((entry.identity, entry.id));
             } else {
-                stale.push(DatabaseKeyIndex::new(
-                    entry.identity.ingredient_index(),
-                    entry.id,
-                ));
+                stale.push((entry.identity, entry.id));
             }
         }
 
         // Removing a stale tracked struct ID shows up in the event logs, so make sure
         // the order is stable here.
         stale.sort_unstable_by(|a, b| {
-            a.ingredient_index()
-                .cmp(&b.ingredient_index())
-                .then(a.key_index().cmp(&b.key_index()))
+            (a.0.ingredient_index(), a.1).cmp(&(b.0.ingredient_index(), b.1))
         });
 
         (active, stale)

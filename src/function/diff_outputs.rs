@@ -27,8 +27,9 @@ where
 
         // Note that tracked structs are not stored as direct query outputs, but they are still outputs
         // that need to be reported as stale.
-        for output in &completed_query.stale_tracked_structs {
-            Self::report_stale_output(zalsa, key, *output);
+        for (identity, id) in &completed_query.stale_tracked_structs {
+            let output = DatabaseKeyIndex::new(identity.ingredient_index(), *id);
+            Self::report_stale_output(zalsa, key, output);
         }
 
         let mut stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
