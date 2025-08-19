@@ -10,7 +10,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{self, QueryEdgeKind, QueryOriginRef, ZalsaLocal};
+use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
 use crate::{Id, Revision};
 
 /// Result of memo validation.
@@ -781,6 +781,7 @@ impl VerifyCycleHeads {
         self.participating_queries.insert(key, result);
     }
 
+    #[inline]
     fn get_result(&self, key: DatabaseKeyIndex) -> Option<&VerifyResult> {
         self.participating_queries.get(&key)
     }
