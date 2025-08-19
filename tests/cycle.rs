@@ -1243,10 +1243,15 @@ fn repeat_query_participating_in_cycle() {
         [
             "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: head(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
             "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration_count: IterationCount(1), fell_back: false })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
@@ -1329,7 +1334,7 @@ fn repeat_query_participating_in_cycle2() {
     fn query_hot(db: &dyn Db, input: Input) -> u32 {
         let _ = Interned::new(db, 2);
 
-        let value = head(db, input);
+        let _ = head(db, input);
 
         1
     }
@@ -1346,18 +1351,13 @@ fn repeat_query_participating_in_cycle2() {
 
     assert_eq!(head(&db, input), 2);
 
-    // The interned value should only be validate once. We otherwise have a
-    // run-away situation where `deep_verify_memo` of `query_hot` is called over and over again.
-    // * First: when checking if `head` has changed
-    // * Second: when checking if `query_a` has changed
-    // * Third: when checking if `query_b` has changed
-    // * ...
-    // Ultimately, this can easily be more expensive than running the cycle head again.
+    // `DidValidateInternedValue { key: Interned(Id(400)), revision: R2 }` should only be logged
+    // once per `maybe_changed_after` root-call (e.g. validating `head` shouldn't validate `query_hot` multiple times).
+    //
+    // This is important to avoid a run-away situation where a query is called many times within a cycle and
+    // Salsa would end up recusively validating the hot query over and over again.
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: head(Id(0)) })",
             "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
