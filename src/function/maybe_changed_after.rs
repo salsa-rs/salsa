@@ -465,73 +465,75 @@ where
         }
 
         let verified_at = memo.verified_at.load();
-        let current_revision = zalsa.current_revision();
+
+        // This is an optimization to avoid unnecessary re-execution within the same revision.
+        // Don't apply it when verifying memos from past revisions. We want them to re-execute
+        // to verify their cycle heads and all participating queries.
+        if verified_at != zalsa.current_revision() {
+            return false;
+        }
 
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             zalsa_local.with_query_stack_unchecked(|stack| {
                 cycle_heads.iter().all(|cycle_head| {
-                    // If the memo was verified in the current revision, check if it has the same iteration count as any query on the stack.
-                    // We skip this check for memo's from past revisions because we want to re-execute them if the cycle heads re-execute.
-                    if current_revision == verified_at {
-                        if let Some(query) = stack
-                            .iter()
-                            .rev()
-                            .find(|query| query.database_key_index == cycle_head.database_key_index)
-                        {
-                            return query.iteration_count() == cycle_head.iteration_count;
-                        }
-                    }
+                    stack
+                        .iter()
+                        .rev()
+                        .find(|query| query.database_key_index == cycle_head.database_key_index)
+                        .map(|query| query.iteration_count())
+                        .or_else(|| {
+                            // If the cycle head isn't on our stack because:
+                            //
+                            // * another thread holds the lock on the cycle head (but it waits for the current query to complete)
+                            // * we're in `maybe_changed_after` because `maybe_changed_after` doesn't modify the cycle stack
+                            //
+                            // check if the latest memo has the same iteration count.
 
-                    // If the cycle head isn't on our stack because:
-                    //
-                    // * another thread holds the lock on the cycle head (but it waits for the current query to complete)
-                    // * we're in `maybe_changed_after` because `maybe_changed_after` doesn't modify the cycle stack
-                    //
-                    // check if the latest memo has the same iteration count.
+                            // However, we've to be careful to skip over fixpoint initial values:
+                            // If the head is the memo we're trying to validate, always return `None`
+                            // to force a re-execution of the query. This is necessary because the query
+                            // has obviously not completed its iteration yet.
+                            //
+                            // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
+                            // without this check. What happens there is that:
+                            //
+                            // * query a blocks on query b
+                            // * query b tries to claim a, fails to do so and inserts the fixpoint initial value
+                            // * query b completes and has `a` as head. It returns its query result Salsa blocks query b from
+                            //   exiting inside `block_on` (or the thread would complete before the cycle iteration is complete)
+                            // * query a resumes but panics because of the fixpoint iteration function
+                            // * query b resumes. It rexecutes its own query which then tries to fetch a (which depends on itself because it's a fixpoint initial value).
+                            //   Without this check, `validate_same_iteration` would return `true` because the latest memo for `a` is the fixpoint initial value.
+                            //   But it should return `false` so that query b's thread re-executes `a` (which then also causes the panic).
+                            //
+                            // That's why we always return `None` if the cycle head is the same as the current database key index.
+                            if cycle_head.database_key_index == database_key_index {
+                                return None;
+                            }
 
-                    // However, we've to be careful to skip over fixpoint initial values:
-                    // If the head is the memo we're trying to validate, always return `None`
-                    // to force a re-execution of the query. This is necessary because the query
-                    // has obviously not completed its iteration yet.
-                    //
-                    // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
-                    // without this check. What happens there is that:
-                    //
-                    // * query a blocks on query b
-                    // * query b tries to claim a, fails to do so and inserts the fixpoint initial value
-                    // * query b completes and has `a` as head. It returns its query result Salsa blocks query b from
-                    //   exiting inside `block_on` (or the thread would complete before the cycle iteration is complete)
-                    // * query a resumes but panics because of the fixpoint iteration function
-                    // * query b resumes. It rexecutes its own query which then tries to fetch a (which depends on itself because it's a fixpoint initial value).
-                    //   Without this check, `validate_same_iteration` would return `true` because the latest memo for `a` is the fixpoint initial value.
-                    //   But it should return `false` so that query b's thread re-executes `a` (which then also causes the panic).
-                    //
-                    // That's why we always return `None` if the cycle head is the same as the current database key index.
-                    if cycle_head.database_key_index == database_key_index {
-                        return false;
-                    }
+                            let ingredient = zalsa.lookup_ingredient(
+                                cycle_head.database_key_index.ingredient_index(),
+                            );
+                            let wait_result = ingredient
+                                .wait_for(zalsa, cycle_head.database_key_index.key_index());
 
-                    let ingredient =
-                        zalsa.lookup_ingredient(cycle_head.database_key_index.ingredient_index());
-                    let wait_result =
-                        ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index());
+                            if !wait_result.is_cycle() {
+                                return None;
+                            }
 
-                    if !wait_result.is_cycle() {
-                        return false;
-                    }
+                            let provisional_status = ingredient.provisional_status(
+                                zalsa,
+                                cycle_head.database_key_index.key_index(),
+                            )?;
 
-                    let Some(provisional_status) = ingredient
-                        .provisional_status(zalsa, cycle_head.database_key_index.key_index())
-                    else {
-                        return false;
-                    };
-
-                    if provisional_status.verified_at() != Some(verified_at) {
-                        false
-                    } else {
-                        provisional_status.iteration() == Some(cycle_head.iteration_count)
-                    }
+                            if provisional_status.verified_at() == Some(verified_at) {
+                                provisional_status.iteration()
+                            } else {
+                                None
+                            }
+                        })
+                        == Some(cycle_head.iteration_count)
                 })
             })
         }
