@@ -1,7 +1,5 @@
 #![cfg(feature = "inventory")]
 
-use expect_test::expect;
-
 #[salsa::input(heap_size = string_tuple_size_of)]
 struct MyInput {
     field: String,
@@ -56,8 +54,11 @@ fn input_to_tracked_tuple<'db>(
     )
 }
 
+#[rustversion::all(stable, since(1.91))]
 #[test]
 fn test() {
+    use expect_test::expect;
+
     let db = salsa::DatabaseImpl::new();
 
     let input1 = MyInput::new(&db, "a".repeat(50));
@@ -133,7 +134,7 @@ fn test() {
             (
                 "input_to_interned",
                 IngredientInfo {
-                    debug_name: "memory_usage::MyInterned",
+                    debug_name: "memory_usage::MyInterned<'_>",
                     count: 3,
                     size_of_metadata: 192,
                     size_of_fields: 24,
@@ -165,7 +166,7 @@ fn test() {
             (
                 "input_to_tracked",
                 IngredientInfo {
-                    debug_name: "memory_usage::MyTracked",
+                    debug_name: "memory_usage::MyTracked<'_>",
                     count: 2,
                     size_of_metadata: 168,
                     size_of_fields: 16,
@@ -175,7 +176,7 @@ fn test() {
             (
                 "input_to_tracked_tuple",
                 IngredientInfo {
-                    debug_name: "(memory_usage::MyTracked, memory_usage::MyTracked)",
+                    debug_name: "(memory_usage::MyTracked<'_>, memory_usage::MyTracked<'_>)",
                     count: 1,
                     size_of_metadata: 108,
                     size_of_fields: 16,
