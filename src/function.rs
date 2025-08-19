@@ -262,6 +262,31 @@ where
             .get()
             .expect("tracked function ingredients cannot be accessed before calling `init`")
     }
+
+    #[cfg(feature = "persistence")]
+    pub fn as_serialize<'db, S>(&'db self, zalsa: &'db mut Zalsa) -> impl serde::Serialize + 'db {
+        persistence::SerializeIngredient {
+            zalsa,
+            ingredient: self,
+        }
+    }
+
+    #[cfg(feature = "persistence")]
+    pub fn deserialize<'de, D>(
+        &mut self,
+        zalsa: &mut Zalsa,
+        deserializer: D,
+    ) -> Result<(), D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let deserialize = persistence::DeserializeIngredient {
+            zalsa,
+            ingredient: self,
+        };
+
+        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
+    }
 }
 
 impl<C> Ingredient for IngredientImpl<C>
@@ -469,32 +494,6 @@ where
         }
 
         false
-    }
-
-    #[cfg(feature = "persistence")]
-    unsafe fn serialize<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
-    ) {
-        f(&persistence::SerializeIngredient {
-            zalsa,
-            ingredient: self,
-        })
-    }
-
-    #[cfg(feature = "persistence")]
-    fn deserialize(
-        &mut self,
-        zalsa: &mut Zalsa,
-        deserializer: &mut dyn erased_serde::Deserializer,
-    ) -> Result<(), erased_serde::Error> {
-        let deserialize = persistence::DeserializeIngredient {
-            zalsa,
-            ingredient: self,
-        };
-
-        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
 }
 

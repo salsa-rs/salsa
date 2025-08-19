@@ -42,7 +42,7 @@ erased-serde = { version = "0.4.6", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
-default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
+default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator", "persistence"]
 inventory = ["dep:inventory"]
 persistence = [
     "dep:serde",
