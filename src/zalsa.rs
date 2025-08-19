@@ -74,6 +74,7 @@ static NONCE: crate::nonce::NonceGenerator<StorageNonce> = crate::nonce::NonceGe
 /// Each ingredient is given a unique index as the database is being created.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "persistence", serde(transparent))]
 pub struct IngredientIndex(u32);
 
 impl IngredientIndex {

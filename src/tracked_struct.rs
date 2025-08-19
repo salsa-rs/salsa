@@ -428,6 +428,7 @@ where
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "persistence", serde(transparent))]
 pub struct Disambiguator(u32);
 
 #[derive(Default, Debug)]
@@ -1231,7 +1232,7 @@ mod tests {
 mod persistence {
     use std::fmt;
 
-    use serde::ser::SerializeMap;
+    use serde::ser::{SerializeMap, SerializeStruct};
     use serde::{de, Deserialize};
 
     use super::{Configuration, IngredientImpl, Value};
@@ -1259,7 +1260,8 @@ mod persistence {
         {
             let Self { zalsa, .. } = self;
 
-            let mut map = serializer.serialize_map(None)?;
+            let count = zalsa.table().slots_of::<Value<C>>().count();
+            let mut map = serializer.serialize_map(Some(count))?;
 
             for (id, value) in zalsa.table().slots_of::<Value<C>>() {
                 map.serialize_entry(&id.as_bits(), value)?;
@@ -1277,21 +1279,7 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            let mut map = serializer.serialize_map(None)?;
-
-            struct SerializeFields<'db, C: Configuration>(&'db C::Fields<'static>);
-
-            impl<C> serde::Serialize for SerializeFields<'_, C>
-            where
-                C: Configuration,
-            {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: serde::Serializer,
-                {
-                    C::serialize(self.0, serializer)
-                }
-            }
+            let mut value = serializer.serialize_struct("Value", 4)?;
 
             let Value {
                 durability,
@@ -1301,12 +1289,26 @@ mod persistence {
                 memos: _,
             } = self;
 
-            map.serialize_entry(&"durability", &durability)?;
-            map.serialize_entry(&"updated_at", &updated_at)?;
-            map.serialize_entry(&"revisions", &revisions)?;
-            map.serialize_entry(&"fields", &SerializeFields::<C>(fields))?;
+            value.serialize_field("durability", &durability)?;
+            value.serialize_field("updated_at", &updated_at)?;
+            value.serialize_field("revisions", &revisions)?;
+            value.serialize_field("fields", &SerializeFields::<C>(fields))?;
 
-            map.end()
+            value.end()
+        }
+    }
+
+    struct SerializeFields<'db, C: Configuration>(&'db C::Fields<'static>);
+
+    impl<C> serde::Serialize for SerializeFields<'_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            C::serialize(self.0, serializer)
         }
     }
 
@@ -1391,6 +1393,7 @@ mod persistence {
     }
 
     #[derive(Deserialize)]
+    #[serde(rename = "Value")]
     pub struct DeserializeValue<C: Configuration> {
         durability: Durability,
         updated_at: OptionalAtomicRevision,

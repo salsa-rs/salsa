@@ -367,9 +367,9 @@ mod persistence {
 
     /// A reference to the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
     pub(crate) struct MappedMemo<'memo, 'db, C: Configuration> {
-        value: Option<&'memo C::Output<'db>>,
-        verified_at: AtomicRevision,
-        revisions: MappedQueryRevisions<'memo>,
+        pub(crate) value: Option<&'memo C::Output<'db>>,
+        pub(crate) verified_at: AtomicRevision,
+        pub(crate) revisions: MappedQueryRevisions<'memo>,
     }
 
     impl<'db, C: Configuration> Memo<'db, C> {
@@ -437,6 +437,7 @@ mod persistence {
             D: serde::Deserializer<'de>,
         {
             #[derive(Deserialize)]
+            #[serde(rename = "Memo")]
             pub struct DeserializeMemo<C: Configuration> {
                 #[serde(bound = "C: Configuration")]
                 value: DeserializeValue<C>,

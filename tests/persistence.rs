@@ -12,6 +12,11 @@ struct MyInput {
     field: usize,
 }
 
+#[salsa::input(persist, singleton)]
+struct MySingleton {
+    field: usize,
+}
+
 #[salsa::interned(persist)]
 struct MyInterned<'db> {
     field: String,
@@ -60,7 +65,7 @@ fn everything() {
             "0": {
               "1": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -71,7 +76,7 @@ fn everything() {
               },
               "2": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -88,6 +93,7 @@ fn everything() {
 
     let input1 = MyInput::new(&db, 1);
     let input2 = MyInput::new(&db, 2);
+    let _singleton = MySingleton::new(&db, 1);
 
     let _out = unit_to_interned(&db);
     let _out = input_to_tracked(&db, input1);
@@ -109,7 +115,7 @@ fn everything() {
             "0": {
               "1": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -120,7 +126,7 @@ fn everything() {
               },
               "2": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -131,7 +137,7 @@ fn everything() {
               },
               "3": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -142,7 +148,7 @@ fn everything() {
               },
               "4": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -153,17 +159,30 @@ fn everything() {
               }
             },
             "2": {
-              "2049": {
-                "durability": "High",
+              "1025": {
+                "durabilities": [
+                  0
+                ],
+                "revisions": [
+                  1
+                ],
+                "fields": [
+                  1
+                ]
+              }
+            },
+            "4": {
+              "3073": {
+                "durability": 2,
                 "last_interned_at": 1,
                 "fields": [
                   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                 ]
               }
             },
-            "3": {
-              "3073": {
-                "durability": "Low",
+            "5": {
+              "4097": {
+                "durability": 0,
                 "updated_at": 1,
                 "revisions": [],
                 "fields": [
@@ -171,9 +190,9 @@ fn everything() {
                 ]
               }
             },
-            "5": {
-              "4097": {
-                "durability": "High",
+            "7": {
+              "5121": {
+                "durability": 2,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
                   3,
@@ -181,34 +200,30 @@ fn everything() {
                 ]
               }
             },
-            "17": {
-              "1025": {
-                "durability": "High",
+            "19": {
+              "2049": {
+                "durability": 2,
                 "last_interned_at": 18446744073709551615,
                 "fields": null
               }
             },
-            "4": {
-              "5:4097": {
+            "6": {
+              "7:5121": {
                 "value": "aaa",
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
-                  "durability": "Low",
+                  "durability": 0,
                   "origin": {
                     "Derived": [
-                      {
-                        "key": {
-                          "key_index": 3,
-                          "ingredient_index": 1
-                        }
-                      },
-                      {
-                        "key": {
-                          "key_index": 4,
-                          "ingredient_index": 1
-                        }
-                      }
+                      [
+                        3,
+                        1
+                      ],
+                      [
+                        4,
+                        1
+                      ]
                     ]
                   },
                   "verified_final": true,
@@ -216,21 +231,19 @@ fn everything() {
                 }
               }
             },
-            "6": {
+            "8": {
               "0:3": {
-                "value": 3073,
+                "value": 4097,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
-                  "durability": "Low",
+                  "durability": 0,
                   "origin": {
                     "Derived": [
-                      {
-                        "key": {
-                          "key_index": 3,
-                          "ingredient_index": 1
-                        }
-                      }
+                      [
+                        3,
+                        1
+                      ]
                     ]
                   },
                   "verified_final": true,
@@ -238,11 +251,11 @@ fn everything() {
                     "tracked_struct_ids": [
                       [
                         {
-                          "ingredient_index": 3,
+                          "ingredient_index": 5,
                           "hash": 6073466998405137972,
                           "disambiguator": 0
                         },
-                        3073
+                        4097
                       ]
                     ],
                     "cycle_heads": [],
@@ -251,21 +264,19 @@ fn everything() {
                 }
               }
             },
-            "16": {
-              "17:1025": {
-                "value": 2049,
+            "18": {
+              "19:2049": {
+                "value": 3073,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
-                  "durability": "High",
+                  "durability": 2,
                   "origin": {
                     "Derived": [
-                      {
-                        "key": {
-                          "key_index": 2049,
-                          "ingredient_index": 2
-                        }
-                      }
+                      [
+                        3073,
+                        4
+                      ]
                     ]
                   },
                   "verified_final": true,
@@ -284,6 +295,8 @@ fn everything() {
         &mut serde_json::Deserializer::from_str(&serialized),
     )
     .unwrap();
+
+    assert_eq!(MySingleton::get(&db).field(&db), 1);
 
     let _out = unit_to_interned(&db);
     let _out = input_to_tracked(&db, input1);
@@ -336,7 +349,7 @@ fn partial_query() {
             "0": {
               "1": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -346,21 +359,19 @@ fn partial_query() {
                 ]
               }
             },
-            "11": {
+            "13": {
               "0:1": {
                 "value": 1,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
-                  "durability": "Low",
+                  "durability": 0,
                   "origin": {
                     "Derived": [
-                      {
-                        "key": {
-                          "key_index": 1,
-                          "ingredient_index": 1
-                        }
-                      }
+                      [
+                        1,
+                        1
+                      ]
                     ]
                   },
                   "verified_final": true,
@@ -454,7 +465,7 @@ fn partial_query_interned() {
             "0": {
               "1": {
                 "durabilities": [
-                  "Low"
+                  0
                 ],
                 "revisions": [
                   1
@@ -464,18 +475,18 @@ fn partial_query_interned() {
                 ]
               }
             },
-            "2": {
+            "4": {
               "3073": {
-                "durability": "Low",
+                "durability": 0,
                 "last_interned_at": 1,
                 "fields": [
                   "0"
                 ]
               }
             },
-            "15": {
+            "17": {
               "1025": {
-                "durability": "High",
+                "durability": 2,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
                   1,
@@ -483,27 +494,23 @@ fn partial_query_interned() {
                 ]
               }
             },
-            "14": {
-              "15:1025": {
+            "16": {
+              "17:1025": {
                 "value": 3073,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
-                  "durability": "Low",
+                  "durability": 0,
                   "origin": {
                     "Derived": [
-                      {
-                        "key": {
-                          "key_index": 1,
-                          "ingredient_index": 1
-                        }
-                      },
-                      {
-                        "key": {
-                          "key_index": 3073,
-                          "ingredient_index": 2
-                        }
-                      }
+                      [
+                        1,
+                        1
+                      ],
+                      [
+                        3073,
+                        4
+                      ]
                     ]
                   },
                   "verified_final": true,

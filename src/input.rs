@@ -152,16 +152,16 @@ impl<C: Configuration> IngredientImpl<C> {
         durabilities: C::Durabilities,
     ) -> C::Struct {
         let id = self.singleton.with_scope(|| {
-            let (id, _) = zalsa_local.allocate(zalsa, self.ingredient_index, |_| Value::<C> {
-                fields,
-                revisions,
-                durabilities,
-                // SAFETY: We only ever access the memos of a value that we allocated through
-                // our `MemoTableTypes`.
-                memos: unsafe { MemoTable::new(self.memo_table_types()) },
-            });
-
-            id
+            zalsa_local
+                .allocate(zalsa, self.ingredient_index, |_| Value::<C> {
+                    fields,
+                    revisions,
+                    durabilities,
+                    // SAFETY: We only ever access the memos of a value that we allocated through
+                    // our `MemoTableTypes`.
+                    memos: unsafe { MemoTable::new(self.memo_table_types()) },
+                })
+                .0
         });
 
         FromIdWithDb::from_id(id, zalsa)
@@ -440,10 +440,11 @@ where
 mod persistence {
     use std::fmt;
 
-    use serde::ser::SerializeMap;
+    use serde::ser::{SerializeMap, SerializeStruct};
     use serde::{de, Deserialize};
 
     use super::{Configuration, IngredientImpl, Value};
+    use crate::input::singleton::SingletonChoice;
     use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
     use crate::zalsa::Zalsa;
@@ -467,7 +468,8 @@ mod persistence {
         {
             let Self { zalsa, .. } = self;
 
-            let mut map = serializer.serialize_map(None)?;
+            let count = zalsa.table().slots_of::<Value<C>>().count();
+            let mut map = serializer.serialize_map(Some(count))?;
 
             for (id, value) in zalsa.table().slots_of::<Value<C>>() {
                 map.serialize_entry(&id.as_bits(), value)?;
@@ -485,21 +487,7 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            let mut map = serializer.serialize_map(None)?;
-
-            struct SerializeFields<'db, C: Configuration>(&'db C::Fields);
-
-            impl<C> serde::Serialize for SerializeFields<'_, C>
-            where
-                C: Configuration,
-            {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: serde::Serializer,
-                {
-                    C::serialize(self.0, serializer)
-                }
-            }
+            let mut value = serializer.serialize_struct("Value", 3)?;
 
             let Value {
                 fields,
@@ -508,11 +496,25 @@ mod persistence {
                 memos: _,
             } = self;
 
-            map.serialize_entry(&"durabilities", &durabilities)?;
-            map.serialize_entry(&"revisions", &revisions)?;
-            map.serialize_entry(&"fields", &SerializeFields::<C>(fields))?;
+            value.serialize_field("durabilities", &durabilities)?;
+            value.serialize_field("revisions", &revisions)?;
+            value.serialize_field("fields", &SerializeFields::<C>(fields))?;
 
-            map.end()
+            value.end()
+        }
+    }
+
+    struct SerializeFields<'db, C: Configuration>(&'db C::Fields);
+
+    impl<C> serde::Serialize for SerializeFields<'_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            C::serialize(self.0, serializer)
         }
     }
 
@@ -577,13 +579,14 @@ mod persistence {
                 // Initialize the slot.
                 //
                 // SAFETY: We have a mutable reference to the database.
-                let (allocated_id, _) = unsafe {
+                let allocated_id = ingredient.singleton.with_scope(|| unsafe {
                     zalsa
                         .table()
                         .page(page_idx)
                         .allocate(page_idx, |_| value)
                         .unwrap_or_else(|_| panic!("serialized an invalid `Id`: {id:?}"))
-                };
+                        .0
+                });
 
                 assert_eq!(
                     allocated_id, id,
@@ -596,6 +599,7 @@ mod persistence {
     }
 
     #[derive(Deserialize)]
+    #[serde(rename = "Value")]
     pub struct DeserializeValue<C: Configuration> {
         durabilities: C::Durabilities,
         revisions: C::Revisions,

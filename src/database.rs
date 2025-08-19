@@ -160,7 +160,7 @@ mod persistence {
 
     use std::fmt;
 
-    use serde::de::{self, DeserializeSeed};
+    use serde::de::{self, DeserializeSeed, SeqAccess};
     use serde::ser::SerializeMap;
 
     impl dyn Database {
@@ -273,6 +273,21 @@ mod persistence {
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter.write_str("struct Database")
+        }
+
+        fn visit_seq<V>(self, mut seq: V) -> Result<(), V::Error>
+        where
+            V: SeqAccess<'de>,
+        {
+            let mut runtime = seq
+                .next_element()?
+                .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+            let () = seq
+                .next_element_seed(DeserializeIngredients(self.0))?
+                .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+
+            self.0.runtime_mut().deserialize_from(&mut runtime);
+            Ok(())
         }
 
         fn visit_map<V>(self, mut map: V) -> Result<(), V::Error>
