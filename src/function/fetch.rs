@@ -1,3 +1,5 @@
+use rustc_hash::FxHashMap;
+
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::maybe_changed_after::VerifyCycleHeads;
 use crate::function::memo::Memo;
@@ -181,17 +183,19 @@ where
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
 
-                let mut cycle_heads = VerifyCycleHeads::default();
+                let mut cycle_heads = Vec::new();
+                let mut participating_queries = FxHashMap::default();
+
                 let verify_result = self.deep_verify_memo(
                     db,
                     zalsa,
                     old_memo,
                     database_key_index,
-                    &mut cycle_heads,
+                    &mut VerifyCycleHeads::new(&mut cycle_heads, &mut participating_queries),
                     can_shallow_update,
                 );
 
-                if verify_result.is_unchanged() && !cycle_heads.has_any() {
+                if verify_result.is_unchanged() && cycle_heads.is_empty() {
                     // SAFETY: memo is present in memo_map and we have verified that it is
                     // still valid for the current revision.
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };

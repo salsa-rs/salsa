@@ -588,11 +588,9 @@ where
                             // The `MaybeChangeAfterCycleHeads` is used as an out parameter and it's
                             // the caller's responsibility to pass an empty `heads`, which is what we do here.
                             let mut inner_cycle_heads = VerifyCycleHeads {
-                                heads: std::mem::take(&mut child_cycle_heads),
-                                participating_queries: std::mem::take(
-                                    &mut cycle_heads.participating_queries,
-                                ),
                                 has_outer_cycles: cycle_heads.has_any(),
+                                heads: &mut child_cycle_heads,
+                                participating_queries: cycle_heads.participating_queries,
                             };
 
                             let input_result = dependency_index.maybe_changed_after(
@@ -602,10 +600,6 @@ where
                                 &mut inner_cycle_heads,
                             );
 
-                            // Reuse the cycle head allocation.
-                            child_cycle_heads = inner_cycle_heads.heads;
-                            cycle_heads.participating_queries =
-                                inner_cycle_heads.participating_queries;
                             // Aggregate the cycle heads into the parent cycle heads
                             cycle_heads.append_heads(&mut child_cycle_heads);
 
@@ -756,23 +750,34 @@ impl ShallowUpdate {
 /// aren't included.
 ///
 /// [`maybe_changed_after`]: crate::ingredient::Ingredient::maybe_changed_after
-#[derive(Debug, Default)]
-pub struct VerifyCycleHeads {
+#[derive(Debug)]
+pub struct VerifyCycleHeads<'a> {
     /// The cycle heads encountered while verifying this ingredient and its subtree.
-    heads: Vec<DatabaseKeyIndex>,
+    heads: &'a mut Vec<DatabaseKeyIndex>,
 
     /// The cached `maybe_changed_after` results for queries that participate in cycles but aren't a cycle head
     /// themselves. We need to cache the results here to avoid calling `deep_verify_memo` repeatedly
     /// for queries that have cyclic dependencies (b depends on a (iteration 0) and a depends on b(iteration 1))
     /// as well as to avoid a run-away situation if a query is dependet on a lot inside a single cycle.
-    participating_queries: FxHashMap<DatabaseKeyIndex, VerifyResult>,
+    participating_queries: &'a mut FxHashMap<DatabaseKeyIndex, VerifyResult>,
 
     /// Whether the outer query (e.g. the parent query running `maybe_changed_after`) has encountered
     /// any cycles to this point.
     has_outer_cycles: bool,
 }
 
-impl VerifyCycleHeads {
+impl<'a> VerifyCycleHeads<'a> {
+    pub(crate) fn new(
+        heads: &'a mut Vec<DatabaseKeyIndex>,
+        participating_queries: &'a mut FxHashMap<DatabaseKeyIndex, VerifyResult>,
+    ) -> Self {
+        Self {
+            heads,
+            participating_queries,
+            has_outer_cycles: false,
+        }
+    }
+
     /// Returns `true` if this query or any of its dependencies depend on this cycle.
     #[inline]
     fn contains_head(&self, key: DatabaseKeyIndex) -> bool {
