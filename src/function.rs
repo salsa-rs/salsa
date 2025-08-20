@@ -345,10 +345,16 @@ where
             if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                 ProvisionalStatus::FallbackImmediate
             } else {
-                ProvisionalStatus::Final { iteration }
+                ProvisionalStatus::Final {
+                    iteration,
+                    verified_at: memo.verified_at.load(),
+                }
             }
         } else {
-            ProvisionalStatus::Provisional { iteration }
+            ProvisionalStatus::Provisional {
+                iteration,
+                verified_at: memo.verified_at.load(),
+            }
         })
     }
 

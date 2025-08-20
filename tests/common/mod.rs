@@ -158,6 +158,7 @@ impl Default for ExecuteValidateLoggerDatabase {
                 move |event| match event.kind {
                     salsa::EventKind::WillExecute { .. }
                     | salsa::EventKind::WillIterateCycle { .. }
+                    | salsa::EventKind::DidValidateInternedValue { .. }
                     | salsa::EventKind::DidValidateMemoizedValue { .. } => {
                         logger.push_log(format!("salsa_event({:?})", event.kind));
                     }

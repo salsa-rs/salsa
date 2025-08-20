@@ -53,6 +53,7 @@ use thin_vec::{thin_vec, ThinVec};
 
 use crate::key::DatabaseKeyIndex;
 use crate::sync::OnceLock;
+use crate::Revision;
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
 ///
@@ -237,16 +238,30 @@ pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProvisionalStatus {
-    Provisional { iteration: IterationCount },
-    Final { iteration: IterationCount },
+    Provisional {
+        iteration: IterationCount,
+        verified_at: Revision,
+    },
+    Final {
+        iteration: IterationCount,
+        verified_at: Revision,
+    },
     FallbackImmediate,
 }
 
 impl ProvisionalStatus {
     pub(crate) const fn iteration(&self) -> Option<IterationCount> {
         match self {
-            ProvisionalStatus::Provisional { iteration } => Some(*iteration),
-            ProvisionalStatus::Final { iteration } => Some(*iteration),
+            ProvisionalStatus::Provisional { iteration, .. } => Some(*iteration),
+            ProvisionalStatus::Final { iteration, .. } => Some(*iteration),
+            ProvisionalStatus::FallbackImmediate => None,
+        }
+    }
+
+    pub(crate) const fn verified_at(&self) -> Option<Revision> {
+        match self {
+            ProvisionalStatus::Provisional { verified_at, .. } => Some(*verified_at),
+            ProvisionalStatus::Final { verified_at, .. } => Some(*verified_at),
             ProvisionalStatus::FallbackImmediate => None,
         }
     }

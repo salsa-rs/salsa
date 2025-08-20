@@ -1,9 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{
-    empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
-};
+use crate::cycle::{empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -76,11 +74,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Is it a provisional value or has it been finalized and in which iteration.
     ///
     /// Returns `None` if `input` doesn't exist.
-    fn provisional_status(&self, zalsa: &Zalsa, input: Id) -> Option<ProvisionalStatus> {
-        _ = (zalsa, input);
-        Some(ProvisionalStatus::Final {
-            iteration: IterationCount::initial(),
-        })
+    fn provisional_status(&self, _zalsa: &Zalsa, _input: Id) -> Option<ProvisionalStatus> {
+        unreachable!("provisional_status should only be called on cycle heads and only functions can be cycle heads");
     }
 
     /// Returns the cycle heads for this ingredient.

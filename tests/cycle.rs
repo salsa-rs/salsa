@@ -1137,3 +1137,242 @@ fn repeat_provisional_query_incremental() {
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
         ]"#]]);
 }
+
+/// Tests a situation where a query participating in a cycle gets called many times (think thousands of times).
+///
+/// We want to avoid calling `deep_verify_memo` for that query over and over again.
+/// This isn't an issue for regular queries because a non-cyclic query is guaranteed to be verified
+/// after `maybe_changed_after` because:
+/// * It can be shallow verified
+/// * `deep_verify_memo` returns `unchanged` and it updates the `verified_at` revision.
+/// * `deep_verify_memo` returns `changed` and Salsa re-executes the query. The query is verified once `execute` completes.
+///
+/// The same guarantee doesn't exist for queries participating in cycles because:
+///
+/// * Salsa update `verified_at` because it depends on the cycle head if the query didn't change.
+/// * Salsa doesn't run `execute` because some inputs may not have been verified yet (which can lead to all sort of pancis).
+#[test]
+fn repeat_query_participating_in_cycle() {
+    #[salsa::input]
+    struct Input {
+        value: u32,
+    }
+
+    #[salsa::interned]
+    struct Interned {
+        value: u32,
+    }
+
+    #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=initial)]
+    fn head(db: &dyn Db, input: Input) -> u32 {
+        let a = query_a(db, input);
+
+        a.min(2)
+    }
+
+    fn initial(_db: &dyn Db, _input: Input) -> u32 {
+        0
+    }
+
+    fn cycle_recover(
+        _db: &dyn Db,
+        _value: &u32,
+        _count: u32,
+        _input: Input,
+    ) -> CycleRecoveryAction<u32> {
+        CycleRecoveryAction::Iterate
+    }
+
+    #[salsa::tracked]
+    fn query_a(db: &dyn Db, input: Input) -> u32 {
+        let _ = query_b(db, input);
+
+        query_hot(db, input)
+    }
+
+    #[salsa::tracked]
+    fn query_b(db: &dyn Db, input: Input) -> u32 {
+        let _ = query_c(db, input);
+
+        query_hot(db, input)
+    }
+
+    #[salsa::tracked]
+    fn query_c(db: &dyn Db, input: Input) -> u32 {
+        let _ = query_d(db, input);
+
+        query_hot(db, input)
+    }
+
+    #[salsa::tracked]
+    fn query_d(db: &dyn Db, input: Input) -> u32 {
+        query_hot(db, input)
+    }
+
+    #[salsa::tracked]
+    fn query_hot(db: &dyn Db, input: Input) -> u32 {
+        let value = head(db, input);
+
+        let _ = Interned::new(db, 2);
+
+        let _ = input.value(db);
+
+        value + 1
+    }
+
+    let mut db = ExecuteValidateLoggerDatabase::default();
+
+    let input = Input::new(&db, 1);
+
+    assert_eq!(head(&db, input), 2);
+
+    db.clear_logs();
+
+    input.set_value(&mut db).to(10);
+
+    assert_eq!(head(&db, input), 2);
+
+    // The interned value should only be validate once. We otherwise have a
+    // run-away situation where `deep_verify_memo` of `query_hot` is called over and over again.
+    // * First: when checking if `head` has changed
+    // * Second: when checking if `query_a` has changed
+    // * Third: when checking if `query_b` has changed
+    // * ...
+    // Ultimately, this can easily be more expensive than running the cycle head again.
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: head(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration_count: IterationCount(1), fell_back: false })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration_count: IterationCount(2), fell_back: false })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
+        ]"#]]);
+}
+
+/// Tests a similar scenario as `repeat_query_participating_in_cycle` with the main difference
+/// that `query_hot` is called before calling the next `query_xxx`.
+#[test]
+fn repeat_query_participating_in_cycle2() {
+    #[salsa::input]
+    struct Input {
+        value: u32,
+    }
+
+    #[salsa::interned]
+    struct Interned {
+        value: u32,
+    }
+
+    #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=initial)]
+    fn head(db: &dyn Db, input: Input) -> u32 {
+        let a = query_a(db, input);
+
+        a.min(2)
+    }
+
+    fn initial(_db: &dyn Db, _input: Input) -> u32 {
+        0
+    }
+
+    fn cycle_recover(
+        _db: &dyn Db,
+        _value: &u32,
+        _count: u32,
+        _input: Input,
+    ) -> CycleRecoveryAction<u32> {
+        CycleRecoveryAction::Iterate
+    }
+
+    #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=initial)]
+    fn query_a(db: &dyn Db, input: Input) -> u32 {
+        let _ = query_hot(db, input);
+        query_b(db, input)
+    }
+
+    #[salsa::tracked]
+    fn query_b(db: &dyn Db, input: Input) -> u32 {
+        let _ = query_hot(db, input);
+        query_c(db, input)
+    }
+
+    #[salsa::tracked]
+    fn query_c(db: &dyn Db, input: Input) -> u32 {
+        let _ = query_hot(db, input);
+        query_d(db, input)
+    }
+
+    #[salsa::tracked]
+    fn query_d(db: &dyn Db, input: Input) -> u32 {
+        let _ = query_hot(db, input);
+
+        let value = head(db, input);
+        let _ = input.value(db);
+
+        value + 1
+    }
+
+    #[salsa::tracked]
+    fn query_hot(db: &dyn Db, input: Input) -> u32 {
+        let _ = Interned::new(db, 2);
+
+        let _ = head(db, input);
+
+        1
+    }
+
+    let mut db = ExecuteValidateLoggerDatabase::default();
+
+    let input = Input::new(&db, 1);
+
+    assert_eq!(head(&db, input), 2);
+
+    db.clear_logs();
+
+    input.set_value(&mut db).to(10);
+
+    assert_eq!(head(&db, input), 2);
+
+    // `DidValidateInternedValue { key: Interned(Id(400)), revision: R2 }` should only be logged
+    // once per `maybe_changed_after` root-call (e.g. validating `head` shouldn't validate `query_hot` multiple times).
+    //
+    // This is important to avoid a run-away situation where a query is called many times within a cycle and
+    // Salsa would end up recusively validating the hot query over and over again.
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: head(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration_count: IterationCount(1), fell_back: false })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration_count: IterationCount(2), fell_back: false })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
+        ]"#]]);
+}
