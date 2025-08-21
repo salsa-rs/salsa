@@ -3,9 +3,86 @@
 mod common;
 
 use common::LogDatabase;
-use salsa::{Database, Durability, Setter};
+use salsa::{Database, Durability, HasJar, Setter};
 
 use expect_test::expect;
+
+use serde::ser::SerializeTupleStruct;
+
+struct SerializeDatabase<'db>(&'db dyn salsa::Database);
+
+impl serde::Serialize for SerializeDatabase<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let SerializeDatabase(db) = *self;
+
+        let mut seq = serializer.serialize_tuple_struct("Database", 14)?;
+
+        seq.serialize_field(&db.as_serialize());
+
+        // TODO: `seq.serialize_field(salsa::serialize_ingredient::<MyInput>())`
+
+        seq.serialize_field(&MyInput::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&MySingleton::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&MyInterned::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&MyTracked::ingredient(db).as_serialize(db))?;
+
+        seq.serialize_field(&unit_to_interned::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&input_to_tracked::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&input_pair_to_string::ingredient(db).as_serialize(db))?;
+
+        seq.serialize_field(&partial_query::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&partial_query_inner::ingredient(db).as_serialize(db))?;
+
+        seq.serialize_field(&partial_query_intern::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&partial_query_intern_inner::ingredient(db).as_serialize(db))?;
+
+        seq.serialize_field(&specify::ingredient(db).as_serialize(db))?;
+        seq.serialize_field(&specified_query::ingredient(db).as_serialize(db))?;
+
+        seq.end()
+    }
+}
+
+struct DeserializeDatabase<'db>(&'db mut dyn salsa::Database);
+
+impl<'de> serde::de::DeserializeSeed<'de> for DeserializeDatabase<'_> {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_tuple_struct("Database", 14, self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for DeserializeDatabase<'_> {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "a sequence")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let DeserializeDatabase(db) = self;
+
+        seq.next_element_seed(db.as_deserialize());
+
+        // TODO: `salsa::deserialize_ingredient::<MyInput>(db, |seed| seq.next_element_seed(seed))`
+
+        salsa::with_mut_ingredient::<MyInput, _>(db, |i, db| {
+            seq.next_element_seed(i.as_deserialize(db))
+        })?;
+
+        Ok(())
+    }
+}
 
 #[salsa::input(persist)]
 struct MyInput {
@@ -49,8 +126,7 @@ fn everything() {
     let _input1 = MyInput::new(&db, 1);
     let _input2 = MyInput::new(&db, 2);
 
-    let serialized =
-        serde_json::to_string_pretty(&<dyn salsa::Database>::as_serialize(&mut db)).unwrap();
+    let serialized = serde_json::to_string_pretty(&SerializeDatabase(&db)).unwrap();
 
     let expected = expect![[r#"
         {
@@ -99,8 +175,7 @@ fn everything() {
     let _out = input_to_tracked(&db, input1);
     let _out = input_pair_to_string(&db, input1, input2);
 
-    let serialized =
-        serde_json::to_string_pretty(&<dyn salsa::Database>::as_serialize(&mut db)).unwrap();
+    let serialized = serde_json::to_string_pretty(&SerializeDatabase(&db)).unwrap();
 
     let expected = expect![[r#"
         {
@@ -312,30 +387,29 @@ fn everything() {
         ]"#]]);
 }
 
-#[test]
-fn partial_query() {
-    use salsa::plumbing::{FromId, ZalsaDatabase};
-
-    #[salsa::tracked(persist)]
-    fn query<'db>(db: &'db dyn salsa::Database, input: MyInput) -> usize {
-        inner_query(db, input) + 1
-    }
-
+#[salsa::tracked(persist)]
+fn partial_query<'db>(db: &'db dyn salsa::Database, input: MyInput) -> usize {
     // Note that the inner query is not persisted, but we should still preserve the dependency on `input.field`.
-    #[salsa::tracked]
-    fn inner_query<'db>(db: &'db dyn salsa::Database, input: MyInput) -> usize {
-        input.field(db)
-    }
+    partial_query_inner(db, input) + 1
+}
+
+#[salsa::tracked]
+fn partial_query_inner<'db>(db: &'db dyn salsa::Database, input: MyInput) -> usize {
+    input.field(db)
+}
+
+#[test]
+fn test_partial_query() {
+    use salsa::plumbing::{FromId, ZalsaDatabase};
 
     let mut db = common::EventLoggerDatabase::default();
 
     let input = MyInput::new(&db, 0);
 
-    let result = query(&db, input);
+    let result = partial_query(&db, input);
     assert_eq!(result, 1);
 
-    let serialized =
-        serde_json::to_string_pretty(&<dyn salsa::Database>::as_serialize(&mut db)).unwrap();
+    let serialized = serde_json::to_string_pretty(&SerializeDatabase(&db)).unwrap();
     let expected = expect![[r#"
         {
           "runtime": {
@@ -397,7 +471,7 @@ fn partial_query() {
         .expect("`MyInput` was persisted");
     let input = MyInput::from_id(id.key_index());
 
-    let result = query(&db, input);
+    let result = partial_query(&db, input);
     assert_eq!(result, 1);
 
     // The query was not re-executed.
@@ -409,7 +483,7 @@ fn partial_query() {
 
     input.set_field(&mut db).to(1);
 
-    let result = query(&db, input);
+    let result = partial_query(&db, input);
     assert_eq!(result, 2);
 
     // The query was re-executed afer the input was updated.
@@ -423,35 +497,38 @@ fn partial_query() {
         ]"#]]);
 }
 
+#[salsa::tracked(persist)]
+fn partial_query_intern<'db>(
+    db: &'db dyn salsa::Database,
+    input: MyInput,
+    value: usize,
+) -> MyInterned<'db> {
+    partial_query_intern_inner(db, input, value)
+}
+
+// Note that the inner query is not persisted, but we should still preserve the dependency on `MyInterned`.
+#[salsa::tracked]
+fn partial_query_intern_inner<'db>(
+    db: &'db dyn salsa::Database,
+    input: MyInput,
+    value: usize,
+) -> MyInterned<'db> {
+    let _i = input.field(db); // Only low durability interned values are garbage collected.
+    MyInterned::new(db, value.to_string())
+}
+
 #[test]
 fn partial_query_interned() {
     use salsa::plumbing::{AsId, FromId, ZalsaDatabase};
-
-    #[salsa::tracked(persist)]
-    fn intern<'db>(db: &'db dyn salsa::Database, input: MyInput, value: usize) -> MyInterned<'db> {
-        do_intern(db, input, value)
-    }
-
-    // Note that the inner query is not persisted, but we should still preserve the dependency on `MyInterned`.
-    #[salsa::tracked]
-    fn do_intern<'db>(
-        db: &'db dyn salsa::Database,
-        input: MyInput,
-        value: usize,
-    ) -> MyInterned<'db> {
-        let _i = input.field(db); // Only low durability interned values are garbage collected.
-        MyInterned::new(db, value.to_string())
-    }
 
     let mut db = common::EventLoggerDatabase::default();
     let input = MyInput::builder(0).durability(Durability::LOW).new(&db);
 
     // Intern `i0`.
-    let i0 = intern(&db, input, 0);
+    let i0 = partial_query_intern(&db, input, 0);
     assert_eq!(i0.field(&db), "0");
 
-    let serialized =
-        serde_json::to_string_pretty(&<dyn salsa::Database>::as_serialize(&mut db)).unwrap();
+    let serialized = serde_json::to_string_pretty(&SerializeDatabase(&db)).unwrap();
     let expected = expect![[r#"
         {
           "runtime": {
@@ -537,7 +614,7 @@ fn partial_query_interned() {
     let input = MyInput::from_id(id.key_index());
 
     // Re-intern `i0`.
-    let i0 = intern(&db, input, 0);
+    let i0 = partial_query_intern(&db, input, 0);
     let i0_id = i0.as_id();
     assert_eq!(i0.field(&db), "0");
 
@@ -552,7 +629,7 @@ fn partial_query_interned() {
     for x in 1.. {
         db.synthetic_write(Durability::LOW);
 
-        let ix = intern(&db, input, x);
+        let ix = partial_query_intern(&db, input, x);
         let ix_id = ix.as_id();
 
         // We reused the slot of `i0`.
@@ -562,7 +639,7 @@ fn partial_query_interned() {
     }
 
     // Re-intern `i0` after is has been garbage collected.
-    let i0 = intern(&db, input, 0);
+    let i0 = partial_query_intern(&db, input, 0);
 
     // The query was re-executed due to garbage collection, even though no inputs have changed
     // and the inner query was not persisted.
@@ -570,47 +647,23 @@ fn partial_query_interned() {
     assert_ne!(i0_id.index(), i0.as_id().index());
 }
 
-#[test]
-#[should_panic(expected = "must be persistable")]
-fn invalid_specified_dependency() {
-    #[salsa::tracked]
-    fn specify<'db>(db: &'db dyn salsa::Database) {
-        let tracked = MyTracked::new(db, "a".to_string());
-        specified_query::specify(db, tracked, 2222);
-    }
+#[salsa::tracked]
+fn specify<'db>(db: &'db dyn salsa::Database) {
+    let tracked = MyTracked::new(db, "a".to_string());
+    specified_query::specify(db, tracked, 2222);
+}
 
-    #[salsa::tracked(specify, persist)]
-    fn specified_query<'db>(_db: &'db dyn salsa::Database, _tracked: MyTracked<'db>) -> u32 {
-        0
-    }
-
-    let mut db = common::LoggerDatabase::default();
-
-    specify(&db);
-
-    let _serialized =
-        serde_json::to_string_pretty(&<dyn salsa::Database>::as_serialize(&mut db)).unwrap();
+#[salsa::tracked(specify, persist)]
+fn specified_query<'db>(_db: &'db dyn salsa::Database, _tracked: MyTracked<'db>) -> u32 {
+    0
 }
 
 #[test]
-fn serialize_nothing() {
-    let mut db = common::LoggerDatabase::default();
+#[should_panic(expected = "must be persistable")]
+fn invalid_specified_dependency() {
+    let db = common::LoggerDatabase::default();
 
-    let serialized =
-        serde_json::to_string_pretty(&<dyn salsa::Database>::as_serialize(&mut db)).unwrap();
+    specify(&db);
 
-    // Empty ingredients should not be serialized.
-    let expected = expect![[r#"
-        {
-          "runtime": {
-            "revisions": [
-              1,
-              1,
-              1
-            ]
-          },
-          "ingredients": {}
-        }"#]];
-
-    expected.assert_eq(&serialized);
+    let _serialized = serde_json::to_string_pretty(&SerializeDatabase(&db)).unwrap();
 }

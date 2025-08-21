@@ -38,7 +38,6 @@ compact_str = { version = "0.9", optional = true }
 shuttle = { version = "0.8.1", optional = true }
 
 # Persistent caching
-erased-serde = { version = "0.4.6", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
@@ -46,7 +45,6 @@ default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator", "per
 inventory = ["dep:inventory"]
 persistence = [
     "dep:serde",
-    "dep:erased-serde",
     "salsa-macros/persistence",
     "thin-vec/serde",
 ]

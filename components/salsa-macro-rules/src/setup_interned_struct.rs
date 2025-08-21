@@ -201,7 +201,12 @@ macro_rules! setup_interned_struct {
 
 
             impl $Configuration {
-                pub fn ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
+                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<Self> {
+                    Self::ingredient_(db.zalsa())
+                }
+
+                #[inline]
+                fn ingredient_(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
 
@@ -250,7 +255,7 @@ macro_rules! setup_interned_struct {
                     zalsa: &$zalsa::Zalsa
                 ) -> impl Iterator<Item = $zalsa::DatabaseKeyIndex> + '_ {
                     let ingredient_index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
-                    <$Configuration>::ingredient(zalsa).entries(zalsa).map(|(key, _)| key)
+                    <$Configuration>::ingredient_(zalsa).entries(zalsa).map(|(key, _)| key)
                 }
 
                 #[inline]
@@ -316,7 +321,7 @@ macro_rules! setup_interned_struct {
                     )*
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
-                    $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
+                    $Configuration::ingredient_(zalsa).intern(zalsa, zalsa_local,
                         StructKey::<$db_lt>($($field_id,)* std::marker::PhantomData::default()), |_, data| ($($zalsa::interned::Lookup::into_owned(data.$field_index),)*))
                 }
 
@@ -328,7 +333,7 @@ macro_rules! setup_interned_struct {
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let zalsa = db.zalsa();
-                        let fields = $Configuration::ingredient(zalsa).fields(zalsa, self);
+                        let fields = $Configuration::ingredient_(zalsa).fields(zalsa, self);
                         $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,
@@ -351,7 +356,7 @@ macro_rules! setup_interned_struct {
                         {
                             $zalsa::with_attached_database(|db| {
                                 let zalsa = db.zalsa();
-                                let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
+                                let fields = $Configuration::ingredient_(zalsa).fields(zalsa, this);
                                 let mut f = f.debug_struct(stringify!($Struct));
                                 $(
                                     let f = f.field(stringify!($field_id), &fields.$field_index);
@@ -375,7 +380,7 @@ macro_rules! setup_interned_struct {
                         {
                             $zalsa::with_attached_database(|db| {
                                 let zalsa = db.zalsa();
-                                let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
+                                let fields = $Configuration::ingredient_(zalsa).fields(zalsa, this);
                                 let mut f = f.debug_struct(stringify!($Struct));
                                 $(
                                     let f = f.field(stringify!($field_id), &fields.$field_index);

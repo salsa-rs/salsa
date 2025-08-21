@@ -105,7 +105,7 @@ macro_rules! setup_tracked_fn {
 
                 type Ingredient = $zalsa::function::IngredientImpl<$Configuration>;
                 fn ingredient(db: &dyn $zalsa::Database) -> &Self::Ingredient {
-                    $Configuration::fn_ingredient(db)
+                    $Configuration::uninit_fn_ingredient(db.zalsa())
                 }
             }
 
@@ -233,12 +233,17 @@ macro_rules! setup_tracked_fn {
 
                 #[inline]
                 fn fn_ingredient_<'z>(db: &dyn $Db, zalsa: &'z $zalsa::Zalsa) -> &'z $zalsa::function::IngredientImpl<$Configuration> {
+                    Self::uninit_fn_ingredient(zalsa)
+                        .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_downcaster(db))
+                }
+
+                #[inline]
+                fn uninit_fn_ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the first
                     // ingredient created by our jar is the function ingredient.
                     unsafe {
                         $FN_CACHE.get_or_create(zalsa, || zalsa.lookup_jar_by_type::<$fn_name>())
                     }
-                    .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_downcaster(db))
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {

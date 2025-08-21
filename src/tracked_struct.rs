@@ -912,28 +912,25 @@ where
     }
 
     #[cfg(feature = "persistence")]
-    pub unsafe fn as_serialize<'db, S>(&'db self, zalsa: &'db Zalsa) -> impl serde::Serialize + 'db {
+    pub fn as_serialize<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+    ) -> impl serde::Serialize + 'db {
         persistence::SerializeIngredient {
-            zalsa,
             _ingredient: self,
+            zalsa: db.zalsa(),
         }
     }
 
     #[cfg(feature = "persistence")]
-    pub fn deserialize<'de, D>(
-        &mut self,
-        zalsa: &mut Zalsa,
-        deserializer: D,
-    ) -> Result<(), D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let deserialize = persistence::DeserializeIngredient {
-            zalsa,
+    pub fn as_deserialize<'db>(
+        &'db mut self,
+        db: &'db mut dyn crate::Database,
+    ) -> impl for<'de> serde::de::DeserializeSeed<'de, Value = ()> + 'db {
+        persistence::DeserializeIngredient {
             ingredient: self,
-        };
-
-        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
+            zalsa: db.zalsa_mut(),
+        }
     }
 }
 
