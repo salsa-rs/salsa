@@ -89,6 +89,11 @@ macro_rules! setup_input_struct {
             impl $zalsa::HasJar for $Struct {
                 type Jar = $zalsa_struct::JarImpl<$Configuration>;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+
+                type Ingredient = $zalsa_struct::IngredientImpl<$Configuration>;
+                fn ingredient(db: &dyn $zalsa::Database) -> &Self::Ingredient {
+                    $Configuration::ingredient(db)
+                }
             }
 
             $zalsa::register_jar! {

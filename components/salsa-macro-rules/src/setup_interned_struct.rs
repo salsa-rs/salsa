@@ -107,6 +107,11 @@ macro_rules! setup_interned_struct {
             impl<$($db_lt_arg)?> $zalsa::HasJar for $Struct<$($db_lt_arg)?> {
                 type Jar = $zalsa_struct::JarImpl<$Configuration>;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+
+                type Ingredient = $zalsa_struct::IngredientImpl<$Configuration>;
+                fn ingredient(db: &dyn $zalsa::Database) -> &Self::Ingredient {
+                    $Configuration::ingredient(db)
+                }
             }
 
             $zalsa::register_jar! {
@@ -193,6 +198,7 @@ macro_rules! setup_interned_struct {
                     }
                 }
             }
+
 
             impl $Configuration {
                 pub fn ingredient(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {

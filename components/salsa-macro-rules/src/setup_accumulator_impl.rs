@@ -24,6 +24,11 @@ macro_rules! setup_accumulator_impl {
             impl $zalsa::HasJar for $Struct {
                 type Jar = $zalsa_struct::JarImpl<$Struct>;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+
+                type Ingredient = $zalsa_struct::IngredientImpl<$Configuration>;
+                fn ingredient(db: &dyn $zalsa::Database) -> &Self::Ingredient {
+                    $ingredient(db.zalsa())
+                }
             }
 
             $zalsa::register_jar! {

@@ -83,9 +83,6 @@ pub struct IngredientImpl<C: Configuration> {
     /// Index of this ingredient in the database (used to construct database-IDs, etc).
     ingredient_index: IngredientIndex,
 
-    /// A hasher for the sharded ID maps.
-    hasher: FxBuildHasher,
-
     /// A shift used to determine the shard for a given hash.
     shift: u32,
 
@@ -276,7 +273,6 @@ where
 
         Self {
             ingredient_index,
-            hasher: FxBuildHasher,
             memo_table_types: Arc::new(MemoTableTypes::default()),
             revision_queue: RevisionQueue::default(),
             shift: usize::BITS - shards.trailing_zeros(),
@@ -363,7 +359,7 @@ where
         self.revision_queue.record(current_revision);
 
         // Hash the value before acquiring the lock.
-        let hash = self.hasher.hash_one(&key);
+        let hash = FxBuildHasher.hash_one(&key);
 
         let shard_index = self.shard(hash);
         // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.
@@ -535,7 +531,7 @@ where
             // map. Crucially, we know that the hashes for the old and new fields both map
             // to the same shard, because we determined the initial shard based on the new
             // fields and only accessed the LRU list for that shard.
-            let old_hash = self.hasher.hash_one(&*old_fields);
+            let old_hash = FxBuildHasher.hash_one(&*old_fields);
             shard
                 .key_map
                 .find_entry(old_hash, |found_id: &Id| *found_id == old_id)
@@ -548,7 +544,7 @@ where
             *old_fields = unsafe { self.to_internal_data(assemble(new_id, key)) };
 
             // SAFETY: We hold the lock for the shard containing the value.
-            let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
+            let hasher = |id: &_| unsafe { Self::value_hash(*id, zalsa) };
 
             // Insert the new value into the ID map.
             shard.key_map.insert_unique(hash, new_id, hasher);
@@ -624,7 +620,7 @@ where
         });
 
         // Insert the newly allocated ID.
-        self.insert_id(id, zalsa, shard, hash, value);
+        Self::insert_id(id, zalsa, shard, hash, value);
 
         let index = self.database_key_index(id);
 
@@ -650,7 +646,6 @@ where
 
     /// Inserts a newly interned value ID into the LRU list and key map.
     fn insert_id(
-        &self,
         id: Id,
         zalsa: &Zalsa,
         shard: &mut IngredientShard<C>,
@@ -669,16 +664,14 @@ where
         }
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
+        let hasher = |id: &_| unsafe { Self::value_hash(*id, zalsa) };
 
         // Insert the value into the ID map.
         shard.key_map.insert_unique(hash, id, hasher);
 
         debug_assert_eq!(hash, {
-            let value = zalsa.table().get::<Value<C>>(id);
-
             // SAFETY: We hold the lock for the shard containing the value.
-            unsafe { self.hasher.hash_one(&*value.fields.get()) }
+            unsafe { Self::value_hash(id, zalsa) }
         });
     }
 
@@ -731,13 +724,13 @@ where
     // # Safety
     //
     // The lock must be held for the shard containing the value.
-    unsafe fn value_hash<'db>(&'db self, id: Id, zalsa: &'db Zalsa) -> u64 {
+    unsafe fn value_hash<'db>(id: Id, zalsa: &'db Zalsa) -> u64 {
         // This closure is only called if the table is resized. So while it's expensive
         // to lookup all values, it will only happen rarely.
         let value = zalsa.table().get::<Value<C>>(id);
 
         // SAFETY: We hold the lock for the shard containing the value.
-        unsafe { self.hasher.hash_one(&*value.fields.get()) }
+        unsafe { FxBuildHasher.hash_one(&*value.fields.get()) }
     }
 
     // Compares the value by its fields to the given key.
@@ -845,7 +838,10 @@ where
     }
 
     #[cfg(feature = "persistence")]
-    pub fn as_serialize<'db, S>(&'db self, zalsa: &'db mut Zalsa) -> impl serde::Serialize + 'db {
+    pub unsafe fn as_serialize<'db, S>(
+        &'db self,
+        zalsa: &'db Zalsa,
+    ) -> impl serde::Serialize + 'db {
         persistence::SerializeIngredient {
             zalsa,
             ingredient: self,
@@ -853,20 +849,14 @@ where
     }
 
     #[cfg(feature = "persistence")]
-    pub fn deserialize<'de, D>(
-        &mut self,
-        zalsa: &mut Zalsa,
-        deserializer: D,
-    ) -> Result<(), D::Error>
+    pub fn deserialize<'de, D>(&self, zalsa: &mut Zalsa, deserializer: D) -> Result<(), D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let deserialize = persistence::DeserializeIngredient {
-            zalsa,
-            ingredient: self,
-        };
-
-        serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
+        crate::database::persistence::with_mut_ingredient(self, zalsa, |ingredient, zalsa| {
+            let deserialize = persistence::DeserializeIngredient { zalsa, ingredient };
+            serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
+        })
     }
 }
 
@@ -1315,11 +1305,11 @@ mod persistence {
     use std::hash::BuildHasher;
 
     use intrusive_collections::LinkedListLink;
+    use rustc_hash::FxBuildHasher;
     use serde::ser::{SerializeMap, SerializeStruct};
     use serde::{de, Deserialize};
 
     use super::{Configuration, IngredientImpl, Value, ValueShared};
-    use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
     use crate::zalsa::Zalsa;
     use crate::{Durability, Id, Revision};
@@ -1380,11 +1370,11 @@ mod persistence {
                 memos: _,
             } = self;
 
-            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
+            // SAFETY: The safety invariant of `Persistable::as_serialize` ensures we have exclusive access
             // to the database.
             let fields = unsafe { &*fields.get() };
 
-            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
+            // SAFETY: The safety invariant of `Persistable::as_serialize` ensures we have exclusive access
             // to the database.
             let ValueShared {
                 durability,
@@ -1457,20 +1447,18 @@ mod persistence {
                 let (page_idx, _) = crate::table::split_id(id);
 
                 // Determine the value shard.
-                let hash = ingredient.hasher.hash_one(&value.fields.0);
+                let hash = FxBuildHasher.hash_one(&value.fields.0);
                 let shard_index = ingredient.shard(hash);
 
                 // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.
-                let shard = unsafe { &mut *ingredient.shards.get_unchecked(shard_index).lock() };
+                let shard = unsafe { ingredient.shards.get_unchecked_mut(shard_index).get_mut() };
 
                 let value = Value::<C> {
                     shard: shard_index as u16,
                     link: LinkedListLink::new(),
                     // SAFETY: We only ever access the memos of a value that we allocated through
                     // our `MemoTableTypes`.
-                    memos: UnsafeCell::new(unsafe {
-                        MemoTable::new(ingredient.memo_table_types())
-                    }),
+                    memos: UnsafeCell::new(unsafe { MemoTable::new(&ingredient.memo_table_types) }),
                     fields: UnsafeCell::new(value.fields.0),
                     shared: UnsafeCell::new(ValueShared {
                         id,
@@ -1482,8 +1470,8 @@ mod persistence {
                 // Force initialize the relevant page.
                 zalsa.table_mut().force_page::<Value<C>>(
                     page_idx,
-                    ingredient.ingredient_index(),
-                    ingredient.memo_table_types(),
+                    ingredient.ingredient_index,
+                    &ingredient.memo_table_types,
                 );
 
                 // Initialize the slot.
@@ -1504,7 +1492,7 @@ mod persistence {
                 );
 
                 // Insert the newly allocated ID into our ingredient.
-                ingredient.insert_id(id, zalsa, shard, hash, value);
+                IngredientImpl::insert_id(id, zalsa, shard, hash, value);
             }
 
             Ok(())

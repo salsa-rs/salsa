@@ -218,17 +218,51 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     }
 }
 
-pub trait Persistable {
+#[cfg(feature = "persistence")]
+pub trait Persistable: Ingredient {
     /// Returns a type implementing [`serde::Serialize`], that can be used to serialize the
     /// current state of the ingredient.
-    fn as_serialize<'db, S>(&'db self, zalsa: &'db mut Zalsa) -> impl serde::Serialize + 'db;
+    ///
+    /// # Safety
+    ///
+    /// While this method takes an immutable reference to the database, it can only be called when a
+    /// the serializer has exclusive access to the database.
+    unsafe fn as_serialize<'db>(&self, zalsa: &'db Zalsa) -> impl serde::Serialize + 'db;
 
     /// Deserialize the ingredient using a [`serde::Deserializer`].
     ///
     /// This method will modify the database in-place based on the serialized data.
-    fn deserialize<'de, D>(&mut self, zalsa: &mut Zalsa, deserializer: D) -> Result<(), D::Error>
+    fn deserialize<'de, D>(&self, zalsa: &mut Zalsa, deserializer: D) -> Result<(), D::Error>
     where
         D: serde::Deserializer<'de>;
+}
+
+trait X: Any {
+    fn bar(&self) -> usize;
+
+    fn foo(&self, x: &dyn Any) -> usize
+    where
+        Self: Sized,
+    {
+        x.downcast_ref::<Self>().unwrap().bar()
+    }
+}
+
+trait Y: Any {
+    fn bar(&self) -> usize;
+    fn foo(&self, y: &dyn Any) -> usize;
+}
+
+struct Bar;
+
+impl Y for Bar {
+    fn bar(&self) -> usize {
+        0
+    }
+
+    fn foo(&self, y: &dyn Any) -> usize {
+        y.downcast_ref::<Self>().unwrap().bar()
+    }
 }
 
 impl dyn Ingredient {

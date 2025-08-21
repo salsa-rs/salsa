@@ -257,7 +257,10 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     #[cfg(feature = "persistence")]
-    pub fn as_serialize<'db, S>(&'db self, zalsa: &'db mut Zalsa) -> impl serde::Serialize + 'db {
+    pub unsafe fn as_serialize<'db, S>(
+        &'db self,
+        zalsa: &'db Zalsa,
+    ) -> impl serde::Serialize + 'db {
         persistence::SerializeIngredient {
             zalsa,
             _ingredient: self,

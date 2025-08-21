@@ -131,6 +131,11 @@ macro_rules! setup_tracked_struct {
             impl<$db_lt> $zalsa::HasJar for $Struct<$db_lt> {
                 type Jar = $zalsa_struct::JarImpl<$Configuration>;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
+
+                type Ingredient = $zalsa_struct::IngredientImpl<$Configuration>;
+                fn ingredient(db: &dyn $zalsa::Database) -> &Self::Ingredient {
+                    $Configuration::ingredient(db)
+                }
             }
 
             $zalsa::register_jar! {

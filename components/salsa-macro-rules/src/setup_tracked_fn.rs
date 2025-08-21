@@ -102,6 +102,11 @@ macro_rules! setup_tracked_fn {
             impl $zalsa::HasJar for $fn_name {
                 type Jar = $fn_name;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::TrackedFn;
+
+                type Ingredient = $zalsa::function::IngredientImpl<$Configuration>;
+                fn ingredient(db: &dyn $zalsa::Database) -> &Self::Ingredient {
+                    $Configuration::fn_ingredient(db)
+                }
             }
 
             static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =

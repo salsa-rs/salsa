@@ -153,24 +153,29 @@ pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
 }
 
 #[cfg(feature = "persistence")]
-mod persistence {
-    use crate::plumbing::Ingredient;
-    use crate::zalsa::Zalsa;
-    use crate::{Database, IngredientIndex, Runtime};
+pub use persistence::SerializeBuilder;
+
+#[cfg(feature = "persistence")]
+pub(crate) mod persistence {
+    use crate::plumbing::{Ingredient, Persistable};
+    use crate::zalsa::{HasJar, Zalsa};
+    use crate::{Database, IngredientIndex};
 
     use std::fmt;
 
     use serde::de::{self, DeserializeSeed, SeqAccess};
-    use serde::ser::SerializeMap;
 
     impl dyn Database {
         /// Returns a type implementing [`serde::Serialize`], that can be used to serialize the
         /// current state of the database.
-        pub fn as_serialize(&mut self) -> impl serde::Serialize + '_ {
-            SerializeDatabase {
-                runtime: self.zalsa().runtime(),
-                ingredients: SerializeIngredients(self.zalsa()),
-            }
+        pub fn as_serialize<'db, I>(
+            &'db mut self,
+            ingredients: impl Fn(SerializeBuilder<'db>) -> I,
+        ) -> impl serde::Serialize + '_
+        where
+            I: serde::Serialize + 'db,
+        {
+            (self.zalsa().runtime(), ingredients(SerializeBuilder(self)))
         }
 
         /// Deserialize the database using a [`serde::Deserializer`].
@@ -183,67 +188,63 @@ mod persistence {
             DeserializeDatabase(self.zalsa_mut()).deserialize(deserializer)
         }
     }
+   
+    // TODO: ingredient_set! { Interned<'_>, Tracked<'_>, query, ... }
+    // TODO: macro_rules! ingredient_set
 
-    #[derive(serde::Serialize)]
-    #[serde(rename = "Database")]
-    pub struct SerializeDatabase<'db> {
-        pub runtime: &'db Runtime,
-        pub ingredients: SerializeIngredients<'db>,
-    }
+    pub struct SerializeBuilder<'db>(&'db dyn Database);
 
-    pub struct SerializeIngredients<'db>(pub &'db Zalsa);
-
-    impl serde::Serialize for SerializeIngredients<'_> {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    impl<'db> SerializeBuilder<'db> {
+        pub fn ingredient<I>(&self) -> impl serde::Serialize + 'db
         where
-            S: serde::Serializer,
+            I: HasJar,
+            I::Ingredient: Persistable,
         {
-            let SerializeIngredients(zalsa) = self;
-
-            let mut ingredients = zalsa
-                .ingredients()
-                .filter(|ingredient| ingredient.should_serialize(zalsa))
-                .collect::<Vec<_>>();
-
-            // Ensure structs are serialized before tracked functions, as deserializing a
-            // memo requires its input struct to have been deserialized.
-            ingredients.sort_by_key(|ingredient| ingredient.jar_kind());
-
-            let mut map = serializer.serialize_map(Some(ingredients.len()))?;
-            for ingredient in ingredients {
-                map.serialize_entry(
-                    &ingredient.ingredient_index().as_u32(),
-                    &SerializeIngredient(ingredient, zalsa),
-                )?;
-            }
-
-            map.end()
+            // SAFETY: `Database::as_serialize` captures a mutable reference to the database.
+            unsafe { I::ingredient(self.0).as_serialize(self.0.zalsa()) }
         }
     }
 
-    struct SerializeIngredient<'db>(&'db dyn Ingredient, &'db Zalsa);
+    pub struct DeserializeBuilder<'db> {
+        db: &'db dyn Database,
+        ingredients: Vec<fn()>
+    }
 
-    impl serde::Serialize for SerializeIngredient<'_> {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    impl<'db> SerializeBuilder<'db> {
+        pub fn ingredient<I>(&self) -> impl serde::Serialize + 'db
         where
-            S: serde::Serializer,
+            I: HasJar,
+            I::Ingredient: Persistable,
         {
-            let mut result = None;
-            let mut serializer = Some(serializer);
-
-            // SAFETY: `<dyn Database>::as_serialize` take `&mut self`.
-            unsafe {
-                self.0.serialize(self.1, &mut |serialize| {
-                    let serializer = serializer.take().expect(
-                        "`Ingredient::serialize` must invoke the serialization callback only once",
-                    );
-
-                    result = Some(erased_serde::serialize(&serialize, serializer))
-                })
-            };
-
-            result.expect("`Ingredient::serialize` must invoke the serialization callback")
+            // SAFETY: `Database::as_serialize` captures a mutable reference to the database.
+            unsafe { I::ingredient(self.0).as_serialize(self.0.zalsa()) }
         }
+    }
+
+    /// Upgrades a shared reference to an ingredient into a mutable reference given a mutable
+    /// reference to the database.
+    ///
+    /// This method will temporarily remove the ingredient from the database, so any attempts
+    /// to lookup the ingredient will fail.
+    pub(crate) fn with_mut_ingredient<I, R>(
+        ingredient: &I,
+        zalsa: &mut Zalsa,
+        f: impl FnOnce(&mut I, &mut Zalsa) -> R,
+    ) -> R
+    where
+        I: Ingredient,
+    {
+        let index = ingredient.ingredient_index();
+
+        // Remove the ingredient temporarily, to avoid holding overlapping mutable borrows.
+        let mut ingredient = zalsa.take_ingredient(index);
+
+        // Call the function with the concrete ingredient.
+        let ingredient_mut = <dyn std::any::Any>::downcast_mut(&mut *ingredient).unwrap();
+        let value = f(ingredient_mut, zalsa);
+
+        zalsa.replace_ingredient(index, ingredient);
+        value
     }
 
     #[derive(serde::Deserialize)]
@@ -253,7 +254,7 @@ mod persistence {
         Ingredients,
     }
 
-    pub struct DeserializeDatabase<'db>(pub &'db mut Zalsa);
+    struct DeserializeDatabase<'db>(&'db mut Zalsa);
 
     impl<'de> de::DeserializeSeed<'de> for DeserializeDatabase<'_> {
         type Value = ();
@@ -262,9 +263,7 @@ mod persistence {
         where
             D: de::Deserializer<'de>,
         {
-            // Note that we have to deserialize using a manual visitor here because the
-            // `Deserialize` derive does not support fields that use `DeserializeSeed`.
-            deserializer.deserialize_struct("Database", &["runtime", "ingredients"], self)
+            deserializer.deserialize_seq(self)
         }
     }
 
@@ -289,73 +288,9 @@ mod persistence {
             self.0.runtime_mut().deserialize_from(&mut runtime);
             Ok(())
         }
-
-        fn visit_map<V>(self, mut map: V) -> Result<(), V::Error>
-        where
-            V: serde::de::MapAccess<'de>,
-        {
-            let mut runtime = None;
-            let mut ingredients = None;
-
-            while let Some(key) = map.next_key()? {
-                match key {
-                    DatabaseField::Runtime => {
-                        if runtime.is_some() {
-                            return Err(serde::de::Error::duplicate_field("runtime"));
-                        }
-
-                        runtime = Some(map.next_value()?);
-                    }
-                    DatabaseField::Ingredients => {
-                        if ingredients.is_some() {
-                            return Err(serde::de::Error::duplicate_field("ingredients"));
-                        }
-
-                        ingredients = Some(map.next_value_seed(DeserializeIngredients(self.0))?);
-                    }
-                }
-            }
-
-            let mut runtime = runtime.ok_or_else(|| serde::de::Error::missing_field("runtime"))?;
-            let () = ingredients.ok_or_else(|| serde::de::Error::missing_field("ingredients"))?;
-
-            self.0.runtime_mut().deserialize_from(&mut runtime);
-
-            Ok(())
-        }
     }
 
     struct DeserializeIngredients<'db>(&'db mut Zalsa);
-
-    impl<'de> serde::de::Visitor<'de> for DeserializeIngredients<'_> {
-        type Value = ();
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map")
-        }
-
-        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-        where
-            M: serde::de::MapAccess<'de>,
-        {
-            let DeserializeIngredients(zalsa) = self;
-
-            while let Some(index) = access.next_key::<u32>()? {
-                let index = IngredientIndex::new(index);
-
-                // Remove the ingredient temporarily, to avoid holding an overlapping mutable borrow
-                // to the ingredient as well as the database.
-                let mut ingredient = zalsa.take_ingredient(index);
-
-                // Deserialize the ingredient.
-                access.next_value_seed(DeserializeIngredient(&mut *ingredient, zalsa))?;
-
-                zalsa.replace_ingredient(index, ingredient);
-            }
-
-            Ok(())
-        }
-    }
 
     impl<'de> serde::de::DeserializeSeed<'de> for DeserializeIngredients<'_> {
         type Value = ();
@@ -364,24 +299,22 @@ mod persistence {
         where
             D: serde::Deserializer<'de>,
         {
-            deserializer.deserialize_map(self)
+            deserializer.deserialize_seq(self)
         }
     }
 
-    struct DeserializeIngredient<'db>(&'db mut dyn Ingredient, &'db mut Zalsa);
-
-    impl<'de> serde::de::DeserializeSeed<'de> for DeserializeIngredient<'_> {
+    impl<'de> serde::de::Visitor<'de> for DeserializeIngredients<'_> {
         type Value = ();
 
-        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            let deserializer = &mut <dyn erased_serde::Deserializer>::erase(deserializer);
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map")
+        }
 
-            self.0
-                .deserialize(self.1, deserializer)
-                .map_err(serde::de::Error::custom)
+        fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            while let Some(x) = seq.next_element_seed(seed) {}
         }
     }
 }

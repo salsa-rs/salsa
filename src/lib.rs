@@ -69,6 +69,9 @@ pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
 pub use crate::attach::{attach, with_attached_database};
 
+#[cfg(feature = "persistence")]
+pub use database::SerializeBuilder;
+
 pub mod prelude {
     #[cfg(feature = "accumulator")]
     pub use crate::accumulator::Accumulator;
@@ -101,7 +104,7 @@ pub mod plumbing {
     pub use crate::database::{current_revision, Database};
     pub use crate::durability::Durability;
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
-    pub use crate::ingredient::{Ingredient, Jar, Location};
+    pub use crate::ingredient::{Ingredient, Jar, Location, Persistable};
     pub use crate::ingredient_cache::IngredientCache;
     pub use crate::key::DatabaseKeyIndex;
     pub use crate::memo_ingredient_indices::{

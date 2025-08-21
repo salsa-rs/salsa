@@ -530,15 +530,21 @@ impl ErasedJar {
     }
 }
 
-/// A salsa ingredient that can be registered in the database.
+/// A salsa type that can be registered in the database.
 ///
 /// This trait is implemented for tracked functions and salsa structs.
 pub trait HasJar {
-    /// The [`Jar`] associated with this ingredient.
+    /// The [`Jar`] associated with this salsa type.
     type Jar: Jar;
 
     /// The [`JarKind`] for `Self::Jar`.
     const KIND: JarKind;
+
+    /// The primary ingredient of the jar.
+    type Ingredient: Ingredient;
+
+    /// Returns the primary ingredient of this jar.
+    fn ingredient(db: &dyn Database) -> &Self::Ingredient;
 }
 
 // Collect jars statically at compile-time if supported.

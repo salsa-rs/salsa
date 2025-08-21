@@ -43,6 +43,11 @@ const _: () = {
     impl<'db> zalsa_::HasJar for InternedString<'db> {
         type Jar = zalsa_struct_::JarImpl<Configuration_>;
         const KIND: zalsa_::JarKind = zalsa_::JarKind::Struct;
+
+        type Ingredient = zalsa_struct_::IngredientImpl<Configuration_>;
+        fn ingredient(db: &dyn zalsa_::Database) -> &Self::Ingredient {
+            Configuration_::ingredient(db)
+        }
     }
 
     zalsa_::register_jar! {
