@@ -276,7 +276,7 @@ macro_rules! setup_tracked_struct {
                     zalsa: &$zalsa::Zalsa
                 ) -> impl Iterator<Item = $zalsa::DatabaseKeyIndex> + '_ {
                     let ingredient_index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
-                    <$Configuration>::ingredient_(zalsa).entries(zalsa).map(|(key, _)| key)
+                    <$Configuration>::ingredient_(zalsa).entries(zalsa).map(|entry| entry.key())
                 }
 
                 #[inline]

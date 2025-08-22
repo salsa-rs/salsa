@@ -152,7 +152,7 @@ const _: () = {
                 zalsa.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>();
             <Configuration_>::ingredient(zalsa)
                 .entries(zalsa)
-                .map(|(key, _)| key)
+                .map(|entry| entry.key())
         }
 
         #[inline]
