@@ -901,14 +901,43 @@ where
     }
 
     /// Returns all data corresponding to the tracked struct.
-    pub fn entries<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
+    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = StructEntry<'db, C>> {
         zalsa
             .table()
             .slots_of::<Value<C>>()
-            .map(|(id, value)| (self.database_key_index(id), value))
+            .map(|(id, value)| StructEntry {
+                value,
+                key: self.database_key_index(id),
+            })
+    }
+}
+
+/// A tracked struct entry.
+pub struct StructEntry<'db, C>
+where
+    C: Configuration,
+{
+    value: &'db Value<C>,
+    key: DatabaseKeyIndex,
+}
+
+impl<'db, C> StructEntry<'db, C>
+where
+    C: Configuration,
+{
+    /// Returns the `DatabaseKeyIndex` for this entry.
+    pub fn key(&self) -> DatabaseKeyIndex {
+        self.key
+    }
+
+    /// Returns the tracked struct.
+    pub fn as_struct(&self) -> C::Struct<'_> {
+        FromId::from_id(self.key.key_index())
+    }
+
+    #[cfg(feature = "salsa_unstable")]
+    pub fn value(&self) -> &'db Value<C> {
+        self.value
     }
 }
 
@@ -990,7 +1019,7 @@ where
             .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
-            .map(|(_, value)| unsafe { value.memory_usage(&self.memo_table_types) })
+            .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
         Some(memory_usage)

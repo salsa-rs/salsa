@@ -314,7 +314,7 @@ fn everything() {
 
 #[test]
 fn partial_query() {
-    use salsa::plumbing::{FromId, ZalsaDatabase};
+    use salsa::plumbing::ZalsaDatabase;
 
     #[salsa::tracked(persist)]
     fn query<'db>(db: &'db dyn salsa::Database, input: MyInput) -> usize {
@@ -390,12 +390,11 @@ fn partial_query() {
     )
     .unwrap();
 
-    // TODO: Expose a better way of recreating inputs after deserialization.
-    let (id, _) = MyInput::ingredient(&db)
+    let input = MyInput::ingredient(&db)
         .entries(db.zalsa())
         .next()
-        .expect("`MyInput` was persisted");
-    let input = MyInput::from_id(id.key_index());
+        .unwrap()
+        .as_struct();
 
     let result = query(&db, input);
     assert_eq!(result, 1);
@@ -425,7 +424,7 @@ fn partial_query() {
 
 #[test]
 fn partial_query_interned() {
-    use salsa::plumbing::{AsId, FromId, ZalsaDatabase};
+    use salsa::plumbing::{AsId, ZalsaDatabase};
 
     #[salsa::tracked(persist)]
     fn intern<'db>(db: &'db dyn salsa::Database, input: MyInput, value: usize) -> MyInterned<'db> {
@@ -529,12 +528,11 @@ fn partial_query_interned() {
     )
     .unwrap();
 
-    // TODO: Expose a better way of recreating inputs after deserialization.
-    let (id, _) = MyInput::ingredient(&db)
+    let input = MyInput::ingredient(&db)
         .entries(db.zalsa())
         .next()
-        .expect("`MyInput` was persisted");
-    let input = MyInput::from_id(id.key_index());
+        .unwrap()
+        .as_struct();
 
     // Re-intern `i0`.
     let i0 = intern(&db, input, 0);

@@ -809,10 +809,7 @@ where
     }
 
     /// Returns all data corresponding to the interned struct.
-    pub fn entries<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
+    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = StructEntry<'db, C>> {
         // SAFETY: `should_lock` is `true`
         unsafe { self.entries_inner(true, zalsa) }
     }
@@ -827,7 +824,7 @@ where
         &'db self,
         should_lock: bool,
         zalsa: &'db Zalsa,
-    ) -> impl Iterator<Item = (DatabaseKeyIndex, &'db Value<C>)> + 'db {
+    ) -> impl Iterator<Item = StructEntry<'db, C>> {
         // TODO: Grab all locks eagerly.
         zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
             if should_lock {
@@ -840,8 +837,40 @@ where
             // Note that this ID includes the generation, unlike the ID provided by the table.
             let id = unsafe { (*value.shared.get()).id };
 
-            (self.database_key_index(id), value)
+            StructEntry {
+                value,
+                key: self.database_key_index(id),
+            }
         })
+    }
+}
+
+/// An interned struct entry.
+pub struct StructEntry<'db, C>
+where
+    C: Configuration,
+{
+    value: &'db Value<C>,
+    key: DatabaseKeyIndex,
+}
+
+impl<'db, C> StructEntry<'db, C>
+where
+    C: Configuration,
+{
+    /// Returns the `DatabaseKeyIndex` for this entry.
+    pub fn key(&self) -> DatabaseKeyIndex {
+        self.key
+    }
+
+    /// Returns the interned struct.
+    pub fn as_struct(&self) -> C::Struct<'_> {
+        FromId::from_id(self.key.key_index())
+    }
+
+    #[cfg(feature = "salsa_unstable")]
+    pub fn value(&self) -> &'db Value<C> {
+        self.value
     }
 }
 
@@ -949,7 +978,7 @@ where
         let memory_usage = entries
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type. Additionally, we are holding the locks for all shards.
-            .map(|(_, value)| unsafe { value.memory_usage(&self.memo_table_types) })
+            .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
         for shard in self.shards.iter() {
