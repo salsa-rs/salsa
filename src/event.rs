@@ -63,7 +63,6 @@ pub enum EventKind {
         /// The database-key for the cycle head. Implements `Debug`.
         database_key: DatabaseKeyIndex,
         iteration_count: IterationCount,
-        fell_back: bool,
     },
 
     /// Indicates that `unwind_if_cancelled` was called and salsa will check if
