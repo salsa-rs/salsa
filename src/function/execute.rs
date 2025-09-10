@@ -134,7 +134,6 @@ where
     ) -> (C::Output<'db>, CompletedQuery) {
         let database_key_index = active_query.database_key_index;
         let mut iteration_count = IterationCount::initial();
-        let mut fell_back = false;
         let zalsa_local = db.zalsa_local();
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
@@ -192,16 +191,6 @@ where
                 // If the new result is equal to the last provisional result, the cycle has
                 // converged and we are done.
                 if !C::values_equal(&new_value, last_provisional_value) {
-                    if fell_back {
-                        // We fell back to a value last iteration, but the fallback didn't result
-                        // in convergence. We only have bad options here: continue iterating
-                        // (ignoring the request to fall back), or forcibly use the fallback and
-                        // leave the cycle in an inconsistent state (we'll be using a value for
-                        // this query that it doesn't evaluate to, given its inputs). Maybe we'll
-                        // have to go with the latter, but for now let's panic and see if real use
-                        // cases need non-converging fallbacks.
-                        panic!("{database_key_index:?}: execute: fallback did not converge");
-                    }
                     // We are in a cycle that hasn't converged; ask the user's
                     // cycle-recovery function what to do:
                     match C::recover_from_cycle(
@@ -216,10 +205,6 @@ where
                                 "{database_key_index:?}: execute: user cycle_fn says to fall back"
                             );
                             new_value = fallback_value;
-                            // We have to insert the fallback value for this query and then iterate
-                            // one more time to fill in correct values for everything else in the
-                            // cycle based on it; then we'll re-insert it as final value.
-                            fell_back = true;
                         }
                     }
                     // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
@@ -231,7 +216,6 @@ where
                         Event::new(EventKind::WillIterateCycle {
                             database_key: database_key_index,
                             iteration_count,
-                            fell_back,
                         })
                     });
                     cycle_heads.update_iteration_count(database_key_index, iteration_count);

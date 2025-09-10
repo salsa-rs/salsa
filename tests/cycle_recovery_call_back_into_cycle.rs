@@ -37,7 +37,6 @@ fn converges() {
 }
 
 #[test]
-#[should_panic(expected = "fallback did not converge")]
 fn diverges() {
     let db = DatabaseWithValue::new(3);
 
