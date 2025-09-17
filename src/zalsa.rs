@@ -516,6 +516,9 @@ impl ErasedJar {
     pub const fn erase<I: HasJar>() -> Self {
         Self {
             kind: I::KIND,
+            // This is a false positive of the lint on beta, fixed on nightly.
+            // FIXME: Remove this when nightly stabilizes.
+            #[allow(clippy::incompatible_msrv)]
             type_id: TypeId::of::<I::Jar>,
             type_name: std::any::type_name::<I::Jar>,
             create_ingredients: <I::Jar>::create_ingredients,
