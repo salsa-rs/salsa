@@ -79,6 +79,38 @@ impl Attached {
         op()
     }
 
+    #[inline]
+    fn attach_allow_change<Db, R>(&self, db: &Db, op: impl FnOnce() -> R) -> R
+    where
+        Db: ?Sized + Database,
+    {
+        struct DbGuard<'s> {
+            state: &'s Attached,
+            prev: Option<NonNull<dyn Database>>,
+        }
+
+        impl<'s> DbGuard<'s> {
+            #[inline]
+            fn new(attached: &'s Attached, db: &dyn Database) -> Self {
+                let prev = attached.database.replace(Some(NonNull::from(db)));
+                Self {
+                    state: attached,
+                    prev,
+                }
+            }
+        }
+
+        impl Drop for DbGuard<'_> {
+            #[inline]
+            fn drop(&mut self) {
+                self.state.database.set(self.prev);
+            }
+        }
+
+        let _guard = DbGuard::new(self, db.as_dyn_database());
+        op()
+    }
+
     /// Access the "attached" database. Returns `None` if no database is attached.
     /// Databases are attached with `attach_database`.
     #[inline]
@@ -101,6 +133,23 @@ where
     ATTACHED.with(
         #[inline]
         |a| a.attach(db, op),
+    )
+}
+
+/// Attach the database to the current thread and execute `op`.
+/// Allows a different database than currently attached. The original database
+/// will be restored on return.
+///
+/// **Note:** Switching databases can cause bugs. If you do not intend to switch
+/// databases, prefer [`attach`] which will panic if you accidentally do.
+#[inline]
+pub fn attach_allow_change<R, Db>(db: &Db, op: impl FnOnce() -> R) -> R
+where
+    Db: ?Sized + Database,
+{
+    ATTACHED.with(
+        #[inline]
+        |a| a.attach_allow_change(db, op),
     )
 }
 
