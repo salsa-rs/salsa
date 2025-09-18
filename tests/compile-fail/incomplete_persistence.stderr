@@ -1,4 +1,4 @@
-error[E0277]: the trait bound `NotPersistable<'_>: Serialize` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'_>: serde::Serialize` is not satisfied
  --> tests/compile-fail/incomplete_persistence.rs:1:1
   |
 1 | #[salsa::tracked(persist)]
@@ -22,7 +22,7 @@ error[E0277]: the trait bound `NotPersistable<'_>: Serialize` is not satisfied
   = note: required for `(NotPersistable<'_>,)` to implement `Serialize`
   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `NotPersistable<'_>: Deserialize<'_>` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'_>: serde::Deserialize<'de>` is not satisfied
  --> tests/compile-fail/incomplete_persistence.rs:1:1
   |
 1 | #[salsa::tracked(persist)]
@@ -43,7 +43,7 @@ error[E0277]: the trait bound `NotPersistable<'_>: Deserialize<'_>` is not satis
   = note: required for `(NotPersistable<'_>,)` to implement `Deserialize<'_>`
   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `NotPersistable<'db>: Serialize` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'db>: serde::Serialize` is not satisfied
   --> tests/compile-fail/incomplete_persistence.rs:12:45
    |
 12 | fn query(_db: &dyn salsa::Database, _input: NotPersistable<'_>) {}
@@ -71,7 +71,7 @@ note: required by a bound in `query_input_is_persistable`
    | required by this bound in `query_input_is_persistable`
    = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `for<'de> NotPersistable<'db>: Deserialize<'de>` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'db>: serde::Deserialize<'de>` is not satisfied
   --> tests/compile-fail/incomplete_persistence.rs:12:45
    |
 12 | fn query(_db: &dyn salsa::Database, _input: NotPersistable<'_>) {}
