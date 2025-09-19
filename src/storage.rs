@@ -1,5 +1,6 @@
 //! Public API facades for the implementation details of [`Zalsa`] and [`ZalsaLocal`].
 use std::marker::PhantomData;
+use std::mem;
 use std::panic::RefUnwindSafe;
 
 use crate::database::RawDatabase;
@@ -25,8 +26,6 @@ pub struct StorageHandle<Db> {
 
 impl<Db> Clone for StorageHandle<Db> {
     fn clone(&self) -> Self {
-        *self.coordinate.clones.lock() += 1;
-
         Self {
             zalsa_impl: self.zalsa_impl.clone(),
             coordinate: CoordinateDrop(Arc::clone(&self.coordinate)),
@@ -53,7 +52,7 @@ impl<Db: Database> StorageHandle<Db> {
         Self {
             zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback, jars)),
             coordinate: CoordinateDrop(Arc::new(Coordinate {
-                clones: Mutex::new(1),
+                coordinate_lock: Mutex::default(),
                 cvar: Default::default(),
             })),
             phantom: PhantomData,
@@ -94,17 +93,6 @@ impl<Db> Drop for Storage<Db> {
             .record_unfilled_pages(self.handle.zalsa_impl.table());
     }
 }
-
-struct Coordinate {
-    /// Counter of the number of clones of actor. Begins at 1.
-    /// Incremented when cloned, decremented when dropped.
-    clones: Mutex<usize>,
-    cvar: Condvar,
-}
-
-// We cannot panic while holding a lock to `clones: Mutex<usize>` and therefore we cannot enter an
-// inconsistent state.
-impl RefUnwindSafe for Coordinate {}
 
 impl<Db: Database> Default for Storage<Db> {
     fn default() -> Self {
@@ -168,12 +156,14 @@ impl<Db: Database> Storage<Db> {
             .zalsa_impl
             .event(&|| Event::new(EventKind::DidSetCancellationFlag));
 
-        let mut clones = self.handle.coordinate.clones.lock();
-        while *clones != 1 {
-            clones = self.handle.coordinate.cvar.wait(clones);
-        }
-        // The ref count on the `Arc` should now be 1
-        let zalsa = Arc::get_mut(&mut self.handle.zalsa_impl).unwrap();
+        let mut coordinate_lock = self.handle.coordinate.coordinate_lock.lock();
+        let zalsa = loop {
+            if let Some(zalsa) = Arc::get_mut(&mut self.handle.zalsa_impl) {
+                // SAFETY: Polonius when ... https://github.com/rust-lang/rfcs/blob/master/text/2094-nll.md#problem-case-3-conditional-control-flow-across-functions
+                break unsafe { mem::transmute::<&mut Zalsa, &mut Zalsa>(zalsa) };
+            }
+            coordinate_lock = self.handle.coordinate.cvar.wait(coordinate_lock);
+        };
         // cancellation is done, so reset the flag
         zalsa.runtime_mut().reset_cancellation_flag();
         zalsa
@@ -260,6 +250,16 @@ impl<Db: Database> Clone for Storage<Db> {
     }
 }
 
+/// A simplified `WaitGroup`, this is used together with `Arc<Zalsa>` as the actual counter
+struct Coordinate {
+    coordinate_lock: Mutex<()>,
+    cvar: Condvar,
+}
+
+// We cannot panic while holding a lock to `clones: Mutex<usize>` and therefore we cannot enter an
+// inconsistent state.
+impl RefUnwindSafe for Coordinate {}
+
 struct CoordinateDrop(Arc<Coordinate>);
 
 impl std::ops::Deref for CoordinateDrop {
@@ -272,7 +272,6 @@ impl std::ops::Deref for CoordinateDrop {
 
 impl Drop for CoordinateDrop {
     fn drop(&mut self) {
-        *self.0.clones.lock() -= 1;
         self.0.cvar.notify_all();
     }
 }
