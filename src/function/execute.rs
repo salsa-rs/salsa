@@ -299,22 +299,22 @@ where
     }
 }
 
-/// Replaces any inserted memo with a fixpoint initial memo without a value if the current thread panicks.
+/// Replaces any inserted memo with a fixpoint initial memo without a value if the current thread panics.
 ///
-/// A regular query doesn't insert any memo if it panicks and the query
+/// A regular query doesn't insert any memo if it panics and the query
 /// simply gets re-executed if any later called query depends on the panicked query (and will panic again unless the query isn't deterministic).
 ///
 /// Unfortunately, this isn't the case for cycle heads because Salsa first inserts the fixpoint initial memo and later inserts
 /// provisional memos for every iteration. Detecting whether a query has previously panicked
-/// in `fetch` (e.g. `validate_same_iteration`) and requires re-execution is probably possible but not very straightforward
-/// and it's easy to get it wrong, which results in infinite loops where `Memo::provisional_retry` keeps retrying getting the latest `Memo`
+/// in `fetch` (e.g., `validate_same_iteration`) and requires re-execution is probably possible but not very straightforward
+/// and it's easy to get it wrong, which results in infinite loops where `Memo::provisional_retry` keeps retrying to get the latest `Memo`
 /// but `fetch` doesn't re-execute the query for reasons.
 ///
-/// Specifically, a Memo can linger after a panic, which then is incorrectly returned
+/// Specifically, a Memo can linger after a panic, which is then incorrectly returned
 /// by `fetch_cold_cycle` because it passes the `shallow_verified_memo` check instead of inserting
 /// a new fix point initial value if that happens.
 ///
-/// We could insert a fixpoint initial value here but it seems unnecessary.
+/// We could insert a fixpoint initial value here, but it seems unnecessary.
 struct ClearCycleHeadIfPanicking<'a, C: Configuration> {
     ingredient: &'a IngredientImpl<C>,
     zalsa: &'a Zalsa,
