@@ -90,7 +90,7 @@ impl Running<'_> {
             })
         });
 
-        crate::tracing::debug!(
+        crate::tracing::info!(
             "block_on: thread {thread_id:?} is blocking on {database_key:?} in thread {other_id:?}",
         );
 

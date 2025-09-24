@@ -5,7 +5,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::ActiveQueryGuard;
+use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
 use crate::{Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -141,6 +141,7 @@ where
         // only when a cycle is actually encountered.
         let mut opt_last_provisional: Option<&Memo<'db, C>> = None;
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
+        let _guard = ClearCycleHeadIfPanicking::new(self, zalsa, id, memo_ingredient_index);
 
         loop {
             let previous_memo = opt_last_provisional.or(opt_old_memo);
@@ -210,6 +211,9 @@ where
                     // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
                     // which is less than `u32::MAX`.
                     iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                        tracing::warn!(
+                            "{database_key_index:?}: execute: too many cycle iterations"
+                        );
                         panic!("{database_key_index:?}: execute: too many cycle iterations")
                     });
                     zalsa.event(&|| {
@@ -222,10 +226,7 @@ where
                     completed_query
                         .revisions
                         .update_iteration_count(iteration_count);
-                    crate::tracing::debug!(
-                        "{database_key_index:?}: execute: iterate again, revisions: {revisions:#?}",
-                        revisions = &completed_query.revisions
-                    );
+                    crate::tracing::info!("{database_key_index:?}: execute: iterate again...",);
                     opt_last_provisional = Some(self.insert_memo(
                         zalsa,
                         id,
@@ -295,5 +296,57 @@ where
         let new_value = C::execute(db, C::id_to_input(zalsa, id));
 
         (new_value, active_query.pop())
+    }
+}
+
+/// Replaces any inserted memo with a fixpoint initial memo without a value if the current thread panicks.
+///
+/// A regular query doesn't insert any memo if it panicks and the query
+/// simply gets re-executed if any later called query depends on the panicked query (and will panic again unless the query isn't deterministic).
+///
+/// Unfortunately, this isn't the case for cycle heads because Salsa first inserts the fixpoint initial memo and later inserts
+/// provisional memos for every iteration. Detecting whether a query has previously panicked
+/// in `fetch` (e.g. `validate_same_iteration`) and requires re-execution is probably possible but not very straightforward
+/// and it's easy to get it wrong, which results in infinite loops where `Memo::provisional_retry` keeps retrying getting the latest `Memo`
+/// but `fetch` doesn't re-execute the query for reasons.
+///
+/// Specifically, a Memo can linger after a panic, which then is incorrectly returned
+/// by `fetch_cold_cycle` because it passes the `shallow_verified_memo` check instead of inserting
+/// a new fix point initial value if that happens.
+///
+/// We could insert a fixpoint initial value here but it seems unnecessary.
+struct ClearCycleHeadIfPanicking<'a, C: Configuration> {
+    ingredient: &'a IngredientImpl<C>,
+    zalsa: &'a Zalsa,
+    id: Id,
+    memo_ingredient_index: MemoIngredientIndex,
+}
+
+impl<'a, C: Configuration> ClearCycleHeadIfPanicking<'a, C> {
+    fn new(
+        ingredient: &'a IngredientImpl<C>,
+        zalsa: &'a Zalsa,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Self {
+        Self {
+            ingredient,
+            zalsa,
+            id,
+            memo_ingredient_index,
+        }
+    }
+}
+
+impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            let revisions =
+                QueryRevisions::fixpoint_initial(self.ingredient.database_key_index(self.id));
+
+            let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
+            self.ingredient
+                .insert_memo(self.zalsa, self.id, memo, self.memo_ingredient_index);
+        }
     }
 }

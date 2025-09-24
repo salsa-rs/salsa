@@ -97,9 +97,11 @@ impl ClaimGuard<'_> {
             syncs.remove(&self.key_index).expect("key claimed twice?");
 
         if anyone_waiting {
+            let database_key = DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index);
             self.zalsa.runtime().unblock_queries_blocked_on(
-                DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index),
+                database_key,
                 if thread::panicking() {
+                    tracing::info!("Unblocking queries blocked on {database_key:?} after a panick");
                     WaitResult::Panicked
                 } else {
                     WaitResult::Completed
