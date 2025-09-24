@@ -55,7 +55,7 @@ error: unexpected token
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:12:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 12 | impl<'db> std::default::Default for MyTracked<'db> {
@@ -64,7 +64,7 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:17:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 17 | impl<'db> std::default::Default for MyTracked<'db> {
@@ -73,7 +73,7 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:22:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 22 | impl<'db> std::default::Default for MyTracked<'db> {
@@ -82,7 +82,7 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:27:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 27 | impl<'db> std::default::Default for MyTracked<'db> {
@@ -91,7 +91,7 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:32:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 32 | impl<'db> std::default::Default for MyTracked<'db> {
@@ -100,7 +100,7 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:37:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 37 | impl<'db> std::default::Default for MyTracked<'db> {
@@ -109,7 +109,7 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:42:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 42 | impl<'db> std::default::Default for MyTracked<'db> {
@@ -118,7 +118,7 @@ error[E0119]: conflicting implementations of trait `Default` for type `MyTracked
 error[E0119]: conflicting implementations of trait `Default` for type `MyTracked<'_>`
   --> tests/compile-fail/tracked_impl_incompatibles.rs:47:1
    |
-7  | impl<'db> std::default::Default for MyTracked<'db> {
+ 7 | impl<'db> std::default::Default for MyTracked<'db> {
    | -------------------------------------------------- first implementation here
 ...
 47 | impl<'db> std::default::Default for MyTracked<'db> {
