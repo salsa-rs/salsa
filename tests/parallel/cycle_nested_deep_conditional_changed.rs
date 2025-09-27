@@ -81,7 +81,7 @@ fn the_test() {
     use crate::sync;
     use salsa::Setter as _;
     sync::check(|| {
-        tracing::debug!("New run");
+        tracing::debug!("Starting new run");
 
         // This is a bit silly but it works around https://github.com/awslabs/shuttle/issues/192
         static INITIALIZE: sync::Mutex<Option<(salsa::DatabaseImpl, Input)>> =
@@ -108,6 +108,7 @@ fn the_test() {
         }
 
         let t1 = thread::spawn(move || {
+            let _span = tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
             let (db, input) = get_db(|db, input| {
                 query_a(db, input);
             });
@@ -117,6 +118,7 @@ fn the_test() {
             query_a(&db, input)
         });
         let t2 = thread::spawn(move || {
+            let _span = tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
             let (db, input) = get_db(|db, input| {
                 query_b(db, input);
             });
@@ -125,19 +127,20 @@ fn the_test() {
             query_b(&db, input)
         });
         let t3 = thread::spawn(move || {
+            let _span = tracing::debug_span!("t3", thread_id = ?thread::current().id()).entered();
             let (db, input) = get_db(|db, input| {
                 query_d(db, input);
             });
 
-            let _span = tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
             query_d(&db, input)
         });
         let t4 = thread::spawn(move || {
+            let _span = tracing::debug_span!("t4", thread_id = ?thread::current().id()).entered();
+
             let (db, input) = get_db(|db, input| {
                 query_e(db, input);
             });
 
-            let _span = tracing::debug_span!("t3", thread_id = ?thread::current().id()).entered();
             query_e(&db, input)
         });
 

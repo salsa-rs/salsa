@@ -11,11 +11,11 @@ use crate::accumulator::{
     Accumulator,
 };
 use crate::active_query::{CompletedQuery, QueryStack};
-use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount};
+use crate::cycle::{empty_cycle_heads, AtomicIterationCount, CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
-use crate::sync::atomic::AtomicBool;
+use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -494,6 +494,7 @@ impl QueryRevisionsExtra {
         mut tracked_struct_ids: ThinVec<(Identity, Id)>,
         cycle_heads: CycleHeads,
         iteration: IterationCount,
+        converged: bool,
     ) -> Self {
         #[cfg(feature = "accumulator")]
         let acc = accumulated.is_empty();
@@ -513,7 +514,9 @@ impl QueryRevisionsExtra {
                 accumulated,
                 cycle_heads,
                 tracked_struct_ids,
-                iteration,
+                iteration: iteration.into(),
+                nested_cycle: false.into(),
+                cycle_converged: converged,
             }))
         };
 
@@ -561,7 +564,12 @@ struct QueryRevisionsExtraInner {
     /// iterate again.
     cycle_heads: CycleHeads,
 
-    iteration: IterationCount,
+    iteration: AtomicIterationCount,
+
+    cycle_converged: bool,
+
+    #[cfg_attr(feature = "persistence", serde(with = "crate::zalsa_local::persistence::atomic_bool"))]
+    nested_cycle: AtomicBool,
 }
 
 impl QueryRevisionsExtraInner {
@@ -573,6 +581,8 @@ impl QueryRevisionsExtraInner {
             tracked_struct_ids,
             cycle_heads,
             iteration: _,
+            cycle_converged: _,
+            nested_cycle: _,
         } = self;
 
         #[cfg(feature = "accumulator")]
@@ -607,6 +617,7 @@ impl QueryRevisions {
                 ThinVec::default(),
                 CycleHeads::initial(query),
                 IterationCount::initial(),
+                false,
             ),
         }
     }
@@ -649,22 +660,80 @@ impl QueryRevisions {
                     ThinVec::default(),
                     cycle_heads,
                     IterationCount::default(),
+                    false,
                 );
             }
         };
     }
 
-    pub(crate) const fn iteration(&self) -> IterationCount {
+    pub(crate) fn cycle_converged(&self) -> bool {
         match &self.extra.0 {
-            Some(extra) => extra.iteration,
+            Some(extra) => extra.cycle_converged,
+            None => false,
+        }
+    }
+
+    pub(crate) fn set_cycle_converged(&mut self, cycle_converged: bool) {
+        if let Some(extra) = &mut self.extra.0 {
+            extra.cycle_converged = cycle_converged
+        }
+    }
+
+    pub(crate) fn is_nested_cycle(&self) -> bool {
+        match &self.extra.0 {
+            Some(extra) => extra.nested_cycle.load(Ordering::Relaxed),
+            None => false,
+        }
+    }
+
+    pub(crate) fn reset_nested_cycle(&self) {
+        if let Some(extra) = &self.extra.0 {
+            extra.nested_cycle.store(false, Ordering::Release)
+        }
+    }
+
+    pub(crate) fn mark_nested_cycle(&mut self) {
+        if let Some(extra) = &mut self.extra.0 {
+            *extra.nested_cycle.get_mut() = true
+        }
+    }
+
+    pub(crate) fn iteration(&self) -> IterationCount {
+        match &self.extra.0 {
+            Some(extra) => extra.iteration.load(),
             None => IterationCount::initial(),
         }
     }
 
+    pub(crate) fn set_iteration_count(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) {
+        let Some(extra) = &self.extra.0 else {
+            return;
+        };
+
+        extra.iteration.store(iteration_count);
+
+        extra
+            .cycle_heads
+            .update_iteration_count(database_key_index, iteration_count);
+    }
+
     /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
-    pub(crate) fn update_iteration_count(&mut self, iteration_count: IterationCount) {
+    pub(crate) fn update_iteration_count_mut(
+        &mut self,
+        cycle_head_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) {
         if let Some(extra) = &mut self.extra.0 {
-            extra.iteration = iteration_count
+            extra.iteration.store_mut(iteration_count);
+            // I think updating is required for `validate_same_iteration` to work because
+            // unless we can skip self?
+            extra
+                .cycle_heads
+                .update_iteration_count_mut(cycle_head_index, iteration_count);
         }
     }
 
@@ -1196,7 +1265,7 @@ pub(crate) mod persistence {
             }
         }
     }
-
+    
     // A workaround the fact that `shuttle` atomic types do not implement `serde::{Serialize, Deserialize}`.
     pub(super) mod verified_final {
         use crate::sync::atomic::{AtomicBool, Ordering};
@@ -1215,4 +1284,23 @@ pub(crate) mod persistence {
             serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
         }
     }
+
+    pub(super) mod atomic_bool {
+        use crate::sync::atomic::{AtomicBool, Ordering};
+
+        pub fn serialize<S>(value: &AtomicBool, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            serde::Serialize::serialize(&value.load(Ordering::Relaxed), serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<AtomicBool, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
+        }
+    }
+
 }

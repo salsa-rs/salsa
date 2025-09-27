@@ -3,9 +3,10 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
-use crate::cycle::{empty_cycle_heads, CycleHead, CycleHeads, IterationCount, ProvisionalStatus};
-use crate::function::{Configuration, IngredientImpl};
-use crate::hash::FxHashSet;
+use smallvec::SmallVec;
+
+use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount, ProvisionalStatus};
+use crate::function::{ClaimGuard, Configuration, IngredientImpl};
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
@@ -176,29 +177,38 @@ impl<'db, C: Configuration> Memo<'db, C> {
         // IMPORTANT: If you make changes to this function, make sure to run `cycle_nested_deep` with
         // shuttle with at least 10k iterations.
 
-        // The most common case is that the entire cycle is running in the same thread.
-        // If that's the case, short circuit and return `true` immediately.
-        if self.all_cycles_on_stack(zalsa_local) {
+        let cycle_heads = self.revisions.cycle_heads();
+        if cycle_heads.is_empty() {
             return true;
         }
 
-        // Otherwise, await all cycle heads, recursively.
-        return block_on_heads_cold(zalsa, self.cycle_heads());
+        return block_on_heads_cold(zalsa, zalsa_local, self.cycle_heads());
 
         #[inline(never)]
-        fn block_on_heads_cold(zalsa: &Zalsa, heads: &CycleHeads) -> bool {
+        fn block_on_heads_cold(
+            zalsa: &Zalsa,
+            zalsa_local: &ZalsaLocal,
+            heads: &CycleHeads,
+        ) -> bool {
             let _entered = crate::tracing::debug_span!("block_on_heads").entered();
-            let mut cycle_heads = TryClaimCycleHeadsIter::new(zalsa, heads);
+            let mut cycle_heads = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, heads);
             let mut all_cycles = true;
 
             while let Some(claim_result) = cycle_heads.next() {
                 match claim_result {
-                    TryClaimHeadsResult::Cycle => {}
+                    TryClaimHeadsResult::Cycle { .. } => {}
                     TryClaimHeadsResult::Finalized => {
                         all_cycles = false;
                     }
-                    TryClaimHeadsResult::Available => {
-                        all_cycles = false;
+                    TryClaimHeadsResult::Available(available) => {
+                        if available.is_nested(zalsa) {
+                            // This is a nested cycle. The lock of nested cycles is released
+                            // when there query completes. But we need to recurse
+                            // TODO: What about cycle initial values. Do we need to reset nested?
+                            available.queue_cycle_heads(&mut cycle_heads);
+                        } else {
+                            all_cycles = false;
+                        }
                     }
                     TryClaimHeadsResult::Running(running) => {
                         all_cycles = false;
@@ -217,17 +227,23 @@ impl<'db, C: Configuration> Memo<'db, C> {
     /// claiming all cycle heads failed because one of them is running on another thread.
     pub(super) fn try_claim_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
         let _entered = crate::tracing::debug_span!("try_claim_heads").entered();
-        if self.all_cycles_on_stack(zalsa_local) {
+
+        let cycle_heads = self.revisions.cycle_heads();
+        if cycle_heads.is_empty() {
             return true;
         }
 
-        let cycle_heads = TryClaimCycleHeadsIter::new(zalsa, self.revisions.cycle_heads());
+        let mut cycle_heads =
+            TryClaimCycleHeadsIter::new(zalsa, zalsa_local, self.revisions.cycle_heads());
 
-        for claim_result in cycle_heads {
+        while let Some(claim_result) = cycle_heads.next() {
             match claim_result {
-                TryClaimHeadsResult::Cycle
-                | TryClaimHeadsResult::Finalized
-                | TryClaimHeadsResult::Available => {}
+                TryClaimHeadsResult::Cycle { .. } | TryClaimHeadsResult::Finalized => {}
+                TryClaimHeadsResult::Available(available) => {
+                    if available.is_nested(zalsa) {
+                        available.queue_cycle_heads(&mut cycle_heads);
+                    }
+                }
                 TryClaimHeadsResult::Running(_) => {
                     return false;
                 }
@@ -235,25 +251,6 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
 
         true
-    }
-
-    fn all_cycles_on_stack(&self, zalsa_local: &ZalsaLocal) -> bool {
-        let cycle_heads = self.revisions.cycle_heads();
-        if cycle_heads.is_empty() {
-            return true;
-        }
-
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            zalsa_local.with_query_stack_unchecked(|stack| {
-                cycle_heads.iter().all(|cycle_head| {
-                    stack
-                        .iter()
-                        .rev()
-                        .any(|query| query.database_key_index == cycle_head.database_key_index)
-                })
-            })
-        }
     }
 
     /// Cycle heads that should be propagated to dependent queries.
@@ -265,6 +262,53 @@ impl<'db, C: Configuration> Memo<'db, C> {
             empty_cycle_heads()
         }
     }
+
+    // pub(super) fn root_cycle_heads(
+    //     &self,
+    //     zalsa: &Zalsa,
+    //     database_key_index: DatabaseKeyIndex,
+    // ) -> impl Iterator<Item = (DatabaseKeyIndex, IterationCount)> {
+    //     let mut queue: SmallVec<[(DatabaseKeyIndex, IterationCount); 4]> = self
+    //         .cycle_heads()
+    //         .iter()
+    //         .filter(|head| head.database_key_index != database_key_index)
+    //         .map(|head| (head.database_key_index, head.iteration_count.load()))
+    //         .collect();
+
+    //     let mut visited: FxHashSet<_> = queue.iter().copied().collect();
+    //     let mut roots: SmallVec<[(DatabaseKeyIndex, IterationCount); 4]> = SmallVec::new();
+
+    //     while let Some((next_key, next_iteration_count)) = queue.pop() {
+    //         let ingredient = zalsa.lookup_ingredient(next_key.ingredient_index());
+    //         let nested = match ingredient.provisional_status(zalsa, next_key.key_index()) {
+    //             Some(
+    //                 ProvisionalStatus::Final { nested, .. }
+    //                 | ProvisionalStatus::Provisional { nested, .. },
+    //             ) => nested,
+    //             None | Some(ProvisionalStatus::FallbackImmediate) => false,
+    //         };
+
+    //         if nested {
+    //             // If this is a nested cycle head, keep following its cycle heads until we find a root.
+    //             queue.extend(
+    //                 ingredient
+    //                     .cycle_heads(zalsa, next_key.key_index())
+    //                     // TODO: Do we need to include the removed heads here?
+    //                     // I think so
+    //                     .iter()
+    //                     .filter_map(|head| {
+    //                         let entry = (head.database_key_index, head.iteration_count.load());
+    //                         visited.insert(entry).then_some(entry)
+    //                     }),
+    //             );
+    //             continue;
+    //         }
+
+    //         roots.push((next_key, next_iteration_count));
+    //     }
+
+    //     roots.into_iter()
+    // }
 
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
@@ -474,13 +518,17 @@ mod persistence {
 
 pub(super) enum TryClaimHeadsResult<'me> {
     /// Claiming every cycle head results in a cycle head.
-    Cycle,
+    Cycle {
+        head_iteration_count: IterationCount,
+        current_iteration_count: IterationCount,
+        verified_at: Revision,
+    },
 
     /// The cycle head has been finalized.
     Finalized,
 
     /// The cycle head is not finalized, but it can be claimed.
-    Available,
+    Available(AvailableCycleHead<'me>),
 
     /// The cycle head is currently executed on another thread.
     Running(RunningCycleHead<'me>),
@@ -493,33 +541,67 @@ pub(super) struct RunningCycleHead<'me> {
 
 impl<'a> RunningCycleHead<'a> {
     fn block_on(self, cycle_heads: &mut TryClaimCycleHeadsIter<'a>) {
-        let key_index = self.inner.database_key().key_index();
+        let database_key_index = self.inner.database_key();
+        let key_index = database_key_index.key_index();
         self.inner.block_on(cycle_heads.zalsa);
 
-        cycle_heads.queue_ingredient_heads(self.ingredient, key_index);
+        let nested_heads = self.ingredient.cycle_heads(cycle_heads.zalsa, key_index);
+
+        cycle_heads.queue_ingredient_heads(nested_heads);
+    }
+}
+
+pub(super) struct AvailableCycleHead<'me> {
+    database_key_index: DatabaseKeyIndex,
+    _guard: ClaimGuard<'me>,
+    ingredient: &'me dyn Ingredient,
+}
+
+impl<'a> AvailableCycleHead<'a> {
+    pub(super) fn is_nested(&self, zalsa: &Zalsa) -> bool {
+        self.ingredient
+            .provisional_status(zalsa, self.database_key_index.key_index())
+            .is_some_and(|status| status.nested())
+    }
+
+    pub(super) fn queue_cycle_heads(&self, cycle_heads: &mut TryClaimCycleHeadsIter<'a>) {
+        let nested_heads = self
+            .ingredient
+            .cycle_heads(cycle_heads.zalsa, self.database_key_index.key_index());
+
+        cycle_heads.queue_ingredient_heads(nested_heads);
     }
 }
 
 /// Iterator to try claiming the transitive cycle heads of a memo.
-struct TryClaimCycleHeadsIter<'a> {
+pub(super) struct TryClaimCycleHeadsIter<'a> {
     zalsa: &'a Zalsa,
-    queue: Vec<CycleHead>,
-    queued: FxHashSet<CycleHead>,
+    zalsa_local: &'a ZalsaLocal,
+    queue: SmallVec<[(DatabaseKeyIndex, IterationCount); 4]>,
+    queued: SmallVec<[(DatabaseKeyIndex, IterationCount); 4]>,
 }
 
 impl<'a> TryClaimCycleHeadsIter<'a> {
-    fn new(zalsa: &'a Zalsa, heads: &CycleHeads) -> Self {
-        let queue: Vec<_> = heads.iter().copied().collect();
-        let queued: FxHashSet<_> = queue.iter().copied().collect();
+    pub(super) fn new(
+        zalsa: &'a Zalsa,
+        zalsa_local: &'a ZalsaLocal,
+        cycle_heads: &CycleHeads,
+    ) -> Self {
+        let queue: SmallVec<_> = cycle_heads
+            .iter()
+            .map(|head| (head.database_key_index, head.iteration_count.load()))
+            .collect();
+        let queued = queue.iter().copied().collect();
 
         Self {
             zalsa,
+            zalsa_local,
             queue,
             queued,
         }
     }
 
-    fn queue_ingredient_heads(&mut self, ingredient: &dyn Ingredient, key: Id) {
+    fn queue_ingredient_heads(&mut self, cycle_heads: &CycleHeads) {
         // Recursively wait for all cycle heads that this head depends on. It's important
         // that we fetch those from the updated memo because the cycle heads can change
         // between iterations and new cycle heads can be added if a query depeonds on
@@ -528,11 +610,19 @@ impl<'a> TryClaimCycleHeadsIter<'a> {
         // IMPORTANT: It's critical that we get the cycle head from the latest memo
         // here, in case the memo has become part of another cycle (we need to block on that too!).
         self.queue.extend(
-            ingredient
-                .cycle_heads(self.zalsa, key)
+            cycle_heads
                 .iter()
-                .copied()
-                .filter(|head| self.queued.insert(*head)),
+                .map(|head| (head.database_key_index, head.iteration_count.load()))
+                .filter(|head| {
+                    let already_checked = self.queued.contains(head);
+
+                    if already_checked {
+                        false
+                    } else {
+                        self.queued.push(*head);
+                        true
+                    }
+                }),
         )
     }
 }
@@ -541,9 +631,29 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
     type Item = TryClaimHeadsResult<'me>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let head = self.queue.pop()?;
+        let (head_database_key, head_iteration_count) = self.queue.pop()?;
 
-        let head_database_key = head.database_key_index;
+        // The most common case is that the head is already in the query stack. So let's check that first.
+        // SAFETY: We do not access the query stack reentrantly.
+        if let Some(current_iteration_count) = unsafe {
+            self.zalsa_local.with_query_stack_unchecked(|stack| {
+                stack
+                    .iter()
+                    .rev()
+                    .find(|query| query.database_key_index == head_database_key)
+                    .map(|query| query.iteration_count())
+            })
+        } {
+            crate::tracing::debug!(
+                "Waiting for {head_database_key:?} results in a cycle (because it is already in the query stack)"
+            );
+            return Some(TryClaimHeadsResult::Cycle {
+                head_iteration_count,
+                current_iteration_count,
+                verified_at: self.zalsa.current_revision(),
+            });
+        }
+
         let head_key_index = head_database_key.key_index();
         let ingredient = self
             .zalsa
@@ -554,34 +664,54 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
             .unwrap_or(ProvisionalStatus::Provisional {
                 iteration: IterationCount::initial(),
                 verified_at: Revision::start(),
+                nested: false,
             });
 
         match cycle_head_kind {
             ProvisionalStatus::Final { .. } | ProvisionalStatus::FallbackImmediate => {
                 // This cycle is already finalized, so we don't need to wait on it;
                 // keep looping through cycle heads.
-                crate::tracing::trace!("Dependent cycle head {head:?} has been finalized.");
+                crate::tracing::trace!(
+                    "Dependent cycle head {head_database_key:?} has been finalized."
+                );
                 Some(TryClaimHeadsResult::Finalized)
             }
-            ProvisionalStatus::Provisional { .. } => {
+            ProvisionalStatus::Provisional {
+                iteration,
+                verified_at,
+                ..
+            } => {
                 match ingredient.wait_for(self.zalsa, head_key_index) {
                     WaitForResult::Cycle { .. } => {
                         // We hit a cycle blocking on the cycle head; this means this query actively
                         // participates in the cycle and some other query is blocked on this thread.
-                        crate::tracing::debug!("Waiting for {head:?} results in a cycle");
-                        Some(TryClaimHeadsResult::Cycle)
+                        crate::tracing::debug!(
+                            "Waiting for {head_database_key:?} results in a cycle"
+                        );
+                        Some(TryClaimHeadsResult::Cycle {
+                            current_iteration_count: iteration,
+                            head_iteration_count,
+                            verified_at,
+                        })
                     }
                     WaitForResult::Running(running) => {
-                        crate::tracing::debug!("Ingredient {head:?} is running: {running:?}");
+                        crate::tracing::debug!(
+                            "Ingredient {head_database_key:?} is running: {running:?}"
+                        );
 
                         Some(TryClaimHeadsResult::Running(RunningCycleHead {
                             inner: running,
                             ingredient,
                         }))
                     }
-                    WaitForResult::Available => {
-                        self.queue_ingredient_heads(ingredient, head_key_index);
-                        Some(TryClaimHeadsResult::Available)
+                    WaitForResult::Available(guard) => {
+                        crate::tracing::debug!("Query {head_database_key:?} is available",);
+
+                        Some(TryClaimHeadsResult::Available(AvailableCycleHead {
+                            _guard: guard,
+                            ingredient,
+                            database_key_index: head_database_key,
+                        }))
                     }
                 }
             }
