@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
@@ -32,6 +34,7 @@ where
         opt_old_memo: Option<&Memo<'db, C>>,
     ) -> &'db Memo<'db, C> {
         let id = database_key_index.key_index();
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         crate::tracing::info!("{:?}: executing query", database_key_index);
 
@@ -40,7 +43,6 @@ where
                 database_key: database_key_index,
             })
         });
-        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         let (new_value, mut completed_query) = match C::CYCLE_STRATEGY {
             CycleRecoveryStrategy::Panic => Self::execute_query(
@@ -60,6 +62,8 @@ where
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
                     if cycle_heads.contains(&database_key_index) {
+                        let id = database_key_index.key_index();
+
                         // Ignore the computed value, leave the fallback value there.
                         let memo = self
                             .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
@@ -119,7 +123,7 @@ where
         }
         self.insert_memo(
             zalsa,
-            id,
+            database_key_index.key_index(),
             Memo::new(
                 Some(new_value),
                 zalsa.current_revision(),
@@ -139,19 +143,32 @@ where
         memo_ingredient_index: MemoIngredientIndex,
     ) -> (C::Output<'db>, CompletedQuery) {
         let id = database_key_index.key_index();
-        let mut iteration_count = IterationCount::initial();
-        let mut active_query = zalsa_local.push_query(database_key_index, iteration_count);
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // Initially it's set to None, because the initial provisional value is created lazily,
         // only when a cycle is actually encountered.
-        let mut opt_last_provisional: Option<&Memo<'db, C>> = None;
+        let mut previous_memo: Option<&Memo<'db, C>> = None;
+        // TODO: Can we seed those somehow?
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
+
         let _guard = ClearCycleHeadIfPanicking::new(self, zalsa, id, memo_ingredient_index);
+        let mut iteration_count = IterationCount::initial();
 
-        loop {
-            let previous_memo = opt_last_provisional.or(opt_old_memo);
+        if let Some(old_memo) = opt_old_memo {
+            if old_memo.verified_at.load() == zalsa.current_revision()
+                && old_memo.cycle_heads().contains(&database_key_index)
+            {
+                previous_memo = Some(old_memo);
 
+                if old_memo.revisions.is_nested_cycle() {
+                    iteration_count = old_memo.revisions.iteration();
+                }
+            }
+        }
+
+        let mut active_query = zalsa_local.push_query(database_key_index, iteration_count);
+
+        let (new_value, completed_query) = loop {
             // Tracked struct ids that existed in the previous revision
             // but weren't recreated in the last iteration. It's important that we seed the next
             // query with these ids because the query might re-create them as part of the next iteration.
@@ -163,115 +180,232 @@ where
             let (mut new_value, mut completed_query) =
                 Self::execute_query(db, zalsa, active_query, previous_memo);
 
-            // Did the new result we got depend on our own provisional value, in a cycle?
-            if let Some(cycle_heads) = completed_query
-                .revisions
-                .cycle_heads_mut()
-                .filter(|cycle_heads| cycle_heads.contains(&database_key_index))
-            {
-                let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
-                    // We have a last provisional value from our previous time around the loop.
-                    last_provisional.value.as_ref()
-                } else {
-                    // This is our first time around the loop; a provisional value must have been
-                    // inserted into the memo table when the cycle was hit, so let's pull our
-                    // initial provisional value from there.
-                    let memo = self
-                        .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                        .filter(|memo| memo.verified_at.load() == zalsa.current_revision())
-                        .unwrap_or_else(|| {
-                            unreachable!(
-                                "{database_key_index:#?} is a cycle head, \
-                                        but no provisional memo found"
-                            )
-                        });
+            // If there are no cycle heads, break out of the loop (`cycle_heads_mut` returns `None` if the cycle head list is empty)
+            let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() else {
+                break (new_value, completed_query);
+            };
 
-                    debug_assert!(memo.may_be_provisional());
-                    memo.value.as_ref()
-                };
+            let mut cycle_heads = std::mem::take(cycle_heads);
 
-                let last_provisional_value = last_provisional_value.expect(
-                    "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
-                );
-                crate::tracing::debug!(
-                    "{database_key_index:?}: execute: \
-                        I am a cycle head, comparing last provisional value with new value"
-                );
-                // If the new result is equal to the last provisional result, the cycle has
-                // converged and we are done.
-                if !C::values_equal(&new_value, last_provisional_value) {
-                    // We are in a cycle that hasn't converged; ask the user's
-                    // cycle-recovery function what to do:
-                    match C::recover_from_cycle(
-                        db,
-                        &new_value,
-                        iteration_count.as_u32(),
-                        C::id_to_input(zalsa, id),
-                    ) {
-                        crate::CycleRecoveryAction::Iterate => {}
-                        crate::CycleRecoveryAction::Fallback(fallback_value) => {
-                            crate::tracing::debug!(
-                                "{database_key_index:?}: execute: user cycle_fn says to fall back"
-                            );
-                            new_value = fallback_value;
-                        }
+            let mut queue: SmallVec<[DatabaseKeyIndex; 4]> = cycle_heads
+                .iter()
+                .map(|head| head.database_key_index)
+                .filter(|head| *head != database_key_index)
+                .collect();
+
+            while let Some(head) = queue.pop() {
+                let ingredient = zalsa.lookup_ingredient(head.ingredient_index());
+                let nested_heads = ingredient.cycle_heads(zalsa, head.key_index());
+
+                for head in nested_heads {
+                    if cycle_heads.insert(head) && !queue.contains(&head.database_key_index) {
+                        queue.push(head.database_key_index);
                     }
-                    // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
-                    // which is less than `u32::MAX`.
-                    iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                        tracing::warn!(
-                            "{database_key_index:?}: execute: too many cycle iterations"
-                        );
-                        panic!("{database_key_index:?}: execute: too many cycle iterations")
-                    });
-                    zalsa.event(&|| {
-                        Event::new(EventKind::WillIterateCycle {
-                            database_key: database_key_index,
-                            iteration_count,
-                        })
-                    });
-                    cycle_heads.update_iteration_count(database_key_index, iteration_count);
-                    completed_query
-                        .revisions
-                        .update_iteration_count(iteration_count);
-                    crate::tracing::info!("{database_key_index:?}: execute: iterate again...",);
-                    opt_last_provisional = Some(self.insert_memo(
-                        zalsa,
-                        id,
-                        Memo::new(
-                            Some(new_value),
-                            zalsa.current_revision(),
-                            completed_query.revisions,
-                        ),
-                        memo_ingredient_index,
-                    ));
-                    last_stale_tracked_ids = completed_query.stale_tracked_structs;
-
-                    active_query = zalsa_local.push_query(database_key_index, iteration_count);
-
-                    continue;
-                }
-                crate::tracing::debug!(
-                    "{database_key_index:?}: execute: fixpoint iteration has a final value"
-                );
-                cycle_heads.remove(&database_key_index);
-
-                if cycle_heads.is_empty() {
-                    // If there are no more cycle heads, we can mark this as verified.
-                    completed_query
-                        .revisions
-                        .verified_final
-                        .store(true, Ordering::Relaxed);
                 }
             }
 
+            // Did the new result we got depend on our own provisional value, in a cycle?
+            if !cycle_heads.contains(&database_key_index) {
+                completed_query.revisions.set_cycle_heads(cycle_heads);
+                break (new_value, completed_query);
+            }
+
+            let last_provisional_value = if let Some(last_provisional) = previous_memo {
+                // We have a last provisional value from our previous time around the loop.
+                last_provisional.value.as_ref()
+            } else {
+                // This is our first time around the loop; a provisional value must have been
+                // inserted into the memo table when the cycle was hit, so let's pull our
+                // initial provisional value from there.
+                let memo = self
+                    .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                    .unwrap_or_else(|| {
+                        unreachable!(
+                            "{database_key_index:#?} is a cycle head, \
+                                        but no provisional memo found"
+                        )
+                    });
+
+                debug_assert!(memo.may_be_provisional());
+                memo.value.as_ref()
+            };
+
+
+            let last_provisional_value = last_provisional_value.expect(
+                    "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
+                );
             crate::tracing::debug!(
-                "{database_key_index:?}: execute: result.revisions = {revisions:#?}",
-                revisions = &completed_query.revisions
+                "{database_key_index:?}: execute: \
+                        I am a cycle head, comparing last provisional value with new value"
             );
 
-            break (new_value, completed_query);
-        }
+            // determine if it is a nested query.
+            // This is a nested query if it depends on any other cycle head than itself
+            // where claiming it results in a cycle. In that case, both queries form a single connected component
+            // that we can iterate together rather than having separate nested fixpoint iterations.
+            let outer_cycle = cycle_heads
+                .iter()
+                .filter(|head| head.database_key_index != database_key_index)
+                .find_map(|head| {
+                    let head_ingredient =
+                        zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+
+                    head_ingredient
+                        .wait_for(zalsa, head.database_key_index.key_index())
+                        .is_cycle()
+                        .then_some(head.database_key_index)
+                });
+
+            let this_converged = C::values_equal(&new_value, last_provisional_value);
+
+            iteration_count = if outer_cycle.is_some() {
+                iteration_count
+            } else {
+                cycle_heads
+                    .iter()
+                    .map(|head| head.iteration_count.load())
+                    .max()
+                    .unwrap_or(iteration_count)
+            };
+
+            // If the new result is equal to the last provisional result, the cycle has
+            // converged and we are done.
+            if !this_converged {
+                // We are in a cycle that hasn't converged; ask the user's
+                // cycle-recovery function what to do:
+                match C::recover_from_cycle(
+                    db,
+                    &new_value,
+                    iteration_count.as_u32(),
+                    C::id_to_input(zalsa, id),
+                ) {
+                    crate::CycleRecoveryAction::Iterate => {}
+                    crate::CycleRecoveryAction::Fallback(fallback_value) => {
+                        crate::tracing::debug!(
+                            "{database_key_index:?}: execute: user cycle_fn says to fall back"
+                        );
+                        new_value = fallback_value;
+                    }
+                }
+            } else {
+                completed_query.revisions.set_cycle_converged(true);
+            }
+
+            if let Some(outer_cycle) = outer_cycle {
+                tracing::debug!(
+                        "Detected nested cycle {database_key_index:?}, iterate it as part of the outer cycle {outer_cycle:?}"
+                    );
+
+                completed_query.revisions.mark_nested_cycle();
+                completed_query.revisions.set_cycle_heads(cycle_heads);
+
+                break (new_value, completed_query);
+            }
+
+            // Verify that all cycles have converged, including all inner cycles.
+            let converged = this_converged
+                && cycle_heads
+                    .iter()
+                    .filter(|head| head.database_key_index != database_key_index)
+                    .all(|head| {
+                        let ingredient =
+                            zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+
+                        ingredient.cycle_converged(zalsa, head.database_key_index.key_index())
+                    });
+
+            if converged {
+                crate::tracing::debug!(
+                        "{database_key_index:?}: execute: fixpoint iteration has a final value after {iteration_count:?} iterations"
+                    );
+
+                // Set the nested cycles as verified. This is necessary because
+                // `validate_provisional` doesn't follow cycle heads recursively (and the inner memos now depend on all cycle heads).
+                for head in cycle_heads {
+                    if head.database_key_index == database_key_index {
+                        continue;
+                    }
+
+                    let ingredient =
+                        zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+                    ingredient.set_cycle_finalized(zalsa, head.database_key_index.key_index());
+                }
+
+                *completed_query.revisions.verified_final.get_mut() = true;
+
+                break (new_value, completed_query);
+            }
+
+            completed_query.revisions.set_cycle_heads(cycle_heads);
+
+            // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
+            // which is less than `u32::MAX`.
+            iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
+                panic!("{database_key_index:?}: execute: too many cycle iterations")
+            });
+
+            zalsa.event(&|| {
+                Event::new(EventKind::WillIterateCycle {
+                    database_key: database_key_index,
+                    iteration_count,
+                })
+            });
+
+            crate::tracing::info!(
+                "{database_key_index:?}: execute: iterate again ({iteration_count:?})...",
+            );
+
+            completed_query
+                .revisions
+                .update_iteration_count_mut(database_key_index, iteration_count);
+
+            for head in completed_query.revisions.cycle_heads() {
+                if head.database_key_index == database_key_index {
+                    continue;
+                }
+
+                let ingredient =
+                    zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+
+                // let iteration_count = if was_initial && !head.iteration_count.load().is_initial() {
+                //     IterationCount::first_after_restart()
+                // } else {
+                //     iteration_count
+                // };
+
+                ingredient.set_cycle_iteration_count(
+                    zalsa,
+                    head.database_key_index.key_index(),
+                    iteration_count,
+                );
+            }
+
+            let new_memo = self.insert_memo(
+                zalsa,
+                id,
+                Memo::new(
+                    Some(new_value),
+                    zalsa.current_revision(),
+                    completed_query.revisions,
+                ),
+                memo_ingredient_index,
+            );
+
+            previous_memo = Some(new_memo);
+
+            last_stale_tracked_ids = completed_query.stale_tracked_structs;
+            active_query = zalsa_local.push_query(database_key_index, iteration_count);
+
+            continue;
+        };
+
+        crate::tracing::debug!(
+            "{database_key_index:?}: execute_maybe_iterate: result.revisions = {revisions:#?}",
+            revisions = &completed_query.revisions
+        );
+
+        (new_value, completed_query)
     }
 
     #[inline]
