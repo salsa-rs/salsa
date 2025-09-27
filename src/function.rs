@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::SyncGuard;
+pub(crate) use sync::{ClaimGuard, SyncGuard};
 
 use std::any::Any;
 use std::fmt;
@@ -8,7 +8,8 @@ use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use crate::cycle::{
-    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
+    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, IterationCount,
+    ProvisionalStatus,
 };
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
@@ -348,14 +349,47 @@ where
                 ProvisionalStatus::Final {
                     iteration,
                     verified_at: memo.verified_at.load(),
+                    nested: memo.revisions.is_nested_cycle(),
                 }
             }
         } else {
             ProvisionalStatus::Provisional {
                 iteration,
                 verified_at: memo.verified_at.load(),
+                nested: memo.revisions.is_nested_cycle(),
             }
         })
+    }
+
+    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return;
+        };
+
+        memo.revisions
+            .set_iteration_count(Self::database_key_index(self, input), iteration_count);
+    }
+
+    fn set_cycle_finalized(&self, zalsa: &Zalsa, input: Id) {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return;
+        };
+
+        memo.revisions.verified_final.store(true, Ordering::Release);
+    }
+
+    fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return true;
+        };
+
+        memo.revisions.cycle_converged()
     }
 
     fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
@@ -375,7 +409,7 @@ where
         match self.sync_table.try_claim(zalsa, key_index) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
             ClaimResult::Cycle => WaitForResult::Cycle,
-            ClaimResult::Claimed(_) => WaitForResult::Available,
+            ClaimResult::Claimed(guard) => WaitForResult::Available(guard),
         }
     }
 
@@ -433,10 +467,6 @@ where
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("function does not allocate pages")
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        C::CYCLE_STRATEGY
     }
 
     #[cfg(feature = "accumulator")]

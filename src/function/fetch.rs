@@ -232,7 +232,7 @@ where
             }
         }
 
-        let memo = self.execute(db, zalsa, zalsa_local, database_key_index, opt_old_memo);
+        let memo = self.execute(db,zalsa, zalsa_local, database_key_index, opt_old_memo);
 
         Some(memo)
     }
@@ -257,6 +257,23 @@ where
                 let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
                 if can_shallow_update.yes() {
                     self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
+
+                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
+                        // This feels strange. I feel like we need to preserve the cycle heads. Let's say a cycle head only sometimes participates in the cycle.
+                        // This doesn't mean that the value becomes final because of it. The query might as well be cyclic in the next iteration but
+                        // we then never re-executed that query because it was marked as `verified_final`.
+                        memo.revisions
+                            .cycle_heads()
+                            .clear_except(database_key_index);
+                        memo.revisions.reset_nested_cycle();
+                    }
+
+                    crate::tracing::debug!(
+                        "hit cycle at {database_key_index:#?}, \
+                        returning last provisional value: {:#?}",
+                        memo.revisions
+                    );
+
                     // SAFETY: memo is present in memo_map.
                     return unsafe { self.extend_memo_lifetime(memo) };
                 }
