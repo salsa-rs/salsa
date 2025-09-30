@@ -48,7 +48,6 @@ where
                 zalsa,
                 zalsa_local.push_query(database_key_index, IterationCount::initial()),
                 opt_old_memo,
-                id,
             ),
             CycleRecoveryStrategy::FallbackImmediate => {
                 let (mut new_value, mut completed_query) = Self::execute_query(
@@ -56,7 +55,6 @@ where
                     zalsa,
                     zalsa_local.push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
-                    id,
                 );
 
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
@@ -163,7 +161,7 @@ where
             active_query.seed_tracked_struct_ids(&last_stale_tracked_ids);
 
             let (mut new_value, mut completed_query) =
-                Self::execute_query(db, zalsa, active_query, previous_memo, id);
+                Self::execute_query(db, zalsa, active_query, previous_memo);
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if let Some(cycle_heads) = completed_query
@@ -280,7 +278,6 @@ where
         zalsa: &'db Zalsa,
         active_query: ActiveQueryGuard<'db>,
         opt_old_memo: Option<&Memo<'db, C>>,
-        id: Id,
     ) -> (C::Output<'db>, CompletedQuery) {
         if let Some(old_memo) = opt_old_memo {
             // If we already executed this query once, then use the tracked-struct ids from the
@@ -301,7 +298,10 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let new_value = C::execute(db, C::id_to_input(zalsa, id));
+        let new_value = C::execute(
+            db,
+            C::id_to_input(zalsa, active_query.database_key_index.key_index()),
+        );
 
         (new_value, active_query.pop())
     }

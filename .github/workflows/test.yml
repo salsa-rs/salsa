@@ -152,7 +152,8 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-
+            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-benchmark
+            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}
             ${{ runner.os }}-cargo-
 
       - name: "Build benchmarks"
