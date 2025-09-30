@@ -130,7 +130,6 @@ where
         )
     }
 
-    #[inline]
     fn execute_maybe_iterate<'db>(
         &'db self,
         db: &'db C::DbView,
