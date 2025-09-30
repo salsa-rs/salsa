@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleRecoveryStrategy, ProvisionalStatus};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
 use crate::function::memo::{Memo, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -453,6 +453,48 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
     ) -> bool {
+        #[cold]
+        #[inline(never)]
+        fn validate_same_iteration_cold(
+            zalsa: &Zalsa,
+            zalsa_local: &ZalsaLocal,
+            cycle_heads: &CycleHeads,
+            verified_at: Revision,
+        ) -> bool {
+            let mut cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, cycle_heads);
+
+            while let Some(cycle_head) = cycle_heads_iter.next() {
+                match cycle_head {
+                    TryClaimHeadsResult::Cycle {
+                        head_iteration_count,
+                        current_iteration_count,
+                        verified_at: head_verified_at,
+                    } => {
+                        if head_verified_at != verified_at {
+                            return false;
+                        }
+
+                        if head_iteration_count != current_iteration_count {
+                            return false;
+                        }
+                    }
+                    TryClaimHeadsResult::Available(available_cycle_head) => {
+                        // Check the cycle heads recursively
+                        if available_cycle_head.is_nested(zalsa) {
+                            available_cycle_head.queue_cycle_heads(&mut cycle_heads_iter);
+                        } else {
+                            return false;
+                        }
+                    }
+                    TryClaimHeadsResult::Finalized | TryClaimHeadsResult::Running(_) => {
+                        return false;
+                    }
+                }
+            }
+
+            true
+        }
+
         crate::tracing::trace!(
             "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
             memo = memo.tracing_debug()
@@ -472,111 +514,7 @@ where
             return false;
         }
 
-        let mut cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, cycle_heads);
-
-        while let Some(cycle_head) = cycle_heads_iter.next() {
-            match cycle_head {
-                TryClaimHeadsResult::Cycle {
-                    head_iteration_count,
-                    current_iteration_count,
-                    verified_at: head_verified_at,
-                } => {
-                    if head_verified_at != verified_at {
-                        return false;
-                    }
-
-                    if head_iteration_count != current_iteration_count {
-                        return false;
-                    }
-                }
-                TryClaimHeadsResult::Available(available_cycle_head) => {
-                    // Check the cycle heads recursively
-                    if available_cycle_head.is_nested(zalsa) {
-                        available_cycle_head.queue_cycle_heads(&mut cycle_heads_iter);
-                    } else {
-                        return false;
-                    }
-                }
-                TryClaimHeadsResult::Finalized | TryClaimHeadsResult::Running(_) => {
-                    return false;
-                }
-            }
-
-            // // If the cycle head isn't on our stack because:
-            // //
-            // // * another thread holds the lock on the cycle head (but it waits for the current query to complete)
-            // // * we're in `maybe_changed_after` because `maybe_changed_after` doesn't modify the cycle stack
-            // //
-            // // check if the latest memo has the same iteration count.
-
-            // // However, we've to be careful to skip over fixpoint initial values:
-            // // If the head is the memo we're trying to validate, always return `None`
-            // // to force a re-execution of the query. This is necessary because the query
-            // // has obviously not completed its iteration yet.
-            // //
-            // // This should be rare but the `cycle_panic` test fails on some platforms (mainly GitHub actions)
-            // // without this check. What happens there is that:
-            // //
-            // // * query a blocks on query b
-            // // * query b tries to claim a, fails to do so and inserts the fixpoint initial value
-            // // * query b completes and has `a` as head. It returns its query result Salsa blocks query b from
-            // //   exiting inside `block_on` (or the thread would complete before the cycle iteration is complete)
-            // // * query a resumes but panics because of the fixpoint iteration function
-            // // * query b resumes. It rexecutes its own query which then tries to fetch a (which depends on itself because it's a fixpoint initial value).
-            // //   Without this check, `validate_same_iteration` would return `true` because the latest memo for `a` is the fixpoint initial value.
-            // //   But it should return `false` so that query b's thread re-executes `a` (which then also causes the panic).
-            // //
-            // // That's why we always return `None` if the cycle head is the same as the current database key index.
-            // if cycle_head.database_key_index == database_key_index {
-            //     return false;
-            // }
-
-            // let wait_result = ingredient.wait_for(zalsa, cycle_head.database_key_index.key_index());
-
-            // let provisional_status = match wait_result {
-            //     WaitForResult::Running(_) => {
-            //         // This Memo is guaranteed to be outdated because another thread
-            //         // is computing a new value right now
-            //         return None;
-            //     }
-            //     WaitForResult::Available(_claim_guard) => {
-            //         // Nested cycles are released as soon as their query completes
-            //         // and the outer queries are part of their `cycle_heads`.
-
-            //         let provisional_status = ingredient
-            //             .provisional_status(zalsa, cycle_head.database_key_index.key_index())?;
-
-            //         if !provisional_status.nested() {
-            //             return None;
-            //         }
-
-            //         let cycle_heads =
-            //             ingredient.cycle_heads(zalsa, cycle_head.database_key_index.key_index());
-
-            //         // This doesn't work, unless we need the same check in blocks-on etc.
-            //         if !cycle_heads.contains(&database_key_index) {
-            //             return None;
-            //         }
-
-            //         provisional_status
-            //     }
-            //     WaitForResult::Cycle => {
-            //         // The head is hold by the current thread or another thread waiting on the
-            //         // result of this thread.
-            //         ingredient
-            //             .provisional_status(zalsa, cycle_head.database_key_index.key_index())?
-            //     }
-            // };
-
-            // if provisional_status.verified_at() == Some(verified_at) {
-            //     provisional_status.iteration()
-            // } else {
-            //     None
-            // }
-            //
-        }
-
-        true
+        validate_same_iteration_cold(zalsa, zalsa_local, cycle_heads, verified_at)
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
