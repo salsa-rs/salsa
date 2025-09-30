@@ -131,6 +131,7 @@ impl ZalsaLocal {
         }
     }
 
+    #[inline]
     pub(crate) fn push_query(
         &self,
         database_key_index: DatabaseKeyIndex,
