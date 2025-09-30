@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleRecoveryStrategy, ProvisionalStatus};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
@@ -227,9 +227,7 @@ where
         // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && !cycle_heads.has_any() {
-            let active_query =
-                zalsa_local.push_query(database_key_index, IterationCount::initial());
-            let memo = self.execute(db, active_query, Some(old_memo));
+            let memo = self.execute(db, database_key_index, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
             // Always assume that a provisional value has changed.

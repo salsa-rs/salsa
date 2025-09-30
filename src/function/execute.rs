@@ -2,11 +2,12 @@ use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
+use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
-use crate::{Event, EventKind, Id};
+use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -25,14 +26,13 @@ where
     pub(super) fn execute<'db>(
         &'db self,
         db: &'db C::DbView,
-        active_query: ActiveQueryGuard<'db>,
+        database_key_index: DatabaseKeyIndex,
         opt_old_memo: Option<&Memo<'db, C>>,
     ) -> &'db Memo<'db, C> {
-        let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index();
 
         crate::tracing::info!("{:?}: executing query", database_key_index);
-        let zalsa = db.zalsa();
+        let (zalsa, zalsa_local) = db.zalsas();
 
         zalsa.event(&|| {
             Event::new(EventKind::WillExecute {
@@ -42,12 +42,21 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         let (new_value, mut completed_query) = match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Panic => {
-                Self::execute_query(db, zalsa, active_query, opt_old_memo, id)
-            }
+            CycleRecoveryStrategy::Panic => Self::execute_query(
+                db,
+                zalsa,
+                zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                opt_old_memo,
+                id,
+            ),
             CycleRecoveryStrategy::FallbackImmediate => {
-                let (mut new_value, mut completed_query) =
-                    Self::execute_query(db, zalsa, active_query, opt_old_memo, id);
+                let (mut new_value, mut completed_query) = Self::execute_query(
+                    db,
+                    zalsa,
+                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                    opt_old_memo,
+                    id,
+                );
 
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
@@ -71,9 +80,8 @@ where
                     // Cycle participants that don't have a fallback will be discarded in
                     // `validate_provisional()`.
                     let cycle_heads = std::mem::take(cycle_heads);
-                    let active_query = db
-                        .zalsa_local()
-                        .push_query(database_key_index, IterationCount::initial());
+                    let active_query =
+                        zalsa_local.push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                     completed_query = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
@@ -86,10 +94,10 @@ where
             }
             CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
                 db,
-                active_query,
                 opt_old_memo,
                 zalsa,
-                id,
+                zalsa_local,
+                database_key_index,
                 memo_ingredient_index,
             ),
         };
@@ -126,15 +134,15 @@ where
     fn execute_maybe_iterate<'db>(
         &'db self,
         db: &'db C::DbView,
-        mut active_query: ActiveQueryGuard<'db>,
         opt_old_memo: Option<&Memo<'db, C>>,
         zalsa: &'db Zalsa,
-        id: Id,
+        zalsa_local: &'db ZalsaLocal,
+        database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> (C::Output<'db>, CompletedQuery) {
-        let database_key_index = active_query.database_key_index;
+        let id = database_key_index.key_index();
         let mut iteration_count = IterationCount::initial();
-        let zalsa_local = db.zalsa_local();
+        let mut active_query = zalsa_local.push_query(database_key_index, iteration_count);
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // Initially it's set to None, because the initial provisional value is created lazily,
