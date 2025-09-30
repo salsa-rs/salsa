@@ -232,11 +232,7 @@ where
             }
         }
 
-        let memo = self.execute(
-            db,
-            zalsa_local.push_query(database_key_index, IterationCount::initial()),
-            opt_old_memo,
-        );
+        let memo = self.execute(db, zalsa, zalsa_local, database_key_index, opt_old_memo);
 
         Some(memo)
     }
