@@ -183,8 +183,10 @@ where
                     debug_assert!(memo.may_be_provisional());
                     memo.value.as_ref()
                 };
-                // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
-                let last_provisional_value = unsafe { last_provisional_value.unwrap_unchecked() };
+
+                let last_provisional_value = last_provisional_value.expect(
+                    "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
+                );
                 crate::tracing::debug!(
                     "{database_key_index:?}: execute: \
                         I am a cycle head, comparing last provisional value with new value"
