@@ -5,7 +5,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::tracked_struct::Identity;
-use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
+use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -26,13 +26,14 @@ where
     pub(super) fn execute<'db>(
         &'db self,
         db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         opt_old_memo: Option<&Memo<'db, C>>,
     ) -> &'db Memo<'db, C> {
         let id = database_key_index.key_index();
 
         crate::tracing::info!("{:?}: executing query", database_key_index);
-        let (zalsa, zalsa_local) = db.zalsas();
 
         zalsa.event(&|| {
             Event::new(EventKind::WillExecute {
