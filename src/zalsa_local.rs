@@ -568,7 +568,10 @@ struct QueryRevisionsExtraInner {
 
     cycle_converged: bool,
 
-    #[cfg_attr(feature = "persistence", serde(with = "crate::zalsa_local::persistence::atomic_bool"))]
+    #[cfg_attr(
+        feature = "persistence",
+        serde(with = "crate::zalsa_local::persistence::atomic_bool")
+    )]
     nested_cycle: AtomicBool,
 }
 
@@ -1265,7 +1268,7 @@ pub(crate) mod persistence {
             }
         }
     }
-    
+
     // A workaround the fact that `shuttle` atomic types do not implement `serde::{Serialize, Deserialize}`.
     pub(super) mod verified_final {
         use crate::sync::atomic::{AtomicBool, Ordering};
@@ -1302,5 +1305,4 @@ pub(crate) mod persistence {
             serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
         }
     }
-
 }

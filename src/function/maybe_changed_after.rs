@@ -446,6 +446,7 @@ where
     /// If this is a provisional memo, validate that it was cached in the same iteration of the
     /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
     /// runaway re-execution of the same queries within a fixpoint iteration.
+    #[inline]
     fn validate_same_iteration(
         &self,
         zalsa: &Zalsa,

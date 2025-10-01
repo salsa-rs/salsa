@@ -187,12 +187,27 @@ where
 
             let mut cycle_heads = std::mem::take(cycle_heads);
 
+            // Recursively resolve all cycle heads that this head depends on.
+            // This isn't required in a single-threaded execution but it's not guaranteed that all nested cycles are listed
+            // in cycle heads in a multi-threaded execution:
+            //
+            // t1: a -> b
+            // t2: c -> b (blocks on t1)
+            // t1: a -> b -> c (cycle, returns fixpoint initial with c(0) in heads)
+            // t1: a -> b (completes b, b has c(0) in its cycle heads, releases `b`, which resumes `t2`, and `retry_provisional` blocks on `c` (t2))
+            // t2: c -> a (cycle, returns fixpoint initial for a with a(0) in heads)
+            // t2: completes c, `provisional_retry` blocks on `a` (t2)
+            // t1: a (complets `b` with `c` in heads)
+            //
+            // Note how `a` only depends on `c` but not `a`. This is because `a` only saw the initial value of `c` and wasn't updated when `c` completed.
+            // That's why we need to resolve the cycle heads recursively to `cycle_heads` contains all cycle heads at the moment this query completed.
             let mut queue: SmallVec<[DatabaseKeyIndex; 4]> = cycle_heads
                 .iter()
                 .map(|head| head.database_key_index)
                 .filter(|head| *head != database_key_index)
                 .collect();
 
+            // TODO: Can we also resolve whether the cycles have converged here?
             while let Some(head) = queue.pop() {
                 let ingredient = zalsa.lookup_ingredient(head.ingredient_index());
                 let nested_heads = ingredient.cycle_heads(zalsa, head.key_index());
@@ -230,10 +245,9 @@ where
                 memo.value.as_ref()
             };
 
-
             let last_provisional_value = last_provisional_value.expect(
-                    "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
-                );
+                "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
+            );
             crate::tracing::debug!(
                 "{database_key_index:?}: execute: \
                         I am a cycle head, comparing last provisional value with new value"
@@ -487,6 +501,10 @@ impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
         if std::thread::panicking() {
             let revisions =
                 QueryRevisions::fixpoint_initial(self.ingredient.database_key_index(self.id));
+            revisions.update_iteration_count_mut(
+                self.ingredient.database_key_index(self.id),
+                IterationCount::panicked(),
+            );
 
             let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
             self.ingredient
