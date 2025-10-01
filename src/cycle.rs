@@ -130,6 +130,10 @@ impl IterationCount {
         self.0 == 0
     }
 
+    pub(crate) const fn panicked() -> Self {
+        Self(u8::MAX)
+    }
+
     pub(crate) const fn increment(self) -> Option<Self> {
         let next = Self(self.0 + 1);
         if next.0 <= MAX_ITERATIONS.0 {
@@ -226,7 +230,7 @@ impl CycleHeads {
 
     pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
         self.into_iter()
-            .any(|head| head.database_key_index == *value)
+            .any(|head| head.database_key_index == *value && !head.removed.load(Ordering::Relaxed))
     }
 
     pub(crate) fn clear_except(&self, except: DatabaseKeyIndex) {
