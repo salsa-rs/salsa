@@ -108,26 +108,23 @@ fn the_test() {
         }
 
         let t1 = thread::spawn(move || {
-            let _span = tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
+            let _span = tracing::info_span!("t1", thread_id = ?thread::current().id()).entered();
             let (db, input) = get_db(|db, input| {
                 query_a(db, input);
             });
 
-            let _span = tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
-
             query_a(&db, input)
         });
         let t2 = thread::spawn(move || {
-            let _span = tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
+            let _span = tracing::info_span!("t2", thread_id = ?thread::current().id()).entered();
             let (db, input) = get_db(|db, input| {
                 query_b(db, input);
             });
 
-            let _span = tracing::debug_span!("t4", thread_id = ?thread::current().id()).entered();
             query_b(&db, input)
         });
         let t3 = thread::spawn(move || {
-            let _span = tracing::debug_span!("t3", thread_id = ?thread::current().id()).entered();
+            let _span = tracing::info_span!("t3", thread_id = ?thread::current().id()).entered();
             let (db, input) = get_db(|db, input| {
                 query_d(db, input);
             });
@@ -135,7 +132,7 @@ fn the_test() {
             query_d(&db, input)
         });
         let t4 = thread::spawn(move || {
-            let _span = tracing::debug_span!("t4", thread_id = ?thread::current().id()).entered();
+            let _span = tracing::info_span!("t4", thread_id = ?thread::current().id()).entered();
 
             let (db, input) = get_db(|db, input| {
                 query_e(db, input);
