@@ -83,7 +83,7 @@ impl SyncTable {
 /// Marks an active 'claim' in the synchronization map. The claim is
 /// released when this value is dropped.
 #[must_use]
-pub(crate) struct ClaimGuard<'me> {
+pub struct ClaimGuard<'me> {
     key_index: Id,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,

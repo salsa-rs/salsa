@@ -1,9 +1,9 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
+use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::{ClaimGuard, VerifyCycleHeads, VerifyResult};
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::runtime::Running;
 use crate::sync::Arc;
@@ -93,9 +93,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// on an other thread, it's up to caller to block until the result becomes available if desired.
     /// A return value of [`WaitForResult::Cycle`] means that a cycle was encountered; the waited-on query is either already claimed
     /// by the current thread, or by a thread waiting on the current thread.
-    fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
-        _ = (zalsa, key_index);
-        WaitForResult::Available
+    fn wait_for<'me>(&'me self, _zalsa: &'me Zalsa, _key_index: Id) -> WaitForResult<'me> {
+        unreachable!(
+            "wait_for should only be called on cycle heads and only functions can be cycle heads"
+        );
     }
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
@@ -157,11 +158,21 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     }
     // Function ingredient methods
 
-    /// If this ingredient is a participant in a cycle, what is its cycle recovery strategy?
-    /// (Really only relevant to [`crate::function::FunctionIngredient`],
-    /// since only function ingredients push themselves onto the active query stack.)
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        unreachable!("only function ingredients can be part of a cycle")
+    fn cycle_converged(&self, _zalsa: &Zalsa, _input: Id) -> bool {
+        unreachable!("cycle_converged should only be called on cycle heads and only functions can be cycle heads");
+    }
+
+    fn set_cycle_iteration_count(
+        &self,
+        _zalsa: &Zalsa,
+        _input: Id,
+        _iteration_count: IterationCount,
+    ) {
+        unreachable!("increment_iteration_count should only be called on cycle heads and only functions can be cycle heads");
+    }
+
+    fn set_cycle_finalized(&self, _zalsa: &Zalsa, _input: Id) {
+        unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
     }
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
@@ -304,12 +315,16 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
 
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
-    Available,
+    Available(ClaimGuard<'me>),
     Cycle,
 }
 
 impl WaitForResult<'_> {
     pub const fn is_cycle(&self) -> bool {
         matches!(self, WaitForResult::Cycle)
+    }
+
+    pub const fn is_running(&self) -> bool {
+        matches!(self, WaitForResult::Running(_))
     }
 }
