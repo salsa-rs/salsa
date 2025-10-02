@@ -234,8 +234,12 @@ where
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if !cycle_heads.contains(&database_key_index) {
+                let new_owner = cycle_heads
+                    .iter()
+                    .next()
+                    .map(|head| head.database_key_index);
                 completed_query.revisions.set_cycle_heads(cycle_heads);
-                break (new_value, completed_query, None);
+                break (new_value, completed_query, new_owner);
             }
 
             let last_provisional_value = if let Some(last_provisional) = previous_memo {

@@ -486,6 +486,9 @@ where
                             return false;
                         }
                     }
+                    TryClaimHeadsResult::Running(running) => {
+                        running.block_on(&mut cycle_heads_iter);
+                    }
                     TryClaimHeadsResult::Available(available_cycle_head) => {
                         // Check the cycle heads recursively
                         // if available_cycle_head.is_nested(zalsa) {

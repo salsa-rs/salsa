@@ -68,9 +68,9 @@ impl SyncTable {
             ..
         } = syncs.remove(&key_index).expect("key claimed twice?");
 
-        if !anyone_waiting {
-            return;
-        }
+        // if !anyone_waiting {
+        //     return;
+        // }
 
         let database_key = DatabaseKeyIndex::new(self.ingredient, key_index);
         let wait_result = if thread::panicking() {
@@ -84,9 +84,9 @@ impl SyncTable {
             .runtime()
             .unblock_queries_blocked_on(database_key, wait_result);
 
-        if !is_transfer_target {
-            return;
-        }
+        // if !is_transfer_target {
+        //     return;
+        // }
 
         let transferred_dependents = zalsa.runtime().take_transferred_dependents(database_key);
 

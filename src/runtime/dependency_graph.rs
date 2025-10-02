@@ -157,12 +157,18 @@ impl DependencyGraph {
             .get(&database_key_index)
             .expect("transfered thread id not found");
 
-        if *thread_id == thread::current().id() {
+        let current_id = thread::current().id();
+        if *thread_id == thread::current().id() || self.depends_on(*thread_id, current_id) {
             if claim {
                 if let Some(dependents) = self.transfered_dependents.get_mut(parent) {
                     if let Some(index) =
                         dependents.iter().position(|key| *key == database_key_index)
                     {
+                        tracing::debug!(
+                            "Remove transfered dependent {:?} from {:?}",
+                            database_key_index,
+                            parent
+                        );
                         dependents.swap_remove(index);
                     }
                 }
@@ -179,29 +185,39 @@ impl DependencyGraph {
         new_owner: DatabaseKeyIndex,
         owning_thread: ThreadId,
     ) {
-        let dependents = match self.transfered.entry(query) {
+        match self.transfered.entry(query) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert((owning_thread, new_owner));
-                None
             }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                let current_owner = entry.get().1;
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                // This sucks, because we no longer know which sub locks we transferred in a previous iteration.
+                //
                 *entry.get_mut() = (owning_thread, new_owner);
-
-                self.transfered_dependents.remove(&current_owner)
             }
-        }
-        .unwrap_or_default();
+        };
 
-        let all_dependents = self.transfered_dependents.entry(new_owner).or_default();
+        let transitive_dependents = self
+            .transfered_dependents
+            .remove(&query)
+            .unwrap_or_default();
 
-        for entry in &dependents {
+        tracing::debug!(
+            "transitive_dependents of query {query:?}: {:?}",
+            transitive_dependents
+        );
+
+        let all_dependents = self.transfered_dependents.entry(query).or_default();
+        all_dependents.push(query);
+
+        for entry in &transitive_dependents {
+            tracing::debug!("Transferring transitive dependent {entry:?} to {new_owner:?}");
             *self.transfered.get_mut(entry).unwrap() = (owning_thread, new_owner);
             all_dependents.push(*entry);
         }
+        tracing::debug!("all dependents after transfer: {:?}", all_dependents);
 
-        tracing::debug!("Unblocking dependents of query {query:?}");
-        for dependent in dependents {
+        tracing::debug!("Unblocking transitive dependents of query {query:?}");
+        for dependent in transitive_dependents {
             self.unblock_runtimes_blocked_on(dependent, WaitResult::Completed);
         }
     }

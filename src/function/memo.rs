@@ -540,7 +540,7 @@ pub(super) struct RunningCycleHead<'me> {
 }
 
 impl<'a> RunningCycleHead<'a> {
-    fn block_on(self, cycle_heads: &mut TryClaimCycleHeadsIter<'a>) {
+    pub(crate) fn block_on(self, cycle_heads: &mut TryClaimCycleHeadsIter<'a>) {
         let database_key_index = self.inner.database_key();
         let key_index = database_key_index.key_index();
         self.inner.block_on(cycle_heads.zalsa);
