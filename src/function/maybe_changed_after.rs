@@ -141,7 +141,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = match self.sync_table.try_claim(zalsa, key_index) {
+        let _claim_guard = match self.sync_table.try_claim(zalsa, key_index, true) {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
@@ -227,7 +227,14 @@ where
         // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && !cycle_heads.has_any() {
-            let memo = self.execute(db, zalsa, zalsa_local, database_key_index, Some(old_memo));
+            let memo = self.execute(
+                db,
+                zalsa,
+                zalsa_local,
+                database_key_index,
+                Some(old_memo),
+                _claim_guard,
+            );
             let changed_at = memo.revisions.changed_at;
 
             // Always assume that a provisional value has changed.
@@ -481,11 +488,12 @@ where
                     }
                     TryClaimHeadsResult::Available(available_cycle_head) => {
                         // Check the cycle heads recursively
-                        if available_cycle_head.is_nested(zalsa) {
-                            available_cycle_head.queue_cycle_heads(&mut cycle_heads_iter);
-                        } else {
-                            return false;
-                        }
+                        // if available_cycle_head.is_nested(zalsa) {
+                        //     available_cycle_head.queue_cycle_heads(&mut cycle_heads_iter);
+                        // } else {
+                        //     return false;
+                        // }
+                        return false;
                     }
                     TryClaimHeadsResult::Finalized | TryClaimHeadsResult::Running(_) => {
                         return false;

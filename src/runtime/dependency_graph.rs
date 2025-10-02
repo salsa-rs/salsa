@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
-use crate::sync::thread::ThreadId;
+use crate::sync::thread::{self, ThreadId};
 use crate::sync::MutexGuard;
 
 #[derive(Debug, Default)]
@@ -25,6 +25,14 @@ pub(super) struct DependencyGraph {
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
     wait_results: FxHashMap<ThreadId, WaitResult>,
+
+    /// A `K -> Q` pair indicates that `K`'s lock is now owned by
+    /// `Q` (The thread id of `Q` and its database key)
+    transfered: FxHashMap<DatabaseKeyIndex, (ThreadId, DatabaseKeyIndex)>,
+
+    /// A `K -> Qs` pair indicates that `K`'s lock is now owned by
+    /// `Qs` (The thread id of `Qs` and their database keys)
+    transfered_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[DatabaseKeyIndex; 4]>>,
 }
 
 impl DependencyGraph {
@@ -117,6 +125,9 @@ impl DependencyGraph {
         database_key: DatabaseKeyIndex,
         wait_result: WaitResult,
     ) {
+        tracing::debug!(
+            "Unblocking runtimes blocked on {database_key:?} with wait result {wait_result:?}"
+        );
         let dependents = self
             .query_dependents
             .remove(&database_key)
@@ -127,10 +138,79 @@ impl DependencyGraph {
         }
     }
 
+    pub(super) fn take_transferred_dependents(
+        &mut self,
+        query: DatabaseKeyIndex,
+    ) -> SmallVec<[DatabaseKeyIndex; 4]> {
+        self.transfered_dependents
+            .remove(&query)
+            .unwrap_or_default()
+    }
+
+    pub(super) fn transfered_thread_id(
+        &mut self,
+        database_key_index: DatabaseKeyIndex,
+        claim: bool,
+    ) -> Result<ThreadId, ThreadId> {
+        let (thread_id, parent) = self
+            .transfered
+            .get(&database_key_index)
+            .expect("transfered thread id not found");
+
+        if *thread_id == thread::current().id() {
+            if claim {
+                if let Some(dependents) = self.transfered_dependents.get_mut(parent) {
+                    if let Some(index) =
+                        dependents.iter().position(|key| *key == database_key_index)
+                    {
+                        dependents.swap_remove(index);
+                    }
+                }
+            }
+            Ok(*thread_id)
+        } else {
+            Err(*thread_id)
+        }
+    }
+
+    pub(super) fn transfer_lock(
+        &mut self,
+        query: DatabaseKeyIndex,
+        new_owner: DatabaseKeyIndex,
+        owning_thread: ThreadId,
+    ) {
+        let dependents = match self.transfered.entry(query) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert((owning_thread, new_owner));
+                None
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let current_owner = entry.get().1;
+                *entry.get_mut() = (owning_thread, new_owner);
+
+                self.transfered_dependents.remove(&current_owner)
+            }
+        }
+        .unwrap_or_default();
+
+        let all_dependents = self.transfered_dependents.entry(new_owner).or_default();
+
+        for entry in &dependents {
+            *self.transfered.get_mut(entry).unwrap() = (owning_thread, new_owner);
+            all_dependents.push(*entry);
+        }
+
+        tracing::debug!("Unblocking dependents of query {query:?}");
+        for dependent in dependents {
+            self.unblock_runtimes_blocked_on(dependent, WaitResult::Completed);
+        }
+    }
+
     /// Unblock the runtime with the given id with the given wait-result.
     /// This will cause it resume execution (though it will have to grab
     /// the lock on this data structure first, to recover the wait result).
     fn unblock_runtime(&mut self, id: ThreadId, wait_result: WaitResult) {
+        tracing::debug!("Unblocking runtime {id:?} with wait result {wait_result:?}");
         let edge = self.edges.remove(&id).expect("not blocked");
         self.wait_results.insert(id, wait_result);
 

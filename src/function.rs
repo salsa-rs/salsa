@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::{ClaimGuard, SyncGuard};
+pub(crate) use sync::{ClaimGuard, SyncGuard, SyncTable};
 
 use std::any::Any;
 use std::fmt;
@@ -13,7 +13,7 @@ use crate::cycle::{
 };
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
-use crate::function::sync::{ClaimResult, SyncTable};
+use crate::function::sync::ClaimResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
@@ -392,6 +392,10 @@ where
         memo.revisions.cycle_converged()
     }
 
+    fn sync_table(&self) -> &SyncTable {
+        &self.sync_table
+    }
+
     fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
         self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .map(|memo| memo.cycle_heads())
@@ -406,9 +410,9 @@ where
     /// * [`WaitResult::Cycle`] Claiming the `key_index` results in a cycle because it's on the current's thread query stack or
     ///   running on another thread that is blocked on this thread.
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
-        match self.sync_table.try_claim(zalsa, key_index) {
+        match self.sync_table.try_claim(zalsa, key_index, false) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle => WaitForResult::Cycle,
+            ClaimResult::Cycle(bool) => WaitForResult::Cycle(bool),
             ClaimResult::Claimed(guard) => WaitForResult::Available(guard),
         }
     }

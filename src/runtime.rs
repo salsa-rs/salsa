@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
 use crate::function::SyncGuard;
@@ -266,6 +268,36 @@ impl Runtime {
         self.dependency_graph
             .lock()
             .unblock_runtimes_blocked_on(database_key, wait_result);
+    }
+
+    pub(super) fn transfered_thread_id(
+        &self,
+        query: DatabaseKeyIndex,
+        reentry: bool,
+    ) -> Result<ThreadId, ThreadId> {
+        self.dependency_graph
+            .lock()
+            .transfered_thread_id(query, reentry)
+    }
+
+    pub(super) fn take_transferred_dependents(
+        &self,
+        query: DatabaseKeyIndex,
+    ) -> SmallVec<[DatabaseKeyIndex; 4]> {
+        self.dependency_graph
+            .lock()
+            .take_transferred_dependents(query)
+    }
+
+    pub(super) fn transfer_lock(
+        &self,
+        query: DatabaseKeyIndex,
+        new_owner: DatabaseKeyIndex,
+        owning_thread: ThreadId,
+    ) {
+        self.dependency_graph
+            .lock()
+            .transfer_lock(query, new_owner, owning_thread);
     }
 
     #[cfg(feature = "persistence")]

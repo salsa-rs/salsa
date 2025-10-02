@@ -3,7 +3,8 @@ use smallvec::SmallVec;
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
-use crate::function::{Configuration, IngredientImpl};
+use crate::function::{ClaimGuard, Configuration, IngredientImpl};
+use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::tracked_struct::Identity;
@@ -32,6 +33,7 @@ where
         zalsa_local: &'db ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         opt_old_memo: Option<&Memo<'db, C>>,
+        claim_guard: ClaimGuard,
     ) -> &'db Memo<'db, C> {
         let id = database_key_index.key_index();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
@@ -44,13 +46,16 @@ where
             })
         });
 
-        let (new_value, mut completed_query) = match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Panic => Self::execute_query(
-                db,
-                zalsa,
-                zalsa_local.push_query(database_key_index, IterationCount::initial()),
-                opt_old_memo,
-            ),
+        let (new_value, mut completed_query, new_lock_owner) = match C::CYCLE_STRATEGY {
+            CycleRecoveryStrategy::Panic => {
+                let (new_value, completed_query) = Self::execute_query(
+                    db,
+                    zalsa,
+                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                    opt_old_memo,
+                );
+                (new_value, completed_query, None)
+            }
             CycleRecoveryStrategy::FallbackImmediate => {
                 let (mut new_value, mut completed_query) = Self::execute_query(
                     db,
@@ -93,7 +98,7 @@ where
                     completed_query.revisions.verified_final = AtomicBool::new(false);
                 }
 
-                (new_value, completed_query)
+                (new_value, completed_query, None)
             }
             CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
                 db,
@@ -121,7 +126,8 @@ where
             // outputs and update the tracked struct IDs for seeding the next revision.
             self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
-        self.insert_memo(
+
+        let new_memo = self.insert_memo(
             zalsa,
             database_key_index.key_index(),
             Memo::new(
@@ -130,7 +136,13 @@ where
                 completed_query.revisions,
             ),
             memo_ingredient_index,
-        )
+        );
+
+        if let Some(new_lock_owner) = new_lock_owner {
+            claim_guard.transfer_to(new_lock_owner);
+        }
+
+        new_memo
     }
 
     fn execute_maybe_iterate<'db>(
@@ -141,7 +153,7 @@ where
         zalsa_local: &'db ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> (C::Output<'db>, CompletedQuery) {
+    ) -> (C::Output<'db>, CompletedQuery, Option<DatabaseKeyIndex>) {
         let id = database_key_index.key_index();
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
@@ -168,7 +180,7 @@ where
 
         let mut active_query = zalsa_local.push_query(database_key_index, iteration_count);
 
-        let (new_value, completed_query) = loop {
+        let (new_value, completed_query, new_lock_owner) = loop {
             // Tracked struct ids that existed in the previous revision
             // but weren't recreated in the last iteration. It's important that we seed the next
             // query with these ids because the query might re-create them as part of the next iteration.
@@ -182,9 +194,10 @@ where
 
             // If there are no cycle heads, break out of the loop (`cycle_heads_mut` returns `None` if the cycle head list is empty)
             let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() else {
-                break (new_value, completed_query);
+                break (new_value, completed_query, None);
             };
 
+            // TODO: Remove "removed" cycle heads"
             let mut cycle_heads = std::mem::take(cycle_heads);
 
             // Recursively resolve all cycle heads that this head depends on.
@@ -222,7 +235,7 @@ where
             // Did the new result we got depend on our own provisional value, in a cycle?
             if !cycle_heads.contains(&database_key_index) {
                 completed_query.revisions.set_cycle_heads(cycle_heads);
-                break (new_value, completed_query);
+                break (new_value, completed_query, None);
             }
 
             let last_provisional_value = if let Some(last_provisional) = previous_memo {
@@ -257,18 +270,37 @@ where
             // This is a nested query if it depends on any other cycle head than itself
             // where claiming it results in a cycle. In that case, both queries form a single connected component
             // that we can iterate together rather than having separate nested fixpoint iterations.
-            let outer_cycle = cycle_heads
-                .iter()
-                .filter(|head| head.database_key_index != database_key_index)
-                .find_map(|head| {
-                    let head_ingredient =
-                        zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
 
-                    head_ingredient
-                        .wait_for(zalsa, head.database_key_index.key_index())
-                        .is_cycle()
-                        .then_some(head.database_key_index)
-                });
+            // SAFETY: We don't enter `query_stack_unchecked` recursively.
+            let outer_on_stack = unsafe {
+                zalsa_local.with_query_stack_unchecked(|stack| {
+                    stack
+                        .iter()
+                        .rev()
+                        .filter(|query| query.database_key_index != database_key_index)
+                        .find(|query| cycle_heads.contains(&query.database_key_index))
+                        .map(|query| query.database_key_index)
+                })
+            };
+
+            // Prefer queries on the stack over those on other threads to take this query out of the cycle as quickly as possible.
+            let outer_cycle = outer_on_stack.or_else(|| {
+                cycle_heads
+                    .iter()
+                    .filter(|head| head.database_key_index != database_key_index)
+                    .find_map(|head| {
+                        // let on_stack = unsafe zalsa_local.with_query_stack_unchecked(| stack| stack.iter().)
+
+                        let head_ingredient =
+                            zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+
+                        let is_outer_cycle = matches!(
+                            head_ingredient.wait_for(zalsa, head.database_key_index.key_index()),
+                            WaitForResult::Cycle(false)
+                        );
+                        is_outer_cycle.then_some(head.database_key_index)
+                    })
+            });
 
             let this_converged = C::values_equal(&new_value, last_provisional_value);
 
@@ -301,19 +333,21 @@ where
                         new_value = fallback_value;
                     }
                 }
-            } else {
-                completed_query.revisions.set_cycle_converged(true);
             }
+
+            completed_query
+                .revisions
+                .set_cycle_converged(this_converged);
+            completed_query.revisions.mark_nested_cycle();
 
             if let Some(outer_cycle) = outer_cycle {
                 tracing::debug!(
                         "Detected nested cycle {database_key_index:?}, iterate it as part of the outer cycle {outer_cycle:?}"
                     );
 
-                completed_query.revisions.mark_nested_cycle();
                 completed_query.revisions.set_cycle_heads(cycle_heads);
 
-                break (new_value, completed_query);
+                break (new_value, completed_query, Some(outer_cycle));
             }
 
             // Verify that all cycles have converged, including all inner cycles.
@@ -325,7 +359,14 @@ where
                         let ingredient =
                             zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
 
-                        ingredient.cycle_converged(zalsa, head.database_key_index.key_index())
+                        let converged =
+                            ingredient.cycle_converged(zalsa, head.database_key_index.key_index());
+
+                        if !converged {
+                            tracing::debug!("inner cycle {database_key_index:?} has not converged");
+                        }
+
+                        converged
                     });
 
             if converged {
@@ -347,7 +388,7 @@ where
 
                 *completed_query.revisions.verified_final.get_mut() = true;
 
-                break (new_value, completed_query);
+                break (new_value, completed_query, None);
             }
 
             completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -419,7 +460,7 @@ where
             revisions = &completed_query.revisions
         );
 
-        (new_value, completed_query)
+        (new_value, completed_query, new_lock_owner)
     }
 
     #[inline]
@@ -499,7 +540,7 @@ impl<'a, C: Configuration> ClearCycleHeadIfPanicking<'a, C> {
 impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            let revisions =
+            let mut revisions =
                 QueryRevisions::fixpoint_initial(self.ingredient.database_key_index(self.id));
             revisions.update_iteration_count_mut(
                 self.ingredient.database_key_index(self.id),

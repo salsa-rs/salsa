@@ -132,7 +132,7 @@ where
     ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let claim_guard = match self.sync_table.try_claim(zalsa, id) {
+        let claim_guard = match self.sync_table.try_claim(zalsa, id, true) {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
@@ -223,16 +223,23 @@ where
                     // some head is running on another thread, drop our claim guard to give that thread
                     // a chance to take ownership of this query and complete it as part of its fixpoint iteration.
                     // We will then block on the cycle head and retry once all cycle heads completed.
-                    if !old_memo.try_claim_heads(zalsa, zalsa_local) {
-                        drop(claim_guard);
-                        old_memo.block_on_heads(zalsa, zalsa_local);
-                        return None;
-                    }
+                    // if !old_memo.try_claim_heads(zalsa, zalsa_local) {
+                    //     drop(claim_guard);
+                    //     old_memo.block_on_heads(zalsa, zalsa_local);
+                    //     return None;
+                    // }
                 }
             }
         }
 
-        let memo = self.execute(db, zalsa, zalsa_local, database_key_index, opt_old_memo);
+        let memo = self.execute(
+            db,
+            zalsa,
+            zalsa_local,
+            database_key_index,
+            opt_old_memo,
+            claim_guard,
+        );
 
         Some(memo)
     }
@@ -258,7 +265,9 @@ where
                 if can_shallow_update.yes() {
                     self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
 
-                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
+                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint
+                        && memo.revisions.is_nested_cycle()
+                    {
                         // This feels strange. I feel like we need to preserve the cycle heads. Let's say a cycle head only sometimes participates in the cycle.
                         // This doesn't mean that the value becomes final because of it. The query might as well be cyclic in the next iteration but
                         // we then never re-executed that query because it was marked as `verified_final`.

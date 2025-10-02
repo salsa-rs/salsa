@@ -201,14 +201,14 @@ impl<'db, C: Configuration> Memo<'db, C> {
                         all_cycles = false;
                     }
                     TryClaimHeadsResult::Available(available) => {
-                        if available.is_nested(zalsa) {
-                            // This is a nested cycle. The lock of nested cycles is released
-                            // when there query completes. But we need to recurse
-                            // TODO: What about cycle initial values. Do we need to reset nested?
-                            available.queue_cycle_heads(&mut cycle_heads);
-                        } else {
-                            all_cycles = false;
-                        }
+                        // if available.is_nested(zalsa) {
+                        //     // This is a nested cycle. The lock of nested cycles is released
+                        //     // when there query completes. But we need to recurse
+                        //     // TODO: What about cycle initial values. Do we need to reset nested?
+                        //     available.queue_cycle_heads(&mut cycle_heads);
+                        // } else {
+                        all_cycles = false;
+                        // }
                     }
                     TryClaimHeadsResult::Running(running) => {
                         all_cycles = false;
@@ -682,7 +682,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                 ..
             } => {
                 match ingredient.wait_for(self.zalsa, head_key_index) {
-                    WaitForResult::Cycle { .. } => {
+                    WaitForResult::Cycle(..) => {
                         // We hit a cycle blocking on the cycle head; this means this query actively
                         // participates in the cycle and some other query is blocked on this thread.
                         crate::tracing::debug!(

@@ -99,6 +99,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         );
     }
 
+    fn sync_table(&self) -> &crate::function::SyncTable {
+        unreachable!("owning_thread should only be called on functions");
+    }
+
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
     /// in the current revision.
@@ -316,12 +320,12 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available(ClaimGuard<'me>),
-    Cycle,
+    Cycle(bool),
 }
 
 impl WaitForResult<'_> {
     pub const fn is_cycle(&self) -> bool {
-        matches!(self, WaitForResult::Cycle)
+        matches!(self, WaitForResult::Cycle(_))
     }
 
     pub const fn is_running(&self) -> bool {
