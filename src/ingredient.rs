@@ -317,6 +317,7 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
     write!(fmt, "{debug_name}({id:?})")
 }
 
+#[derive(Debug)]
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available(ClaimGuard<'me>),

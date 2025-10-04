@@ -1,5 +1,3 @@
-use smallvec::SmallVec;
-
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
 use crate::function::SyncGuard;
@@ -270,34 +268,67 @@ impl Runtime {
             .unblock_runtimes_blocked_on(database_key, wait_result);
     }
 
-    pub(super) fn transfered_thread_id(
+    #[cold]
+    pub(crate) fn unblock_transferred_queries(
         &self,
-        query: DatabaseKeyIndex,
-        reentry: bool,
-    ) -> Result<ThreadId, ThreadId> {
+        database_key: DatabaseKeyIndex,
+        wait_result: WaitResult,
+    ) {
         self.dependency_graph
             .lock()
-            .transfered_thread_id(query, reentry)
+            .unblock_transferred_queries(database_key, wait_result);
     }
 
-    pub(super) fn take_transferred_dependents(
+    #[cold]
+    pub(crate) fn resume_transferred_queries(
         &self,
-        query: DatabaseKeyIndex,
-    ) -> SmallVec<[DatabaseKeyIndex; 4]> {
+        database_key: DatabaseKeyIndex,
+        wait_result: WaitResult,
+    ) {
         self.dependency_graph
             .lock()
-            .take_transferred_dependents(query)
+            .resume_transferred_dependents(database_key, wait_result);
+    }
+
+    pub(super) fn block_on_transferred(
+        &self,
+        query: DatabaseKeyIndex,
+        thread_id: ThreadId,
+    ) -> Result<(DatabaseKeyIndex, ThreadId), Option<ThreadId>> {
+        self.dependency_graph
+            .lock()
+            .block_on_transferred(query, thread_id)
+    }
+
+    pub(super) fn remove_transferred(&self, database_key: DatabaseKeyIndex) {
+        self.dependency_graph
+            .lock()
+            .remove_transferred(database_key);
+    }
+
+    pub(super) fn resolved_transferred_thread_id(
+        &self,
+        query: DatabaseKeyIndex,
+    ) -> Option<ThreadId> {
+        self.dependency_graph
+            .lock()
+            .resolved_transferred_id(query)
+            .map(|(id, _)| id)
     }
 
     pub(super) fn transfer_lock(
         &self,
         query: DatabaseKeyIndex,
+        current_thread: ThreadId,
         new_owner: DatabaseKeyIndex,
-        owning_thread: ThreadId,
+        new_owner_thread: ThreadId,
     ) {
-        self.dependency_graph
-            .lock()
-            .transfer_lock(query, new_owner, owning_thread);
+        self.dependency_graph.lock().transfer_lock(
+            query,
+            current_thread,
+            new_owner,
+            new_owner_thread,
+        );
     }
 
     #[cfg(feature = "persistence")]

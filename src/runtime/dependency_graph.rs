@@ -3,10 +3,12 @@ use std::pin::Pin;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
+#[cfg(debug_assertions)]
+use crate::hash::FxHashSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
-use crate::sync::thread::{self, ThreadId};
+use crate::sync::thread::ThreadId;
 use crate::sync::MutexGuard;
 
 #[derive(Debug, Default)]
@@ -138,87 +140,163 @@ impl DependencyGraph {
         }
     }
 
-    pub(super) fn take_transferred_dependents(
+    pub(super) fn unblock_transferred_queries(
         &mut self,
-        query: DatabaseKeyIndex,
-    ) -> SmallVec<[DatabaseKeyIndex; 4]> {
-        self.transfered_dependents
-            .remove(&query)
-            .unwrap_or_default()
+        database_key: DatabaseKeyIndex,
+        wait_result: WaitResult,
+    ) {
+        tracing::debug!("unblock_transferred_queries({database_key:?}");
+        // If `database_key` is `c` and it has been transfered to `b` earlier, remove its entry.
+        if let Some((_, owner)) = self.transfered.remove(&database_key) {
+            let owner_dependents = self.transfered_dependents.get_mut(&owner).unwrap();
+            let index = owner_dependents
+                .iter()
+                .position(|&x| x == database_key)
+                .unwrap();
+            owner_dependents.swap_remove(index);
+        }
+
+        let queries = self
+            .transfered_dependents
+            .remove(&database_key)
+            .unwrap_or_default();
+
+        for query in queries {
+            let (_, owner) = self.transfered.remove(&query).unwrap();
+            debug_assert_eq!(owner, database_key);
+
+            // Unblock transitively.
+            self.unblock_transferred_queries(query, wait_result);
+
+            self.unblock_runtimes_blocked_on(query, wait_result);
+        }
     }
 
-    pub(super) fn transfered_thread_id(
+    /// Returns `Ok(thread_id)` if `database_key_index` is a query who's lock ownership has been transferred to `thread_id` (potentially over multiple steps)
+    /// and the lock was claimed. Returns `Err(Some(thread_id))` if the lock was not claimed.
+    ///
+    /// Returns `Err(None)` if `database_key_index` hasn't been transferred or its owning lock has since then been removed.
+    pub(super) fn block_on_transferred(
         &mut self,
         database_key_index: DatabaseKeyIndex,
-        claim: bool,
-    ) -> Result<ThreadId, ThreadId> {
-        let (thread_id, parent) = self
-            .transfered
-            .get(&database_key_index)
-            .expect("transfered thread id not found");
+        current_id: ThreadId,
+    ) -> Result<(DatabaseKeyIndex, ThreadId), Option<ThreadId>> {
+        let owner_thread = self.resolved_transferred_id(database_key_index);
 
-        let current_id = thread::current().id();
-        if *thread_id == thread::current().id() || self.depends_on(*thread_id, current_id) {
-            if claim {
-                if let Some(dependents) = self.transfered_dependents.get_mut(parent) {
-                    if let Some(index) =
-                        dependents.iter().position(|key| *key == database_key_index)
-                    {
-                        tracing::debug!(
-                            "Remove transfered dependent {:?} from {:?}",
-                            database_key_index,
-                            parent
-                        );
-                        dependents.swap_remove(index);
-                    }
-                }
-            }
-            Ok(*thread_id)
+        let Some((thread_id, owner_key)) = owner_thread else {
+            return Err(None);
+        };
+
+        if thread_id == current_id || self.depends_on(thread_id, current_id) {
+            Ok((owner_key, thread_id))
         } else {
-            Err(*thread_id)
+            Err(Some(thread_id))
         }
+    }
+
+    pub(super) fn remove_transferred(&mut self, database_key: DatabaseKeyIndex) {
+        if let Some((_, owner)) = self.transfered.remove(&database_key) {
+            let dependents = self.transfered_dependents.get_mut(&owner).unwrap();
+            let index = dependents.iter().position(|h| *h == database_key).unwrap();
+            dependents.swap_remove(index);
+        }
+    }
+
+    pub(super) fn resolved_transferred_id(
+        &self,
+        database_key: DatabaseKeyIndex,
+    ) -> Option<(ThreadId, DatabaseKeyIndex)> {
+        let mut owner_thread = None;
+        let mut owner_key = database_key;
+
+        while let Some((next_thread, next_key)) = self.transfered.get(&owner_key) {
+            owner_thread = Some(*next_thread);
+            owner_key = *next_key;
+        }
+
+        owner_thread.map(|thread| (thread, owner_key))
     }
 
     pub(super) fn transfer_lock(
         &mut self,
         query: DatabaseKeyIndex,
+        current_thread: ThreadId,
         new_owner: DatabaseKeyIndex,
-        owning_thread: ThreadId,
+        new_owner_thread: ThreadId,
     ) {
+        // if let Some((_, owner)) = self.transfered.remove(&new_owner) {
+        //     let old_dependents = self.transfered_dependents.get_mut(&owner).unwrap();
+        //     let index = old_dependents.iter().position(|key| *key == query).unwrap();
+        //     old_dependents.swap_remove(index);
+        // }
+
+        let mut owner_changed = current_thread != new_owner_thread;
+
+        // TODO: Skip unblocks for transitive queries if the old owner is the same as the new owner?
         match self.transfered.entry(query) {
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert((owning_thread, new_owner));
+                // Transfer `c -> b` and there's no existing entry for `c`.
+                entry.insert((new_owner_thread, new_owner));
             }
-            std::collections::hash_map::Entry::Occupied(entry) => {
-                // This sucks, because we no longer know which sub locks we transferred in a previous iteration.
-                //
-                *entry.get_mut() = (owning_thread, new_owner);
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                // `Transfer `c -> b` after a previous `c -> d` mapping.
+                // Update the owner and remove the query from the old owner's dependents.
+                let old_owner = entry.get().1;
+
+                owner_changed = true;
+                let old_dependents = self.transfered_dependents.get_mut(&old_owner).unwrap();
+                let index = old_dependents.iter().position(|key| *key == query).unwrap();
+                old_dependents.swap_remove(index);
+
+                entry.insert((new_owner_thread, new_owner));
             }
         };
 
-        let transitive_dependents = self
-            .transfered_dependents
-            .remove(&query)
-            .unwrap_or_default();
-
-        tracing::debug!(
-            "transitive_dependents of query {query:?}: {:?}",
-            transitive_dependents
-        );
-
-        let all_dependents = self.transfered_dependents.entry(query).or_default();
+        // Register `c` as a dependent of `b`.
+        let all_dependents = self.transfered_dependents.entry(new_owner).or_default();
+        assert!(!all_dependents.contains(&query));
+        assert!(!all_dependents.contains(&new_owner));
         all_dependents.push(query);
 
-        for entry in &transitive_dependents {
-            tracing::debug!("Transferring transitive dependent {entry:?} to {new_owner:?}");
-            *self.transfered.get_mut(entry).unwrap() = (owning_thread, new_owner);
-            all_dependents.push(*entry);
+        if owner_changed {
+            self.resume_transferred_dependents(query, WaitResult::Completed);
         }
-        tracing::debug!("all dependents after transfer: {:?}", all_dependents);
+    }
 
-        tracing::debug!("Unblocking transitive dependents of query {query:?}");
-        for dependent in transitive_dependents {
-            self.unblock_runtimes_blocked_on(dependent, WaitResult::Completed);
+    pub(super) fn resume_transferred_dependents(
+        &mut self,
+        query: DatabaseKeyIndex,
+        wait_result: WaitResult,
+    ) {
+        tracing::debug!("Resuming transitive dependents of query {query:?}");
+        let Some(queries) = self.transfered_dependents.get(&query) else {
+            return;
+        };
+
+        #[cfg(debug_assertions)]
+        let mut stack = FxHashSet::default();
+        #[cfg(debug_assertions)]
+        stack.insert(query);
+
+        let mut queue: SmallVec<[_; 4]> =
+            queries.into_iter().map(|nested| (*nested, query)).collect();
+
+        while let Some((nested, parent)) = queue.pop() {
+            debug_assert_eq!(self.transfered.get(&nested).unwrap().1, parent);
+
+            #[cfg(debug_assertions)]
+            if !stack.insert(nested) {
+                panic!("Encountered cycle while resuming the transferred dependents. between {nested:?} and {parent:?}. Current state of dependency graph: {self:#?}")
+            }
+            queue.extend(
+                self.transfered_dependents
+                    .get(&nested)
+                    .into_iter()
+                    .flatten()
+                    .map(|inner| (*inner, nested)),
+            );
+
+            self.unblock_runtimes_blocked_on(nested, wait_result);
         }
     }
 

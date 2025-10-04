@@ -232,14 +232,7 @@ where
             }
         }
 
-        let memo = self.execute(
-            db,
-            zalsa,
-            zalsa_local,
-            database_key_index,
-            opt_old_memo,
-            claim_guard,
-        );
+        let memo = self.execute(db, claim_guard, zalsa_local, opt_old_memo);
 
         Some(memo)
     }
