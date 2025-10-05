@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::{BlockResult, Running, WaitResult};
+use crate::runtime::{BlockResult, ClaimTransferredResult, Running, WaitResult};
 use crate::sync::thread::{self, ThreadId};
 use crate::sync::Mutex;
 use crate::zalsa::Zalsa;
@@ -20,7 +20,7 @@ pub(crate) enum ClaimResult<'a> {
     /// Can't claim the query because it is running on an other thread.
     Running(Running<'a>),
     /// Claiming the query results in a cycle.
-    Cycle(bool),
+    Cycle { with: ThreadId, nested: bool },
     /// Successfully claimed the query.
     Claimed(ClaimGuard<'a>),
 }
@@ -44,25 +44,6 @@ impl SyncTable {
         }
     }
 
-    fn make_transfer_target(&self, key_index: Id, zalsa: &Zalsa) -> Option<ThreadId> {
-        let mut read = self.syncs.lock();
-        read.get_mut(&key_index).map(|state| {
-            state.anyone_waiting = true;
-            state.is_transfer_target = true;
-
-            match state.id {
-                OwnerId::Thread(thread_id) => thread_id,
-                OwnerId::Transferred => zalsa
-                    .runtime()
-                    .resolved_transferred_thread_id(DatabaseKeyIndex::new(
-                        self.ingredient,
-                        key_index,
-                    ))
-                    .unwrap(),
-            }
-        })
-    }
-
     pub(crate) fn try_claim<'me>(
         &'me self,
         zalsa: &'me Zalsa,
@@ -79,66 +60,51 @@ impl SyncTable {
                     OwnerId::Transferred => {
                         let current_id = thread::current().id();
                         let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
-                        match zalsa
+                        return match zalsa
                             .runtime()
-                            .block_on_transferred(database_key_index, current_id)
+                            .claim_transferred(database_key_index, allow_reentry)
                         {
-                            Ok((current_owner, owning_thread_id)) => {
+                            ClaimTransferredResult::OtherThread(other_thread) => {
+                                occupied_entry.get_mut().anyone_waiting = true;
+                                let thread_id = other_thread.id();
+
+                                match other_thread.block(write) {
+                                    BlockResult::Cycle => ClaimResult::Cycle {
+                                        with: thread_id,
+                                        nested: false,
+                                    },
+                                    BlockResult::Running(running) => ClaimResult::Running(running),
+                                }
+                            }
+                            ClaimTransferredResult::Claimed { current_owner } => {
                                 let SyncState { id, .. } = occupied_entry.into_mut();
 
-                                return if !allow_reentry {
-                                    tracing::debug!("Claiming {database_key_index:?} results in a cycle because re-entrant lock is not allowed");
-                                    ClaimResult::Cycle(true)
-                                } else {
-                                    tracing::debug!("Reentrant lock {database_key_index:?}");
-                                    *id = OwnerId::Thread(current_id);
+                                *id = OwnerId::Thread(current_id);
 
-                                    zalsa.runtime().remove_transferred(database_key_index);
-
-                                    if owning_thread_id != current_id {
-                                        zalsa.runtime().unblock_queries_blocked_on(
-                                            database_key_index,
-                                            WaitResult::Completed,
-                                        );
-                                        zalsa.runtime().resume_transferred_queries(
-                                            database_key_index,
-                                            WaitResult::Completed,
-                                        );
-                                    }
-
-                                    ClaimResult::Claimed(ClaimGuard {
-                                        key_index,
-                                        zalsa,
-                                        sync_table: self,
-                                        mode: ReleaseMode::TransferTo(current_owner),
-                                    })
-                                };
+                                ClaimResult::Claimed(ClaimGuard {
+                                    key_index,
+                                    zalsa,
+                                    sync_table: self,
+                                    mode: ReleaseMode::TransferTo(current_owner),
+                                })
                             }
-                            // Lock is owned by another thread, wait for it to be released.
-                            Err(Some(thread_id)) => {
-                                tracing::debug!("Waiting for transfered lock {database_key_index:?} to be released by thread {thread_id:?}");
-                                thread_id
+                            ClaimTransferredResult::Cycle { with, nested } => {
+                                ClaimResult::Cycle { nested, with }
                             }
-                            // Lock was transferred but is no more. Replace the entry.
-                            Err(None) => {
-                                tracing::debug!(
-                                    "Claiming previously transferred lock {database_key_index:?}"
-                                );
-
-                                // Lock was transferred but it has since then been released.
+                            ClaimTransferredResult::Released => {
                                 occupied_entry.insert(SyncState {
                                     id: OwnerId::Thread(thread::current().id()),
                                     anyone_waiting: false,
                                     is_transfer_target: false,
                                 });
-                                return ClaimResult::Claimed(ClaimGuard {
+                                ClaimResult::Claimed(ClaimGuard {
                                     key_index,
                                     zalsa,
                                     sync_table: self,
                                     mode: ReleaseMode::Default,
-                                });
+                                })
                             }
-                        }
+                        };
                     }
                 };
 
@@ -160,7 +126,10 @@ impl SyncTable {
                     write,
                 ) {
                     BlockResult::Running(blocked_on) => ClaimResult::Running(blocked_on),
-                    BlockResult::Cycle => ClaimResult::Cycle(false),
+                    BlockResult::Cycle => ClaimResult::Cycle {
+                        nested: false,
+                        with: id,
+                    },
                 }
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {
@@ -177,6 +146,25 @@ impl SyncTable {
                 })
             }
         }
+    }
+
+    fn make_transfer_target(&self, key_index: Id, zalsa: &Zalsa) -> Option<ThreadId> {
+        let mut syncs = self.syncs.lock();
+        syncs.get_mut(&key_index).map(|state| {
+            state.anyone_waiting = true;
+            state.is_transfer_target = true;
+
+            match state.id {
+                OwnerId::Thread(thread_id) => thread_id,
+                OwnerId::Transferred => zalsa
+                    .runtime()
+                    .resolved_transferred_thread_id(DatabaseKeyIndex::new(
+                        self.ingredient,
+                        key_index,
+                    ))
+                    .unwrap(),
+            }
+        })
     }
 }
 
@@ -218,19 +206,12 @@ impl<'me> ClaimGuard<'me> {
         self.mode = mode;
     }
 
-    fn release_default(&self) {
+    fn release_default(&self, wait_result: WaitResult) {
         let mut syncs = self.sync_table.syncs.lock();
         let state = syncs.remove(&self.key_index).expect("key claimed twice?");
 
         let database_key_index = self.database_key_index();
         tracing::debug!("release_and_unblock({database_key_index:?})");
-
-        let wait_result = if thread::panicking() {
-            tracing::info!("Unblocking queries blocked on {database_key_index:?} after a panick");
-            WaitResult::Panicked
-        } else {
-            WaitResult::Completed
-        };
 
         let SyncState {
             anyone_waiting,
@@ -243,12 +224,13 @@ impl<'me> ClaimGuard<'me> {
         }
 
         let runtime = self.zalsa.runtime();
-        runtime.unblock_queries_blocked_on(database_key_index, wait_result);
 
         if is_transfer_target {
             tracing::debug!("unblock transferred queries owned by {database_key_index:?}");
             runtime.unblock_transferred_queries(database_key_index, wait_result);
         }
+
+        runtime.unblock_queries_blocked_on(database_key_index, wait_result);
     }
 
     #[cold]
@@ -302,10 +284,19 @@ impl<'me> ClaimGuard<'me> {
 
 impl Drop for ClaimGuard<'_> {
     fn drop(&mut self) {
+        let wait_result = if thread::panicking() {
+            WaitResult::Panicked
+        } else {
+            WaitResult::Completed
+        };
+
         // TODO, what to do if thread panics? Always force release?
         match self.mode {
             ReleaseMode::Default => {
-                self.release_default();
+                self.release_default(wait_result);
+            }
+            _ if matches!(wait_result, WaitResult::Panicked) => {
+                self.release_default(wait_result);
             }
             ReleaseMode::TransferTo(new_owner) => {
                 self.transfer(new_owner);

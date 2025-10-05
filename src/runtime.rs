@@ -58,6 +58,60 @@ pub(crate) enum BlockResult<'me> {
     Cycle,
 }
 
+pub(crate) enum ClaimTransferredResult<'me> {
+    /// The transferred query has been successfully claimed.
+    Claimed { current_owner: DatabaseKeyIndex },
+
+    /// The query is running on another thread.
+    OtherThread(OtherThread<'me>),
+
+    /// Blocking resulted in a cycle.
+    ///
+    /// The lock is hold by the current thread or there's another thread that is waiting on the current thread,
+    /// and blocking this thread on the other thread would result in a deadlock/cycle.
+    Cycle { with: ThreadId, nested: bool },
+
+    /// Query is no longer a transferred query.
+    Released,
+}
+
+pub(super) struct OtherThread<'me> {
+    dg: crate::sync::MutexGuard<'me, DependencyGraph>,
+    database_key: DatabaseKeyIndex,
+    other_id: ThreadId,
+}
+
+impl<'me> OtherThread<'me> {
+    pub(super) fn id(&self) -> ThreadId {
+        self.other_id
+    }
+
+    pub(super) fn block(self, query_mutex_guard: SyncGuard<'me>) -> BlockResult<'me> {
+        let thread_id = thread::current().id();
+        // Cycle in the same thread.
+        if thread_id == self.other_id {
+            return BlockResult::Cycle;
+        }
+
+        if self.dg.depends_on(self.other_id, thread_id) {
+            crate::tracing::debug!(
+                "block_on: cycle detected for {:?} in thread {thread_id:?} on {:?}",
+                self.database_key,
+                self.other_id
+            );
+            return BlockResult::Cycle;
+        }
+
+        BlockResult::Running(Running(Box::new(BlockedOnInner {
+            dg: self.dg,
+            query_mutex_guard,
+            database_key: self.database_key,
+            other_id: self.other_id,
+            thread_id,
+        })))
+    }
+}
+
 pub struct Running<'me>(Box<BlockedOnInner<'me>>);
 
 struct BlockedOnInner<'me> {
@@ -279,31 +333,48 @@ impl Runtime {
             .unblock_transferred_queries(database_key, wait_result);
     }
 
-    #[cold]
-    pub(crate) fn resume_transferred_queries(
-        &self,
-        database_key: DatabaseKeyIndex,
-        wait_result: WaitResult,
-    ) {
-        self.dependency_graph
-            .lock()
-            .resume_transferred_dependents(database_key, wait_result);
-    }
-
-    pub(super) fn block_on_transferred(
+    pub(super) fn claim_transferred(
         &self,
         query: DatabaseKeyIndex,
-        thread_id: ThreadId,
-    ) -> Result<(DatabaseKeyIndex, ThreadId), Option<ThreadId>> {
-        self.dependency_graph
-            .lock()
-            .block_on_transferred(query, thread_id)
-    }
+        allow_reentry: bool,
+    ) -> ClaimTransferredResult<'_> {
+        let mut dg = self.dependency_graph.lock();
+        let thread_id = thread::current().id();
 
-    pub(super) fn remove_transferred(&self, database_key: DatabaseKeyIndex) {
-        self.dependency_graph
-            .lock()
-            .remove_transferred(database_key);
+        match dg.block_on_transferred(query, thread_id) {
+            Ok((current_owner, owning_thread_id)) => {
+                return if !allow_reentry {
+                    tracing::debug!("Claiming {query:?} results in a cycle because re-entrant lock is not allowed");
+                    ClaimTransferredResult::Cycle {
+                        with: owning_thread_id,
+                        nested: true,
+                    }
+                } else {
+                    tracing::debug!("Reentrant lock {query:?}");
+                    dg.remove_transferred(query);
+
+                    // This seems wrong?
+                    // if owning_thread_id != current_id {
+                    dg.unblock_runtimes_blocked_on(query, WaitResult::Completed);
+                    dg.resume_transferred_dependents(query, WaitResult::Completed);
+
+                    ClaimTransferredResult::Claimed { current_owner }
+                };
+            }
+            // Lock is owned by another thread, wait for it to be released.
+            Err(Some(thread_id)) => {
+                tracing::debug!(
+                    "Waiting for transfered lock {query:?} to be released by thread {thread_id:?}"
+                );
+                ClaimTransferredResult::OtherThread(OtherThread {
+                    dg,
+                    database_key: query,
+                    other_id: thread_id,
+                })
+            }
+            // Lock was transferred but is no more. Replace the entry.
+            Err(None) => ClaimTransferredResult::Released,
+        }
     }
 
     pub(super) fn resolved_transferred_thread_id(
@@ -329,6 +400,14 @@ impl Runtime {
             new_owner,
             new_owner_thread,
         );
+    }
+
+    pub(crate) fn transfer_target(
+        &self,
+        candidates: &[(DatabaseKeyIndex, ThreadId)],
+    ) -> Option<DatabaseKeyIndex> {
+        let dependency_graph = self.dependency_graph.lock();
+        dependency_graph.transfer_target(candidates)
     }
 
     #[cfg(feature = "persistence")]

@@ -682,7 +682,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                 ..
             } => {
                 match ingredient.wait_for(self.zalsa, head_key_index) {
-                    WaitForResult::Cycle(..) => {
+                    WaitForResult::Cycle { .. } => {
                         // We hit a cycle blocking on the cycle head; this means this query actively
                         // participates in the cycle and some other query is blocked on this thread.
                         crate::tracing::debug!(

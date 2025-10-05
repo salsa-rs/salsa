@@ -321,12 +321,15 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available(ClaimGuard<'me>),
-    Cycle(bool),
+    Cycle {
+        with: crate::sync::thread::ThreadId,
+        nested: bool,
+    },
 }
 
 impl WaitForResult<'_> {
     pub const fn is_cycle(&self) -> bool {
-        matches!(self, WaitForResult::Cycle(_))
+        matches!(self, WaitForResult::Cycle { .. })
     }
 
     pub const fn is_running(&self) -> bool {

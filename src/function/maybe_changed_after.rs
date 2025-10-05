@@ -414,6 +414,7 @@ where
                     //
                     // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
                     // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
+                    // FIXME: Do we still need this?
                     if iteration != cycle_head.iteration_count.load() {
                         return false;
                     }
@@ -479,21 +480,23 @@ where
                             return false;
                         }
                     }
-                    TryClaimHeadsResult::Running(running) => {
-                        running.block_on(&mut cycle_heads_iter);
-                    }
-                    TryClaimHeadsResult::Available(available_cycle_head) => {
-                        // Check the cycle heads recursively
-                        // if available_cycle_head.is_nested(zalsa) {
-                        //     available_cycle_head.queue_cycle_heads(&mut cycle_heads_iter);
-                        // } else {
-                        //     return false;
-                        // }
+                    _ => {
                         return false;
-                    }
-                    TryClaimHeadsResult::Finalized | TryClaimHeadsResult::Running(_) => {
-                        return false;
-                    }
+                    } // TryClaimHeadsResult::Running(running) => {
+                      //     running.block_on(&mut cycle_heads_iter);
+                      // }
+                      // TryClaimHeadsResult::Available(available_cycle_head) => {
+                      //     // Check the cycle heads recursively
+                      //     // if available_cycle_head.is_nested(zalsa) {
+                      //     //     available_cycle_head.queue_cycle_heads(&mut cycle_heads_iter);
+                      //     // } else {
+                      //     //     return false;
+                      //     // }
+                      //     return false;
+                      // }
+                      // TryClaimHeadsResult::Finalized | TryClaimHeadsResult::Running(_) => {
+                      //     return false;
+                      // }
                 }
             }
 

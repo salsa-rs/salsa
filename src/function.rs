@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::{ClaimGuard, SyncGuard, SyncTable};
+pub(crate) use sync::{ClaimGuard, SyncGuard, SyncState, SyncTable};
 
 use std::any::Any;
 use std::fmt;
@@ -412,7 +412,7 @@ where
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim(zalsa, key_index, false) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle(bool) => WaitForResult::Cycle(bool),
+            ClaimResult::Cycle { with, nested } => WaitForResult::Cycle { with, nested },
             ClaimResult::Claimed(guard) => WaitForResult::Available(guard),
         }
     }

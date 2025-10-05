@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
-use crate::cycle::{CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
@@ -229,24 +229,26 @@ where
                 }
             }
 
-            let outer_cycle = cycle_heads
-                .iter()
-                .filter(|head| head.database_key_index != database_key_index)
-                .find_map(|head| {
-                    let head_ingredient =
-                        zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+            let outer_cycle = outer_cycle(zalsa, &cycle_heads, database_key_index);
 
-                    let result =
-                        head_ingredient.wait_for(zalsa, head.database_key_index.key_index());
-                    tracing::debug!(
-                        "Wait for result for {:?}: {result:?} {:?}",
-                        head.database_key_index,
-                        result
-                    );
+            // let outer_cycle = cycle_heads
+            //     .iter()
+            //     .filter(|head| head.database_key_index != database_key_index)
+            //     .find_map(|head| {
+            //         let head_ingredient =
+            //             zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
 
-                    let is_outer_cycle = matches!(result, WaitForResult::Cycle(false));
-                    is_outer_cycle.then_some(head.database_key_index)
-                });
+            //         let result =
+            //             head_ingredient.wait_for(zalsa, head.database_key_index.key_index());
+            //         tracing::debug!(
+            //             "Wait for result for {:?}: {result:?} {:?}",
+            //             head.database_key_index,
+            //             result
+            //         );
+
+            //         let is_outer_cycle = matches!(result, WaitForResult::Cycle(false));
+            //         is_outer_cycle.then_some(head.database_key_index)
+            //     });
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if !cycle_heads.contains(&database_key_index) {
@@ -542,4 +544,28 @@ impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
                 .insert_memo(self.zalsa, self.id, memo, self.memo_ingredient_index);
         }
     }
+}
+
+fn outer_cycle(
+    zalsa: &Zalsa,
+    cycle_heads: &CycleHeads,
+    current_key: DatabaseKeyIndex,
+) -> Option<DatabaseKeyIndex> {
+    let candidates: SmallVec<[_; 4]> = cycle_heads
+        .iter()
+        .filter(|head| head.database_key_index != current_key)
+        .filter_map(|head| {
+            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+            match ingredient.wait_for(zalsa, head.database_key_index.key_index()) {
+                WaitForResult::Cycle {
+                    with,
+                    nested: false,
+                } => Some((head.database_key_index, with)),
+                _ => None,
+            }
+        })
+        .collect();
+
+    // Do we need to pass the thread id here to account for a potential re-entrance?
+    zalsa.runtime().transfer_target(&candidates)
 }

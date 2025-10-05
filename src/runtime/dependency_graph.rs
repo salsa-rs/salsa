@@ -1,7 +1,7 @@
 use std::pin::Pin;
 
 use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
 #[cfg(debug_assertions)]
 use crate::hash::FxHashSet;
@@ -145,8 +145,8 @@ impl DependencyGraph {
         database_key: DatabaseKeyIndex,
         wait_result: WaitResult,
     ) {
-        tracing::debug!("unblock_transferred_queries({database_key:?}");
         // If `database_key` is `c` and it has been transfered to `b` earlier, remove its entry.
+        tracing::debug!("unblock_transferred_queries({database_key:?}");
         if let Some((_, owner)) = self.transfered.remove(&database_key) {
             let owner_dependents = self.transfered_dependents.get_mut(&owner).unwrap();
             let index = owner_dependents
@@ -156,18 +156,22 @@ impl DependencyGraph {
             owner_dependents.swap_remove(index);
         }
 
-        let queries = self
-            .transfered_dependents
-            .remove(&database_key)
-            .unwrap_or_default();
+        let mut unblocked: SmallVec<[_; 4]> = SmallVec::new();
+        let mut queue: SmallVec<[_; 4]> = smallvec![database_key];
 
-        for query in queries {
-            let (_, owner) = self.transfered.remove(&query).unwrap();
-            debug_assert_eq!(owner, database_key);
+        while let Some(current) = queue.pop() {
+            self.transfered.remove(&current);
+            let transitive = self
+                .transfered_dependents
+                .remove(&current)
+                .unwrap_or_default();
 
-            // Unblock transitively.
-            self.unblock_transferred_queries(query, wait_result);
+            queue.extend(transitive);
 
+            unblocked.push(current);
+        }
+
+        for query in unblocked {
             self.unblock_runtimes_blocked_on(query, wait_result);
         }
     }
@@ -206,15 +210,18 @@ impl DependencyGraph {
         &self,
         database_key: DatabaseKeyIndex,
     ) -> Option<(ThreadId, DatabaseKeyIndex)> {
-        let mut owner_thread = None;
-        let mut owner_key = database_key;
+        let Some(&(mut resolved_thread, owner)) = self.transfered.get(&database_key) else {
+            return None;
+        };
 
-        while let Some((next_thread, next_key)) = self.transfered.get(&owner_key) {
-            owner_thread = Some(*next_thread);
-            owner_key = *next_key;
+        let mut current_owner = owner;
+
+        while let Some(&(next_thread, next_key)) = self.transfered.get(&current_owner) {
+            resolved_thread = next_thread;
+            current_owner = next_key;
         }
 
-        owner_thread.map(|thread| (thread, owner_key))
+        Some((resolved_thread, owner))
     }
 
     pub(super) fn transfer_lock(
@@ -224,12 +231,6 @@ impl DependencyGraph {
         new_owner: DatabaseKeyIndex,
         new_owner_thread: ThreadId,
     ) {
-        // if let Some((_, owner)) = self.transfered.remove(&new_owner) {
-        //     let old_dependents = self.transfered_dependents.get_mut(&owner).unwrap();
-        //     let index = old_dependents.iter().position(|key| *key == query).unwrap();
-        //     old_dependents.swap_remove(index);
-        // }
-
         let mut owner_changed = current_thread != new_owner_thread;
 
         // TODO: Skip unblocks for transitive queries if the old owner is the same as the new owner?
@@ -260,6 +261,45 @@ impl DependencyGraph {
 
         if owner_changed {
             self.resume_transferred_dependents(query, WaitResult::Completed);
+        }
+    }
+
+    pub(super) fn transfer_target(
+        &self,
+        candidates: &[(DatabaseKeyIndex, ThreadId)],
+    ) -> Option<DatabaseKeyIndex> {
+        if candidates.is_empty() {
+            return None;
+        }
+
+        if let &[(key, _)] = candidates {
+            return Some(key);
+        }
+
+        let mut possible_tranfer_targets: Vec<_> = candidates
+            .iter()
+            .filter_map(|&(key, thread)| {
+                // Ensure that transferring to this other thread won't introduce any cyclic wait dependency (where `thread` is blocked on `other_thread` and the other way round).)
+                let depends_on_another = candidates.iter().any(|&(_, other_thread)| {
+                    other_thread != thread && self.depends_on(thread, other_thread)
+                });
+
+                (!depends_on_another).then_some(key)
+            })
+            .collect();
+
+        if possible_tranfer_targets.is_empty() {
+            panic!(
+                "No possible transfer targets found for query {:?}",
+                candidates
+            );
+        } else if let &[target] = &*possible_tranfer_targets {
+            Some(target)
+        } else {
+            possible_tranfer_targets
+                .into_iter()
+                .min_by_key(|target| (target.ingredient_index(), target.key_index()))
+                .map(|target| target)
         }
     }
 
