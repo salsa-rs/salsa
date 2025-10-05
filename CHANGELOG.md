@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.23.0...salsa-v0.24.0) - 2025-09-30
+
+### Fixed
+
+- Cleanup provisional cycle head memos when query panics ([#993](https://github.com/salsa-rs/salsa/pull/993))
+- Runaway for unchanged queries participating in cycle ([#981](https://github.com/salsa-rs/salsa/pull/981))
+- Delete not re-created tracked structs after fixpoint iteration ([#979](https://github.com/salsa-rs/salsa/pull/979))
+- fix assertion during interned deserialization ([#978](https://github.com/salsa-rs/salsa/pull/978))
+- Do not unnecessarily require `Debug` on fields for interned structs ([#951](https://github.com/salsa-rs/salsa/pull/951))
+- Fix phantom data usage in salsa structs affecting auto traits ([#932](https://github.com/salsa-rs/salsa/pull/932))
+
+### Other
+
+- Replace unsafe unwrap with `expect` call ([#998](https://github.com/salsa-rs/salsa/pull/998))
+- Push active query in execute ([#996](https://github.com/salsa-rs/salsa/pull/996))
+- Update codspeed action ([#997](https://github.com/salsa-rs/salsa/pull/997))
+- Add implementations for Lookup and HashEqLike for CompactString ([#988](https://github.com/salsa-rs/salsa/pull/988))
+- Provide a method to attach a database even if it's different from the current attached one ([#992](https://github.com/salsa-rs/salsa/pull/992))
+- Allow fallback to take longer than one iteration to converge ([#991](https://github.com/salsa-rs/salsa/pull/991))
+- refactor `entries` API ([#987](https://github.com/salsa-rs/salsa/pull/987))
+- Persistent caching fixes ([#982](https://github.com/salsa-rs/salsa/pull/982))
+- outline cold path of `lookup_ingredient` ([#984](https://github.com/salsa-rs/salsa/pull/984))
+- Update snapshot to fix nightly type rendering ([#983](https://github.com/salsa-rs/salsa/pull/983))
+- avoid cycles during serialization ([#977](https://github.com/salsa-rs/salsa/pull/977))
+- Flatten unserializable query dependencies ([#975](https://github.com/salsa-rs/salsa/pull/975))
+- optimize `Id::hash` ([#974](https://github.com/salsa-rs/salsa/pull/974))
+- Make `thin-vec/serde` dependency dependent on `persistence` feature ([#973](https://github.com/salsa-rs/salsa/pull/973))
+- Remove tracked structs from query outputs ([#969](https://github.com/salsa-rs/salsa/pull/969))
+- Remove jemalloc ([#972](https://github.com/salsa-rs/salsa/pull/972))
+- Initial persistent caching prototype ([#967](https://github.com/salsa-rs/salsa/pull/967))
+- Fix `maybe_changed_after` runnaway for fixpoint queries ([#961](https://github.com/salsa-rs/salsa/pull/961))
+- add parallel maybe changed after test ([#963](https://github.com/salsa-rs/salsa/pull/963))
+- Update tests for Rust 1.89 ([#966](https://github.com/salsa-rs/salsa/pull/966))
+- remove allocation lock ([#962](https://github.com/salsa-rs/salsa/pull/962))
+- consolidate memory usage information API ([#964](https://github.com/salsa-rs/salsa/pull/964))
+- Add heap size support for salsa structs ([#943](https://github.com/salsa-rs/salsa/pull/943))
+- Extract the cycle branches from `fetch` and `maybe_changed_after` ([#955](https://github.com/salsa-rs/salsa/pull/955))
+- allow reuse of cached provisional memos within the same cycle iteration during `maybe_changed_after` ([#954](https://github.com/salsa-rs/salsa/pull/954))
+- Expose API to manually trigger cancellation ([#959](https://github.com/salsa-rs/salsa/pull/959))
+- Upgrade dependencies ([#956](https://github.com/salsa-rs/salsa/pull/956))
+- Use `CycleHeadSet` in `maybe_update_after` ([#953](https://github.com/salsa-rs/salsa/pull/953))
+- Gate accumulator feature behind a feature flag ([#946](https://github.com/salsa-rs/salsa/pull/946))
+- optimize allocation fast-path ([#949](https://github.com/salsa-rs/salsa/pull/949))
+- remove borrow checks from `ZalsaLocal` ([#939](https://github.com/salsa-rs/salsa/pull/939))
+- Do manual trait casting ([#922](https://github.com/salsa-rs/salsa/pull/922))
+- Retain backing allocation of `ActiveQuery::input_outputs` in `ActiveQuery::seed_iteration` ([#948](https://github.com/salsa-rs/salsa/pull/948))
+- remove extra bounds checks from memo table hot-paths ([#938](https://github.com/salsa-rs/salsa/pull/938))
+- Outline all tracing events ([#942](https://github.com/salsa-rs/salsa/pull/942))
+- remove bounds and type checks from `IngredientCache` ([#937](https://github.com/salsa-rs/salsa/pull/937))
+- Avoid dynamic dispatch to access memo tables ([#941](https://github.com/salsa-rs/salsa/pull/941))
+- optimize page access ([#940](https://github.com/salsa-rs/salsa/pull/940))
+- Use `inventory` for static ingredient registration ([#934](https://github.com/salsa-rs/salsa/pull/934))
+- Fix `heap_size` option not being preserved in tracked impls ([#930](https://github.com/salsa-rs/salsa/pull/930))
+- update papaya ([#928](https://github.com/salsa-rs/salsa/pull/928))
+
 ## [0.23.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.22.0...salsa-v0.23.0) - 2025-06-27
 
 ### Added
