@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
-use crate::function::{ClaimGuard, VerifyCycleHeads, VerifyResult};
+use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::runtime::Running;
 use crate::sync::Arc;
@@ -320,7 +320,7 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
 #[derive(Debug)]
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
-    Available(ClaimGuard<'me>),
+    Available,
     Cycle {
         with: crate::sync::thread::ThreadId,
         nested: bool,

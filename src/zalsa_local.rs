@@ -15,7 +15,7 @@ use crate::cycle::{empty_cycle_heads, AtomicIterationCount, CycleHeads, Iteratio
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
-use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::sync::atomic::AtomicBool;
 use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -515,7 +515,6 @@ impl QueryRevisionsExtra {
                 cycle_heads,
                 tracked_struct_ids,
                 iteration: iteration.into(),
-                nested_cycle: false.into(),
                 cycle_converged: converged,
             }))
         };
@@ -567,12 +566,6 @@ struct QueryRevisionsExtraInner {
     iteration: AtomicIterationCount,
 
     cycle_converged: bool,
-
-    #[cfg_attr(
-        feature = "persistence",
-        serde(with = "crate::zalsa_local::persistence::atomic_bool")
-    )]
-    nested_cycle: AtomicBool,
 }
 
 impl QueryRevisionsExtraInner {
@@ -585,7 +578,6 @@ impl QueryRevisionsExtraInner {
             cycle_heads,
             iteration: _,
             cycle_converged: _,
-            nested_cycle: _,
         } = self;
 
         #[cfg(feature = "accumulator")]
@@ -679,25 +671,6 @@ impl QueryRevisions {
     pub(crate) fn set_cycle_converged(&mut self, cycle_converged: bool) {
         if let Some(extra) = &mut self.extra.0 {
             extra.cycle_converged = cycle_converged
-        }
-    }
-
-    pub(crate) fn is_nested_cycle(&self) -> bool {
-        match &self.extra.0 {
-            Some(extra) => extra.nested_cycle.load(Ordering::Relaxed),
-            None => false,
-        }
-    }
-
-    pub(crate) fn reset_nested_cycle(&self) {
-        if let Some(extra) = &self.extra.0 {
-            extra.nested_cycle.store(false, Ordering::Release)
-        }
-    }
-
-    pub(crate) fn mark_nested_cycle(&mut self) {
-        if let Some(extra) = &mut self.extra.0 {
-            *extra.nested_cycle.get_mut() = true
         }
     }
 

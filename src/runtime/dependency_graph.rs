@@ -3,6 +3,7 @@ use std::pin::Pin;
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 
+use crate::function::SyncOwnerId;
 #[cfg(debug_assertions)]
 use crate::hash::FxHashSet;
 use crate::key::DatabaseKeyIndex;
@@ -211,9 +212,7 @@ impl DependencyGraph {
         database_key: DatabaseKeyIndex,
         ignore: Option<DatabaseKeyIndex>,
     ) -> Option<(ThreadId, DatabaseKeyIndex)> {
-        let Some(&(mut resolved_thread, owner)) = self.transfered.get(&database_key) else {
-            return None;
-        };
+        let &(mut resolved_thread, owner) = self.transfered.get(&database_key)?;
 
         let mut current_owner = owner;
 
@@ -233,13 +232,20 @@ impl DependencyGraph {
         query: DatabaseKeyIndex,
         current_thread: ThreadId,
         new_owner: DatabaseKeyIndex,
-        new_owner_thread: ThreadId,
+        new_owner_thread: SyncOwnerId,
     ) {
-        if self.transfered.get(&query) == Some(&(new_owner_thread, new_owner)) {
-            return;
-        }
+        let new_owner_thread = match new_owner_thread {
+            SyncOwnerId::Thread(thread) => thread,
+            SyncOwnerId::Transferred => {
+                self.resolved_transferred_id(new_owner, Some(query))
+                    .unwrap()
+                    .0
+            }
+        };
 
         let mut owner_changed = current_thread != new_owner_thread;
+
+        // TODO: Can we move this into the occupied branch? It's pointless to run this check if there's no existing mapping.
 
         // If we have `c -> a -> d` and we now insert a mapping `d -> c`, rewrite the mapping to
         // `d -> c -> a` to avoid cycles.
@@ -303,6 +309,10 @@ impl DependencyGraph {
                 entry.insert((new_owner_thread, new_owner));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry.get() == &(new_owner_thread, new_owner) {
+                    return;
+                }
+
                 // `Transfer `c -> b` after a previous `c -> d` mapping.
                 // Update the owner and remove the query from the old owner's dependents.
                 let old_owner = entry.get().1;
@@ -351,8 +361,7 @@ impl DependencyGraph {
 
         let selection = possible_tranfer_targets
             .into_iter()
-            .min_by_key(|target| (target.ingredient_index(), target.key_index()))
-            .map(|target| target);
+            .min_by_key(|target| (target.ingredient_index(), target.key_index()));
 
         tracing::debug!("Selected transfer target: {selection:?}");
         selection

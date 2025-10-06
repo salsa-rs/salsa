@@ -400,7 +400,6 @@ where
                 ProvisionalStatus::Final {
                     iteration,
                     verified_at,
-                    nested: _,
                 } => {
                     // Only consider the cycle head if it is from the same revision as the memo
                     if verified_at != memo_verified_at {
@@ -482,21 +481,7 @@ where
                     }
                     _ => {
                         return false;
-                    } // TryClaimHeadsResult::Running(running) => {
-                      //     running.block_on(&mut cycle_heads_iter);
-                      // }
-                      // TryClaimHeadsResult::Available(available_cycle_head) => {
-                      //     // Check the cycle heads recursively
-                      //     // if available_cycle_head.is_nested(zalsa) {
-                      //     //     available_cycle_head.queue_cycle_heads(&mut cycle_heads_iter);
-                      //     // } else {
-                      //     //     return false;
-                      //     // }
-                      //     return false;
-                      // }
-                      // TryClaimHeadsResult::Finalized | TryClaimHeadsResult::Running(_) => {
-                      //     return false;
-                      // }
+                    }
                 }
             }
 

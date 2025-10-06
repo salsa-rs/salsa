@@ -407,22 +407,10 @@ pub enum ProvisionalStatus {
     Provisional {
         iteration: IterationCount,
         verified_at: Revision,
-        nested: bool,
     },
     Final {
         iteration: IterationCount,
         verified_at: Revision,
-        nested: bool,
     },
     FallbackImmediate,
-}
-
-impl ProvisionalStatus {
-    pub(crate) fn nested(&self) -> bool {
-        match self {
-            ProvisionalStatus::Provisional { nested, .. } => *nested,
-            ProvisionalStatus::Final { nested, .. } => *nested,
-            ProvisionalStatus::FallbackImmediate => false,
-        }
-    }
 }

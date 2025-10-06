@@ -258,16 +258,13 @@ where
                 if can_shallow_update.yes() {
                     self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
 
-                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint
-                        && memo.revisions.is_nested_cycle()
-                    {
+                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
                         // This feels strange. I feel like we need to preserve the cycle heads. Let's say a cycle head only sometimes participates in the cycle.
                         // This doesn't mean that the value becomes final because of it. The query might as well be cyclic in the next iteration but
                         // we then never re-executed that query because it was marked as `verified_final`.
                         memo.revisions
                             .cycle_heads()
                             .clear_except(database_key_index);
-                        memo.revisions.reset_nested_cycle();
                     }
 
                     crate::tracing::debug!(

@@ -167,10 +167,7 @@ where
                 && old_memo.cycle_heads().contains(&database_key_index)
             {
                 previous_memo = Some(old_memo);
-
-                if old_memo.revisions.is_nested_cycle() {
-                    iteration_count = old_memo.revisions.iteration();
-                }
+                iteration_count = old_memo.revisions.iteration();
             }
         }
 
@@ -230,25 +227,6 @@ where
             }
 
             let outer_cycle = outer_cycle(zalsa, &cycle_heads, database_key_index);
-
-            // let outer_cycle = cycle_heads
-            //     .iter()
-            //     .filter(|head| head.database_key_index != database_key_index)
-            //     .find_map(|head| {
-            //         let head_ingredient =
-            //             zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-
-            //         let result =
-            //             head_ingredient.wait_for(zalsa, head.database_key_index.key_index());
-            //         tracing::debug!(
-            //             "Wait for result for {:?}: {result:?} {:?}",
-            //             head.database_key_index,
-            //             result
-            //         );
-
-            //         let is_outer_cycle = matches!(result, WaitForResult::Cycle(false));
-            //         is_outer_cycle.then_some(head.database_key_index)
-            //     });
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if !cycle_heads.contains(&database_key_index) {
@@ -331,12 +309,11 @@ where
             completed_query
                 .revisions
                 .set_cycle_converged(this_converged);
-            completed_query.revisions.mark_nested_cycle();
 
             if let Some(outer_cycle) = outer_cycle {
                 tracing::debug!(
-                        "Detected nested cycle {database_key_index:?}, iterate it as part of the outer cycle {outer_cycle:?}"
-                    );
+                    "Detected nested cycle {database_key_index:?}, iterate it as part of the outer cycle {outer_cycle:?}"
+                );
 
                 completed_query.revisions.set_cycle_heads(cycle_heads);
                 claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));

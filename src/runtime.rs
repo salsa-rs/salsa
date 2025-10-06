@@ -1,6 +1,6 @@
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
-use crate::function::SyncGuard;
+use crate::function::{SyncGuard, SyncOwnerId};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
@@ -382,23 +382,12 @@ impl Runtime {
         self.dependency_graph.lock().remove_transferred(query);
     }
 
-    pub(super) fn resolved_transferred_thread_id(
-        &self,
-        query: DatabaseKeyIndex,
-        ignore: DatabaseKeyIndex,
-    ) -> Option<ThreadId> {
-        self.dependency_graph
-            .lock()
-            .resolved_transferred_id(query, Some(ignore))
-            .map(|(id, _)| id)
-    }
-
     pub(super) fn transfer_lock(
         &self,
         query: DatabaseKeyIndex,
         current_thread: ThreadId,
         new_owner: DatabaseKeyIndex,
-        new_owner_thread: ThreadId,
+        new_owner_thread: SyncOwnerId,
     ) {
         self.dependency_graph.lock().transfer_lock(
             query,

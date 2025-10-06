@@ -27,7 +27,7 @@ pub(crate) enum ClaimResult<'a> {
 
 pub(crate) struct SyncState {
     /// The thread id that is owning this query (actively executing it or iterating it as part of a larger cycle).
-    id: OwnerId,
+    id: SyncOwnerId,
 
     /// Set to true if any other queries are blocked,
     /// waiting for this query to complete.
@@ -57,8 +57,8 @@ impl SyncTable {
                 let id = occupied_entry.get().id;
 
                 let id = match id {
-                    OwnerId::Thread(id) => id,
-                    OwnerId::Transferred => {
+                    SyncOwnerId::Thread(id) => id,
+                    SyncOwnerId::Transferred => {
                         let current_id = thread::current().id();
                         let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
                         return match zalsa
@@ -90,7 +90,7 @@ impl SyncTable {
                                     };
                                 }
 
-                                *id = OwnerId::Thread(current_id);
+                                *id = SyncOwnerId::Thread(current_id);
                                 *claimed_twice = true;
 
                                 ClaimResult::Claimed(ClaimGuard {
@@ -105,7 +105,7 @@ impl SyncTable {
                             }
                             ClaimTransferredResult::Released => {
                                 occupied_entry.insert(SyncState {
-                                    id: OwnerId::Thread(thread::current().id()),
+                                    id: SyncOwnerId::Thread(thread::current().id()),
                                     anyone_waiting: false,
                                     is_transfer_target: false,
                                     claimed_twice: false,
@@ -147,7 +147,7 @@ impl SyncTable {
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(SyncState {
-                    id: OwnerId::Thread(thread::current().id()),
+                    id: SyncOwnerId::Thread(thread::current().id()),
                     anyone_waiting: false,
                     is_transfer_target: false,
                     claimed_twice: false,
@@ -162,44 +162,24 @@ impl SyncTable {
         }
     }
 
-    fn make_transfer_target(
-        &self,
-        key_index: Id,
-        zalsa: &Zalsa,
-        ignore: DatabaseKeyIndex,
-    ) -> Option<ThreadId> {
+    fn make_transfer_target(&self, key_index: Id) -> Option<SyncOwnerId> {
         let mut syncs = self.syncs.lock();
         syncs.get_mut(&key_index).map(|state| {
             state.anyone_waiting = true;
             state.is_transfer_target = true;
 
-            match state.id {
-                OwnerId::Thread(thread_id) => thread_id,
-                OwnerId::Transferred => zalsa
-                    .runtime()
-                    .resolved_transferred_thread_id(
-                        DatabaseKeyIndex::new(self.ingredient, key_index),
-                        ignore,
-                    )
-                    .unwrap(),
-            }
+            state.id
         })
     }
 }
 
 #[derive(Copy, Clone, Debug)]
-enum OwnerId {
+pub(crate) enum SyncOwnerId {
     /// Entry is owned by this thread
     Thread(thread::ThreadId),
     /// Entry has been transferred and is owned by another thread.
     /// The id is known by the `DependencyGraph`.
     Transferred,
-}
-
-impl OwnerId {
-    const fn is_thread(&self) -> bool {
-        matches!(self, OwnerId::Thread(_))
-    }
 }
 
 /// Marks an active 'claim' in the synchronization map. The claim is
@@ -274,7 +254,7 @@ impl<'me> ClaimGuard<'me> {
 
         if state.get().claimed_twice {
             state.get_mut().claimed_twice = false;
-            state.get_mut().id = OwnerId::Transferred;
+            state.get_mut().id = SyncOwnerId::Transferred;
         } else {
             self.release(WaitResult::Completed, state.remove());
         }
@@ -284,14 +264,12 @@ impl<'me> ClaimGuard<'me> {
     pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) {
         let self_key = self.database_key_index();
 
-        let runtime = self.zalsa.runtime();
-
         let owner_ingredient = self.zalsa.lookup_ingredient(new_owner.ingredient_index());
 
         // Get the owning thread of `new_owner`.
         let owner_sync_table = owner_ingredient.sync_table();
         let owner_thread_id = owner_sync_table
-            .make_transfer_target(new_owner.key_index(), self.zalsa, self_key)
+            .make_transfer_target(new_owner.key_index())
             .expect("new owner to be a locked query");
 
         tracing::debug!(
@@ -300,6 +278,7 @@ impl<'me> ClaimGuard<'me> {
 
         let mut syncs = self.sync_table.syncs.lock();
 
+        let runtime = self.zalsa.runtime();
         runtime.transfer_lock(self_key, thread::current().id(), new_owner, owner_thread_id);
 
         let SyncState {
@@ -309,7 +288,7 @@ impl<'me> ClaimGuard<'me> {
             ..
         } = syncs.get_mut(&self.key_index).expect("key claimed twice?");
 
-        *id = OwnerId::Transferred;
+        *id = SyncOwnerId::Transferred;
         *claimed_twice = false;
 
         // TODO: Do we need to wake up any threads that are awaiting any of the dependents to update the dependency graph -> I think so.

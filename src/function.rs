@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::{ClaimGuard, SyncGuard, SyncTable};
+pub(crate) use sync::{ClaimGuard, SyncGuard, SyncOwnerId, SyncTable};
 
 use std::any::Any;
 use std::fmt;
@@ -349,14 +349,12 @@ where
                 ProvisionalStatus::Final {
                     iteration,
                     verified_at: memo.verified_at.load(),
-                    nested: memo.revisions.is_nested_cycle(),
                 }
             }
         } else {
             ProvisionalStatus::Provisional {
                 iteration,
                 verified_at: memo.verified_at.load(),
-                nested: memo.revisions.is_nested_cycle(),
             }
         })
     }
@@ -413,7 +411,7 @@ where
         match self.sync_table.try_claim(zalsa, key_index, false) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
             ClaimResult::Cycle { with, nested } => WaitForResult::Cycle { with, nested },
-            ClaimResult::Claimed(guard) => WaitForResult::Available(guard),
+            ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }
 
