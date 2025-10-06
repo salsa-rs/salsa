@@ -225,6 +225,7 @@ impl<'me> ClaimGuard<'me> {
         self.mode = mode;
     }
 
+    #[inline(always)]
     fn release_default(&self, wait_result: WaitResult) {
         let mut syncs = self.sync_table.syncs.lock();
         let state = syncs.remove(&self.key_index).expect("key claimed twice?");
@@ -232,6 +233,7 @@ impl<'me> ClaimGuard<'me> {
         self.release(wait_result, state);
     }
 
+    #[inline(always)]
     fn release(&self, wait_result: WaitResult, state: SyncState) {
         let database_key_index = self.database_key_index();
         tracing::debug!("release_and_unblock({database_key_index:?})");
@@ -327,6 +329,7 @@ impl<'me> ClaimGuard<'me> {
 }
 
 impl Drop for ClaimGuard<'_> {
+    #[inline]
     fn drop(&mut self) {
         let wait_result = if thread::panicking() {
             WaitResult::Panicked

@@ -235,6 +235,10 @@ impl DependencyGraph {
         new_owner: DatabaseKeyIndex,
         new_owner_thread: ThreadId,
     ) {
+        if self.transfered.get(&query) == Some(&(new_owner_thread, new_owner)) {
+            return;
+        }
+
         let mut owner_changed = current_thread != new_owner_thread;
 
         // If we have `c -> a -> d` and we now insert a mapping `d -> c`, rewrite the mapping to
@@ -253,7 +257,7 @@ impl DependencyGraph {
         // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
         let mut last_segment = self.transfered.entry(new_owner);
 
-        while let std::collections::hash_map::Entry::Occupied(mut entry) = last_segment {
+        while let std::collections::hash_map::Entry::Occupied(entry) = last_segment {
             let next_target = entry.get().1;
             if next_target == query {
                 tracing::debug!(
