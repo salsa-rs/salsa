@@ -252,8 +252,10 @@ where
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if !cycle_heads.contains(&database_key_index) {
-                if let Some(new_owner) = outer_cycle {
-                    claim_guard.set_release_mode(ReleaseMode::TransferTo(new_owner));
+                if let Some(outer) = outer_cycle {
+                    claim_guard.set_release_mode(ReleaseMode::TransferTo(outer));
+                } else {
+                    claim_guard.set_release_mode(ReleaseMode::SelfOnly);
                 }
 
                 completed_query.revisions.set_cycle_heads(cycle_heads);

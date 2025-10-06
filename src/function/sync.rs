@@ -34,6 +34,7 @@ pub(crate) struct SyncState {
     anyone_waiting: bool,
 
     is_transfer_target: bool,
+    claimed_twice: bool,
 }
 
 impl SyncTable {
@@ -64,7 +65,7 @@ impl SyncTable {
                             .runtime()
                             .claim_transferred(database_key_index, allow_reentry)
                         {
-                            ClaimTransferredResult::OtherThread(other_thread) => {
+                            ClaimTransferredResult::ClaimedBy(other_thread) => {
                                 occupied_entry.get_mut().anyone_waiting = true;
                                 let thread_id = other_thread.id();
 
@@ -76,16 +77,27 @@ impl SyncTable {
                                     BlockResult::Running(running) => ClaimResult::Running(running),
                                 }
                             }
-                            ClaimTransferredResult::Claimed { current_owner } => {
-                                let SyncState { id, .. } = occupied_entry.into_mut();
+                            ClaimTransferredResult::Reentrant => {
+                                let SyncState {
+                                    id, claimed_twice, ..
+                                } = occupied_entry.into_mut();
+
+                                if *claimed_twice {
+                                    // TODO: Is this thread id correct?
+                                    return ClaimResult::Cycle {
+                                        with: current_id,
+                                        nested: false,
+                                    };
+                                }
 
                                 *id = OwnerId::Thread(current_id);
+                                *claimed_twice = true;
 
                                 ClaimResult::Claimed(ClaimGuard {
                                     key_index,
                                     zalsa,
                                     sync_table: self,
-                                    mode: ReleaseMode::TransferTo(current_owner),
+                                    mode: ReleaseMode::SelfOnly,
                                 })
                             }
                             ClaimTransferredResult::Cycle { with, nested } => {
@@ -96,6 +108,7 @@ impl SyncTable {
                                     id: OwnerId::Thread(thread::current().id()),
                                     anyone_waiting: false,
                                     is_transfer_target: false,
+                                    claimed_twice: false,
                                 });
                                 ClaimResult::Claimed(ClaimGuard {
                                     key_index,
@@ -137,6 +150,7 @@ impl SyncTable {
                     id: OwnerId::Thread(thread::current().id()),
                     anyone_waiting: false,
                     is_transfer_target: false,
+                    claimed_twice: false,
                 });
                 ClaimResult::Claimed(ClaimGuard {
                     key_index,
@@ -148,7 +162,12 @@ impl SyncTable {
         }
     }
 
-    fn make_transfer_target(&self, key_index: Id, zalsa: &Zalsa) -> Option<ThreadId> {
+    fn make_transfer_target(
+        &self,
+        key_index: Id,
+        zalsa: &Zalsa,
+        ignore: DatabaseKeyIndex,
+    ) -> Option<ThreadId> {
         let mut syncs = self.syncs.lock();
         syncs.get_mut(&key_index).map(|state| {
             state.anyone_waiting = true;
@@ -158,10 +177,10 @@ impl SyncTable {
                 OwnerId::Thread(thread_id) => thread_id,
                 OwnerId::Transferred => zalsa
                     .runtime()
-                    .resolved_transferred_thread_id(DatabaseKeyIndex::new(
-                        self.ingredient,
-                        key_index,
-                    ))
+                    .resolved_transferred_thread_id(
+                        DatabaseKeyIndex::new(self.ingredient, key_index),
+                        ignore,
+                    )
                     .unwrap(),
             }
         })
@@ -210,20 +229,29 @@ impl<'me> ClaimGuard<'me> {
         let mut syncs = self.sync_table.syncs.lock();
         let state = syncs.remove(&self.key_index).expect("key claimed twice?");
 
+        self.release(wait_result, state);
+    }
+
+    fn release(&self, wait_result: WaitResult, state: SyncState) {
         let database_key_index = self.database_key_index();
         tracing::debug!("release_and_unblock({database_key_index:?})");
 
         let SyncState {
             anyone_waiting,
             is_transfer_target,
+            claimed_twice,
             ..
         } = state;
+
+        let runtime = self.zalsa.runtime();
+
+        if claimed_twice {
+            runtime.remove_transferred(database_key_index);
+        }
 
         if !anyone_waiting {
             return;
         }
-
-        let runtime = self.zalsa.runtime();
 
         if is_transfer_target {
             tracing::debug!("unblock transferred queries owned by {database_key_index:?}");
@@ -234,15 +262,34 @@ impl<'me> ClaimGuard<'me> {
     }
 
     #[cold]
+    fn release_self(&self) {
+        tracing::debug!("release_self");
+        let mut syncs = self.sync_table.syncs.lock();
+        let std::collections::hash_map::Entry::Occupied(mut state) = syncs.entry(self.key_index)
+        else {
+            panic!("key claimed twice?");
+        };
+
+        if state.get().claimed_twice {
+            state.get_mut().claimed_twice = false;
+            state.get_mut().id = OwnerId::Transferred;
+        } else {
+            self.release(WaitResult::Completed, state.remove());
+        }
+    }
+
+    #[cold]
     pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) {
         let self_key = self.database_key_index();
+
+        let runtime = self.zalsa.runtime();
 
         let owner_ingredient = self.zalsa.lookup_ingredient(new_owner.ingredient_index());
 
         // Get the owning thread of `new_owner`.
         let owner_sync_table = owner_ingredient.sync_table();
         let owner_thread_id = owner_sync_table
-            .make_transfer_target(new_owner.key_index(), self.zalsa)
+            .make_transfer_target(new_owner.key_index(), self.zalsa, self_key)
             .expect("new owner to be a locked query");
 
         tracing::debug!(
@@ -251,18 +298,17 @@ impl<'me> ClaimGuard<'me> {
 
         let mut syncs = self.sync_table.syncs.lock();
 
-        self.zalsa.runtime().transfer_lock(
-            self_key,
-            thread::current().id(),
-            new_owner,
-            owner_thread_id,
-        );
+        runtime.transfer_lock(self_key, thread::current().id(), new_owner, owner_thread_id);
 
         let SyncState {
-            anyone_waiting, id, ..
+            anyone_waiting,
+            id,
+            claimed_twice,
+            ..
         } = syncs.get_mut(&self.key_index).expect("key claimed twice?");
 
         *id = OwnerId::Transferred;
+        *claimed_twice = false;
 
         // TODO: Do we need to wake up any threads that are awaiting any of the dependents to update the dependency graph -> I think so.
         if *anyone_waiting {
@@ -271,9 +317,7 @@ impl<'me> ClaimGuard<'me> {
             );
             // Wake up all threads that were waiting on the query to complete so that they'll retry and block on the new owner.
             let database_key = DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index);
-            self.zalsa
-                .runtime()
-                .unblock_queries_blocked_on(database_key, WaitResult::Completed);
+            runtime.unblock_queries_blocked_on(database_key, WaitResult::Completed);
         }
 
         *anyone_waiting = false;
@@ -296,7 +340,11 @@ impl Drop for ClaimGuard<'_> {
                 self.release_default(wait_result);
             }
             _ if matches!(wait_result, WaitResult::Panicked) => {
+                tracing::debug!("Release after panicked");
                 self.release_default(wait_result);
+            }
+            ReleaseMode::SelfOnly => {
+                self.release_self();
             }
             ReleaseMode::TransferTo(new_owner) => {
                 self.transfer(new_owner);
@@ -321,6 +369,8 @@ pub(crate) enum ReleaseMode {
     /// If this lock is owned by another query (because it was transferred), then releasing is a no-op.
     #[default]
     Default,
+
+    SelfOnly,
 
     /// Transfers the ownership of the lock to the specified query.
     ///

@@ -184,15 +184,15 @@ impl DependencyGraph {
         &mut self,
         database_key_index: DatabaseKeyIndex,
         current_id: ThreadId,
-    ) -> Result<(DatabaseKeyIndex, ThreadId), Option<ThreadId>> {
-        let owner_thread = self.resolved_transferred_id(database_key_index);
+    ) -> Result<DatabaseKeyIndex, Option<ThreadId>> {
+        let owner_thread = self.resolved_transferred_id(database_key_index, None);
 
         let Some((thread_id, owner_key)) = owner_thread else {
             return Err(None);
         };
 
         if thread_id == current_id || self.depends_on(thread_id, current_id) {
-            Ok((owner_key, thread_id))
+            Ok(owner_key)
         } else {
             Err(Some(thread_id))
         }
@@ -209,6 +209,7 @@ impl DependencyGraph {
     pub(super) fn resolved_transferred_id(
         &self,
         database_key: DatabaseKeyIndex,
+        ignore: Option<DatabaseKeyIndex>,
     ) -> Option<(ThreadId, DatabaseKeyIndex)> {
         let Some(&(mut resolved_thread, owner)) = self.transfered.get(&database_key) else {
             return None;
@@ -217,6 +218,9 @@ impl DependencyGraph {
         let mut current_owner = owner;
 
         while let Some(&(next_thread, next_key)) = self.transfered.get(&current_owner) {
+            if Some(next_key) == ignore {
+                break;
+            }
             resolved_thread = next_thread;
             current_owner = next_key;
         }
@@ -232,6 +236,33 @@ impl DependencyGraph {
         new_owner_thread: ThreadId,
     ) {
         let mut owner_changed = current_thread != new_owner_thread;
+
+        // If we have `c -> a -> d` and we now insert a mapping `d -> c`, then remove the last segment (`a -> d`)
+        // to avoid cycles.
+        // A cycle between transfers can occur when a later iteration has a different outer most query than
+        // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
+        let mut last_segment = self.transfered.entry(new_owner);
+
+        while let std::collections::hash_map::Entry::Occupied(entry) = last_segment {
+            let next_target = entry.get().1;
+            if next_target == query {
+                tracing::debug!(
+                    "Remove mapping from {:?} to {:?} to prevent a cycle",
+                    entry.key(),
+                    query
+                );
+                let old_dependents = self.transfered_dependents.get_mut(&query).unwrap();
+                let index = old_dependents
+                    .iter()
+                    .position(|key| key == entry.key())
+                    .unwrap();
+                old_dependents.swap_remove(index);
+                entry.remove();
+                break;
+            }
+
+            last_segment = self.transfered.entry(next_target);
+        }
 
         // TODO: Skip unblocks for transitive queries if the old owner is the same as the new owner?
         match self.transfered.entry(query) {
@@ -272,11 +303,7 @@ impl DependencyGraph {
             return None;
         }
 
-        if let &[(key, _)] = candidates {
-            return Some(key);
-        }
-
-        let mut possible_tranfer_targets: Vec<_> = candidates
+        let possible_tranfer_targets: Vec<_> = candidates
             .iter()
             .filter_map(|&(key, thread)| {
                 // Ensure that transferring to this other thread won't introduce any cyclic wait dependency (where `thread` is blocked on `other_thread` and the other way round).)
@@ -288,19 +315,15 @@ impl DependencyGraph {
             })
             .collect();
 
-        if possible_tranfer_targets.is_empty() {
-            panic!(
-                "No possible transfer targets found for query {:?}",
-                candidates
-            );
-        } else if let &[target] = &*possible_tranfer_targets {
-            Some(target)
-        } else {
-            possible_tranfer_targets
-                .into_iter()
-                .min_by_key(|target| (target.ingredient_index(), target.key_index()))
-                .map(|target| target)
-        }
+        tracing::debug!("Possible transfer targets: {:?}", possible_tranfer_targets);
+
+        let selection = possible_tranfer_targets
+            .into_iter()
+            .min_by_key(|target| (target.ingredient_index(), target.key_index()))
+            .map(|target| target);
+
+        tracing::debug!("Selected transfer target: {selection:?}");
+        selection
     }
 
     pub(super) fn resume_transferred_dependents(

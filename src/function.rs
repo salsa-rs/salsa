@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::{ClaimGuard, SyncGuard, SyncState, SyncTable};
+pub(crate) use sync::{ClaimGuard, SyncGuard, SyncTable};
 
 use std::any::Any;
 use std::fmt;
