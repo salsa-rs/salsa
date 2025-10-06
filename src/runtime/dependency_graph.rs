@@ -237,13 +237,23 @@ impl DependencyGraph {
     ) {
         let mut owner_changed = current_thread != new_owner_thread;
 
-        // If we have `c -> a -> d` and we now insert a mapping `d -> c`, then remove the last segment (`a -> d`)
-        // to avoid cycles.
+        // If we have `c -> a -> d` and we now insert a mapping `d -> c`, rewrite the mapping to
+        // `d -> c -> a` to avoid cycles.
+        //
+        // A more complex is  `e -> c -> a -> d -> b` where we now transfer `d -> c`. Respine
+        // ```
+        // e -> c -> a -> b
+        // d /
+        // ```
+        //
+        // The first part here only takes care of removing `d` form ` a -> d -> b` (so that it becomes `a -> b`).
+        // The `d -> c` mapping is inserted by the `match` statement below.
+        //
         // A cycle between transfers can occur when a later iteration has a different outer most query than
         // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
         let mut last_segment = self.transfered.entry(new_owner);
 
-        while let std::collections::hash_map::Entry::Occupied(entry) = last_segment {
+        while let std::collections::hash_map::Entry::Occupied(mut entry) = last_segment {
             let next_target = entry.get().1;
             if next_target == query {
                 tracing::debug!(
@@ -251,13 +261,31 @@ impl DependencyGraph {
                     entry.key(),
                     query
                 );
+
+                // Remove `b` from the dependents of `d` and remove the mapping from `a -> d`.
                 let old_dependents = self.transfered_dependents.get_mut(&query).unwrap();
                 let index = old_dependents
                     .iter()
                     .position(|key| key == entry.key())
                     .unwrap();
                 old_dependents.swap_remove(index);
+                // `a` in `a -> d`
+                let previous_source = *entry.key();
                 entry.remove();
+
+                // If there's a `d -> b` mapping, remove `d` from `b`'s dependents and connect `a` with `b`
+                if let Some(next_next) = self.transfered.remove(&query) {
+                    // connect `a` with `b` (okay to use `insert` because we removed the `a` mapping before).
+                    self.transfered.insert(previous_source, next_next);
+                    let next_next_dependents =
+                        self.transfered_dependents.get_mut(&next_next.1).unwrap();
+                    let query_index = next_next_dependents
+                        .iter()
+                        .position(|key| *key == query)
+                        .unwrap();
+                    next_next_dependents[query_index] = previous_source;
+                }
+
                 break;
             }
 
