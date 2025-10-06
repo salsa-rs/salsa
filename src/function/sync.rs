@@ -245,14 +245,14 @@ impl<'me> ClaimGuard<'me> {
             ..
         } = state;
 
+        if !anyone_waiting {
+            return;
+        }
+
         let runtime = self.zalsa.runtime();
 
         if claimed_twice {
             runtime.remove_transferred(database_key_index);
-        }
-
-        if !anyone_waiting {
-            return;
         }
 
         if is_transfer_target {
