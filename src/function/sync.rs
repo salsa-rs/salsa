@@ -1,7 +1,8 @@
 use rustc_hash::FxHashMap;
+use std::collections::hash_map::OccupiedEntry;
 
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::{BlockResult, ClaimTransferredResult, Running, WaitResult};
+use crate::runtime::{BlockResult, ClaimTransferredResult, OtherThread, Running, WaitResult};
 use crate::sync::thread::{self};
 use crate::sync::Mutex;
 use crate::tracing;
@@ -54,64 +55,23 @@ impl SyncTable {
     ) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
         match write.entry(key_index) {
-            std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
+            std::collections::hash_map::Entry::Occupied(occupied_entry) => {
                 let id = occupied_entry.get().id;
 
                 let id = match id {
                     SyncOwnerId::Thread(id) => id,
                     SyncOwnerId::Transferred => {
-                        let current_id = thread::current().id();
-                        let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
-
-                        return match zalsa
-                            .runtime()
-                            .claim_transferred(database_key_index, allow_reentry)
-                        {
-                            ClaimTransferredResult::ClaimedBy(other_thread) => {
-                                occupied_entry.get_mut().anyone_waiting = true;
-
-                                match other_thread.block(write) {
-                                    BlockResult::Cycle => ClaimResult::Cycle { inner: false },
-                                    BlockResult::Running(running) => ClaimResult::Running(running),
-                                }
-                            }
-                            ClaimTransferredResult::Reentrant => {
-                                let SyncState {
-                                    id, claimed_twice, ..
-                                } = occupied_entry.into_mut();
-
-                                if *claimed_twice {
-                                    return ClaimResult::Cycle { inner: false };
-                                }
-
-                                *id = SyncOwnerId::Thread(current_id);
-                                *claimed_twice = true;
-
-                                ClaimResult::Claimed(ClaimGuard {
-                                    key_index,
-                                    zalsa,
-                                    sync_table: self,
-                                    mode: ReleaseMode::SelfOnly,
-                                })
-                            }
-                            ClaimTransferredResult::Cycle { inner: nested } => {
-                                ClaimResult::Cycle { inner: nested }
-                            }
-                            ClaimTransferredResult::Released => {
-                                occupied_entry.insert(SyncState {
-                                    id: SyncOwnerId::Thread(thread::current().id()),
-                                    anyone_waiting: false,
-                                    is_transfer_target: false,
-                                    claimed_twice: false,
-                                });
-                                ClaimResult::Claimed(ClaimGuard {
-                                    key_index,
-                                    zalsa,
-                                    sync_table: self,
-                                    mode: ReleaseMode::Default,
-                                })
-                            }
-                        };
+                        return match self.try_claim_transferred(
+                            zalsa,
+                            occupied_entry,
+                            allow_reentry,
+                        ) {
+                            Ok(claimed) => claimed,
+                            Err(other_thread) => match other_thread.block(write) {
+                                BlockResult::Cycle => ClaimResult::Cycle { inner: false },
+                                BlockResult::Running(running) => ClaimResult::Running(running),
+                            },
+                        }
                     }
                 };
 
@@ -149,6 +109,63 @@ impl SyncTable {
                     sync_table: self,
                     mode: ReleaseMode::Default,
                 })
+            }
+        }
+    }
+
+    #[cold]
+    fn try_claim_transferred<'me>(
+        &'me self,
+        zalsa: &'me Zalsa,
+        mut entry: OccupiedEntry<Id, SyncState>,
+        allow_reentry: bool,
+    ) -> Result<ClaimResult<'me>, OtherThread<'me>> {
+        let key_index = *entry.key();
+        let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
+
+        match zalsa
+            .runtime()
+            .claim_transferred(database_key_index, allow_reentry)
+        {
+            ClaimTransferredResult::ClaimedBy(other_thread) => {
+                entry.get_mut().anyone_waiting = true;
+                Err(other_thread)
+            }
+            ClaimTransferredResult::Reentrant => {
+                let SyncState {
+                    id, claimed_twice, ..
+                } = entry.into_mut();
+
+                if *claimed_twice {
+                    return Ok(ClaimResult::Cycle { inner: false });
+                }
+
+                *id = SyncOwnerId::Thread(thread::current().id());
+                *claimed_twice = true;
+
+                Ok(ClaimResult::Claimed(ClaimGuard {
+                    key_index,
+                    zalsa,
+                    sync_table: self,
+                    mode: ReleaseMode::SelfOnly,
+                }))
+            }
+            ClaimTransferredResult::Cycle { inner: nested } => {
+                Ok(ClaimResult::Cycle { inner: nested })
+            }
+            ClaimTransferredResult::Released => {
+                entry.insert(SyncState {
+                    id: SyncOwnerId::Thread(thread::current().id()),
+                    anyone_waiting: false,
+                    is_transfer_target: false,
+                    claimed_twice: false,
+                });
+                Ok(ClaimResult::Claimed(ClaimGuard {
+                    key_index,
+                    zalsa,
+                    sync_table: self,
+                    mode: ReleaseMode::Default,
+                }))
             }
         }
     }
