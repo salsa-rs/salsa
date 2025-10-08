@@ -413,7 +413,6 @@ where
                     //
                     // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
                     // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
-                    // FIXME: Do we still need this?
                     if iteration != cycle_head.iteration_count.load() {
                         return false;
                     }
@@ -462,9 +461,9 @@ where
             cycle_heads: &CycleHeads,
             verified_at: Revision,
         ) -> bool {
-            let mut cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, cycle_heads);
+            let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, cycle_heads);
 
-            while let Some(cycle_head) = cycle_heads_iter.next() {
+            for cycle_head in cycle_heads_iter {
                 match cycle_head {
                     TryClaimHeadsResult::Cycle {
                         head_iteration_count,

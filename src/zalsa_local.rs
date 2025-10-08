@@ -1261,6 +1261,7 @@ pub(crate) mod persistence {
         }
     }
 
+    #[cfg(feature = "persistence")]
     pub(super) mod atomic_bool {
         use crate::sync::atomic::{AtomicBool, Ordering};
 

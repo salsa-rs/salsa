@@ -123,10 +123,6 @@ struct BlockedOnInner<'me> {
 }
 
 impl Running<'_> {
-    pub(crate) fn database_key(&self) -> DatabaseKeyIndex {
-        self.0.database_key
-    }
-
     /// Blocks on the other thread to complete the computation.
     pub(crate) fn block_on(self, zalsa: &Zalsa) {
         let BlockedOnInner {

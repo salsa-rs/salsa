@@ -290,17 +290,6 @@ impl<'me> ClaimGuard<'me> {
 
         *id = SyncOwnerId::Transferred;
         *claimed_twice = false;
-
-        // TODO: Do we need to wake up any threads that are awaiting any of the dependents to update the dependency graph -> I think so.
-        if *anyone_waiting {
-            tracing::debug!(
-                "Wake up blocked threads after transferring ownership to {new_owner:?}"
-            );
-            // Wake up all threads that were waiting on the query to complete so that they'll retry and block on the new owner.
-            let database_key = DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index);
-            runtime.unblock_queries_blocked_on(database_key, WaitResult::Completed);
-        }
-
         *anyone_waiting = false;
 
         tracing::debug!("Transfer ownership completed");

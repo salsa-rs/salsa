@@ -1,11 +1,8 @@
-use std::pin::Pin;
-
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
+use std::pin::Pin;
 
 use crate::function::SyncOwnerId;
-#[cfg(debug_assertions)]
-use crate::hash::FxHashSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
@@ -31,11 +28,11 @@ pub(super) struct DependencyGraph {
 
     /// A `K -> Q` pair indicates that `K`'s lock is now owned by
     /// `Q` (The thread id of `Q` and its database key)
-    transfered: FxHashMap<DatabaseKeyIndex, (ThreadId, DatabaseKeyIndex)>,
+    transferred: FxHashMap<DatabaseKeyIndex, (ThreadId, DatabaseKeyIndex)>,
 
     /// A `K -> Qs` pair indicates that `K`'s lock is now owned by
     /// `Qs` (The thread id of `Qs` and their database keys)
-    transfered_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[DatabaseKeyIndex; 4]>>,
+    transferred_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[DatabaseKeyIndex; 4]>>,
 }
 
 impl DependencyGraph {
@@ -43,8 +40,16 @@ impl DependencyGraph {
     ///
     /// (i.e., there is a path from `from_id` to `to_id` in the graph.)
     pub(super) fn depends_on(&self, from_id: ThreadId, to_id: ThreadId) -> bool {
+        Self::depends_on_impl(&self.edges, from_id, to_id)
+    }
+
+    fn depends_on_impl(
+        edges: &FxHashMap<ThreadId, edge::Edge>,
+        from_id: ThreadId,
+        to_id: ThreadId,
+    ) -> bool {
         let mut p = from_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.blocked_on_id) {
+        while let Some(q) = edges.get(&p).map(|edge| edge.blocked_on_id) {
             if q == to_id {
                 return true;
             }
@@ -141,6 +146,19 @@ impl DependencyGraph {
         }
     }
 
+    /// Unblock the runtime with the given id with the given wait-result.
+    /// This will cause it resume execution (though it will have to grab
+    /// the lock on this data structure first, to recover the wait result).
+    fn unblock_runtime(&mut self, id: ThreadId, wait_result: WaitResult) {
+        tracing::debug!("Unblocking runtime {id:?} with wait result {wait_result:?}");
+        let edge = self.edges.remove(&id).expect("not blocked");
+        self.wait_results.insert(id, wait_result);
+
+        // Now that we have inserted the `wait_results`,
+        // notify the thread.
+        edge.notify();
+    }
+
     pub(super) fn unblock_transferred_queries(
         &mut self,
         database_key: DatabaseKeyIndex,
@@ -148,8 +166,8 @@ impl DependencyGraph {
     ) {
         // If `database_key` is `c` and it has been transfered to `b` earlier, remove its entry.
         tracing::debug!("unblock_transferred_queries({database_key:?}");
-        if let Some((_, owner)) = self.transfered.remove(&database_key) {
-            let owner_dependents = self.transfered_dependents.get_mut(&owner).unwrap();
+        if let Some((_, owner)) = self.transferred.remove(&database_key) {
+            let owner_dependents = self.transferred_dependents.get_mut(&owner).unwrap();
             let index = owner_dependents
                 .iter()
                 .position(|&x| x == database_key)
@@ -161,9 +179,9 @@ impl DependencyGraph {
         let mut queue: SmallVec<[_; 4]> = smallvec![database_key];
 
         while let Some(current) = queue.pop() {
-            self.transfered.remove(&current);
+            self.transferred.remove(&current);
             let transitive = self
-                .transfered_dependents
+                .transferred_dependents
                 .remove(&current)
                 .unwrap_or_default();
 
@@ -200,8 +218,8 @@ impl DependencyGraph {
     }
 
     pub(super) fn remove_transferred(&mut self, database_key: DatabaseKeyIndex) {
-        if let Some((_, owner)) = self.transfered.remove(&database_key) {
-            let dependents = self.transfered_dependents.get_mut(&owner).unwrap();
+        if let Some((_, owner)) = self.transferred.remove(&database_key) {
+            let dependents = self.transferred_dependents.get_mut(&owner).unwrap();
             let index = dependents.iter().position(|h| *h == database_key).unwrap();
             dependents.swap_remove(index);
         }
@@ -212,11 +230,11 @@ impl DependencyGraph {
         database_key: DatabaseKeyIndex,
         ignore: Option<DatabaseKeyIndex>,
     ) -> Option<(ThreadId, DatabaseKeyIndex)> {
-        let &(mut resolved_thread, owner) = self.transfered.get(&database_key)?;
+        let &(mut resolved_thread, owner) = self.transferred.get(&database_key)?;
 
         let mut current_owner = owner;
 
-        while let Some(&(next_thread, next_key)) = self.transfered.get(&current_owner) {
+        while let Some(&(next_thread, next_key)) = self.transferred.get(&current_owner) {
             if Some(next_key) == ignore {
                 break;
             }
@@ -261,7 +279,7 @@ impl DependencyGraph {
         //
         // A cycle between transfers can occur when a later iteration has a different outer most query than
         // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
-        let mut last_segment = self.transfered.entry(new_owner);
+        let mut last_segment = self.transferred.entry(new_owner);
 
         while let std::collections::hash_map::Entry::Occupied(entry) = last_segment {
             let next_target = entry.get().1;
@@ -273,7 +291,7 @@ impl DependencyGraph {
                 );
 
                 // Remove `b` from the dependents of `d` and remove the mapping from `a -> d`.
-                let old_dependents = self.transfered_dependents.get_mut(&query).unwrap();
+                let old_dependents = self.transferred_dependents.get_mut(&query).unwrap();
                 let index = old_dependents
                     .iter()
                     .position(|key| key == entry.key())
@@ -284,11 +302,11 @@ impl DependencyGraph {
                 entry.remove();
 
                 // If there's a `d -> b` mapping, remove `d` from `b`'s dependents and connect `a` with `b`
-                if let Some(next_next) = self.transfered.remove(&query) {
+                if let Some(next_next) = self.transferred.remove(&query) {
                     // connect `a` with `b` (okay to use `insert` because we removed the `a` mapping before).
-                    self.transfered.insert(previous_source, next_next);
+                    self.transferred.insert(previous_source, next_next);
                     let next_next_dependents =
-                        self.transfered_dependents.get_mut(&next_next.1).unwrap();
+                        self.transferred_dependents.get_mut(&next_next.1).unwrap();
                     let query_index = next_next_dependents
                         .iter()
                         .position(|key| *key == query)
@@ -299,11 +317,11 @@ impl DependencyGraph {
                 break;
             }
 
-            last_segment = self.transfered.entry(next_target);
+            last_segment = self.transferred.entry(next_target);
         }
 
         // TODO: Skip unblocks for transitive queries if the old owner is the same as the new owner?
-        match self.transfered.entry(query) {
+        match self.transferred.entry(query) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 // Transfer `c -> b` and there's no existing entry for `c`.
                 entry.insert((new_owner_thread, new_owner));
@@ -318,7 +336,7 @@ impl DependencyGraph {
                 let old_owner = entry.get().1;
 
                 owner_changed = true;
-                let old_dependents = self.transfered_dependents.get_mut(&old_owner).unwrap();
+                let old_dependents = self.transferred_dependents.get_mut(&old_owner).unwrap();
                 let index = old_dependents.iter().position(|key| *key == query).unwrap();
                 old_dependents.swap_remove(index);
 
@@ -327,13 +345,15 @@ impl DependencyGraph {
         };
 
         // Register `c` as a dependent of `b`.
-        let all_dependents = self.transfered_dependents.entry(new_owner).or_default();
+        let all_dependents = self.transferred_dependents.entry(new_owner).or_default();
         assert!(!all_dependents.contains(&query));
         assert!(!all_dependents.contains(&new_owner));
         all_dependents.push(query);
 
+        tracing::debug!("Wake up blocked threads after transferring ownership to {new_owner:?}");
         if owner_changed {
-            self.resume_transferred_dependents(query, WaitResult::Completed);
+            self.unblock_transfer_target(query, new_owner_thread);
+            self.update_transferred_edges(query, new_owner_thread);
         }
     }
 
@@ -345,7 +365,7 @@ impl DependencyGraph {
             return None;
         }
 
-        let possible_tranfer_targets: Vec<_> = candidates
+        let possible_transfer_targets: Vec<_> = candidates
             .iter()
             .filter_map(|&(key, thread)| {
                 // Ensure that transferring to this other thread won't introduce any cyclic wait dependency (where `thread` is blocked on `other_thread` and the other way round).)
@@ -357,9 +377,9 @@ impl DependencyGraph {
             })
             .collect();
 
-        tracing::debug!("Possible transfer targets: {:?}", possible_tranfer_targets);
+        tracing::debug!("Possible transfer targets: {:?}", possible_transfer_targets);
 
-        let selection = possible_tranfer_targets
+        let selection = possible_transfer_targets
             .into_iter()
             .min_by_key(|target| (target.ingredient_index(), target.key_index()));
 
@@ -367,54 +387,79 @@ impl DependencyGraph {
         selection
     }
 
-    pub(super) fn resume_transferred_dependents(
-        &mut self,
-        query: DatabaseKeyIndex,
-        wait_result: WaitResult,
-    ) {
-        tracing::debug!("Resuming transitive dependents of query {query:?}");
-        let Some(queries) = self.transfered_dependents.get(&query) else {
-            return;
-        };
+    /// Finds the one query in the dependents of the `source_query` (the one that is transferred to a new owner)
+    /// on which the `new_owner_id` thread blocks on and unblocks it, to ensure progress.
+    fn unblock_transfer_target(&mut self, source_query: DatabaseKeyIndex, new_owner_id: ThreadId) {
+        let mut queue: SmallVec<[_; 4]> = smallvec![source_query];
 
-        #[cfg(debug_assertions)]
-        let mut stack = FxHashSet::default();
-        #[cfg(debug_assertions)]
-        stack.insert(query);
+        while let Some(current) = queue.pop() {
+            if let Some(dependents) = self.query_dependents.get_mut(&current) {
+                for (i, id) in dependents.iter().enumerate() {
+                    if *id == new_owner_id || Self::depends_on_impl(&self.edges, new_owner_id, *id)
+                    {
+                        let thread_id = dependents.swap_remove(i);
+                        if dependents.is_empty() {
+                            self.query_dependents.remove(&current);
+                        }
 
-        let mut queue: SmallVec<[_; 4]> =
-            queries.into_iter().map(|nested| (*nested, query)).collect();
+                        self.unblock_runtime(thread_id, WaitResult::Completed);
 
-        while let Some((nested, parent)) = queue.pop() {
-            debug_assert_eq!(self.transfered.get(&nested).unwrap().1, parent);
+                        return;
+                    }
+                }
+            };
 
-            #[cfg(debug_assertions)]
-            if !stack.insert(nested) {
-                panic!("Encountered cycle while resuming the transferred dependents. between {nested:?} and {parent:?}. Current state of dependency graph: {self:#?}")
-            }
             queue.extend(
-                self.transfered_dependents
-                    .get(&nested)
-                    .into_iter()
+                self.transferred_dependents
+                    .get(&current)
+                    .iter()
+                    .copied()
                     .flatten()
-                    .map(|inner| (*inner, nested)),
+                    .copied(),
             );
-
-            self.unblock_runtimes_blocked_on(nested, wait_result);
         }
     }
 
-    /// Unblock the runtime with the given id with the given wait-result.
-    /// This will cause it resume execution (though it will have to grab
-    /// the lock on this data structure first, to recover the wait result).
-    fn unblock_runtime(&mut self, id: ThreadId, wait_result: WaitResult) {
-        tracing::debug!("Unblocking runtime {id:?} with wait result {wait_result:?}");
-        let edge = self.edges.remove(&id).expect("not blocked");
-        self.wait_results.insert(id, wait_result);
+    fn update_transferred_edges(&mut self, query: DatabaseKeyIndex, new_owner_thread: ThreadId) {
+        tracing::info!("Resuming transitive dependents of query {query:?}");
 
-        // Now that we have inserted the `wait_results`,
-        // notify the thread.
-        edge.notify();
+        let mut queue: SmallVec<[_; 4]> = smallvec![query];
+
+        while let Some(query) = queue.pop() {
+            queue.extend(
+                self.transferred_dependents
+                    .get(&query)
+                    .iter()
+                    .copied()
+                    .flatten()
+                    .copied(),
+            );
+
+            let Some(dependents) = self.query_dependents.get_mut(&query) else {
+                continue;
+            };
+
+            for dependent in dependents.iter_mut() {
+                let edge = self.edges.get_mut(dependent).unwrap();
+
+                tracing::info!(
+                    "Rewrite edge from {:?} to {new_owner_thread:?}",
+                    edge.blocked_on_id
+                );
+                edge.blocked_on_id = new_owner_thread;
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                for id in self.query_dependents.get(&query).into_iter().flatten() {
+                    debug_assert!(
+                        !self.depends_on(new_owner_thread, *id),
+                        "Circular reference between blocked edges: {:#?}",
+                        self.edges
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -443,7 +488,6 @@ mod edge {
 
         /// Signalled whenever a query with dependents completes.
         /// Allows those dependents to check if they are ready to unblock.
-        // condvar: unsafe<'stack_frame> Pin<&'stack_frame Condvar>,
         condvar: Pin<&'static EdgeCondvar>,
     }
 
