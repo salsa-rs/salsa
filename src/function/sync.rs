@@ -4,6 +4,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::{BlockResult, ClaimTransferredResult, Running, WaitResult};
 use crate::sync::thread::{self};
 use crate::sync::Mutex;
+use crate::tracing;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
 

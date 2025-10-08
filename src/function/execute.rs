@@ -8,6 +8,7 @@ use crate::function::{ClaimGuard, Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::tracing;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
@@ -367,7 +368,7 @@ where
             // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
             // which is less than `u32::MAX`.
             iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
+                ::tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
                 panic!("{database_key_index:?}: execute: too many cycle iterations")
             });
 

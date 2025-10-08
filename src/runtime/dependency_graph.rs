@@ -8,6 +8,7 @@ use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
 use crate::sync::thread::ThreadId;
 use crate::sync::MutexGuard;
+use crate::tracing;
 
 #[derive(Debug, Default)]
 pub(super) struct DependencyGraph {
@@ -261,97 +262,97 @@ impl DependencyGraph {
             }
         };
 
-        let mut owner_changed = current_thread != new_owner_thread;
+        let mut thread_changed = current_thread != new_owner_thread;
 
-        // TODO: Can we move this into the occupied branch? It's pointless to run this check if there's no existing mapping.
-
-        // If we have `c -> a -> d` and we now insert a mapping `d -> c`, rewrite the mapping to
-        // `d -> c -> a` to avoid cycles.
-        //
-        // A more complex is  `e -> c -> a -> d -> b` where we now transfer `d -> c`. Respine
-        // ```
-        // e -> c -> a -> b
-        // d /
-        // ```
-        //
-        // The first part here only takes care of removing `d` form ` a -> d -> b` (so that it becomes `a -> b`).
-        // The `d -> c` mapping is inserted by the `match` statement below.
-        //
-        // A cycle between transfers can occur when a later iteration has a different outer most query than
-        // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
-        let mut last_segment = self.transferred.entry(new_owner);
-
-        while let std::collections::hash_map::Entry::Occupied(entry) = last_segment {
-            let next_target = entry.get().1;
-            if next_target == query {
-                tracing::debug!(
-                    "Remove mapping from {:?} to {:?} to prevent a cycle",
-                    entry.key(),
-                    query
-                );
-
-                // Remove `b` from the dependents of `d` and remove the mapping from `a -> d`.
-                let old_dependents = self.transferred_dependents.get_mut(&query).unwrap();
-                let index = old_dependents
-                    .iter()
-                    .position(|key| key == entry.key())
-                    .unwrap();
-                old_dependents.swap_remove(index);
-                // `a` in `a -> d`
-                let previous_source = *entry.key();
-                entry.remove();
-
-                // If there's a `d -> b` mapping, remove `d` from `b`'s dependents and connect `a` with `b`
-                if let Some(next_next) = self.transferred.remove(&query) {
-                    // connect `a` with `b` (okay to use `insert` because we removed the `a` mapping before).
-                    self.transferred.insert(previous_source, next_next);
-                    let next_next_dependents =
-                        self.transferred_dependents.get_mut(&next_next.1).unwrap();
-                    let query_index = next_next_dependents
-                        .iter()
-                        .position(|key| *key == query)
-                        .unwrap();
-                    next_next_dependents[query_index] = previous_source;
-                }
-
-                break;
-            }
-
-            last_segment = self.transferred.entry(next_target);
-        }
-
-        // TODO: Skip unblocks for transitive queries if the old owner is the same as the new owner?
         match self.transferred.entry(query) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 // Transfer `c -> b` and there's no existing entry for `c`.
                 entry.insert((new_owner_thread, new_owner));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
+                // If we transfer to the same owner as before, return immediately.
                 if entry.get() == &(new_owner_thread, new_owner) {
                     return;
                 }
 
                 // `Transfer `c -> b` after a previous `c -> d` mapping.
                 // Update the owner and remove the query from the old owner's dependents.
-                let old_owner = entry.get().1;
+                let (old_owner_thread, old_owner) = *entry.get();
 
-                owner_changed = true;
+                // We simply assume here that the thread has changed because we'd have to walk the entire
+                // transferred chaine of `old_owner` to know if the thread has changed. This won't safe us much
+                // compared to just updating all dependent threads.
+                thread_changed = true;
+
+                // For the example below, remove `d` from `b`'s dependents.`
                 let old_dependents = self.transferred_dependents.get_mut(&old_owner).unwrap();
                 let index = old_dependents.iter().position(|key| *key == query).unwrap();
                 old_dependents.swap_remove(index);
 
                 entry.insert((new_owner_thread, new_owner));
+
+                // If we have `c -> a -> d` and we now insert a mapping `d -> c`, rewrite the mapping to
+                // `d -> c -> a` to avoid cycles.
+                //
+                // Or, starting with `e -> c -> a -> d -> b` insert `d -> c`. We need to respine the tree to
+                // ```
+                // e -> c -> a -> b
+                // d /
+                // ```
+                //
+                //
+                // A cycle between transfers can occur when a later iteration has a different outer most query than
+                // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
+                let mut last_segment = self.transferred.entry(new_owner);
+
+                while let std::collections::hash_map::Entry::Occupied(mut entry) = last_segment {
+                    let source = *entry.key();
+                    let next_target = entry.get().1;
+
+                    // If it's `a -> d`, remove `a -> d` and insert an edge from `a -> b`
+                    if next_target == query {
+                        tracing::trace!(
+                            "Remap edge {source:?} -> {next_target:?} to {source:?} -> {old_owner:?} to prevent a cycle",
+                        );
+
+                        // Remove `a` from the dependents of `d` and remove the mapping from `a -> d`.
+                        let query_dependents = self.transferred_dependents.get_mut(&query).unwrap();
+                        let index = query_dependents
+                            .iter()
+                            .copied()
+                            .position(|key| key == source)
+                            .unwrap();
+                        query_dependents.swap_remove(index);
+
+                        // if the old mapping was `c -> d` and we now insert `d -> c`, remove `d -> c`
+                        if old_owner == new_owner {
+                            entry.remove();
+                        } else {
+                            // otherwise (when `d` pointed to some other query, e.g. `b` in the example),
+                            // add an edge from `a` to `b`
+                            entry.insert((old_owner_thread, old_owner));
+
+                            let old_owner_dependents =
+                                self.transferred_dependents.get_mut(&old_owner).unwrap();
+                            old_owner_dependents.push(source);
+                        }
+
+                        break;
+                    }
+
+                    last_segment = self.transferred.entry(next_target);
+                }
             }
         };
 
         // Register `c` as a dependent of `b`.
         let all_dependents = self.transferred_dependents.entry(new_owner).or_default();
-        assert!(!all_dependents.contains(&query));
-        assert!(!all_dependents.contains(&new_owner));
+        debug_assert!(!all_dependents.contains(&query));
+        debug_assert!(!all_dependents.contains(&new_owner));
         all_dependents.push(query);
 
-        tracing::debug!("Wake up blocked threads after transferring ownership to {new_owner:?}");
-        if owner_changed {
+        if thread_changed {
+            tracing::debug!("Unblocking new owner of transfer target {new_owner:?}");
             self.unblock_transfer_target(query, new_owner_thread);
             self.update_transferred_edges(query, new_owner_thread);
         }

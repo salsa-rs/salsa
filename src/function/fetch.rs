@@ -137,14 +137,13 @@ where
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
 
-                // TOOO: Try to restrict this to `FALLBACK_IMMEDIATE`.
-                // There's an issue that `cycle_nested_deep_conditional_changed` hangs
-                // if I remove this but why? Should this be handled in `maybe_changed_after` instead?
-                let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                    let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
-                if let Some(memo) = memo {
-                    if memo.value.is_some() && memo.may_be_provisional() {
-                        memo.block_on_heads(zalsa, zalsa_local);
+                    if let Some(memo) = memo {
+                        if memo.value.is_some() && memo.may_be_provisional() {
+                            memo.block_on_heads(zalsa, zalsa_local);
+                        }
                     }
                 }
 
