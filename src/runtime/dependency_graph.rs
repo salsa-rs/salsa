@@ -165,8 +165,22 @@ impl DependencyGraph {
         database_key: DatabaseKeyIndex,
         wait_result: WaitResult,
     ) {
-        // If `database_key` is `c` and it has been transfered to `b` earlier, remove its entry.
-        tracing::debug!("unblock_transferred_queries({database_key:?}");
+        fn unblock_recursive(
+            me: &mut DependencyGraph,
+            query: DatabaseKeyIndex,
+            wait_result: WaitResult,
+        ) {
+            me.transferred.remove(&query);
+            if let Some(transitive) = me.transferred_dependents.remove(&query) {
+                for query in transitive {
+                    me.unblock_runtimes_blocked_on(query, wait_result);
+                    unblock_recursive(me, query, wait_result);
+                }
+            }
+        }
+
+        // If `database_key` is `c` and it has been transferred to `b` earlier, remove its entry.
+        tracing::trace!("unblock_transferred_queries({database_key:?}");
         if let Some((_, owner)) = self.transferred.remove(&database_key) {
             let owner_dependents = self.transferred_dependents.get_mut(&owner).unwrap();
             let index = owner_dependents
@@ -176,24 +190,7 @@ impl DependencyGraph {
             owner_dependents.swap_remove(index);
         }
 
-        let mut unblocked: SmallVec<[_; 4]> = SmallVec::new();
-        let mut queue: SmallVec<[_; 4]> = smallvec![database_key];
-
-        while let Some(current) = queue.pop() {
-            self.transferred.remove(&current);
-            let transitive = self
-                .transferred_dependents
-                .remove(&current)
-                .unwrap_or_default();
-
-            queue.extend(transitive);
-
-            unblocked.push(current);
-        }
-
-        for query in unblocked {
-            self.unblock_runtimes_blocked_on(query, wait_result);
-        }
+        unblock_recursive(self, database_key, wait_result);
     }
 
     /// Returns `Ok(thread_id)` if `database_key_index` is a query who's lock ownership has been transferred to `thread_id` (potentially over multiple steps)
@@ -392,7 +389,7 @@ impl DependencyGraph {
     }
 
     fn update_transferred_edges(&mut self, query: DatabaseKeyIndex, new_owner_thread: ThreadId) {
-        tracing::info!("Resuming transitive dependents of query {query:?}");
+        tracing::trace!("Resuming transitive dependents of query {query:?}");
 
         let mut queue: SmallVec<[_; 4]> = smallvec![query];
 
@@ -418,17 +415,11 @@ impl DependencyGraph {
                     edge.blocked_on_id
                 );
                 edge.blocked_on_id = new_owner_thread;
-            }
-
-            #[cfg(debug_assertions)]
-            {
-                for id in self.query_dependents.get(&query).into_iter().flatten() {
-                    debug_assert!(
-                        !self.depends_on(new_owner_thread, *id),
-                        "Circular reference between blocked edges: {:#?}",
-                        self.edges
-                    );
-                }
+                debug_assert!(
+                    !DependencyGraph::depends_on_impl(&self.edges, new_owner_thread, *dependent),
+                    "Circular reference between blocked edges: {:#?}",
+                    self.edges
+                );
             }
         }
     }
