@@ -175,7 +175,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         unreachable!("increment_iteration_count should only be called on cycle heads and only functions can be cycle heads");
     }
 
-    fn set_cycle_finalized(&self, _zalsa: &Zalsa, _input: Id) {
+    fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
         unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
     }
 
@@ -321,10 +321,7 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available,
-    Cycle {
-        with: crate::sync::thread::ThreadId,
-        nested: bool,
-    },
+    Cycle { inner: bool },
 }
 
 impl WaitForResult<'_> {

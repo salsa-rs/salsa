@@ -182,7 +182,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
             return true;
         }
 
-        return block_on_heads_cold(zalsa, zalsa_local, self.cycle_heads());
+        return block_on_heads_cold(zalsa, zalsa_local, cycle_heads);
 
         #[inline(never)]
         fn block_on_heads_cold(

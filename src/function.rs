@@ -370,7 +370,7 @@ where
             .set_iteration_count(Self::database_key_index(self, input), iteration_count);
     }
 
-    fn set_cycle_finalized(&self, zalsa: &Zalsa, input: Id) {
+    fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
@@ -410,7 +410,7 @@ where
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim(zalsa, key_index, false) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle { with, nested } => WaitForResult::Cycle { with, nested },
+            ClaimResult::Cycle { inner: nested } => WaitForResult::Cycle { inner: nested },
             ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }

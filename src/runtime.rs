@@ -69,7 +69,7 @@ pub(crate) enum ClaimTransferredResult<'me> {
     ///
     /// The lock is hold by the current thread or there's another thread that is waiting on the current thread,
     /// and blocking this thread on the other thread would result in a deadlock/cycle.
-    Cycle { with: ThreadId, nested: bool },
+    Cycle { inner: bool },
 
     /// Query is no longer a transferred query.
     Released,
@@ -82,10 +82,6 @@ pub(super) struct OtherThread<'me> {
 }
 
 impl<'me> OtherThread<'me> {
-    pub(super) fn id(&self) -> ThreadId {
-        self.other_id
-    }
-
     pub(super) fn block(self, query_mutex_guard: SyncGuard<'me>) -> BlockResult<'me> {
         let thread_id = thread::current().id();
         // Cycle in the same thread.
@@ -339,12 +335,9 @@ impl Runtime {
 
         match dg.block_on_transferred(query, thread_id) {
             Ok(_) => {
-                return if !allow_reentry {
+                if !allow_reentry {
                     tracing::debug!("Claiming {query:?} results in a cycle because re-entrant lock is not allowed");
-                    ClaimTransferredResult::Cycle {
-                        with: thread_id,
-                        nested: true,
-                    }
+                    ClaimTransferredResult::Cycle { inner: true }
                 } else {
                     tracing::debug!("Reentrant lock {query:?}");
                     // dg.remove_transferred(query);
@@ -355,7 +348,7 @@ impl Runtime {
                     // dg.resume_transferred_dependents(query, WaitResult::Completed);
 
                     ClaimTransferredResult::Reentrant
-                };
+                }
             }
             // Lock is owned by another thread, wait for it to be released.
             Err(Some(thread_id)) => {
@@ -391,14 +384,6 @@ impl Runtime {
             new_owner,
             new_owner_thread,
         );
-    }
-
-    pub(crate) fn transfer_target(
-        &self,
-        candidates: &[(DatabaseKeyIndex, ThreadId)],
-    ) -> Option<DatabaseKeyIndex> {
-        let dependency_graph = self.dependency_graph.lock();
-        dependency_graph.transfer_target(candidates)
     }
 
     #[cfg(feature = "persistence")]

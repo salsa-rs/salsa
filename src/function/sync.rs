@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::{BlockResult, ClaimTransferredResult, Running, WaitResult};
-use crate::sync::thread::{self, ThreadId};
+use crate::sync::thread::{self};
 use crate::sync::Mutex;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
@@ -20,7 +20,7 @@ pub(crate) enum ClaimResult<'a> {
     /// Can't claim the query because it is running on an other thread.
     Running(Running<'a>),
     /// Claiming the query results in a cycle.
-    Cycle { with: ThreadId, nested: bool },
+    Cycle { inner: bool },
     /// Successfully claimed the query.
     Claimed(ClaimGuard<'a>),
 }
@@ -67,13 +67,9 @@ impl SyncTable {
                         {
                             ClaimTransferredResult::ClaimedBy(other_thread) => {
                                 occupied_entry.get_mut().anyone_waiting = true;
-                                let thread_id = other_thread.id();
 
                                 match other_thread.block(write) {
-                                    BlockResult::Cycle => ClaimResult::Cycle {
-                                        with: thread_id,
-                                        nested: false,
-                                    },
+                                    BlockResult::Cycle => ClaimResult::Cycle { inner: false },
                                     BlockResult::Running(running) => ClaimResult::Running(running),
                                 }
                             }
@@ -83,11 +79,7 @@ impl SyncTable {
                                 } = occupied_entry.into_mut();
 
                                 if *claimed_twice {
-                                    // TODO: Is this thread id correct?
-                                    return ClaimResult::Cycle {
-                                        with: current_id,
-                                        nested: false,
-                                    };
+                                    return ClaimResult::Cycle { inner: false };
                                 }
 
                                 *id = SyncOwnerId::Thread(current_id);
@@ -100,8 +92,8 @@ impl SyncTable {
                                     mode: ReleaseMode::SelfOnly,
                                 })
                             }
-                            ClaimTransferredResult::Cycle { with, nested } => {
-                                ClaimResult::Cycle { nested, with }
+                            ClaimTransferredResult::Cycle { inner: nested } => {
+                                ClaimResult::Cycle { inner: nested }
                             }
                             ClaimTransferredResult::Released => {
                                 occupied_entry.insert(SyncState {
@@ -139,10 +131,7 @@ impl SyncTable {
                     write,
                 ) {
                     BlockResult::Running(blocked_on) => ClaimResult::Running(blocked_on),
-                    BlockResult::Cycle => ClaimResult::Cycle {
-                        nested: false,
-                        with: id,
-                    },
+                    BlockResult::Cycle => ClaimResult::Cycle { inner: false },
                 }
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {

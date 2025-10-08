@@ -226,7 +226,7 @@ where
                 }
             }
 
-            let outer_cycle = outer_cycle(zalsa, &cycle_heads, database_key_index);
+            let outer_cycle = outer_cycle(zalsa, zalsa_local, &cycle_heads, database_key_index);
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if !cycle_heads.contains(&database_key_index) {
@@ -354,7 +354,7 @@ where
 
                     let ingredient =
                         zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-                    ingredient.set_cycle_finalized(zalsa, head.database_key_index.key_index());
+                    ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
                 }
 
                 *completed_query.revisions.verified_final.get_mut() = true;
@@ -527,24 +527,34 @@ impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
 
 fn outer_cycle(
     zalsa: &Zalsa,
+    zalsa_local: &ZalsaLocal,
     cycle_heads: &CycleHeads,
     current_key: DatabaseKeyIndex,
 ) -> Option<DatabaseKeyIndex> {
-    let candidates: SmallVec<[_; 4]> = cycle_heads
+    cycle_heads
         .iter()
         .filter(|head| head.database_key_index != current_key)
-        .filter_map(|head| {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-            match ingredient.wait_for(zalsa, head.database_key_index.key_index()) {
-                WaitForResult::Cycle {
-                    with,
-                    nested: false,
-                } => Some((head.database_key_index, with)),
-                _ => None,
-            }
-        })
-        .collect();
+        .find(|head| {
+            // SAFETY: We don't call into with_query_stack recursively
+            let is_on_stack = unsafe {
+                zalsa_local.with_query_stack_unchecked(|stack| {
+                    stack
+                        .iter()
+                        .rev()
+                        .any(|query| query.database_key_index == head.database_key_index)
+                })
+            };
 
-    // Do we need to pass the thread id here to account for a potential re-entrance?
-    zalsa.runtime().transfer_target(&candidates)
+            if is_on_stack {
+                return true;
+            }
+
+            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+
+            matches!(
+                ingredient.wait_for(zalsa, head.database_key_index.key_index()),
+                WaitForResult::Cycle { inner: false }
+            )
+        })
+        .map(|head| head.database_key_index)
 }

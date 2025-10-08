@@ -62,7 +62,7 @@ fn initial(_db: &dyn KnobsDatabase) -> CycleValue {
 #[test_log::test]
 fn the_test() {
     crate::sync::check(|| {
-        tracing::debug!("New run");
+        tracing::debug!("Starting new run");
         let db_t1 = Knobs::default();
         let db_t2 = db_t1.clone();
 

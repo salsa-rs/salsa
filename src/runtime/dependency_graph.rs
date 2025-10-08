@@ -357,36 +357,6 @@ impl DependencyGraph {
         }
     }
 
-    pub(super) fn transfer_target(
-        &self,
-        candidates: &[(DatabaseKeyIndex, ThreadId)],
-    ) -> Option<DatabaseKeyIndex> {
-        if candidates.is_empty() {
-            return None;
-        }
-
-        let possible_transfer_targets: Vec<_> = candidates
-            .iter()
-            .filter_map(|&(key, thread)| {
-                // Ensure that transferring to this other thread won't introduce any cyclic wait dependency (where `thread` is blocked on `other_thread` and the other way round).)
-                let depends_on_another = candidates.iter().any(|&(_, other_thread)| {
-                    other_thread != thread && self.depends_on(thread, other_thread)
-                });
-
-                (!depends_on_another).then_some(key)
-            })
-            .collect();
-
-        tracing::debug!("Possible transfer targets: {:?}", possible_transfer_targets);
-
-        let selection = possible_transfer_targets
-            .into_iter()
-            .min_by_key(|target| (target.ingredient_index(), target.key_index()));
-
-        tracing::debug!("Selected transfer target: {selection:?}");
-        selection
-    }
-
     /// Finds the one query in the dependents of the `source_query` (the one that is transferred to a new owner)
     /// on which the `new_owner_id` thread blocks on and unblocks it, to ensure progress.
     fn unblock_transfer_target(&mut self, source_query: DatabaseKeyIndex, new_owner_id: ThreadId) {

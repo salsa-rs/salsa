@@ -137,17 +137,17 @@ where
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
 
+                // TOOO: Try to restrict this to `FALLBACK_IMMEDIATE`.
+                // There's an issue that `cycle_nested_deep_conditional_changed` hangs
+                // if I remove this but why? Should this be handled in `maybe_changed_after` instead?
                 let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
                 if let Some(memo) = memo {
-                    // TODO: Why is this now necessary? Is it because we wake up all other threads?
-                    // and they could "steal" our claim? Is this an argument for implementing
-                    // resume internally in DG instead of using unblock followed by another lock call.
-                    // Do we need the same in maybe changed after?
                     if memo.value.is_some() && memo.may_be_provisional() {
                         memo.block_on_heads(zalsa, zalsa_local);
                     }
                 }
+
                 return None;
             }
             ClaimResult::Cycle { .. } => {
