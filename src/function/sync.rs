@@ -62,6 +62,7 @@ impl SyncTable {
                     SyncOwnerId::Transferred => {
                         let current_id = thread::current().id();
                         let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
+
                         return match zalsa
                             .runtime()
                             .claim_transferred(database_key_index, allow_reentry)

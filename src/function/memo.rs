@@ -197,7 +197,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
             for claim_result in cycle_heads {
                 match claim_result {
                     TryClaimHeadsResult::Cycle {
-                        current_iteration_count,
+                        memo_iteration_count: current_iteration_count,
                         head_iteration_count,
                         ..
                     } => {
@@ -449,7 +449,7 @@ pub(super) enum TryClaimHeadsResult<'me> {
     /// Claiming the cycle head results in a cycle.
     Cycle {
         head_iteration_count: IterationCount,
-        current_iteration_count: IterationCount,
+        memo_iteration_count: IterationCount,
         verified_at: Revision,
     },
 
@@ -506,7 +506,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
             );
             return Some(TryClaimHeadsResult::Cycle {
                 head_iteration_count,
-                current_iteration_count,
+                memo_iteration_count: current_iteration_count,
                 verified_at: self.zalsa.current_revision(),
             });
         }
@@ -540,7 +540,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                 };
 
                 Some(TryClaimHeadsResult::Cycle {
-                    current_iteration_count,
+                    memo_iteration_count: current_iteration_count,
                     head_iteration_count,
                     verified_at,
                 })

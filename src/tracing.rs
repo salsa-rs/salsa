@@ -25,6 +25,12 @@ macro_rules! debug_span {
     };
 }
 
+macro_rules! info_span {
+    ($($x:tt)*) => {
+        crate::tracing::span!(INFO, $($x)*)
+    };
+}
+
 macro_rules! event {
     ($level:ident, $($x:tt)*) => {{
         let event = {
@@ -51,4 +57,4 @@ macro_rules! span {
     }};
 }
 
-pub(crate) use {debug, debug_span, event, info, span, trace};
+pub(crate) use {debug, debug_span, event, info, info_span, span, trace};

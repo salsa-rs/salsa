@@ -200,35 +200,6 @@ where
                     // still valid for the current revision.
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
-
-                // If this is a provisional memo from the same revision, await all its cycle heads because
-                // we need to ensure that only one thread is iterating on a cycle at a given time.
-                // For example, if we have a nested cycle like so:
-                // ```
-                // a -> b -> c -> b
-                //        -> a
-                //
-                // d -> b
-                // ```
-                // thread 1 calls `a` and `a` completes the inner cycle `b -> c` but hasn't finished the outer cycle `a` yet.
-                // thread 2 now calls `b`. We don't want that thread 2 iterates `b` while thread 1 is iterating `a` at the same time
-                // because it can result in thread b overriding provisional memos that thread a has accessed already and still relies upon.
-                //
-                // By waiting, we ensure that thread 1 completes a (based on a provisional value for `b`) and `b`
-                // becomes the new outer cycle, which thread 2 drives to completion.
-                if old_memo.may_be_provisional()
-                    && old_memo.verified_at.load() == zalsa.current_revision()
-                {
-                    // Try to claim all cycle heads of the provisional memo. If we can't because
-                    // some head is running on another thread, drop our claim guard to give that thread
-                    // a chance to take ownership of this query and complete it as part of its fixpoint iteration.
-                    // We will then block on the cycle head and retry once all cycle heads completed.
-                    // if !old_memo.try_claim_heads(zalsa, zalsa_local) {
-                    //     drop(claim_guard);
-                    //     old_memo.block_on_heads(zalsa, zalsa_local);
-                    //     return None;
-                    // }
-                }
             }
         }
 
