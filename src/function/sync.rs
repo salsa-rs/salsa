@@ -47,6 +47,7 @@ impl SyncTable {
         }
     }
 
+    #[inline]
     pub(crate) fn try_claim<'me>(
         &'me self,
         zalsa: &'me Zalsa,
@@ -114,6 +115,7 @@ impl SyncTable {
     }
 
     #[cold]
+    #[inline(never)]
     fn try_claim_transferred<'me>(
         &'me self,
         zalsa: &'me Zalsa,
@@ -252,6 +254,7 @@ impl<'me> ClaimGuard<'me> {
     }
 
     #[cold]
+    #[inline(never)]
     fn release_self(&self) {
         tracing::debug!("release_self");
         let mut syncs = self.sync_table.syncs.lock();
@@ -269,6 +272,7 @@ impl<'me> ClaimGuard<'me> {
     }
 
     #[cold]
+    #[inline(never)]
     pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) {
         let self_key = self.database_key_index();
 
