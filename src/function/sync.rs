@@ -35,8 +35,18 @@ pub(crate) struct SyncState {
     /// waiting for this query to complete.
     anyone_waiting: bool,
 
+    /// Whether any other query has transferred its lock ownership to this query.
+    /// This is only an optimization so that the expensive unblocking of transferred queries
+    /// can be skipped if `false`. This field might be `true` in cases where queries *were* transferred
+    /// to this query, but have since then been transferred to another query (in a later iteration).
     is_transfer_target: bool,
-    claimed_twice: bool,
+
+    /// Whether this query has been claimed by the query that currently owns it.
+    ///
+    /// If `a` has been transferred to `b` and the stack for t1 is `b -> a`, then `a` can be claimed
+    /// and `claimed_transferred` is set to `true`. However, t2 won't be able to claim `a` because
+    /// it doesn't own `b`.
+    claimed_transferred: bool,
 }
 
 impl SyncTable {
@@ -47,8 +57,12 @@ impl SyncTable {
         }
     }
 
+    /// Claims the given key index, or blocks if it is running on another thread.
+    ///
+    /// `REENTRANT` controls whether claiming a query whose ownership has been transferred to another query
+    /// should result in a cycle (`false`) or can be claimed (`true`), if not already done so.
     #[inline]
-    pub(crate) fn try_claim<'me, const REENTRANT: bool>(
+    pub(crate) fn try_claim<'me, const TRANSFERRED: bool>(
         &'me self,
         zalsa: &'me Zalsa,
         key_index: Id,
@@ -59,7 +73,8 @@ impl SyncTable {
                 let id = match occupied_entry.get().id {
                     SyncOwnerId::Thread(id) => id,
                     SyncOwnerId::Transferred => {
-                        return match self.try_claim_transferred::<REENTRANT>(zalsa, occupied_entry)
+                        return match self
+                            .try_claim_transferred::<TRANSFERRED>(zalsa, occupied_entry)
                         {
                             Ok(claimed) => claimed,
                             Err(other_thread) => match other_thread.block(write) {
@@ -96,7 +111,7 @@ impl SyncTable {
                     id: SyncOwnerId::Thread(thread::current().id()),
                     anyone_waiting: false,
                     is_transfer_target: false,
-                    claimed_twice: false,
+                    claimed_transferred: false,
                 });
                 ClaimResult::Claimed(ClaimGuard {
                     key_index,
@@ -128,7 +143,9 @@ impl SyncTable {
             }
             ClaimTransferredResult::Reentrant => {
                 let SyncState {
-                    id, claimed_twice, ..
+                    id,
+                    claimed_transferred: claimed_twice,
+                    ..
                 } = entry.into_mut();
                 debug_assert!(!*claimed_twice);
 
@@ -150,7 +167,7 @@ impl SyncTable {
                     id: SyncOwnerId::Thread(thread::current().id()),
                     anyone_waiting: false,
                     is_transfer_target: false,
-                    claimed_twice: false,
+                    claimed_transferred: false,
                 });
                 Ok(ClaimResult::Claimed(ClaimGuard {
                     key_index,
@@ -175,10 +192,18 @@ impl SyncTable {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum SyncOwnerId {
-    /// Entry is owned by this thread
+    /// Query is owned by this thread
     Thread(thread::ThreadId),
-    /// Entry has been transferred and is owned by another thread.
-    /// The id is known by the `DependencyGraph`.
+
+    /// The query's lock ownership has been transferred to another query.
+    /// E.g. if `a` transfers its ownership to `b`, then only the thread in the critical path
+    /// to complete b` can claim `a` (in most instances, only the thread owning `b` can claim `a`).
+    ///
+    /// The thread owning `a` is stored in the `DependencyGraph`.
+    ///
+    /// A query can be marked as `Transferred` even if it has since then been released by the owning query.
+    /// In that case, the query is effectively unclaimed and the `Transferred` state is stale. The reason
+    /// for this is that it avoids the need for locking each sync table when releasing the transferred queries.
     Transferred,
 }
 
@@ -220,7 +245,7 @@ impl<'me> ClaimGuard<'me> {
         let SyncState {
             anyone_waiting,
             is_transfer_target,
-            claimed_twice,
+            claimed_transferred: claimed_twice,
             ..
         } = state;
 
@@ -250,8 +275,8 @@ impl<'me> ClaimGuard<'me> {
             panic!("key claimed twice?");
         };
 
-        if state.get().claimed_twice {
-            state.get_mut().claimed_twice = false;
+        if state.get().claimed_transferred {
+            state.get_mut().claimed_transferred = false;
             state.get_mut().id = SyncOwnerId::Transferred;
         } else {
             self.release(WaitResult::Completed, state.remove());
@@ -261,6 +286,7 @@ impl<'me> ClaimGuard<'me> {
     #[cold]
     #[inline(never)]
     pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) {
+        tracing::info!("transfer");
         let self_key = self.database_key_index();
 
         let owner_ingredient = self.zalsa.lookup_ingredient(new_owner.ingredient_index());
@@ -283,7 +309,7 @@ impl<'me> ClaimGuard<'me> {
         let SyncState {
             anyone_waiting,
             id,
-            claimed_twice,
+            claimed_transferred: claimed_twice,
             ..
         } = syncs.get_mut(&self.key_index).expect("key claimed twice?");
 
@@ -326,23 +352,28 @@ impl std::fmt::Debug for SyncTable {
     }
 }
 
+/// Controls how the lock is released when the `ClaimGuard` is dropped.
 #[derive(Copy, Clone, Debug, Default)]
 pub(crate) enum ReleaseMode {
     /// The default release mode.
     ///
-    /// Releases the lock of the current query for claims that are not transferred. Queries who's ownership
-    /// were transferred to this query will be transitively unlocked.
-    ///
-    /// If this lock is owned by another query (because it was transferred), then releasing is a no-op.
+    /// Releases the query for which this claim guard holds the lock and any queries that have
+    /// transferred ownership to this query.
     #[default]
     Default,
 
+    /// Only releases the lock for this query. Any query that has transferred ownership to this query
+    /// will remain locked.
+    ///
+    /// If this thread panics, the query will be released as normal (default mode).
     SelfOnly,
 
     /// Transfers the ownership of the lock to the specified query.
     ///
-    /// All waiting queries will be awakened so that they can retry and block on the new owner thread.
-    /// The new owner thread (or any thread it blocks on) will be able to acquire the lock (reentrant).
+    /// The query will remain locked except the query that's currently blocking this query from completing
+    /// (to avoid deadlocks).
+    ///
+    /// If this thread panics, the query will be released as normal (default mode).
     TransferTo(DatabaseKeyIndex),
 }
 

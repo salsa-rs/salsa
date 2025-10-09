@@ -248,11 +248,13 @@ where
             // Did the new result we got depend on our own provisional value, in a cycle?
             // If not, return because this query is not a cycle head.
             if !depends_on_self {
-                if let Some(outer) = outer_cycle {
-                    claim_guard.set_release_mode(ReleaseMode::TransferTo(outer));
-                } else {
-                    claim_guard.set_release_mode(ReleaseMode::SelfOnly);
-                }
+                // For as long as this query participates in any cycle, don't release its lock, instead
+                // transfer it to the outermost cycle head (if any). This prevents any other thread
+                // from claiming this query (all cycle heads are potential entry points to the same cycle),
+                // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
+                claim_guard.set_release_mode(ReleaseMode::TransferTo(
+                    outer_cycle.expect("query to of an outer cycle."),
+                ));
 
                 completed_query.revisions.set_cycle_heads(cycle_heads);
                 break (new_value, completed_query);
@@ -324,7 +326,7 @@ where
             }
 
             if let Some(outer_cycle) = outer_cycle {
-                tracing::debug!(
+                tracing::info!(
                     "Detected nested cycle {database_key_index:?}, iterate it as part of the outer cycle {outer_cycle:?}"
                 );
 
