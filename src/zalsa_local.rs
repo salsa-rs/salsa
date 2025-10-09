@@ -566,6 +566,8 @@ struct QueryRevisionsExtraInner {
 
     iteration: AtomicIterationCount,
 
+    /// Stores for nested cycle heads whether they've converged in the last iteration.
+    /// This value is always `false` for other queries.
     cycle_converged: bool,
 
     #[cfg_attr(
@@ -606,7 +608,10 @@ const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
     [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
+    pub(crate) fn fixpoint_initial(
+        query: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> Self {
         Self {
             changed_at: Revision::start(),
             durability: Durability::MAX,
@@ -618,8 +623,8 @@ impl QueryRevisions {
                 #[cfg(feature = "accumulator")]
                 AccumulatedMap::default(),
                 ThinVec::default(),
-                CycleHeads::initial(query),
-                IterationCount::initial(),
+                CycleHeads::initial(query, iteration_count),
+                iteration_count,
                 false,
             ),
         }
@@ -716,6 +721,7 @@ impl QueryRevisions {
         let Some(extra) = &self.extra.0 else {
             return;
         };
+        debug_assert!(extra.iteration.load() <= iteration_count);
 
         extra.iteration.store(iteration_count);
 
@@ -732,8 +738,7 @@ impl QueryRevisions {
     ) {
         if let Some(extra) = &mut self.extra.0 {
             extra.iteration.store_mut(iteration_count);
-            // I think updating is required for `validate_same_iteration` to work because
-            // unless we can skip self?
+
             extra
                 .cycle_heads
                 .update_iteration_count_mut(cycle_head_index, iteration_count);

@@ -520,8 +520,9 @@ pub(super) enum TryClaimHeadsResult<'me> {
     /// Claiming every cycle head results in a cycle head.
     Cycle {
         head_iteration_count: IterationCount,
-        current_iteration_count: IterationCount,
+        memo_iteration_count: IterationCount,
         verified_at: Revision,
+        database_key_index: DatabaseKeyIndex,
     },
 
     /// The cycle head has been finalized.
@@ -649,8 +650,9 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
             );
             return Some(TryClaimHeadsResult::Cycle {
                 head_iteration_count,
-                current_iteration_count,
+                memo_iteration_count: current_iteration_count,
                 verified_at: self.zalsa.current_revision(),
+                database_key_index: head_database_key,
             });
         }
 
@@ -689,9 +691,10 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                             "Waiting for {head_database_key:?} results in a cycle"
                         );
                         Some(TryClaimHeadsResult::Cycle {
-                            current_iteration_count: iteration,
+                            memo_iteration_count: iteration,
                             head_iteration_count,
                             verified_at,
+                            database_key_index: head_database_key,
                         })
                     }
                     WaitForResult::Running(running) => {

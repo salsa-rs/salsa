@@ -6,6 +6,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::tracing;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
@@ -62,8 +63,6 @@ where
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
                     if cycle_heads.contains(&database_key_index) {
-                        let id = database_key_index.key_index();
-
                         // Ignore the computed value, leave the fallback value there.
                         let memo = self
                             .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
@@ -121,9 +120,10 @@ where
             // outputs and update the tracked struct IDs for seeding the next revision.
             self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
+
         self.insert_memo(
             zalsa,
-            database_key_index.key_index(),
+            id,
             Memo::new(
                 Some(new_value),
                 zalsa.current_revision(),
@@ -155,14 +155,14 @@ where
         let mut iteration_count = IterationCount::initial();
 
         if let Some(old_memo) = opt_old_memo {
+            let memo_iteration_count = old_memo.revisions.iteration();
+
             if old_memo.verified_at.load() == zalsa.current_revision()
                 && old_memo.cycle_heads().contains(&database_key_index)
+                && !memo_iteration_count.is_panicked()
             {
                 previous_memo = Some(old_memo);
-
-                if old_memo.revisions.is_nested_cycle() {
-                    iteration_count = old_memo.revisions.iteration();
-                }
+                iteration_count = memo_iteration_count;
             }
         }
 
@@ -186,10 +186,14 @@ where
             };
 
             let mut cycle_heads = std::mem::take(cycle_heads);
+            let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationCount); 1]> =
+                SmallVec::new_const();
+            let mut max_iteration_count = iteration_count;
+            let mut depends_on_self = false;
 
-            // Recursively resolve all cycle heads that this head depends on.
-            // This isn't required in a single-threaded execution but it's not guaranteed that all nested cycles are listed
-            // in cycle heads in a multi-threaded execution:
+            // Ensure that we resolve the latest cycle heads from any provisional value this query depended on during execution.
+            // This isn't required in a single-threaded execution, but it's not guaranteed that `cycle_heads` contains all cycles
+            // in a multi-threaded execution:
             //
             // t1: a -> b
             // t2: c -> b (blocks on t1)
@@ -197,30 +201,42 @@ where
             // t1: a -> b (completes b, b has c(0) in its cycle heads, releases `b`, which resumes `t2`, and `retry_provisional` blocks on `c` (t2))
             // t2: c -> a (cycle, returns fixpoint initial for a with a(0) in heads)
             // t2: completes c, `provisional_retry` blocks on `a` (t2)
-            // t1: a (complets `b` with `c` in heads)
+            // t1: a (completes `b` with `c` in heads)
             //
             // Note how `a` only depends on `c` but not `a`. This is because `a` only saw the initial value of `c` and wasn't updated when `c` completed.
             // That's why we need to resolve the cycle heads recursively to `cycle_heads` contains all cycle heads at the moment this query completed.
-            let mut queue: SmallVec<[DatabaseKeyIndex; 4]> = cycle_heads
-                .iter()
-                .map(|head| head.database_key_index)
-                .filter(|head| *head != database_key_index)
-                .collect();
+            for head in &cycle_heads {
+                max_iteration_count = max_iteration_count.max(head.iteration_count.load());
+                depends_on_self |= head.database_key_index == database_key_index;
 
-            // TODO: Can we also resolve whether the cycles have converged here?
-            while let Some(head) = queue.pop() {
-                let ingredient = zalsa.lookup_ingredient(head.ingredient_index());
-                let nested_heads = ingredient.cycle_heads(zalsa, head.key_index());
+                let ingredient =
+                    zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
 
-                for head in nested_heads {
-                    if cycle_heads.insert(head) && !queue.contains(&head.database_key_index) {
-                        queue.push(head.database_key_index);
+                for nested_head in
+                    ingredient.cycle_heads(zalsa, head.database_key_index.key_index())
+                {
+                    let nested_as_tuple = (
+                        nested_head.database_key_index,
+                        nested_head.iteration_count.load(),
+                    );
+
+                    if !cycle_heads.contains(&nested_head.database_key_index)
+                        && !missing_heads.contains(&nested_as_tuple)
+                    {
+                        missing_heads.push(nested_as_tuple);
                     }
                 }
             }
 
+            for (head_key, iteration_count) in missing_heads {
+                max_iteration_count = max_iteration_count.max(iteration_count);
+                depends_on_self |= head_key == database_key_index;
+
+                cycle_heads.insert(head_key, iteration_count);
+            }
+
             // Did the new result we got depend on our own provisional value, in a cycle?
-            if !cycle_heads.contains(&database_key_index) {
+            if !depends_on_self {
                 completed_query.revisions.set_cycle_heads(cycle_heads);
                 break (new_value, completed_query);
             }
@@ -272,14 +288,18 @@ where
 
             let this_converged = C::values_equal(&new_value, last_provisional_value);
 
-            iteration_count = if outer_cycle.is_some() {
-                iteration_count
+            // If this is the outermost cycle, use the maximum iteration count of all cycles.
+            // This is important for when later iterations introduce new cycle heads (that then
+            // become the outermost cycle). We want to ensure that the iteration count keeps increasing
+            // for all queries or they won't be re-executed because `validate_same_iteration` would
+            // pass when we go from 1 -> 0 and then increment by 1 to 1).
+            iteration_count = if outer_cycle.is_none() {
+                max_iteration_count
             } else {
-                cycle_heads
-                    .iter()
-                    .map(|head| head.iteration_count.load())
-                    .max()
-                    .unwrap_or(iteration_count)
+                // Otherwise keep the iteration count because outer cycles
+                // already have a cycle head with this exact iteration count (and we don't allow
+                // heads from different iterations).
+                iteration_count
             };
 
             // If the new result is equal to the last provisional result, the cycle has
@@ -318,15 +338,19 @@ where
 
             // Verify that all cycles have converged, including all inner cycles.
             let converged = this_converged
-                && cycle_heads
-                    .iter()
-                    .filter(|head| head.database_key_index != database_key_index)
-                    .all(|head| {
-                        let ingredient =
-                            zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+                && cycle_heads.iter_not_eq(database_key_index).all(|head| {
+                    let ingredient =
+                        zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
 
-                        ingredient.cycle_converged(zalsa, head.database_key_index.key_index())
-                    });
+                    let converged =
+                        ingredient.cycle_converged(zalsa, head.database_key_index.key_index());
+
+                    if !converged {
+                        tracing::debug!("inner cycle {database_key_index:?} has not converged");
+                    }
+
+                    converged
+                });
 
             if converged {
                 crate::tracing::debug!(
@@ -334,15 +358,11 @@ where
                     );
 
                 // Set the nested cycles as verified. This is necessary because
-                // `validate_provisional` doesn't follow cycle heads recursively (and the inner memos now depend on all cycle heads).
-                for head in cycle_heads {
-                    if head.database_key_index == database_key_index {
-                        continue;
-                    }
-
+                // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
+                for head in cycle_heads.iter_not_eq(database_key_index) {
                     let ingredient =
                         zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-                    ingredient.set_cycle_finalized(zalsa, head.database_key_index.key_index());
+                    ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
                 }
 
                 *completed_query.revisions.verified_final.get_mut() = true;
@@ -350,12 +370,10 @@ where
                 break (new_value, completed_query);
             }
 
-            completed_query.revisions.set_cycle_heads(cycle_heads);
-
             // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
             // which is less than `u32::MAX`.
             iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
+                ::tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
                 panic!("{database_key_index:?}: execute: too many cycle iterations")
             });
 
@@ -370,23 +388,10 @@ where
                 "{database_key_index:?}: execute: iterate again ({iteration_count:?})...",
             );
 
-            completed_query
-                .revisions
-                .update_iteration_count_mut(database_key_index, iteration_count);
-
-            for head in completed_query.revisions.cycle_heads() {
-                if head.database_key_index == database_key_index {
-                    continue;
-                }
-
+            // Update the iteration count of nested cycles.
+            for head in cycle_heads.iter_not_eq(database_key_index) {
                 let ingredient =
                     zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-
-                // let iteration_count = if was_initial && !head.iteration_count.load().is_initial() {
-                //     IterationCount::first_after_restart()
-                // } else {
-                //     iteration_count
-                // };
 
                 ingredient.set_cycle_iteration_count(
                     zalsa,
@@ -394,6 +399,13 @@ where
                     iteration_count,
                 );
             }
+
+            // Update the iteration count of this cycle head, but only after restoring
+            // the cycle heads array (or this becomes a no-op).
+            completed_query.revisions.set_cycle_heads(cycle_heads);
+            completed_query
+                .revisions
+                .update_iteration_count_mut(database_key_index, iteration_count);
 
             let new_memo = self.insert_memo(
                 zalsa,
@@ -499,9 +511,7 @@ impl<'a, C: Configuration> ClearCycleHeadIfPanicking<'a, C> {
 impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            let revisions =
-                QueryRevisions::fixpoint_initial(self.ingredient.database_key_index(self.id));
-            revisions.update_iteration_count_mut(
+            let revisions = QueryRevisions::fixpoint_initial(
                 self.ingredient.database_key_index(self.id),
                 IterationCount::panicked(),
             );

@@ -140,9 +140,6 @@ where
                 let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
                 if let Some(memo) = memo {
-                    // This isn't strictly necessary, but if this is a provisional memo for an inner cycle,
-                    // await all outer cycle heads to give the thread driving it a chance to complete
-                    // (we don't want multiple threads competing for the queries participating in the same cycle).
                     if memo.value.is_some() && memo.may_be_provisional() {
                         memo.block_on_heads(zalsa, zalsa_local);
                     }
@@ -259,12 +256,9 @@ where
                     self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
 
                     if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
-                        // This feels strange. I feel like we need to preserve the cycle heads. Let's say a cycle head only sometimes participates in the cycle.
-                        // This doesn't mean that the value becomes final because of it. The query might as well be cyclic in the next iteration but
-                        // we then never re-executed that query because it was marked as `verified_final`.
                         memo.revisions
                             .cycle_heads()
-                            .clear_except(database_key_index);
+                            .remove_all_except(database_key_index);
                         memo.revisions.reset_nested_cycle();
                     }
 
@@ -297,7 +291,8 @@ where
                     "hit cycle at {database_key_index:#?}, \
                     inserting and returning fixpoint initial value"
                 );
-                let revisions = QueryRevisions::fixpoint_initial(database_key_index);
+                let revisions =
+                    QueryRevisions::fixpoint_initial(database_key_index, IterationCount::initial());
                 let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                 self.insert_memo(
                     zalsa,
@@ -316,7 +311,10 @@ where
                 let mut completed_query = active_query.pop();
                 completed_query
                     .revisions
-                    .set_cycle_heads(CycleHeads::initial(database_key_index));
+                    .set_cycle_heads(CycleHeads::initial(
+                        database_key_index,
+                        IterationCount::initial(),
+                    ));
                 // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
                 *completed_query.revisions.verified_final.get_mut() = false;
                 self.insert_memo(
