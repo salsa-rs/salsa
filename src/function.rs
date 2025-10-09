@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::{ClaimGuard, SyncGuard, SyncOwnerId, SyncTable};
+pub(crate) use sync::{ClaimGuard, ClaimResult, SyncGuard, SyncOwnerId, SyncState, SyncTable};
 
 use std::any::Any;
 use std::fmt;
@@ -13,7 +13,6 @@ use crate::cycle::{
 };
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
-use crate::function::sync::ClaimResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
@@ -419,7 +418,7 @@ where
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim::<false>(zalsa, key_index) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
+            ClaimResult::Cycle { inner: inner } => WaitForResult::Cycle { inner },
             ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }

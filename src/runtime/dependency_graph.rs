@@ -190,28 +190,6 @@ impl DependencyGraph {
         unblock_recursive(self, database_key, wait_result);
     }
 
-    /// Returns `Ok(thread_id)` if `database_key_index` is a query who's lock ownership has been transferred to `thread_id` (potentially over multiple steps)
-    /// and the lock was claimed. Returns `Err(Some(thread_id))` if the lock was not claimed.
-    ///
-    /// Returns `Err(None)` if `database_key_index` hasn't been transferred or its owning lock has since then been removed.
-    pub(super) fn block_on_transferred(
-        &mut self,
-        database_key_index: DatabaseKeyIndex,
-        current_id: ThreadId,
-    ) -> Result<DatabaseKeyIndex, Option<ThreadId>> {
-        let owner_thread = self.resolved_transferred_id(database_key_index, None);
-
-        let Some((thread_id, owner_key)) = owner_thread else {
-            return Err(None);
-        };
-
-        if thread_id == current_id || self.depends_on(thread_id, current_id) {
-            Ok(owner_key)
-        } else {
-            Err(Some(thread_id))
-        }
-    }
-
     pub(super) fn remove_transferred(&mut self, database_key: DatabaseKeyIndex) {
         if let Some((_, owner)) = self.transferred.remove(&database_key) {
             let dependents = self.transferred_dependents.get_mut(&owner).unwrap();
@@ -224,7 +202,7 @@ impl DependencyGraph {
         &self,
         database_key: DatabaseKeyIndex,
         ignore: Option<DatabaseKeyIndex>,
-    ) -> Option<(ThreadId, DatabaseKeyIndex)> {
+    ) -> Option<ThreadId> {
         let &(mut resolved_thread, owner) = self.transferred.get(&database_key)?;
 
         let mut current_owner = owner;
@@ -237,7 +215,7 @@ impl DependencyGraph {
             current_owner = next_key;
         }
 
-        Some((resolved_thread, owner))
+        Some(resolved_thread)
     }
 
     pub(super) fn transfer_lock(
@@ -249,12 +227,14 @@ impl DependencyGraph {
     ) {
         let new_owner_thread = match new_owner_thread {
             SyncOwnerId::Thread(thread) => thread,
-            SyncOwnerId::Transferred => {
-                self.resolved_transferred_id(new_owner, Some(query))
-                    .unwrap()
-                    .0
-            }
+            SyncOwnerId::Transferred => self
+                .resolved_transferred_id(new_owner, Some(query))
+                .unwrap(),
         };
+
+        debug_assert!(
+            new_owner_thread == current_thread || self.depends_on(new_owner_thread, current_thread)
+        );
 
         let mut thread_changed = current_thread != new_owner_thread;
 
@@ -420,6 +400,18 @@ impl DependencyGraph {
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub(super) enum CanClaimTransferred {
+    /// Transferred can be claimed because the current thread is the owner or depends on the owner.
+    ImTheOwner,
+
+    /// Transferred can't be claimed because it's owned by another thread.
+    OwnedBy(ThreadId),
+
+    /// The query was transferred earlier but it has since then been released by the owning query.
+    Released,
 }
 
 mod edge {
