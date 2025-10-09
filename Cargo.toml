@@ -22,7 +22,7 @@ intrusive-collections = "0.9.7"
 parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
-smallvec = "1"
+smallvec = { version = "1", features = ["const_new"] }
 thin-vec = { version = "0.2.14" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 

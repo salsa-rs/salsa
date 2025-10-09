@@ -114,6 +114,19 @@ pub struct CycleHead {
     removed: AtomicBool,
 }
 
+impl CycleHead {
+    pub const fn new(
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> Self {
+        Self {
+            database_key_index,
+            iteration_count: AtomicIterationCount(AtomicU8::new(iteration_count.0)),
+            removed: AtomicBool::new(false),
+        }
+    }
+}
+
 impl Clone for CycleHead {
     fn clone(&self) -> Self {
         Self {
@@ -145,6 +158,10 @@ impl IterationCount {
     /// to be different (which isn't guaranteed if the panicked memo uses [`Self::initial`]).
     pub(crate) const fn panicked() -> Self {
         Self(u8::MAX)
+    }
+
+    pub(crate) const fn is_panicked(self) -> bool {
+        self.0 == u8::MAX
     }
 
     pub(crate) const fn increment(self) -> Option<Self> {
@@ -248,6 +265,12 @@ impl CycleHeads {
         }
     }
 
+    /// Iterates over all cycle heads that aren't equal to `own`.
+    pub(crate) fn iter_not_eq(&self, own: DatabaseKeyIndex) -> impl Iterator<Item = &CycleHead> {
+        self.iter()
+            .filter(move |head| head.database_key_index != own)
+    }
+
     pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
         self.into_iter()
             .any(|head| head.database_key_index == *value && !head.removed.load(Ordering::Relaxed))
@@ -307,17 +330,20 @@ impl CycleHeads {
         self.0.reserve(other.0.len());
 
         for head in other {
-            self.insert(head);
+            debug_assert!(!head.removed.load(Ordering::Relaxed));
+            self.insert(head.database_key_index, head.iteration_count.load());
         }
     }
 
-    pub(crate) fn insert(&mut self, head: &CycleHead) -> bool {
-        debug_assert!(!head.removed.load(Ordering::Relaxed));
-
+    pub(crate) fn insert(
+        &mut self,
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> bool {
         if let Some(existing) = self
             .0
             .iter_mut()
-            .find(|candidate| candidate.database_key_index == head.database_key_index)
+            .find(|candidate| candidate.database_key_index == database_key_index)
         {
             let removed = existing.removed.get_mut();
 
@@ -327,18 +353,18 @@ impl CycleHeads {
                 true
             } else {
                 let existing_count = existing.iteration_count.load_mut();
-                let head_count = head.iteration_count.load();
 
                 assert_eq!(
-                    existing_count, head_count,
-                    "Can't merge cycle heads {:?} with different iteration counts ({existing_count:?}, {head_count:?})",
+                    existing_count, iteration_count,
+                    "Can't merge cycle heads {:?} with different iteration counts ({existing_count:?}, {iteration_count:?})",
                     existing.database_key_index
                 );
 
                 false
             }
         } else {
-            self.0.push(head.clone());
+            self.0
+                .push(CycleHead::new(database_key_index, iteration_count));
             true
         }
     }
