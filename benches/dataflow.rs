@@ -167,5 +167,46 @@ fn dataflow(criterion: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, dataflow);
+/// Emulates a data flow problem of the form:
+/// ```py
+/// self.x0 = self.x1 + self.x2 + self.x3 + self.x4
+/// self.x1 = self.x0 + self.x2 + self.x3 + self.x4
+/// self.x2 = self.x0 + self.x1 + self.x3 + self.x4
+/// self.x3 = self.x0 + self.x1 + self.x2 + self.x4
+/// self.x4 = 0
+/// ```
+fn nested(criterion: &mut Criterion) {
+    criterion.bench_function("converge_diverge_nested", |b| {
+        b.iter_batched_ref(
+            || {
+                let mut db = salsa::DatabaseImpl::new();
+
+                let def_x0 = Definition::new(&db, None, 0);
+                let def_x1 = Definition::new(&db, None, 0);
+                let def_x2 = Definition::new(&db, None, 0);
+                let def_x3 = Definition::new(&db, None, 0);
+                let def_x4 = Definition::new(&db, None, 0);
+
+                let use_x0 = Use::new(&db, vec![def_x1, def_x2, def_x3, def_x4]);
+                let use_x1 = Use::new(&db, vec![def_x0, def_x2, def_x3, def_x4]);
+                let use_x2 = Use::new(&db, vec![def_x0, def_x1, def_x3, def_x4]);
+                let use_x3 = Use::new(&db, vec![def_x0, def_x1, def_x3, def_x4]);
+
+                def_x0.set_base(&mut db).to(Some(use_x0));
+                def_x1.set_base(&mut db).to(Some(use_x1));
+                def_x2.set_base(&mut db).to(Some(use_x2));
+                def_x3.set_base(&mut db).to(Some(use_x3));
+
+                (db, def_x0)
+            },
+            |(db, def_x0)| {
+                // All symbols converge on 0.
+                assert_eq!(infer_definition(db, *def_x0), Type::Values(Box::from([0])));
+            },
+            BatchSize::LargeInput,
+        );
+    });
+}
+
+criterion_group!(benches, dataflow, nested);
 criterion_main!(benches);
