@@ -132,7 +132,7 @@ where
     ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let claim_guard = match self.sync_table.try_claim(zalsa, id, true) {
+        let claim_guard = match self.sync_table.try_claim::<true>(zalsa, id) {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);

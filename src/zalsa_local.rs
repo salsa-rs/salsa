@@ -1260,23 +1260,4 @@ pub(crate) mod persistence {
             serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
         }
     }
-
-    #[cfg(feature = "persistence")]
-    pub(super) mod atomic_bool {
-        use crate::sync::atomic::{AtomicBool, Ordering};
-
-        pub fn serialize<S>(value: &AtomicBool, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            serde::Serialize::serialize(&value.load(Ordering::Relaxed), serializer)
-        }
-
-        pub fn deserialize<'de, D>(deserializer: D) -> Result<AtomicBool, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            serde::Deserialize::deserialize(deserializer).map(AtomicBool::new)
-        }
-    }
 }

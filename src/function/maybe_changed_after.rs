@@ -144,7 +144,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = match self.sync_table.try_claim(zalsa, key_index, false) {
+        let _claim_guard = match self.sync_table.try_claim::<false>(zalsa, key_index) {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);

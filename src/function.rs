@@ -408,7 +408,7 @@ where
     /// * [`WaitResult::Cycle`] Claiming the `key_index` results in a cycle because it's on the current's thread query stack or
     ///   running on another thread that is blocked on this thread.
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
-        match self.sync_table.try_claim(zalsa, key_index, false) {
+        match self.sync_table.try_claim::<false>(zalsa, key_index) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
             ClaimResult::Cycle { inner: nested } => WaitForResult::Cycle { inner: nested },
             ClaimResult::Claimed(_) => WaitForResult::Available,

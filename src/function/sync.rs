@@ -48,11 +48,10 @@ impl SyncTable {
     }
 
     #[inline]
-    pub(crate) fn try_claim<'me>(
+    pub(crate) fn try_claim<'me, const REENTRANT: bool>(
         &'me self,
         zalsa: &'me Zalsa,
         key_index: Id,
-        allow_reentry: bool,
     ) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
         match write.entry(key_index) {
@@ -62,11 +61,8 @@ impl SyncTable {
                 let id = match id {
                     SyncOwnerId::Thread(id) => id,
                     SyncOwnerId::Transferred => {
-                        return match self.try_claim_transferred(
-                            zalsa,
-                            occupied_entry,
-                            allow_reentry,
-                        ) {
+                        return match self.try_claim_transferred::<REENTRANT>(zalsa, occupied_entry)
+                        {
                             Ok(claimed) => claimed,
                             Err(other_thread) => match other_thread.block(write) {
                                 BlockResult::Cycle => ClaimResult::Cycle { inner: false },
@@ -116,18 +112,17 @@ impl SyncTable {
 
     #[cold]
     #[inline(never)]
-    fn try_claim_transferred<'me>(
+    fn try_claim_transferred<'me, const REENTRANT: bool>(
         &'me self,
         zalsa: &'me Zalsa,
         mut entry: OccupiedEntry<Id, SyncState>,
-        allow_reentry: bool,
     ) -> Result<ClaimResult<'me>, OtherThread<'me>> {
         let key_index = *entry.key();
         let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
 
         match zalsa
             .runtime()
-            .claim_transferred(database_key_index, allow_reentry)
+            .claim_transferred::<REENTRANT>(database_key_index)
         {
             ClaimTransferredResult::ClaimedBy(other_thread) => {
                 entry.get_mut().anyone_waiting = true;

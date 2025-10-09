@@ -325,27 +325,20 @@ impl Runtime {
             .unblock_transferred_queries(database_key, wait_result);
     }
 
-    pub(super) fn claim_transferred(
+    pub(super) fn claim_transferred<const REENTRANT: bool>(
         &self,
         query: DatabaseKeyIndex,
-        allow_reentry: bool,
     ) -> ClaimTransferredResult<'_> {
         let mut dg = self.dependency_graph.lock();
         let thread_id = thread::current().id();
 
         match dg.block_on_transferred(query, thread_id) {
             Ok(_) => {
-                if !allow_reentry {
+                if !REENTRANT {
                     tracing::debug!("Claiming {query:?} results in a cycle because re-entrant lock is not allowed");
                     ClaimTransferredResult::Cycle { inner: true }
                 } else {
                     tracing::debug!("Reentrant lock {query:?}");
-                    // dg.remove_transferred(query);
-
-                    // // This seems wrong?
-                    // // if owning_thread_id != current_id {
-                    // dg.unblock_runtimes_blocked_on(query, WaitResult::Completed);
-                    // dg.resume_transferred_dependents(query, WaitResult::Completed);
 
                     ClaimTransferredResult::Reentrant
                 }
