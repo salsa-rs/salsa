@@ -5,7 +5,7 @@
 macro_rules! unexpected_cycle_recovery {
     ($db:ident, $value:ident, $count:ident, $($other_inputs:ident),*) => {{
         std::mem::drop($db);
-        std::mem::drop(($($other_inputs),*));
+        std::mem::drop(($($other_inputs,)*));
         panic!("cannot recover from cycle")
     }};
 }
@@ -14,7 +14,7 @@ macro_rules! unexpected_cycle_recovery {
 macro_rules! unexpected_cycle_initial {
     ($db:ident, $($other_inputs:ident),*) => {{
         std::mem::drop($db);
-        std::mem::drop(($($other_inputs),*));
+        std::mem::drop(($($other_inputs,)*));
         panic!("no cycle initial value")
     }};
 }
