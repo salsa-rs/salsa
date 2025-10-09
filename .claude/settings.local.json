@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view:*)",
+      "Bash(cargo bench:*)",
+      "Bash(chmod:*)",
+      "Bash(cargo build:*)",
+      "Bash(./compare_branches_valgrind.sh:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
