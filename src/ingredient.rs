@@ -162,10 +162,16 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     }
     // Function ingredient methods
 
+    /// Tests if the (nested) cycle head `_input` has converged in the most recent iteration.
+    ///
+    /// Returns `false` if the Memo doesn't exist or if called on a non-cycle head.
     fn cycle_converged(&self, _zalsa: &Zalsa, _input: Id) -> bool {
         unreachable!("cycle_converged should only be called on cycle heads and only functions can be cycle heads");
     }
 
+    /// Updates the iteration count for the (nested) cycle head `_input` to `iteration_count`.
+    ///
+    /// This is a no-op if the memo doesn't exist or if called on a Memo without cycle heads.
     fn set_cycle_iteration_count(
         &self,
         _zalsa: &Zalsa,

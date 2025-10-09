@@ -691,6 +691,7 @@ impl QueryRevisions {
         let Some(extra) = &self.extra.0 else {
             return;
         };
+        debug_assert!(extra.iteration.load() <= iteration_count);
 
         extra.iteration.store(iteration_count);
 
