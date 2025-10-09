@@ -323,13 +323,3 @@ pub enum WaitForResult<'me> {
     Available,
     Cycle { inner: bool },
 }
-
-impl WaitForResult<'_> {
-    pub const fn is_cycle(&self) -> bool {
-        matches!(self, WaitForResult::Cycle { .. })
-    }
-
-    pub const fn is_running(&self) -> bool {
-        matches!(self, WaitForResult::Running(_))
-    }
-}

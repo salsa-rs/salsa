@@ -25,6 +25,7 @@ macro_rules! debug_span {
     };
 }
 
+#[expect(unused_macros)]
 macro_rules! info_span {
     ($($x:tt)*) => {
         crate::tracing::span!(INFO, $($x)*)
@@ -57,4 +58,5 @@ macro_rules! span {
     }};
 }
 
+#[expect(unused_imports)]
 pub(crate) use {debug, debug_span, event, info, info_span, span, trace};

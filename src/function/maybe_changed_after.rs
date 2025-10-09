@@ -84,12 +84,9 @@ where
         loop {
             let database_key_index = self.database_key_index(id);
 
-            let _span = crate::tracing::info_span!(
-                "maybe_changed_after",
-                ?revision,
-                query=?database_key_index
-            )
-            .entered();
+            crate::tracing::debug!(
+                "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
+            );
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
@@ -144,7 +141,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = match self.sync_table.try_claim::<false>(zalsa, key_index) {
+        let claim_guard = match self.sync_table.try_claim::<false>(zalsa, key_index) {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
@@ -228,7 +225,7 @@ where
         // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && !cycle_heads.has_any() {
-            let memo = self.execute(db, _claim_guard, zalsa_local, Some(old_memo));
+            let memo = self.execute(db, claim_guard, zalsa_local, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
             // Always assume that a provisional value has changed.
@@ -366,28 +363,57 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
     ) -> bool {
-        !memo.may_be_provisional()
-            || self.validate_provisional(zalsa, database_key_index, memo)
-            || self.validate_same_iteration(zalsa, zalsa_local, database_key_index, memo)
+        if !memo.may_be_provisional() {
+            return true;
+        }
+
+        let cycle_heads = memo.cycle_heads();
+
+        if cycle_heads.is_empty() {
+            return true;
+        }
+
+        // Always return `false` if this is a cycle initial memo (or the last provisional memo in an iteration)
+        // as this value has obviously not finished computing yet.
+        if cycle_heads
+            .iter()
+            .all(|head| head.database_key_index == database_key_index)
+        {
+            return false;
+        }
+
+        crate::tracing::trace!(
+            "{database_key_index:?}: validate_may_be_provisional(memo = {memo:#?})",
+            memo = memo.tracing_debug()
+        );
+
+        let verified_at = memo.verified_at.load();
+
+        self.validate_provisional(zalsa, database_key_index, memo, verified_at, cycle_heads)
+            || self.validate_same_iteration(
+                zalsa,
+                zalsa_local,
+                database_key_index,
+                verified_at,
+                cycle_heads,
+            )
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
     /// return true, if not return false.
-    #[inline]
     fn validate_provisional(
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
+        memo_verified_at: Revision,
+        cycle_heads: &CycleHeads,
     ) -> bool {
         crate::tracing::trace!(
-            "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
-            memo = memo.tracing_debug()
+            "{database_key_index:?}: validate_provisional({database_key_index:?})",
         );
 
-        let memo_verified_at = memo.verified_at.load();
-
-        for cycle_head in memo.revisions.cycle_heads() {
+        for cycle_head in cycle_heads {
             // Test if our cycle heads (with the same revision) are now finalized.
             let Some(kind) = zalsa
                 .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
@@ -446,77 +472,47 @@ where
     /// If this is a provisional memo, validate that it was cached in the same iteration of the
     /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
     /// runaway re-execution of the same queries within a fixpoint iteration.
-    #[inline]
     fn validate_same_iteration(
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<'_, C>,
+        memo_verified_at: Revision,
+        cycle_heads: &CycleHeads,
     ) -> bool {
-        #[cold]
-        #[inline(never)]
-        fn validate_same_iteration_cold(
-            zalsa: &Zalsa,
-            zalsa_local: &ZalsaLocal,
-            cycle_heads: &CycleHeads,
-            verified_at: Revision,
-        ) -> bool {
-            let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, cycle_heads);
-
-            for cycle_head in cycle_heads_iter {
-                match cycle_head {
-                    TryClaimHeadsResult::Cycle {
-                        head_iteration_count,
-                        memo_iteration_count: current_iteration_count,
-                        verified_at: head_verified_at,
-                    } => {
-                        if head_verified_at != verified_at {
-                            return false;
-                        }
-
-                        if head_iteration_count != current_iteration_count {
-                            return false;
-                        }
-                    }
-                    _ => {
-                        return false;
-                    }
-                }
-            }
-
-            true
-        }
-
-        crate::tracing::info!(
-            "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
-            memo = memo.tracing_debug()
-        );
-
-        let cycle_heads = memo.revisions.cycle_heads();
-        if cycle_heads.is_empty() {
-            return true;
-        }
-
-        let verified_at = memo.verified_at.load();
+        crate::tracing::trace!("validate_same_iteration({database_key_index:?})",);
 
         // This is an optimization to avoid unnecessary re-execution within the same revision.
         // Don't apply it when verifying memos from past revisions. We want them to re-execute
         // to verify their cycle heads and all participating queries.
-        if verified_at != zalsa.current_revision() {
+        if memo_verified_at != zalsa.current_revision() {
             return false;
         }
 
-        // Always return `false` if this is a cycle initial memo (or the last provisional memo in an iteration)
-        // as this value has obviously not finished computing yet.
-        if cycle_heads
-            .iter()
-            .all(|head| head.database_key_index == database_key_index)
-        {
-            return false;
+        let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, cycle_heads);
+
+        for cycle_head in cycle_heads_iter {
+            match cycle_head {
+                TryClaimHeadsResult::Cycle {
+                    head_iteration_count,
+                    memo_iteration_count: current_iteration_count,
+                    verified_at: head_verified_at,
+                } => {
+                    if head_verified_at != memo_verified_at {
+                        return false;
+                    }
+
+                    if head_iteration_count != current_iteration_count {
+                        return false;
+                    }
+                }
+                _ => {
+                    return false;
+                }
+            }
         }
 
-        validate_same_iteration_cold(zalsa, zalsa_local, cycle_heads, verified_at)
+        true
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the

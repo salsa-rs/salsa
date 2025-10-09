@@ -494,7 +494,6 @@ impl QueryRevisionsExtra {
         mut tracked_struct_ids: ThinVec<(Identity, Id)>,
         cycle_heads: CycleHeads,
         iteration: IterationCount,
-        converged: bool,
     ) -> Self {
         #[cfg(feature = "accumulator")]
         let acc = accumulated.is_empty();
@@ -515,7 +514,7 @@ impl QueryRevisionsExtra {
                 cycle_heads,
                 tracked_struct_ids,
                 iteration: iteration.into(),
-                cycle_converged: converged,
+                cycle_converged: false,
             }))
         };
 
@@ -598,7 +597,10 @@ const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
     [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
+    pub(crate) fn fixpoint_initial(
+        query: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> Self {
         Self {
             changed_at: Revision::start(),
             durability: Durability::MAX,
@@ -610,9 +612,8 @@ impl QueryRevisions {
                 #[cfg(feature = "accumulator")]
                 AccumulatedMap::default(),
                 ThinVec::default(),
-                CycleHeads::initial(query),
-                IterationCount::initial(),
-                false,
+                CycleHeads::initial(query, iteration_count),
+                iteration_count,
             ),
         }
     }
@@ -655,7 +656,6 @@ impl QueryRevisions {
                     ThinVec::default(),
                     cycle_heads,
                     IterationCount::default(),
-                    false,
                 );
             }
         };
@@ -705,8 +705,7 @@ impl QueryRevisions {
     ) {
         if let Some(extra) = &mut self.extra.0 {
             extra.iteration.store_mut(iteration_count);
-            // I think updating is required for `validate_same_iteration` to work because
-            // unless we can skip self?
+
             extra
                 .cycle_heads
                 .update_iteration_count_mut(cycle_head_index, iteration_count);

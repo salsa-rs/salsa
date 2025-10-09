@@ -145,14 +145,6 @@ impl<'db, C: Configuration> Memo<'db, C> {
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
-        if self.revisions.cycle_heads().is_empty() {
-            return false;
-        }
-
-        if !self.may_be_provisional() {
-            return false;
-        };
-
         if self.block_on_heads(zalsa, zalsa_local) {
             // If we get here, we are a provisional value of
             // the cycle head (either initial value, or from a later iteration) and should be
@@ -177,7 +169,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
         // IMPORTANT: If you make changes to this function, make sure to run `cycle_nested_deep` with
         // shuttle with at least 10k iterations.
 
-        let cycle_heads = self.revisions.cycle_heads();
+        let cycle_heads = self.cycle_heads();
         if cycle_heads.is_empty() {
             return true;
         }
@@ -501,7 +493,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                     .map(|query| query.iteration_count())
             })
         } {
-            crate::tracing::debug!(
+            crate::tracing::trace!(
                 "Waiting for {head_database_key:?} results in a cycle (because it is already in the query stack)"
             );
             return Some(TryClaimHeadsResult::Cycle {
@@ -520,7 +512,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
             WaitForResult::Cycle { .. } => {
                 // We hit a cycle blocking on the cycle head; this means this query actively
                 // participates in the cycle and some other query is blocked on this thread.
-                crate::tracing::debug!("Waiting for {head_database_key:?} results in a cycle");
+                crate::tracing::trace!("Waiting for {head_database_key:?} results in a cycle");
 
                 let provisional_status = ingredient
                     .provisional_status(self.zalsa, head_key_index)
@@ -546,15 +538,11 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                 })
             }
             WaitForResult::Running(running) => {
-                crate::tracing::debug!("Ingredient {head_database_key:?} is running: {running:?}");
+                crate::tracing::trace!("Ingredient {head_database_key:?} is running: {running:?}");
 
                 Some(TryClaimHeadsResult::Running(running))
             }
-            WaitForResult::Available => {
-                crate::tracing::debug!("Query {head_database_key:?} is available",);
-
-                Some(TryClaimHeadsResult::Available)
-            }
+            WaitForResult::Available => Some(TryClaimHeadsResult::Available),
         }
     }
 }

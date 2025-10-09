@@ -102,6 +102,14 @@ pub enum CycleRecoveryStrategy {
 pub struct CycleHead {
     pub(crate) database_key_index: DatabaseKeyIndex,
     pub(crate) iteration_count: AtomicIterationCount,
+
+    /// Marks a cycle head as removed within its `CycleHeads` container.
+    ///
+    /// Cycle heads are marked as removed when the memo from the last iteration (a provisional memo)
+    /// is used as the initial value for the next iteration. It's necessary to remove all but its own
+    /// head from the `CycleHeads` container, because the query might now depend on fewer cycles
+    /// (in case of conditional dependencies). However, we can't actually remove the cycle head
+    /// within `fetch_cold_cycle` because we only have a readonly memo. That's what `removed` is used for.
     #[cfg_attr(feature = "persistence", serde(skip))]
     removed: AtomicBool,
 }
@@ -130,6 +138,11 @@ impl IterationCount {
         self.0 == 0
     }
 
+    /// Iteration count reserved for panicked cycles.
+    ///
+    /// Using a special iteration count ensures that `validate_same_iteration` and `validate_provisional`
+    /// return `false` for queries depending on this panicked cycle, because the iteration count is guaranteed
+    /// to be different (which isn't guaranteed if the panicked memo uses [`Self::initial`]).
     pub(crate) const fn panicked() -> Self {
         Self(u8::MAX)
     }
@@ -150,7 +163,7 @@ impl IterationCount {
 
 impl std::fmt::Display for IterationCount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "iteration={}", self.0)
+        self.0.fmt(f)
     }
 }
 
@@ -160,6 +173,10 @@ pub(crate) struct AtomicIterationCount(AtomicU8);
 impl AtomicIterationCount {
     pub(crate) fn load(&self) -> IterationCount {
         IterationCount(self.0.load(Ordering::Relaxed))
+    }
+
+    pub(crate) fn load_mut(&mut self) -> IterationCount {
+        IterationCount(*self.0.get_mut())
     }
 
     pub(crate) fn store(&self, value: IterationCount) {
@@ -214,10 +231,13 @@ impl CycleHeads {
         self.0.is_empty()
     }
 
-    pub(crate) fn initial(database_key_index: DatabaseKeyIndex) -> Self {
+    pub(crate) fn initial(
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> Self {
         Self(thin_vec![CycleHead {
             database_key_index,
-            iteration_count: IterationCount::initial().into(),
+            iteration_count: iteration_count.into(),
             removed: false.into()
         }])
     }
@@ -233,17 +253,24 @@ impl CycleHeads {
             .any(|head| head.database_key_index == *value && !head.removed.load(Ordering::Relaxed))
     }
 
-    pub(crate) fn clear_except(&self, except: DatabaseKeyIndex) {
+    /// Removes all cycle heads except `except` by marking them as removed.
+    ///
+    /// Note that the heads aren't actually removed. They're only marked as removed and will be
+    /// skipped when iterating. This is because we might not have a mutable reference.
+    pub(crate) fn remove_all_except(&self, except: DatabaseKeyIndex) {
         for head in self.0.iter() {
             if head.database_key_index == except {
                 continue;
             }
 
-            // TODO: verify ordering
             head.removed.store(true, Ordering::Release);
         }
     }
 
+    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
+    ///
+    /// Unlike [`update_iteration_count`], this method takes a `&mut self` reference. It should
+    /// be preferred if possible, as it avoids atomic operations.
     pub(crate) fn update_iteration_count_mut(
         &mut self,
         cycle_head_index: DatabaseKeyIndex,
@@ -258,6 +285,9 @@ impl CycleHeads {
         }
     }
 
+    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
+    ///
+    /// Unlike [`update_iteration_count_mut`], this method takes a `&self` reference.
     pub(crate) fn update_iteration_count(
         &self,
         cycle_head_index: DatabaseKeyIndex,
@@ -282,6 +312,8 @@ impl CycleHeads {
     }
 
     pub(crate) fn insert(&mut self, head: &CycleHead) -> bool {
+        debug_assert!(!head.removed.load(Ordering::Relaxed));
+
         if let Some(existing) = self
             .0
             .iter_mut()
@@ -294,12 +326,9 @@ impl CycleHeads {
 
                 true
             } else {
-                let existing_count = existing.iteration_count.load();
+                let existing_count = existing.iteration_count.load_mut();
                 let head_count = head.iteration_count.load();
 
-                // It's now possible that a query can depend on different iteration counts of the same query
-                // This because some queries (inner) read the provisional value of the last iteration
-                // while outer queries read the value from the last iteration (which is i+1 if the head didn't converge).
                 assert_eq!(
                     existing_count, head_count,
                     "Can't merge cycle heads {:?} with different iteration counts ({existing_count:?}, {head_count:?})",
@@ -309,7 +338,6 @@ impl CycleHeads {
                 false
             }
         } else {
-            debug_assert!(!head.removed.load(Ordering::Relaxed));
             self.0.push(head.clone());
             true
         }

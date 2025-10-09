@@ -67,8 +67,6 @@ where
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
                     if cycle_heads.contains(&database_key_index) {
-                        let id = database_key_index.key_index();
-
                         // Ignore the computed value, leave the fallback value there.
                         let memo = self
                             .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
@@ -126,18 +124,16 @@ where
             self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
 
-        let new_memo = self.insert_memo(
+        self.insert_memo(
             zalsa,
-            database_key_index.key_index(),
+            id,
             Memo::new(
                 Some(new_value),
                 zalsa.current_revision(),
                 completed_query.revisions,
             ),
             memo_ingredient_index,
-        );
-
-        new_memo
+        )
     }
 
     fn execute_maybe_iterate<'db>(
@@ -512,9 +508,7 @@ impl<'a, C: Configuration> ClearCycleHeadIfPanicking<'a, C> {
 impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            let mut revisions =
-                QueryRevisions::fixpoint_initial(self.ingredient.database_key_index(self.id));
-            revisions.update_iteration_count_mut(
+            let revisions = QueryRevisions::fixpoint_initial(
                 self.ingredient.database_key_index(self.id),
                 IterationCount::panicked(),
             );

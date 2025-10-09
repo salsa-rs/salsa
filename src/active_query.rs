@@ -225,7 +225,6 @@ impl ActiveQuery {
             active_tracked_structs,
             mem::take(cycle_heads),
             iteration_count,
-            false,
         );
 
         let revisions = QueryRevisions {
@@ -518,7 +517,7 @@ impl fmt::Display for Backtrace {
                         }
                         write!(
                             fmt,
-                            "{:?} -> {}",
+                            "{:?} -> iteration = {}",
                             head.database_key_index, head.iteration_count
                         )?;
                     }

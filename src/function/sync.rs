@@ -56,9 +56,7 @@ impl SyncTable {
         let mut write = self.syncs.lock();
         match write.entry(key_index) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
-                let id = occupied_entry.get().id;
-
-                let id = match id {
+                let id = match occupied_entry.get().id {
                     SyncOwnerId::Thread(id) => id,
                     SyncOwnerId::Transferred => {
                         return match self.try_claim_transferred::<REENTRANT>(zalsa, occupied_entry)
@@ -132,10 +130,7 @@ impl SyncTable {
                 let SyncState {
                     id, claimed_twice, ..
                 } = entry.into_mut();
-
-                if *claimed_twice {
-                    return Ok(ClaimResult::Cycle { inner: false });
-                }
+                debug_assert!(!*claimed_twice);
 
                 *id = SyncOwnerId::Thread(thread::current().id());
                 *claimed_twice = true;
@@ -221,7 +216,6 @@ impl<'me> ClaimGuard<'me> {
     #[inline(always)]
     fn release(&self, wait_result: WaitResult, state: SyncState) {
         let database_key_index = self.database_key_index();
-        tracing::debug!("release_and_unblock({database_key_index:?})");
 
         let SyncState {
             anyone_waiting,
@@ -241,7 +235,6 @@ impl<'me> ClaimGuard<'me> {
         }
 
         if is_transfer_target {
-            tracing::debug!("unblock transferred queries owned by {database_key_index:?}");
             runtime.unblock_transferred_queries(database_key_index, wait_result);
         }
 
@@ -251,7 +244,6 @@ impl<'me> ClaimGuard<'me> {
     #[cold]
     #[inline(never)]
     fn release_self(&self) {
-        tracing::debug!("release_self");
         let mut syncs = self.sync_table.syncs.lock();
         let std::collections::hash_map::Entry::Occupied(mut state) = syncs.entry(self.key_index)
         else {
@@ -298,8 +290,6 @@ impl<'me> ClaimGuard<'me> {
         *id = SyncOwnerId::Transferred;
         *claimed_twice = false;
         *anyone_waiting = false;
-
-        tracing::debug!("Transfer ownership completed");
     }
 }
 
@@ -312,13 +302,12 @@ impl Drop for ClaimGuard<'_> {
             WaitResult::Completed
         };
 
-        // TODO, what to do if thread panics? Always force release?
         match self.mode {
             ReleaseMode::Default => {
                 self.release_default(wait_result);
             }
             _ if matches!(wait_result, WaitResult::Panicked) => {
-                tracing::debug!("Release after panicked");
+                tracing::debug!("Releasing `ClaimGuard` after panic");
                 self.release_default(wait_result);
             }
             ReleaseMode::SelfOnly => {

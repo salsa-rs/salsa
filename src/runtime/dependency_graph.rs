@@ -1,6 +1,7 @@
+use std::pin::Pin;
+
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
-use std::pin::Pin;
 
 use crate::function::SyncOwnerId;
 use crate::key::DatabaseKeyIndex;
@@ -134,9 +135,6 @@ impl DependencyGraph {
         database_key: DatabaseKeyIndex,
         wait_result: WaitResult,
     ) {
-        tracing::debug!(
-            "Unblocking runtimes blocked on {database_key:?} with wait result {wait_result:?}"
-        );
         let dependents = self
             .query_dependents
             .remove(&database_key)
@@ -151,7 +149,6 @@ impl DependencyGraph {
     /// This will cause it resume execution (though it will have to grab
     /// the lock on this data structure first, to recover the wait result).
     fn unblock_runtime(&mut self, id: ThreadId, wait_result: WaitResult) {
-        tracing::debug!("Unblocking runtime {id:?} with wait result {wait_result:?}");
         let edge = self.edges.remove(&id).expect("not blocked");
         self.wait_results.insert(id, wait_result);
 
@@ -389,7 +386,7 @@ impl DependencyGraph {
     }
 
     fn update_transferred_edges(&mut self, query: DatabaseKeyIndex, new_owner_thread: ThreadId) {
-        tracing::trace!("Resuming transitive dependents of query {query:?}");
+        tracing::trace!("update_transferred_edges({query:?}");
 
         let mut queue: SmallVec<[_; 4]> = smallvec![query];
 
@@ -410,7 +407,7 @@ impl DependencyGraph {
             for dependent in dependents.iter_mut() {
                 let edge = self.edges.get_mut(dependent).unwrap();
 
-                tracing::info!(
+                tracing::trace!(
                     "Rewrite edge from {:?} to {new_owner_thread:?}",
                     edge.blocked_on_id
                 );

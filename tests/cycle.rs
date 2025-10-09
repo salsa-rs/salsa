@@ -230,7 +230,6 @@ fn value(num: u8) -> Input {
 #[test]
 #[should_panic(expected = "dependency graph cycle")]
 fn self_panic() {
-    // TODO: This test takes very long to run?
     let mut db = DbImpl::new();
     let a_in = Inputs::new(&db, vec![]);
     let a = Input::MinPanic(a_in);
@@ -921,7 +920,7 @@ fn cycle_unchanged_nested() {
     a.assert_value(&db, 59);
     b.assert_value(&db, 60);
 
-    db.assert_logs_len(13);
+    db.assert_logs_len(15);
 
     // next revision, we change only A, which is not part of the cycle and the cycle does not
     // depend on.
