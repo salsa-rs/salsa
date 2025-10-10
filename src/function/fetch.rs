@@ -96,7 +96,6 @@ where
         }
     }
 
-    #[inline(never)]
     fn fetch_cold_with_retry<'db>(
         &'db self,
         zalsa: &'db Zalsa,
