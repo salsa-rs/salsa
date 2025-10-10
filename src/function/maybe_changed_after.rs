@@ -484,6 +484,7 @@ where
             .iter()
             .all(|head| head.database_key_index == memo_database_key_index)
         {
+            // SAFETY: We do not access the query stack reentrantly.
             let on_stack = unsafe {
                 zalsa_local.with_query_stack_unchecked(|stack| {
                     stack
