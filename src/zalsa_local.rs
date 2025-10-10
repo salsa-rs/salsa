@@ -566,6 +566,7 @@ struct QueryRevisionsExtraInner {
 
     /// Stores for nested cycle heads whether they've converged in the last iteration.
     /// This value is always `false` for other queries.
+    #[cfg_attr(feature = "persistence", serde(skip))]
     cycle_converged: bool,
 }
 

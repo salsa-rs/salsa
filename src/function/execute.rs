@@ -165,7 +165,6 @@ where
                 && old_memo.cycle_heads().contains(&database_key_index)
                 && !memo_iteration_count.is_panicked()
             {
-                // BUG, we need to pass in previous memo even for the first iteration.
                 last_provisional_memo = Some(old_memo);
                 iteration_count = memo_iteration_count;
             }
