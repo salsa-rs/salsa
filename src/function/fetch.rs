@@ -13,6 +13,7 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
+    #[inline]
     pub fn fetch<'db>(
         &'db self,
         db: &'db C::DbView,
