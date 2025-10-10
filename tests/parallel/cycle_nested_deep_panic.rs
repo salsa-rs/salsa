@@ -76,8 +76,7 @@ fn the_test() {
     let t1 = thread::spawn(move || {
         let _span = tracing::debug_span!("t1", thread_id = ?thread::current().id()).entered();
 
-        let result = query_a(&db_t1);
-        result
+        query_a(&db_t1)
     });
     let t2 = thread::spawn(move || {
         let _span = tracing::debug_span!("t4", thread_id = ?thread::current().id()).entered();
