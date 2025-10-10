@@ -1,13 +1,13 @@
-use self::dependency_graph::{CanClaimTransferred, DependencyGraph};
+use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
-use crate::function::{SyncGuard, SyncOwnerId, SyncState};
+use crate::function::{SyncGuard, SyncOwnerId};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
 use crate::sync::Mutex;
 use crate::table::Table;
 use crate::zalsa::Zalsa;
-use crate::{Cancelled, Event, EventKind, Id, Revision};
+use crate::{Cancelled, Event, EventKind, Revision};
 
 mod dependency_graph;
 
@@ -303,16 +303,16 @@ impl Runtime {
     /// Tries to claim ownership of a transferred query where `thread_id` is the current thread and `query`
     /// is the query (that had its ownership transferred) to claim.
     ///
-    /// For this operation to be reasonable, the caller must ensure that the lock on `query` is not released
+    /// For this operation to be reasonable, the caller must ensure that the sync table lock on `query` is not released
     /// before this operation completes.
     pub(super) fn block_transferred(
         &self,
         query: DatabaseKeyIndex,
         current_id: ThreadId,
     ) -> BlockTransferredResult<'_> {
-        let mut dg = self.dependency_graph.lock();
+        let dg = self.dependency_graph.lock();
 
-        let owner_thread = dg.resolved_transferred_id(query, None);
+        let owner_thread = dg.thread_id_of_transferred_query(query, None);
 
         let Some(owner_thread_id) = owner_thread else {
             // The query transferred its ownership but the owner has since then released the lock.
@@ -333,8 +333,7 @@ impl Runtime {
     }
 
     /// Invoked when this runtime completed computing `database_key` with
-    /// the given result `wait_result` (`wait_result` should be `None` if
-    /// computing `database_key` panicked and could not complete).
+    /// the given result `wait_result`.
     /// This function unblocks any dependent queries and allows them
     /// to continue executing.
     pub(crate) fn unblock_queries_blocked_on(
@@ -347,34 +346,49 @@ impl Runtime {
             .unblock_runtimes_blocked_on(database_key, wait_result);
     }
 
+    /// Unblocks all transferred queries that are owned by `database_key` recursively.
+    ///
+    /// Invoked when a query completes that has been marked as transfer target (it has
+    /// queries that transferred their lock ownership to it) with the given `wait_result`.
+    ///
+    /// This function unblocks any dependent queries and allows them to continue executing. The
+    /// query `database_key` is not unblocked by this function.
     #[cold]
-    pub(crate) fn unblock_transferred_queries(
+    pub(crate) fn unblock_transferred_queries_owned_by(
         &self,
         database_key: DatabaseKeyIndex,
         wait_result: WaitResult,
     ) {
         self.dependency_graph
             .lock()
-            .unblock_transferred_queries(database_key, wait_result);
+            .unblock_runtimes_blocked_on_transferred_queries_owned_by(database_key, wait_result);
     }
 
+    /// Removes the ownership transfer of `query`'s lock if it exists.
+    ///
+    /// If `query` has transferred its lock ownership to another query, this function will remove that transfer,
+    /// so that `query` now owns its lock again.
     #[cold]
-    pub(super) fn remove_transferred(&self, query: DatabaseKeyIndex) {
-        self.dependency_graph.lock().remove_transferred(query);
+    pub(super) fn undo_transfer_lock(&self, query: DatabaseKeyIndex) {
+        self.dependency_graph.lock().undo_transfer_lock(query);
     }
 
+    /// Transfers ownership of the lock for `query` to `new_owner_key`.
+    ///
+    /// For this operation to be reasonable, the caller must ensure that the sync table lock on `query` is not released
+    /// and that `new_owner_key` is currently blocked on `query`. Otherwise, `new_owner_key` might
+    /// complete before the lock is transferred, leaving `query` locked forever.
     pub(super) fn transfer_lock(
         &self,
         query: DatabaseKeyIndex,
-        current_thread: ThreadId,
-        new_owner: DatabaseKeyIndex,
-        new_owner_thread: SyncOwnerId,
+        new_owner_key: DatabaseKeyIndex,
+        new_owner_id: SyncOwnerId,
     ) {
         self.dependency_graph.lock().transfer_lock(
             query,
-            current_thread,
-            new_owner,
-            new_owner_thread,
+            thread::current().id(),
+            new_owner_key,
+            new_owner_id,
         );
     }
 

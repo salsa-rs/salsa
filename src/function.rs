@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::{ClaimGuard, ClaimResult, SyncGuard, SyncOwnerId, SyncState, SyncTable};
+pub(crate) use sync::{ClaimGuard, ClaimResult, SyncGuard, SyncOwnerId, SyncTable};
 
 use std::any::Any;
 use std::fmt;
@@ -398,8 +398,8 @@ where
         memo.revisions.cycle_converged()
     }
 
-    fn sync_table(&self) -> &SyncTable {
-        &self.sync_table
+    fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwnerId> {
+        self.sync_table.mark_as_transfer_target(key_index)
     }
 
     fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
@@ -418,7 +418,7 @@ where
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self.sync_table.try_claim::<false>(zalsa, key_index) {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle { inner: inner } => WaitForResult::Cycle { inner },
+            ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
             ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }

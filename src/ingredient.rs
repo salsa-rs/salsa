@@ -99,8 +99,13 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         );
     }
 
-    fn sync_table(&self) -> &crate::function::SyncTable {
-        unreachable!("owning_thread should only be called on functions");
+    /// Invoked when a query transfers its lock-ownership to `_key_index`. Returns the thread
+    /// owning the lock for `_key_index` or `None` if `_key_index` is not claimed.
+    ///
+    /// Note: The returned `SyncOwnerId` may be outdated as soon as this function returns **unless**
+    /// it's guaranteed that `_key_index` is blocked on the current thread.
+    fn mark_as_transfer_target(&self, _key_index: Id) -> Option<crate::function::SyncOwnerId> {
+        unreachable!("mark_as_transfer_target should only be called on functions");
     }
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.

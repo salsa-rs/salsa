@@ -17,7 +17,7 @@ pub(super) struct DependencyGraph {
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<ThreadId, edge::Edge>,
+    edges: Edges,
 
     /// Encodes the `ThreadId` that are blocked waiting for the result
     /// of a given query.
@@ -28,13 +28,15 @@ pub(super) struct DependencyGraph {
     /// come here to fetch their results.
     wait_results: FxHashMap<ThreadId, WaitResult>,
 
-    /// A `K -> Q` pair indicates that `K`'s lock is now owned by
-    /// `Q` (The thread id of `Q` and its database key)
+    /// A `K -> Q` pair indicates that the query `K`'s lock is now owned by the query
+    /// `Q`. It's important that `transferred` always forms a tree (must be acyclic),
+    /// or else deadlock will result.
     transferred: FxHashMap<DatabaseKeyIndex, (ThreadId, DatabaseKeyIndex)>,
 
-    /// A `K -> Qs` pair indicates that `K`'s lock is now owned by
-    /// `Qs` (The thread id of `Qs` and their database keys)
-    transferred_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[DatabaseKeyIndex; 4]>>,
+    /// A `K -> [Q]` pair indicates that the query `K` owns the locks of
+    /// `Q`. This is the reverse mapping of `transferred` to allow efficient unlocking
+    /// of all dependent queries when `K` completes.
+    transferred_dependents: FxHashMap<DatabaseKeyIndex, SmallSet<DatabaseKeyIndex, 4>>,
 }
 
 impl DependencyGraph {
@@ -42,23 +44,7 @@ impl DependencyGraph {
     ///
     /// (i.e., there is a path from `from_id` to `to_id` in the graph.)
     pub(super) fn depends_on(&self, from_id: ThreadId, to_id: ThreadId) -> bool {
-        Self::depends_on_impl(&self.edges, from_id, to_id)
-    }
-
-    fn depends_on_impl(
-        edges: &FxHashMap<ThreadId, edge::Edge>,
-        from_id: ThreadId,
-        to_id: ThreadId,
-    ) -> bool {
-        let mut p = from_id;
-        while let Some(q) = edges.get(&p).map(|edge| edge.blocked_on_id) {
-            if q == to_id {
-                return true;
-            }
-
-            p = q;
-        }
-        p == to_id
+        self.edges.depends_on(from_id, to_id)
     }
 
     /// Modifies the graph so that `from_id` is blocked
@@ -157,7 +143,9 @@ impl DependencyGraph {
         edge.notify();
     }
 
-    pub(super) fn unblock_transferred_queries(
+    /// Invoked when the query `database_key` completes and it owns the locks of other queries
+    /// (the queries transferred their locks to `database_key`).
+    pub(super) fn unblock_runtimes_blocked_on_transferred_queries_owned_by(
         &mut self,
         database_key: DatabaseKeyIndex,
         wait_result: WaitResult,
@@ -168,37 +156,44 @@ impl DependencyGraph {
             wait_result: WaitResult,
         ) {
             me.transferred.remove(&query);
-            if let Some(transitive) = me.transferred_dependents.remove(&query) {
-                for query in transitive {
-                    me.unblock_runtimes_blocked_on(query, wait_result);
-                    unblock_recursive(me, query, wait_result);
-                }
+
+            for query in me.transferred_dependents.remove(&query).unwrap_or_default() {
+                me.unblock_runtimes_blocked_on(query, wait_result);
+                unblock_recursive(me, query, wait_result);
             }
         }
 
         // If `database_key` is `c` and it has been transferred to `b` earlier, remove its entry.
-        tracing::trace!("unblock_transferred_queries({database_key:?}");
+        tracing::trace!(
+            "unblock_runtimes_blocked_on_transferred_queries_owned_by({database_key:?}"
+        );
+
         if let Some((_, owner)) = self.transferred.remove(&database_key) {
-            let owner_dependents = self.transferred_dependents.get_mut(&owner).unwrap();
-            let index = owner_dependents
-                .iter()
-                .position(|&x| x == database_key)
-                .unwrap();
-            owner_dependents.swap_remove(index);
+            // If this query previously transferred its lock ownership to another query, remove
+            // it from that queries dependents as it is now completing.
+            self.transferred_dependents
+                .get_mut(&owner)
+                .unwrap()
+                .remove(&database_key);
         }
 
         unblock_recursive(self, database_key, wait_result);
     }
 
-    pub(super) fn remove_transferred(&mut self, database_key: DatabaseKeyIndex) {
+    pub(super) fn undo_transfer_lock(&mut self, database_key: DatabaseKeyIndex) {
         if let Some((_, owner)) = self.transferred.remove(&database_key) {
-            let dependents = self.transferred_dependents.get_mut(&owner).unwrap();
-            let index = dependents.iter().position(|h| *h == database_key).unwrap();
-            dependents.swap_remove(index);
+            self.transferred_dependents
+                .get_mut(&owner)
+                .unwrap()
+                .remove(&database_key);
         }
     }
 
-    pub(super) fn resolved_transferred_id(
+    /// Recursively resolves the thread id that currently owns the lock for `database_key`.
+    ///
+    /// Returns `None` if `database_key` hasn't (or has since then been released) transferred its lock
+    /// and the thread id must be looked up in the `SyncTable` instead.
+    pub(super) fn thread_id_of_transferred_query(
         &self,
         database_key: DatabaseKeyIndex,
         ignore: Option<DatabaseKeyIndex>,
@@ -218,50 +213,51 @@ impl DependencyGraph {
         Some(resolved_thread)
     }
 
+    /// Modifies the graph so that the lock on `query` (currently owned by `current_thread`) is
+    /// transferred to `new_owner` (which is owned by `new_owner_id`).
     pub(super) fn transfer_lock(
         &mut self,
         query: DatabaseKeyIndex,
         current_thread: ThreadId,
         new_owner: DatabaseKeyIndex,
-        new_owner_thread: SyncOwnerId,
+        new_owner_id: SyncOwnerId,
     ) {
-        let new_owner_thread = match new_owner_thread {
+        let new_owner_thread = match new_owner_id {
             SyncOwnerId::Thread(thread) => thread,
-            SyncOwnerId::Transferred => self
-                .resolved_transferred_id(new_owner, Some(query))
-                .unwrap(),
+            SyncOwnerId::Transferred => {
+                // Skip over `query` to skip over any existing mapping from `new_owner` to `query` that may
+                // exist from previous transfers.
+                self.thread_id_of_transferred_query(new_owner, Some(query))
+                    .expect("new owner should be blocked on `query`")
+            }
         };
 
         debug_assert!(
-            new_owner_thread == current_thread || self.depends_on(new_owner_thread, current_thread)
+            new_owner_thread == current_thread || self.depends_on(new_owner_thread, current_thread),
+            "new owner {new_owner:?} ({new_owner_thread:?}) must be blocked on {query:?} ({current_thread:?})"
         );
 
-        let mut thread_changed = current_thread != new_owner_thread;
-
-        match self.transferred.entry(query) {
+        let thread_changed = match self.transferred.entry(query) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 // Transfer `c -> b` and there's no existing entry for `c`.
                 entry.insert((new_owner_thread, new_owner));
+                current_thread != new_owner_thread
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                // If we transfer to the same owner as before, return immediately.
+                // If we transfer to the same owner as before, return immediately as this is a no-op.
                 if entry.get() == &(new_owner_thread, new_owner) {
                     return;
                 }
 
                 // `Transfer `c -> b` after a previous `c -> d` mapping.
                 // Update the owner and remove the query from the old owner's dependents.
-                let (old_owner_thread, old_owner) = *entry.get();
-
-                // We simply assume here that the thread has changed because we'd have to walk the entire
-                // transferred chaine of `old_owner` to know if the thread has changed. This won't safe us much
-                // compared to just updating all dependent threads.
-                thread_changed = true;
+                let &(old_owner_thread, old_owner) = entry.get();
 
                 // For the example below, remove `d` from `b`'s dependents.`
-                let old_dependents = self.transferred_dependents.get_mut(&old_owner).unwrap();
-                let index = old_dependents.iter().position(|key| *key == query).unwrap();
-                old_dependents.swap_remove(index);
+                self.transferred_dependents
+                    .get_mut(&old_owner)
+                    .unwrap()
+                    .remove(&query);
 
                 entry.insert((new_owner_thread, new_owner));
 
@@ -290,13 +286,10 @@ impl DependencyGraph {
                         );
 
                         // Remove `a` from the dependents of `d` and remove the mapping from `a -> d`.
-                        let query_dependents = self.transferred_dependents.get_mut(&query).unwrap();
-                        let index = query_dependents
-                            .iter()
-                            .copied()
-                            .position(|key| key == source)
-                            .unwrap();
-                        query_dependents.swap_remove(index);
+                        self.transferred_dependents
+                            .get_mut(&query)
+                            .unwrap()
+                            .remove(&source);
 
                         // if the old mapping was `c -> d` and we now insert `d -> c`, remove `d -> c`
                         if old_owner == new_owner {
@@ -305,10 +298,10 @@ impl DependencyGraph {
                             // otherwise (when `d` pointed to some other query, e.g. `b` in the example),
                             // add an edge from `a` to `b`
                             entry.insert((old_owner_thread, old_owner));
-
-                            let old_owner_dependents =
-                                self.transferred_dependents.get_mut(&old_owner).unwrap();
-                            old_owner_dependents.push(source);
+                            self.transferred_dependents
+                                .get_mut(&old_owner)
+                                .unwrap()
+                                .push(source);
                         }
 
                         break;
@@ -316,12 +309,16 @@ impl DependencyGraph {
 
                     last_segment = self.transferred.entry(next_target);
                 }
+
+                // We simply assume here that the thread has changed because we'd have to walk the entire
+                // transferred chaine of `old_owner` to know if the thread has changed. This won't save us much
+                // compared to just updating all dependent threads.
+                true
             }
         };
 
         // Register `c` as a dependent of `b`.
         let all_dependents = self.transferred_dependents.entry(new_owner).or_default();
-        debug_assert!(!all_dependents.contains(&query));
         debug_assert!(!all_dependents.contains(&new_owner));
         all_dependents.push(query);
 
@@ -340,8 +337,7 @@ impl DependencyGraph {
         while let Some(current) = queue.pop() {
             if let Some(dependents) = self.query_dependents.get_mut(&current) {
                 for (i, id) in dependents.iter().enumerate() {
-                    if *id == new_owner_id || Self::depends_on_impl(&self.edges, new_owner_id, *id)
-                    {
+                    if *id == new_owner_id || self.edges.depends_on(new_owner_id, *id) {
                         let thread_id = dependents.swap_remove(i);
                         if dependents.is_empty() {
                             self.query_dependents.remove(&current);
@@ -393,7 +389,7 @@ impl DependencyGraph {
                 );
                 edge.blocked_on_id = new_owner_thread;
                 debug_assert!(
-                    !DependencyGraph::depends_on_impl(&self.edges, new_owner_thread, *dependent),
+                    !&self.edges.depends_on(new_owner_thread, *dependent),
                     "Circular reference between blocked edges: {:#?}",
                     self.edges
                 );
@@ -402,16 +398,102 @@ impl DependencyGraph {
     }
 }
 
+#[derive(Debug, Default)]
+struct Edges(FxHashMap<ThreadId, edge::Edge>);
+
+impl Edges {
+    fn depends_on(&self, from_id: ThreadId, to_id: ThreadId) -> bool {
+        let mut p = from_id;
+        while let Some(q) = self.0.get(&p).map(|edge| edge.blocked_on_id) {
+            if q == to_id {
+                return true;
+            }
+
+            p = q;
+        }
+        p == to_id
+    }
+
+    fn get_mut(&mut self, id: &ThreadId) -> Option<&mut edge::Edge> {
+        self.0.get_mut(id)
+    }
+
+    fn contains_key(&self, id: &ThreadId) -> bool {
+        self.0.contains_key(id)
+    }
+
+    fn insert(&mut self, id: ThreadId, edge: edge::Edge) {
+        self.0.insert(id, edge);
+    }
+
+    fn remove(&mut self, id: &ThreadId) -> Option<edge::Edge> {
+        self.0.remove(id)
+    }
+}
+
 #[derive(Debug)]
-pub(super) enum CanClaimTransferred {
-    /// Transferred can be claimed because the current thread is the owner or depends on the owner.
-    ImTheOwner,
+struct SmallSet<T, const N: usize>(SmallVec<[T; N]>);
 
-    /// Transferred can't be claimed because it's owned by another thread.
-    OwnedBy(ThreadId),
+impl<T, const N: usize> SmallSet<T, N>
+where
+    T: PartialEq,
+{
+    const fn new() -> Self {
+        Self(SmallVec::new_const())
+    }
 
-    /// The query was transferred earlier but it has since then been released by the owning query.
-    Released,
+    fn push(&mut self, value: T) {
+        debug_assert!(!self.0.contains(&value));
+
+        self.0.push(value);
+    }
+
+    fn contains(&self, value: &T) -> bool {
+        self.0.contains(value)
+    }
+
+    fn remove(&mut self, value: &T) -> bool {
+        if let Some(index) = self.0.iter().position(|x| x == value) {
+            self.0.swap_remove(index);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.0.iter()
+    }
+}
+
+impl<T, const N: usize> IntoIterator for SmallSet<T, N> {
+    type Item = T;
+    type IntoIter = smallvec::IntoIter<[T; N]>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a SmallSet<T, N>
+where
+    T: PartialEq,
+{
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<T, const N: usize> Default for SmallSet<T, N>
+where
+    T: PartialEq,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 mod edge {
