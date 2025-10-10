@@ -150,9 +150,8 @@ where
         let id = database_key_index.key_index();
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
-        // Initially it's set to None, because the initial provisional value is created lazily,
-        // only when a cycle is actually encountered.
-        let mut previous_memo: Option<&Memo<'db, C>> = None;
+        // This is different from `opt_old_memo` which might be from a different revision.
+        let mut last_provisional_memo: Option<&Memo<'db, C>> = None;
         // TODO: Can we seed those somehow?
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
 
@@ -166,7 +165,8 @@ where
                 && old_memo.cycle_heads().contains(&database_key_index)
                 && !memo_iteration_count.is_panicked()
             {
-                previous_memo = Some(old_memo);
+                // BUG, we need to pass in previous memo even for the first iteration.
+                last_provisional_memo = Some(old_memo);
                 iteration_count = memo_iteration_count;
             }
         }
@@ -183,8 +183,12 @@ where
             // if they aren't recreated when reaching the final iteration.
             active_query.seed_tracked_struct_ids(&last_stale_tracked_ids);
 
-            let (mut new_value, mut completed_query) =
-                Self::execute_query(db, zalsa, active_query, previous_memo);
+            let (mut new_value, mut completed_query) = Self::execute_query(
+                db,
+                zalsa,
+                active_query,
+                last_provisional_memo.or(opt_old_memo),
+            );
 
             // If there are no cycle heads, break out of the loop (`cycle_heads_mut` returns `None` if the cycle head list is empty)
             let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() else {
@@ -262,7 +266,7 @@ where
 
             // Get the last provisional value for this query so that we can compare it with the new value
             // to test if the cycle converged.
-            let last_provisional_value = if let Some(last_provisional) = previous_memo {
+            let last_provisional_value = if let Some(last_provisional) = last_provisional_memo {
                 // We have a last provisional value from our previous time around the loop.
                 last_provisional.value.as_ref()
             } else {
@@ -424,7 +428,7 @@ where
                 memo_ingredient_index,
             );
 
-            previous_memo = Some(new_memo);
+            last_provisional_memo = Some(new_memo);
 
             last_stale_tracked_ids = completed_query.stale_tracked_structs;
             active_query = zalsa_local.push_query(database_key_index, iteration_count);
