@@ -9,6 +9,7 @@ mod cycle_ab_peeping_c;
 mod cycle_nested_deep;
 mod cycle_nested_deep_conditional;
 mod cycle_nested_deep_conditional_changed;
+mod cycle_nested_deep_panic;
 mod cycle_nested_three_threads;
 mod cycle_nested_three_threads_changed;
 mod cycle_panic;

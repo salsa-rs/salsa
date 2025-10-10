@@ -243,6 +243,10 @@ impl<'me> ClaimGuard<'me> {
     fn release_panicking(&self) {
         let mut syncs = self.sync_table.syncs.lock();
         let state = syncs.remove(&self.key_index).expect("key claimed twice?");
+        tracing::debug!(
+            "Release claim on {:?} due to panic",
+            self.database_key_index()
+        );
 
         self.release(state, WaitResult::Panicked);
     }
