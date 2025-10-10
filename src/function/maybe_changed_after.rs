@@ -372,15 +372,6 @@ where
             return true;
         }
 
-        // Always return `false` if this is a cycle initial memo (or the last provisional memo in an iteration)
-        // as this value has obviously not finished computing yet.
-        if cycle_heads
-            .iter()
-            .all(|head| head.database_key_index == database_key_index)
-        {
-            return false;
-        }
-
         crate::tracing::trace!(
             "{database_key_index:?}: validate_may_be_provisional(memo = {memo:#?})",
             memo = memo.tracing_debug()
@@ -475,17 +466,34 @@ where
         &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
-        database_key_index: DatabaseKeyIndex,
+        memo_database_key_index: DatabaseKeyIndex,
         memo_verified_at: Revision,
         cycle_heads: &CycleHeads,
     ) -> bool {
-        crate::tracing::trace!("validate_same_iteration({database_key_index:?})",);
+        crate::tracing::trace!("validate_same_iteration({memo_database_key_index:?})",);
 
         // This is an optimization to avoid unnecessary re-execution within the same revision.
         // Don't apply it when verifying memos from past revisions. We want them to re-execute
         // to verify their cycle heads and all participating queries.
         if memo_verified_at != zalsa.current_revision() {
             return false;
+        }
+
+        // Always return `false` for cycle initial values "unless" they are running in the same thread.
+        if cycle_heads
+            .iter()
+            .all(|head| head.database_key_index == memo_database_key_index)
+        {
+            let on_stack = unsafe {
+                zalsa_local.with_query_stack_unchecked(|stack| {
+                    stack
+                        .iter()
+                        .rev()
+                        .any(|query| query.database_key_index == memo_database_key_index)
+                })
+            };
+
+            return on_stack;
         }
 
         let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, cycle_heads);
