@@ -69,7 +69,6 @@ impl SyncTable {
     /// `REENTRANT` controls whether a query that transferred its ownership to another query for which
     /// this thread currently holds the lock for can be claimed. For example, if `a` transferred its ownership
     /// to `b`, and this thread holds the lock for `b`, then this thread can also claim `a` but only if `REENTRANT` is `true`.
-    #[inline]
     pub(crate) fn try_claim<'me, const REENTRANT: bool>(
         &'me self,
         zalsa: &'me Zalsa,

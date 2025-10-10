@@ -529,6 +529,9 @@ impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
     }
 }
 
+/// Returns the key of any potential outer cycle head or `None` if there is no outer cycle.
+///
+/// That is, any query that's currently blocked on the result computed by this query (claiming it results in a cycle).
 fn outer_cycle(
     zalsa: &Zalsa,
     zalsa_local: &ZalsaLocal,
