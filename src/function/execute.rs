@@ -256,9 +256,11 @@ where
                 // transfer it to the outermost cycle head (if any). This prevents any other thread
                 // from claiming this query (all cycle heads are potential entry points to the same cycle),
                 // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
-                claim_guard.set_release_mode(ReleaseMode::TransferTo(
-                    outer_cycle.expect("query to of an outer cycle."),
-                ));
+                if let Some(outer_cycle) = outer_cycle {
+                    claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
+                } else {
+                    claim_guard.set_release_mode(ReleaseMode::SelfOnly);
+                }
 
                 completed_query.revisions.set_cycle_heads(cycle_heads);
                 break (new_value, completed_query);
