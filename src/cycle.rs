@@ -44,10 +44,12 @@
 //! result in a stable, converged cycle. If it does not (that is, if the result of another
 //! iteration of the cycle is not the same as the fallback value), we'll panic.
 //!
-//! In nested cycle cases, the inner cycle head will iterate until its own cycle is resolved, but
-//! the "final" value it then returns will still be provisional on the outer cycle head. The outer
-//! cycle head may then iterate, which may result in a new set of iterations on the inner cycle,
-//! for each iteration of the outer cycle.
+//! In nested cycle cases, the inner cycles are iterated as part of the outer cycle iteration. This helps
+//! to significantly reduce the number of iterations needed to reach a fixpoint. For nested cycles,
+//! the inner cycles head will transfer their lock ownership to the outer cycle. This ensures
+//! that, over time, the outer cycle will hold all necessary locks to complete the fixpoint iteration.
+//! Without this, different threads would compete for the locks of inner cycle heads, leading to potential
+//! hangs (but not deadlocks).
 
 use thin_vec::{thin_vec, ThinVec};
 
