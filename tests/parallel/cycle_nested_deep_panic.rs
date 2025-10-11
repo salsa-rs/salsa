@@ -63,8 +63,7 @@ fn initial(_db: &dyn KnobsDatabase) -> CycleValue {
     MIN
 }
 
-#[test_log::test]
-fn the_test() {
+fn run() {
     tracing::debug!("Starting new run");
     let db_t1 = Knobs::default();
     let db_t2 = db_t1.clone();
@@ -106,6 +105,13 @@ fn the_test() {
     assert_is_set_cycle_error(catch_unwind(|| query_d(&db_t4)));
 }
 
+#[test_log::test]
+fn the_test() {
+    for _ in 0..200 {
+        run()
+    }
+}
+
 #[track_caller]
 fn assert_is_set_cycle_error<T>(result: Result<T, Box<dyn std::any::Any + Send>>)
 where
@@ -125,7 +131,7 @@ where
             "Expected error message to contain 'set cycle_fn/cycle_initial to fixpoint iterate', but got: {}",
             message
         );
-    } else if let Some(_) = err.downcast_ref::<salsa::Cancelled>() {
+    } else if err.downcast_ref::<salsa::Cancelled>().is_some() {
         // This is okay, because Salsa throws a Cancelled::PropagatedPanic when a panic occurs in a query
         // that it blocks on.
     } else {

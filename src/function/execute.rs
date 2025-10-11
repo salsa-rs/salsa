@@ -8,10 +8,11 @@ use crate::function::{ClaimGuard, Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::{AtomicBool, Ordering};
-use crate::tracing;
+use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
+use crate::{tracing, Cancelled};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -144,6 +145,8 @@ where
         zalsa_local: &'db ZalsaLocal,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> (C::Output<'db>, CompletedQuery) {
+        claim_guard.set_release_mode(ReleaseMode::Default);
+
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
 
@@ -155,23 +158,33 @@ where
         // TODO: Can we seed those somehow?
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
 
-        let _guard = ClearCycleHeadIfPanicking::new(self, zalsa, id, memo_ingredient_index);
         let mut iteration_count = IterationCount::initial();
 
         if let Some(old_memo) = opt_old_memo {
-            let memo_iteration_count = old_memo.revisions.iteration();
-
             if old_memo.verified_at.load() == zalsa.current_revision()
                 && old_memo.cycle_heads().contains(&database_key_index)
-                && !memo_iteration_count.is_panicked()
             {
+                let memo_iteration_count = old_memo.revisions.iteration();
+
+                // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
+                // However, the locking doesn't handle the case where a thread fetches the result of a panicking cycle head query  **after** all locks were released.
+                // That's what we do here. We could consider re-executing the entire cycle but:
+                // a) It's tricky to ensure that all queries participating in the cycle will re-execute
+                //    (we can't rely on `iteration_count` being updated for nested cycles because the nested cycles may have completed successfully).
+                // b) It's guaranteed that this query will panic again anyway.
+                // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
+                if memo_iteration_count.is_panicked() {
+                    ::tracing::warn!("Propagating panic for cycle head that panicked in an earlier execution in that revision");
+                    Cancelled::PropagatedPanic.throw();
+                }
                 last_provisional_memo = Some(old_memo);
                 iteration_count = memo_iteration_count;
             }
         }
 
+        let _poison_guard =
+            PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
         let mut active_query = zalsa_local.push_query(database_key_index, iteration_count);
-        claim_guard.set_release_mode(ReleaseMode::Default);
 
         let (new_value, completed_query) = loop {
             // Tracked struct ids that existed in the previous revision
@@ -496,14 +509,14 @@ where
 /// a new fix point initial value if that happens.
 ///
 /// We could insert a fixpoint initial value here, but it seems unnecessary.
-struct ClearCycleHeadIfPanicking<'a, C: Configuration> {
+struct PoisonProvisionalIfPanicking<'a, C: Configuration> {
     ingredient: &'a IngredientImpl<C>,
     zalsa: &'a Zalsa,
     id: Id,
     memo_ingredient_index: MemoIngredientIndex,
 }
 
-impl<'a, C: Configuration> ClearCycleHeadIfPanicking<'a, C> {
+impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
     fn new(
         ingredient: &'a IngredientImpl<C>,
         zalsa: &'a Zalsa,
@@ -519,9 +532,9 @@ impl<'a, C: Configuration> ClearCycleHeadIfPanicking<'a, C> {
     }
 }
 
-impl<C: Configuration> Drop for ClearCycleHeadIfPanicking<'_, C> {
+impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
     fn drop(&mut self) {
-        if std::thread::panicking() {
+        if thread::panicking() {
             let revisions = QueryRevisions::fixpoint_initial(
                 self.ingredient.database_key_index(self.id),
                 IterationCount::panicked(),

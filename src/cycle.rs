@@ -342,6 +342,7 @@ impl CycleHeads {
         database_key_index: DatabaseKeyIndex,
         iteration_count: IterationCount,
     ) -> bool {
+        assert!(!iteration_count.is_panicked());
         if let Some(existing) = self
             .0
             .iter_mut()
