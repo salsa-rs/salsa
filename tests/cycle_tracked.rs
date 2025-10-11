@@ -269,7 +269,7 @@ fn cycle_recover_with_structs<'db>(
     CycleRecoveryAction::Iterate
 }
 
-#[test]
+#[test_log::test]
 fn test_cycle_with_fixpoint_structs() {
     let mut db = EventLoggerDatabase::default();
 

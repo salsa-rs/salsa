@@ -1,4 +1,6 @@
 use std::cell::{RefCell, UnsafeCell};
+use std::fmt;
+use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 
@@ -11,7 +13,7 @@ use crate::accumulator::{
     Accumulator,
 };
 use crate::active_query::{CompletedQuery, QueryStack};
-use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount};
+use crate::cycle::{empty_cycle_heads, AtomicIterationCount, CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -513,7 +515,8 @@ impl QueryRevisionsExtra {
                 accumulated,
                 cycle_heads,
                 tracked_struct_ids,
-                iteration,
+                iteration: iteration.into(),
+                cycle_converged: false,
             }))
         };
 
@@ -521,7 +524,6 @@ impl QueryRevisionsExtra {
     }
 }
 
-#[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 struct QueryRevisionsExtraInner {
     #[cfg(feature = "accumulator")]
@@ -561,7 +563,12 @@ struct QueryRevisionsExtraInner {
     /// iterate again.
     cycle_heads: CycleHeads,
 
-    iteration: IterationCount,
+    iteration: AtomicIterationCount,
+
+    /// Stores for nested cycle heads whether they've converged in the last iteration.
+    /// This value is always `false` for other queries.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    cycle_converged: bool,
 }
 
 impl QueryRevisionsExtraInner {
@@ -573,6 +580,7 @@ impl QueryRevisionsExtraInner {
             tracked_struct_ids,
             cycle_heads,
             iteration: _,
+            cycle_converged: _,
         } = self;
 
         #[cfg(feature = "accumulator")]
@@ -580,6 +588,44 @@ impl QueryRevisionsExtraInner {
         #[cfg(not(feature = "accumulator"))]
         let b = 0;
         b + cycle_heads.allocation_size() + std::mem::size_of_val(tracked_struct_ids.as_slice())
+    }
+}
+
+impl fmt::Debug for QueryRevisionsExtraInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        struct FmtTrackedStructIds<'a>(&'a ThinVec<(Identity, Id)>);
+
+        impl fmt::Debug for FmtTrackedStructIds<'_> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                let mut f = f.debug_list();
+
+                if self.0.len() > 5 {
+                    f.entries(&self.0[..5]);
+                    f.finish_non_exhaustive()
+                } else {
+                    f.entries(self.0);
+                    f.finish()
+                }
+            }
+        }
+
+        let mut f = f.debug_struct("QueryRevisionsExtraInner");
+
+        f.field("cycle_heads", &self.cycle_heads)
+            .field("iteration", &self.iteration)
+            .field("cycle_converged", &self.cycle_converged);
+
+        #[cfg(feature = "accumulator")]
+        {
+            f.field("accumulated", &self.accumulated);
+        }
+
+        f.field(
+            "tracked_struct_ids",
+            &FmtTrackedStructIds(&self.tracked_struct_ids),
+        );
+
+        f.finish()
     }
 }
 
@@ -605,7 +651,7 @@ impl QueryRevisions {
                 #[cfg(feature = "accumulator")]
                 AccumulatedMap::default(),
                 ThinVec::default(),
-                CycleHeads::initial(query),
+                CycleHeads::initial(query, IterationCount::initial()),
                 IterationCount::initial(),
             ),
         }
@@ -654,17 +700,55 @@ impl QueryRevisions {
         };
     }
 
-    pub(crate) const fn iteration(&self) -> IterationCount {
+    pub(crate) fn cycle_converged(&self) -> bool {
         match &self.extra.0 {
-            Some(extra) => extra.iteration,
+            Some(extra) => extra.cycle_converged,
+            None => false,
+        }
+    }
+
+    pub(crate) fn set_cycle_converged(&mut self, cycle_converged: bool) {
+        if let Some(extra) = &mut self.extra.0 {
+            extra.cycle_converged = cycle_converged
+        }
+    }
+
+    pub(crate) fn iteration(&self) -> IterationCount {
+        match &self.extra.0 {
+            Some(extra) => extra.iteration.load(),
             None => IterationCount::initial(),
         }
     }
 
+    pub(crate) fn set_iteration_count(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) {
+        let Some(extra) = &self.extra.0 else {
+            return;
+        };
+        debug_assert!(extra.iteration.load() <= iteration_count);
+
+        extra.iteration.store(iteration_count);
+
+        extra
+            .cycle_heads
+            .update_iteration_count(database_key_index, iteration_count);
+    }
+
     /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
-    pub(crate) fn update_iteration_count(&mut self, iteration_count: IterationCount) {
+    pub(crate) fn update_iteration_count_mut(
+        &mut self,
+        cycle_head_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) {
         if let Some(extra) = &mut self.extra.0 {
-            extra.iteration = iteration_count
+            extra.iteration.store_mut(iteration_count);
+
+            extra
+                .cycle_heads
+                .update_iteration_count_mut(cycle_head_index, iteration_count);
         }
     }
 

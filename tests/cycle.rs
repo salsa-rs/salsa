@@ -95,18 +95,22 @@ impl Input {
         }
     }
 
+    #[track_caller]
     fn assert(&self, db: &dyn Db, expected: Value) {
         assert_eq!(self.eval(db), expected)
     }
 
+    #[track_caller]
     fn assert_value(&self, db: &dyn Db, expected: u8) {
         self.assert(db, Value::N(expected))
     }
 
+    #[track_caller]
     fn assert_bounds(&self, db: &dyn Db) {
         self.assert(db, Value::OutOfBounds)
     }
 
+    #[track_caller]
     fn assert_count(&self, db: &dyn Db) {
         self.assert(db, Value::TooManyIterations)
     }
@@ -893,7 +897,7 @@ fn cycle_unchanged() {
 ///
 /// If nothing in a nested cycle changed in the new revision, no part of the cycle should
 /// re-execute.
-#[test]
+#[test_log::test]
 fn cycle_unchanged_nested() {
     let mut db = ExecuteValidateLoggerDatabase::default();
     let a_in = Inputs::new(&db, vec![]);
@@ -978,7 +982,7 @@ fn cycle_unchanged_nested_intertwined() {
             e.assert_value(&db, 60);
         }
 
-        db.assert_logs_len(15 + i);
+        db.assert_logs_len(13 + i);
 
         // next revision, we change only A, which is not part of the cycle and the cycle does not
         // depend on.

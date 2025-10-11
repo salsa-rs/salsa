@@ -20,6 +20,7 @@ pub enum Cancelled {
 }
 
 impl Cancelled {
+    #[cold]
     pub(crate) fn throw(self) -> ! {
         // We use resume and not panic here to avoid running the panic
         // hook (that is, to avoid collecting and printing backtrace).
