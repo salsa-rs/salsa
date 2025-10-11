@@ -219,7 +219,7 @@ pub enum SyncOwnerId {
 /// Marks an active 'claim' in the synchronization map. The claim is
 /// released when this value is dropped.
 #[must_use]
-pub struct ClaimGuard<'me> {
+pub(crate) struct ClaimGuard<'me> {
     key_index: Id,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,

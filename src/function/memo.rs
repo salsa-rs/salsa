@@ -144,6 +144,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
+        retry_count: &mut u32,
     ) -> bool {
         if self.block_on_heads(zalsa, zalsa_local) {
             // If we get here, we are a provisional value of
@@ -151,6 +152,15 @@ impl<'db, C: Configuration> Memo<'db, C> {
             // returned to caller to allow fixpoint iteration to proceed.
             false
         } else {
+            assert!(
+                *retry_count <= 20000,
+                "Provisional memo retry limit exceeded for {database_key_index:?}; \
+                     this usually indicates a bug in salsa's cycle caching/locking. \
+                     (retried {retry_count} times)",
+            );
+
+            *retry_count += 1;
+
             // all our cycle heads are complete; re-fetch
             // and we should get a non-provisional memo.
             crate::tracing::debug!(

@@ -58,11 +58,19 @@ where
         id: Id,
     ) -> &'db Memo<'db, C> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        let mut retry_count = 0;
         loop {
             if let Some(memo) = self
                 .fetch_hot(zalsa, id, memo_ingredient_index)
                 .or_else(|| {
-                    self.fetch_cold_with_retry(zalsa, zalsa_local, db, id, memo_ingredient_index)
+                    self.fetch_cold_with_retry(
+                        zalsa,
+                        zalsa_local,
+                        db,
+                        id,
+                        memo_ingredient_index,
+                        &mut retry_count,
+                    )
                 })
             {
                 return memo;
@@ -103,6 +111,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
+        retry_count: &mut u32,
     ) -> Option<&'db Memo<'db, C>> {
         let memo = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)?;
 
@@ -114,7 +123,7 @@ where
         // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
         // never have provisional entries.
         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-            || !memo.provisional_retry(zalsa, zalsa_local, self.database_key_index(id))
+            || !memo.provisional_retry(zalsa, zalsa_local, self.database_key_index(id), retry_count)
         {
             Some(memo)
         } else {
