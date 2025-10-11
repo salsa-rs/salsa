@@ -69,10 +69,11 @@ impl SyncTable {
     /// `REENTRANT` controls whether a query that transferred its ownership to another query for which
     /// this thread currently holds the lock for can be claimed. For example, if `a` transferred its ownership
     /// to `b`, and this thread holds the lock for `b`, then this thread can also claim `a` but only if `REENTRANT` is `true`.
-    pub(crate) fn try_claim<'me, const REENTRANT: bool>(
+    pub(crate) fn try_claim<'me>(
         &'me self,
         zalsa: &'me Zalsa,
         key_index: Id,
+        reentrant: Reentrant,
     ) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
         match write.entry(key_index) {
@@ -80,8 +81,7 @@ impl SyncTable {
                 let id = match occupied_entry.get().id {
                     SyncOwnerId::Thread(id) => id,
                     SyncOwnerId::Transferred => {
-                        return match self.try_claim_transferred::<REENTRANT>(zalsa, occupied_entry)
-                        {
+                        return match self.try_claim_transferred(zalsa, occupied_entry, reentrant) {
                             Ok(claimed) => claimed,
                             Err(other_thread) => match other_thread.block(write) {
                                 BlockResult::Cycle => ClaimResult::Cycle { inner: false },
@@ -131,10 +131,11 @@ impl SyncTable {
 
     #[cold]
     #[inline(never)]
-    fn try_claim_transferred<'me, const REENTRANT: bool>(
+    fn try_claim_transferred<'me>(
         &'me self,
         zalsa: &'me Zalsa,
         mut entry: OccupiedEntry<Id, SyncState>,
+        reentrant: Reentrant,
     ) -> Result<ClaimResult<'me>, Box<BlockOnTransferredOwner<'me>>> {
         let key_index = *entry.key();
         let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
@@ -144,7 +145,7 @@ impl SyncTable {
             .runtime()
             .block_transferred(database_key_index, thread_id)
         {
-            BlockTransferredResult::ImTheOwner if REENTRANT => {
+            BlockTransferredResult::ImTheOwner if reentrant.is_allow() => {
                 let SyncState {
                     id, claimed_twice, ..
                 } = entry.into_mut();
@@ -405,5 +406,21 @@ impl std::fmt::Debug for ClaimGuard<'_> {
             .field("key_index", &self.key_index)
             .field("mode", &self.mode)
             .finish_non_exhaustive()
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Reentrant {
+    /// Allow `try_claim` to reclaim a query's that transferred its ownership to a query
+    /// hold by this thread.
+    Allow,
+
+    /// Only allow claiming queries that haven't been claimed by any thread.
+    Deny,
+}
+
+impl Reentrant {
+    const fn is_allow(self) -> bool {
+        matches!(self, Reentrant::Allow)
     }
 }

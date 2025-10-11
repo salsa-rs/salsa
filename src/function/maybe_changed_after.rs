@@ -5,7 +5,7 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
 use crate::function::memo::{Memo, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl};
+use crate::function::{Configuration, IngredientImpl, Reentrant};
 
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
@@ -141,7 +141,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let claim_guard = match self.sync_table.try_claim::<false>(zalsa, key_index) {
+        let claim_guard = match self.sync_table.try_claim(zalsa, key_index, Reentrant::Deny) {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
