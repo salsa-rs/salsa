@@ -639,10 +639,7 @@ const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
     [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(
-        query: DatabaseKeyIndex,
-        iteration_count: IterationCount,
-    ) -> Self {
+    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
         Self {
             changed_at: Revision::start(),
             durability: Durability::MAX,
@@ -654,8 +651,8 @@ impl QueryRevisions {
                 #[cfg(feature = "accumulator")]
                 AccumulatedMap::default(),
                 ThinVec::default(),
-                CycleHeads::initial(query, iteration_count),
-                iteration_count,
+                CycleHeads::initial(query, IterationCount::initial()),
+                IterationCount::initial(),
             ),
         }
     }

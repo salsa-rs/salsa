@@ -273,8 +273,7 @@ where
                     "hit cycle at {database_key_index:#?}, \
                     inserting and returning fixpoint initial value"
                 );
-                let revisions =
-                    QueryRevisions::fixpoint_initial(database_key_index, IterationCount::initial());
+                let revisions = QueryRevisions::fixpoint_initial(database_key_index);
                 let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
                 self.insert_memo(
                     zalsa,

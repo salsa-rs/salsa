@@ -173,7 +173,7 @@ where
                 //    (we can't rely on `iteration_count` being updated for nested cycles because the nested cycles may have completed successfully).
                 // b) It's guaranteed that this query will panic again anyway.
                 // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
-                if memo_iteration_count.is_panicked() {
+                if old_memo.value.is_none() {
                     ::tracing::warn!("Propagating panic for cycle head that panicked in an earlier execution in that revision");
                     Cancelled::PropagatedPanic.throw();
                 }
@@ -535,10 +535,8 @@ impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
 impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
     fn drop(&mut self) {
         if thread::panicking() {
-            let revisions = QueryRevisions::fixpoint_initial(
-                self.ingredient.database_key_index(self.id),
-                IterationCount::panicked(),
-            );
+            let revisions =
+                QueryRevisions::fixpoint_initial(self.ingredient.database_key_index(self.id));
 
             let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
             self.ingredient

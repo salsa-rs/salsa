@@ -154,19 +154,6 @@ impl IterationCount {
         self.0 == 0
     }
 
-    /// Iteration count reserved for panicked cycles.
-    ///
-    /// Using a special iteration count ensures that `validate_same_iteration` and `validate_provisional`
-    /// return `false` for queries depending on this panicked cycle, because the iteration count is guaranteed
-    /// to be different (which isn't guaranteed if the panicked memo uses [`Self::initial`]).
-    pub(crate) const fn panicked() -> Self {
-        Self(u8::MAX)
-    }
-
-    pub(crate) const fn is_panicked(self) -> bool {
-        self.0 == u8::MAX
-    }
-
     pub(crate) const fn increment(self) -> Option<Self> {
         let next = Self(self.0 + 1);
         if next.0 <= MAX_ITERATIONS.0 {
@@ -346,7 +333,6 @@ impl CycleHeads {
         database_key_index: DatabaseKeyIndex,
         iteration_count: IterationCount,
     ) -> bool {
-        assert!(!iteration_count.is_panicked());
         if let Some(existing) = self
             .0
             .iter_mut()
