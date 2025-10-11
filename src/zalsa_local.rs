@@ -1,4 +1,6 @@
 use std::cell::{RefCell, UnsafeCell};
+use std::fmt;
+use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 
@@ -522,7 +524,6 @@ impl QueryRevisionsExtra {
     }
 }
 
-#[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 struct QueryRevisionsExtraInner {
     #[cfg(feature = "accumulator")]
@@ -587,6 +588,44 @@ impl QueryRevisionsExtraInner {
         #[cfg(not(feature = "accumulator"))]
         let b = 0;
         b + cycle_heads.allocation_size() + std::mem::size_of_val(tracked_struct_ids.as_slice())
+    }
+}
+
+impl fmt::Debug for QueryRevisionsExtraInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        struct FmtTrackedStructIds<'a>(&'a ThinVec<(Identity, Id)>);
+
+        impl fmt::Debug for FmtTrackedStructIds<'_> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                let mut f = f.debug_list();
+
+                if self.0.len() > 5 {
+                    f.entries(&self.0[..5]);
+                    f.finish_non_exhaustive()
+                } else {
+                    f.entries(self.0);
+                    f.finish()
+                }
+            }
+        }
+
+        let mut f = f.debug_struct("QueryRevisionsExtraInner");
+
+        f.field("cycle_heads", &self.cycle_heads)
+            .field("iteration", &self.iteration)
+            .field("cycle_converged", &self.cycle_converged);
+
+        #[cfg(feature = "accumulator")]
+        {
+            f.field("accumulated", &self.accumulated);
+        }
+
+        f.field(
+            "tracked_struct_ids",
+            &FmtTrackedStructIds(&self.tracked_struct_ids),
+        );
+
+        f.finish()
     }
 }
 

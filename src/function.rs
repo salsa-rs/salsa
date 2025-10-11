@@ -92,16 +92,18 @@ pub trait Configuration: Any {
 
     /// Decide whether to iterate a cycle again or fallback. `value` is the provisional return
     /// value from the latest iteration of this cycle. `count` is the number of cycle iterations
-    /// we've already completed.
+    /// completed so far.
     ///
-    /// Note: There is no guarantee that `count` always starts at 0. It's possible that
-    /// the function is called with a non-zero value even if it is the first time around for
-    /// this specific query if the query has become the outermost cycle of a larger cycle.
-    /// In this case, Salsa uses the `count` value of the already iterating cycle as the start.
+    /// # Iteration count semantics
     ///
-    /// It's also not guaranteed that `count` values are contiguous. The function might not be called
-    /// if this query converged in this specific iteration OR if the query only participates conditionally
-    /// in the cycle (e.g. every other iteration).
+    /// The `count` parameter isn't guaranteed to start from zero or to be contiguous:
+    ///
+    /// * **Initial value**: `count` may be non-zero on the first call for a given query if that
+    ///   query becomes the outermost cycle head after a nested cycle complete a few iterations. In this case,
+    ///   `count` continues from the nested cycle's iteration count rather than resetting to zero.
+    /// * **Non-contiguous values**: This function isn't called if this cycle is part of an outer cycle
+    ///   and the value for this query remains unchanged for one iteration. But the outer cycle might
+    ///   keep iterating because other heads keep changing.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         value: &Self::Output<'db>,

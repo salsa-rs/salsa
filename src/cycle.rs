@@ -51,6 +51,7 @@
 //! Without this, different threads would compete for the locks of inner cycle heads, leading to potential
 //! hangs (but not deadlocks).
 
+use std::iter::FusedIterator;
 use thin_vec::{thin_vec, ThinVec};
 
 use crate::key::DatabaseKeyIndex;
@@ -268,14 +269,17 @@ impl CycleHeads {
     }
 
     /// Iterates over all cycle heads that aren't equal to `own`.
-    pub(crate) fn iter_not_eq(&self, own: DatabaseKeyIndex) -> impl Iterator<Item = &CycleHead> {
+    pub(crate) fn iter_not_eq(
+        &self,
+        own: DatabaseKeyIndex,
+    ) -> impl DoubleEndedIterator<Item = &CycleHead> {
         self.iter()
             .filter(move |head| head.database_key_index != own)
     }
 
     pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
         self.into_iter()
-            .any(|head| head.database_key_index == *value && !head.removed.load(Ordering::Relaxed))
+            .any(|head| head.database_key_index == *value)
     }
 
     /// Removes all cycle heads except `except` by marking them as removed.
@@ -428,6 +432,21 @@ impl<'a> Iterator for CycleHeadsIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let next = self.inner.next()?;
+
+            if next.removed.load(Ordering::Relaxed) {
+                continue;
+            }
+
+            return Some(next);
+        }
+    }
+}
+
+impl FusedIterator for CycleHeadsIterator<'_> {}
+impl DoubleEndedIterator for CycleHeadsIterator<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        loop {
+            let next = self.inner.next_back()?;
 
             if next.removed.load(Ordering::Relaxed) {
                 continue;

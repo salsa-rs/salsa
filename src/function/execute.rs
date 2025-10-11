@@ -155,9 +155,9 @@ where
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // This is different from `opt_old_memo` which might be from a different revision.
         let mut last_provisional_memo: Option<&Memo<'db, C>> = None;
+
         // TODO: Can we seed those somehow?
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
-
         let mut iteration_count = IterationCount::initial();
 
         if let Some(old_memo) = opt_old_memo {
@@ -556,23 +556,23 @@ fn outer_cycle(
     cycle_heads: &CycleHeads,
     current_key: DatabaseKeyIndex,
 ) -> Option<DatabaseKeyIndex> {
+    // SAFETY: We don't call into with_query_stack recursively
+    if let Some(on_stack) = unsafe {
+        zalsa_local.with_query_stack_unchecked(|stack| {
+            cycle_heads.iter_not_eq(current_key).rfind(|query| {
+                stack
+                    .iter()
+                    .rev()
+                    .any(|active_query| active_query.database_key_index == query.database_key_index)
+            })
+        })
+    } {
+        return Some(on_stack.database_key_index);
+    }
+
     cycle_heads
         .iter_not_eq(current_key)
-        .find(|head| {
-            // SAFETY: We don't call into with_query_stack recursively
-            let is_on_stack = unsafe {
-                zalsa_local.with_query_stack_unchecked(|stack| {
-                    stack
-                        .iter()
-                        .rev()
-                        .any(|query| query.database_key_index == head.database_key_index)
-                })
-            };
-
-            if is_on_stack {
-                return true;
-            }
-
+        .rfind(|head| {
             let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
 
             matches!(

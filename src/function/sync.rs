@@ -26,8 +26,8 @@ pub(crate) enum ClaimResult<'a> {
     /// Claiming the query results in a cycle.
     Cycle {
         /// `true` if this is a cycle with an inner query. For example, if `a` transferred its ownership to
-        /// `b`. If the thread claiming `b` tries to claim `a`, then this results in a cycle unless
-        /// `REENTRANT` is `true` (in which case it can be claimed).
+        /// `b`. If the thread claiming `b` tries to claim `a`, then this results in a cycle except when calling
+        /// [`SyncTable::try_claim`] with [`Reentrant::Allow`].
         inner: bool,
     },
     /// Successfully claimed the query.
@@ -65,10 +65,6 @@ impl SyncTable {
     }
 
     /// Claims the given key index, or blocks if it is running on another thread.
-    ///
-    /// `REENTRANT` controls whether a query that transferred its ownership to another query for which
-    /// this thread currently holds the lock for can be claimed. For example, if `a` transferred its ownership
-    /// to `b`, and this thread holds the lock for `b`, then this thread can also claim `a` but only if `REENTRANT` is `true`.
     pub(crate) fn try_claim<'me>(
         &'me self,
         zalsa: &'me Zalsa,
@@ -241,6 +237,7 @@ impl<'me> ClaimGuard<'me> {
     }
 
     #[cold]
+    #[inline(never)]
     fn release_panicking(&self) {
         let mut syncs = self.sync_table.syncs.lock();
         let state = syncs.remove(&self.key_index).expect("key claimed twice?");
@@ -409,6 +406,11 @@ impl std::fmt::Debug for ClaimGuard<'_> {
     }
 }
 
+/// Controls whether this thread can claim a query that transferred its ownership to a query
+/// this thread currently holds the lock for.
+///
+/// For example: if query `a` transferred its ownership to query `b`, and this thread holds
+/// the lock for `b`, then this thread can also claim `a` — but only when using [`Self::Allow`].
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Reentrant {
     /// Allow `try_claim` to reclaim a query's that transferred its ownership to a query
