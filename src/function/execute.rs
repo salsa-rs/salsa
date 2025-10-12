@@ -554,20 +554,25 @@ fn outer_cycle(
     cycle_heads: &CycleHeads,
     current_key: DatabaseKeyIndex,
 ) -> Option<DatabaseKeyIndex> {
+    // First, look for the outer most cycle head on the same thread.
+    // Using the outer most over the inner most should reduce the need
+    // for transitive transfers.
     // SAFETY: We don't call into with_query_stack recursively
-    if let Some(on_stack) = unsafe {
+    if let Some(same_thread) = unsafe {
         zalsa_local.with_query_stack_unchecked(|stack| {
-            cycle_heads.iter_not_eq(current_key).rfind(|query| {
-                stack
-                    .iter()
-                    .rev()
-                    .any(|active_query| active_query.database_key_index == query.database_key_index)
-            })
+            stack
+                .iter()
+                .find(|active_query| {
+                    cycle_heads.contains(&active_query.database_key_index)
+                        && active_query.database_key_index != current_key
+                })
+                .map(|active_query| active_query.database_key_index)
         })
     } {
-        return Some(on_stack.database_key_index);
+        return Some(same_thread);
     }
 
+    // Check for any outer cycle head running on a different thread.
     cycle_heads
         .iter_not_eq(current_key)
         .rfind(|head| {
