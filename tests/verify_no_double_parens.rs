@@ -2,6 +2,7 @@
 //!
 //! This test verifies that the expanded macros don't contain the problematic
 //! std::mem::drop(()) pattern that triggers clippy warnings.
+#![cfg(feature = "inventory")]
 
 use std::process::Command;
 
