@@ -6,10 +6,7 @@
 //! Before the fix in components/salsa-macro-rules/src/unexpected_cycle_recovery.rs,
 //! these macros would generate `std::mem::drop(())` which triggered the warning.
 //!
-//! Run `cargo test --test verify_no_double_parens` to verify the fix.
-//!
 //! See: https://github.com/salsa-rs/salsa/issues/1004
-#![cfg(feature = "inventory")]
 
 // This tracked function has no additional inputs beyond `db`.
 // With the old code, this would trigger clippy::double_parens warnings in the
