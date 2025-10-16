@@ -107,7 +107,9 @@ fn run() {
 
 #[test_log::test]
 fn the_test() {
-    for _ in 0..200 {
+    let count = if cfg!(miri) { 1 } else { 200 };
+
+    for _ in 0..count {
         run()
     }
 }
