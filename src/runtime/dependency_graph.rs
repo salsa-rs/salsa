@@ -3,7 +3,7 @@ use std::pin::Pin;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-use crate::function::SyncOwnerId;
+use crate::function::SyncOwner;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
@@ -223,11 +223,11 @@ impl DependencyGraph {
         query: DatabaseKeyIndex,
         current_thread: ThreadId,
         new_owner: DatabaseKeyIndex,
-        new_owner_id: SyncOwnerId,
+        new_owner_id: SyncOwner,
     ) {
         let new_owner_thread = match new_owner_id {
-            SyncOwnerId::Thread(thread) => thread,
-            SyncOwnerId::Transferred => {
+            SyncOwner::Thread(thread) => thread,
+            SyncOwner::Transferred => {
                 // Skip over `query` to skip over any existing mapping from `new_owner` to `query` that may
                 // exist from previous transfers.
                 self.thread_id_of_transferred_query(new_owner, Some(query))
@@ -267,7 +267,7 @@ impl DependencyGraph {
                 // If we have `c -> a -> d` and we now insert a mapping `d -> c`, rewrite the mapping to
                 // `d -> c -> a` to avoid cycles.
                 //
-                // Or, starting with `e -> c -> a -> d -> b` insert `d -> c`. We need to respine the tree to
+                // Or, starting with `e -> c -> a -> d -> b` insert `d -> c`. We need to rewrite the tree to
                 // ```
                 // e -> c -> a -> b
                 // d /
@@ -547,6 +547,7 @@ mod edge {
 
         /// Signalled whenever a query with dependents completes.
         /// Allows those dependents to check if they are ready to unblock.
+        /// `condvar: unsafe<'stack_frame> Pin<&'stack_frame Condvar>`
         condvar: Pin<&'static EdgeCondvar>,
     }
 

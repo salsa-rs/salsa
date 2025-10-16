@@ -7,6 +7,12 @@ macro_rules! trace {
     };
 }
 
+macro_rules! warn_event {
+    ($($x:tt)*) => {
+        crate::tracing::event!(WARN, $($x)*)
+    };
+}
+
 macro_rules! info {
     ($($x:tt)*) => {
         crate::tracing::event!(INFO, $($x)*)
@@ -59,4 +65,4 @@ macro_rules! span {
 }
 
 #[expect(unused_imports)]
-pub(crate) use {debug, debug_span, event, info, info_span, span, trace};
+pub(crate) use {debug, debug_span, event, info, info_span, span, trace, warn_event as warn};

@@ -167,14 +167,15 @@ where
                 let memo_iteration_count = old_memo.revisions.iteration();
 
                 // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
-                // However, the locking doesn't handle the case where a thread fetches the result of a panicking cycle head query  **after** all locks were released.
-                // That's what we do here. We could consider re-executing the entire cycle but:
+                // However, the locking doesn't handle the case where a thread fetches the result of a panicking
+                // cycle head query **after** all locks were released. That's what we do here.
+                // We could consider re-executing the entire cycle but:
                 // a) It's tricky to ensure that all queries participating in the cycle will re-execute
                 //    (we can't rely on `iteration_count` being updated for nested cycles because the nested cycles may have completed successfully).
                 // b) It's guaranteed that this query will panic again anyway.
                 // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
                 if old_memo.value.is_none() {
-                    ::tracing::warn!("Propagating panic for cycle head that panicked in an earlier execution in that revision");
+                    tracing::warn!("Propagating panic for cycle head that panicked in an earlier execution in that revision");
                     Cancelled::PropagatedPanic.throw();
                 }
                 last_provisional_memo = Some(old_memo);
@@ -228,7 +229,7 @@ where
             // t1: a (completes `b` with `c` in heads)
             //
             // Note how `a` only depends on `c` but not `a`. This is because `a` only saw the initial value of `c` and wasn't updated when `c` completed.
-            // That's why we need to resolve the cycle heads recursively to `cycle_heads` contains all cycle heads at the moment this query completed.
+            // That's why we need to resolve the cycle heads recursively so `cycle_heads` contains all cycle heads at the moment this query completed.
             for head in &cycle_heads {
                 max_iteration_count = max_iteration_count.max(head.iteration_count.load());
                 depends_on_self |= head.database_key_index == database_key_index;
@@ -397,7 +398,7 @@ where
 
             // The fixpoint iteration hasn't converged. Iterate again...
             iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                ::tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
+                tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
                 panic!("{database_key_index:?}: execute: too many cycle iterations")
             });
 

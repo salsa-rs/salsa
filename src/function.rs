@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrant, SyncGuard, SyncOwnerId, SyncTable};
+pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrancy, SyncGuard, SyncOwner, SyncTable};
 
 use std::any::Any;
 use std::fmt;
@@ -400,7 +400,7 @@ where
         memo.revisions.cycle_converged()
     }
 
-    fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwnerId> {
+    fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
         self.sync_table.mark_as_transfer_target(key_index)
     }
 
@@ -418,7 +418,10 @@ where
     /// * [`WaitResult::Cycle`] Claiming the `key_index` results in a cycle because it's on the current's thread query stack or
     ///   running on another thread that is blocked on this thread.
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
-        match self.sync_table.try_claim(zalsa, key_index, Reentrant::Deny) {
+        match self
+            .sync_table
+            .try_claim(zalsa, key_index, Reentrancy::Deny)
+        {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
             ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
             ClaimResult::Claimed(_) => WaitForResult::Available,

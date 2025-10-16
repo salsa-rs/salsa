@@ -104,7 +104,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ///
     /// Note: The returned `SyncOwnerId` may be outdated as soon as this function returns **unless**
     /// it's guaranteed that `_key_index` is blocked on the current thread.
-    fn mark_as_transfer_target(&self, _key_index: Id) -> Option<crate::function::SyncOwnerId> {
+    fn mark_as_transfer_target(&self, _key_index: Id) -> Option<crate::function::SyncOwner> {
         unreachable!("mark_as_transfer_target should only be called on functions");
     }
 

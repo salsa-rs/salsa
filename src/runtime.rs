@@ -1,6 +1,6 @@
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
-use crate::function::{SyncGuard, SyncOwnerId};
+use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
@@ -382,7 +382,7 @@ impl Runtime {
         &self,
         query: DatabaseKeyIndex,
         new_owner_key: DatabaseKeyIndex,
-        new_owner_id: SyncOwnerId,
+        new_owner_id: SyncOwner,
     ) {
         self.dependency_graph.lock().transfer_lock(
             query,

@@ -35,8 +35,8 @@ pub(crate) enum ClaimResult<'a> {
 }
 
 pub(crate) struct SyncState {
-    /// The thread id that is owning this query (actively executing it or iterating it as part of a larger cycle).
-    id: SyncOwnerId,
+    /// The thread id that currently owns this query (actively executing it or iterating it as part of a larger cycle).
+    id: SyncOwner,
 
     /// Set to true if any other queries are blocked,
     /// waiting for this query to complete.
@@ -51,7 +51,7 @@ pub(crate) struct SyncState {
     /// Whether this query has been claimed by the query that currently owns it.
     ///
     /// If `a` has been transferred to `b` and the stack for t1 is `b -> a`, then `a` can be claimed
-    /// and `claimed_transferred` is set to `true`. However, t2 won't be able to claim `a` because
+    /// and `claimed_twice` is set to `true`. However, t2 won't be able to claim `a` because
     /// it doesn't own `b`.
     claimed_twice: bool,
 }
@@ -69,14 +69,14 @@ impl SyncTable {
         &'me self,
         zalsa: &'me Zalsa,
         key_index: Id,
-        reentrant: Reentrant,
+        reentrant: Reentrancy,
     ) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
         match write.entry(key_index) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
                 let id = match occupied_entry.get().id {
-                    SyncOwnerId::Thread(id) => id,
-                    SyncOwnerId::Transferred => {
+                    SyncOwner::Thread(id) => id,
+                    SyncOwner::Transferred => {
                         return match self.try_claim_transferred(zalsa, occupied_entry, reentrant) {
                             Ok(claimed) => claimed,
                             Err(other_thread) => match other_thread.block(write) {
@@ -110,7 +110,7 @@ impl SyncTable {
             }
             std::collections::hash_map::Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(SyncState {
-                    id: SyncOwnerId::Thread(thread::current().id()),
+                    id: SyncOwner::Thread(thread::current().id()),
                     anyone_waiting: false,
                     is_transfer_target: false,
                     claimed_twice: false,
@@ -131,7 +131,7 @@ impl SyncTable {
         &'me self,
         zalsa: &'me Zalsa,
         mut entry: OccupiedEntry<Id, SyncState>,
-        reentrant: Reentrant,
+        reentrant: Reentrancy,
     ) -> Result<ClaimResult<'me>, Box<BlockOnTransferredOwner<'me>>> {
         let key_index = *entry.key();
         let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
@@ -147,7 +147,7 @@ impl SyncTable {
                 } = entry.into_mut();
                 debug_assert!(!*claimed_twice);
 
-                *id = SyncOwnerId::Thread(thread_id);
+                *id = SyncOwner::Thread(thread_id);
                 *claimed_twice = true;
 
                 Ok(ClaimResult::Claimed(ClaimGuard {
@@ -164,7 +164,7 @@ impl SyncTable {
             }
             BlockTransferredResult::Released => {
                 entry.insert(SyncState {
-                    id: SyncOwnerId::Thread(thread_id),
+                    id: SyncOwner::Thread(thread_id),
                     anyone_waiting: false,
                     is_transfer_target: false,
                     claimed_twice: false,
@@ -185,9 +185,13 @@ impl SyncTable {
     ///
     /// Note: The result of this method will immediately become stale unless the thread owning `key_index`
     /// is currently blocked on this thread (claiming `key_index` from this thread results in a cycle).
-    pub(super) fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwnerId> {
+    pub(super) fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
         let mut syncs = self.syncs.lock();
         syncs.get_mut(&key_index).map(|state| {
+            // We set `anyone_waiting` to true because it is used in `ClaimGuard::release`
+            // to exit early if the query doesn't need to release any locks.
+            // However, there are now dependent queries that need to be released, that's why we set `anyone_waiting` to true,
+            // so that `ClaimGuard::release` no longer exits early.
             state.anyone_waiting = true;
             state.is_transfer_target = true;
 
@@ -197,7 +201,7 @@ impl SyncTable {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum SyncOwnerId {
+pub enum SyncOwner {
     /// Query is owned by this thread
     Thread(thread::ThreadId),
 
@@ -287,7 +291,7 @@ impl<'me> ClaimGuard<'me> {
 
         if state.get().claimed_twice {
             state.get_mut().claimed_twice = false;
-            state.get_mut().id = SyncOwnerId::Transferred;
+            state.get_mut().id = SyncOwner::Transferred;
         } else {
             self.release(state.remove(), WaitResult::Completed);
         }
@@ -333,7 +337,7 @@ impl<'me> ClaimGuard<'me> {
             .runtime()
             .transfer_lock(self_key, new_owner, new_owner_thread_id);
 
-        *id = SyncOwnerId::Transferred;
+        *id = SyncOwner::Transferred;
         *claimed_twice = false;
     }
 }
@@ -412,7 +416,7 @@ impl std::fmt::Debug for ClaimGuard<'_> {
 /// For example: if query `a` transferred its ownership to query `b`, and this thread holds
 /// the lock for `b`, then this thread can also claim `a` — but only when using [`Self::Allow`].
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Reentrant {
+pub(crate) enum Reentrancy {
     /// Allow `try_claim` to reclaim a query's that transferred its ownership to a query
     /// hold by this thread.
     Allow,
@@ -421,8 +425,8 @@ pub(crate) enum Reentrant {
     Deny,
 }
 
-impl Reentrant {
+impl Reentrancy {
     const fn is_allow(self) -> bool {
-        matches!(self, Reentrant::Allow)
+        matches!(self, Reentrancy::Allow)
     }
 }
