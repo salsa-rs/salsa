@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.24.0...salsa-v0.24.1) - 2025-10-16
+
+### Other
+
+- Run fixpoint per strongly connected component ([#999](https://github.com/salsa-rs/salsa/pull/999))
+- Add benchmark for a fixpoint iteration with nested cycles ([#1001](https://github.com/salsa-rs/salsa/pull/1001))
+
 ## [0.24.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.23.0...salsa-v0.24.0) - 2025-09-30
 
 ### Fixed
