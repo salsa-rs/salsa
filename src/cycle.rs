@@ -44,14 +44,18 @@
 //! result in a stable, converged cycle. If it does not (that is, if the result of another
 //! iteration of the cycle is not the same as the fallback value), we'll panic.
 //!
-//! In nested cycle cases, the inner cycle head will iterate until its own cycle is resolved, but
-//! the "final" value it then returns will still be provisional on the outer cycle head. The outer
-//! cycle head may then iterate, which may result in a new set of iterations on the inner cycle,
-//! for each iteration of the outer cycle.
+//! In nested cycle cases, the inner cycles are iterated as part of the outer cycle iteration. This helps
+//! to significantly reduce the number of iterations needed to reach a fixpoint. For nested cycles,
+//! the inner cycles head will transfer their lock ownership to the outer cycle. This ensures
+//! that, over time, the outer cycle will hold all necessary locks to complete the fixpoint iteration.
+//! Without this, different threads would compete for the locks of inner cycle heads, leading to potential
+//! hangs (but not deadlocks).
 
+use std::iter::FusedIterator;
 use thin_vec::{thin_vec, ThinVec};
 
 use crate::key::DatabaseKeyIndex;
+use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::sync::OnceLock;
 use crate::Revision;
 
@@ -96,14 +100,47 @@ pub enum CycleRecoveryStrategy {
 /// would be the cycle head. It returns an "initial value" when the cycle is encountered (if
 /// fixpoint iteration is enabled for that query), and then is responsible for re-iterating the
 /// cycle until it converges.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct CycleHead {
     pub(crate) database_key_index: DatabaseKeyIndex,
-    pub(crate) iteration_count: IterationCount,
+    pub(crate) iteration_count: AtomicIterationCount,
+
+    /// Marks a cycle head as removed within its `CycleHeads` container.
+    ///
+    /// Cycle heads are marked as removed when the memo from the last iteration (a provisional memo)
+    /// is used as the initial value for the next iteration. It's necessary to remove all but its own
+    /// head from the `CycleHeads` container, because the query might now depend on fewer cycles
+    /// (in case of conditional dependencies). However, we can't actually remove the cycle head
+    /// within `fetch_cold_cycle` because we only have a readonly memo. That's what `removed` is used for.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    removed: AtomicBool,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+impl CycleHead {
+    pub const fn new(
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> Self {
+        Self {
+            database_key_index,
+            iteration_count: AtomicIterationCount(AtomicU8::new(iteration_count.0)),
+            removed: AtomicBool::new(false),
+        }
+    }
+}
+
+impl Clone for CycleHead {
+    fn clone(&self) -> Self {
+        Self {
+            database_key_index: self.database_key_index,
+            iteration_count: self.iteration_count.load().into(),
+            removed: self.removed.load(Ordering::Relaxed).into(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "persistence", serde(transparent))]
 pub struct IterationCount(u8);
@@ -131,11 +168,69 @@ impl IterationCount {
     }
 }
 
+impl std::fmt::Display for IterationCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct AtomicIterationCount(AtomicU8);
+
+impl AtomicIterationCount {
+    pub(crate) fn load(&self) -> IterationCount {
+        IterationCount(self.0.load(Ordering::Relaxed))
+    }
+
+    pub(crate) fn load_mut(&mut self) -> IterationCount {
+        IterationCount(*self.0.get_mut())
+    }
+
+    pub(crate) fn store(&self, value: IterationCount) {
+        self.0.store(value.0, Ordering::Release);
+    }
+
+    pub(crate) fn store_mut(&mut self, value: IterationCount) {
+        *self.0.get_mut() = value.0;
+    }
+}
+
+impl std::fmt::Display for AtomicIterationCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.load().fmt(f)
+    }
+}
+
+impl From<IterationCount> for AtomicIterationCount {
+    fn from(iteration_count: IterationCount) -> Self {
+        AtomicIterationCount(iteration_count.0.into())
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for AtomicIterationCount {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.load().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for AtomicIterationCount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        IterationCount::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Any provisional value generated by any query in a cycle will track the cycle head(s) (can be
 /// plural in case of nested cycles) representing the cycles it is part of, and the current
 /// iteration count for each cycle head. This struct tracks these cycle heads.
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct CycleHeads(ThinVec<CycleHead>);
 
 impl CycleHeads {
@@ -143,15 +238,30 @@ impl CycleHeads {
         self.0.is_empty()
     }
 
-    pub(crate) fn initial(database_key_index: DatabaseKeyIndex) -> Self {
+    pub(crate) fn initial(
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> Self {
         Self(thin_vec![CycleHead {
             database_key_index,
-            iteration_count: IterationCount::initial(),
+            iteration_count: iteration_count.into(),
+            removed: false.into()
         }])
     }
 
-    pub(crate) fn iter(&self) -> std::slice::Iter<'_, CycleHead> {
-        self.0.iter()
+    pub(crate) fn iter(&self) -> CycleHeadsIterator<'_> {
+        CycleHeadsIterator {
+            inner: self.0.iter(),
+        }
+    }
+
+    /// Iterates over all cycle heads that aren't equal to `own`.
+    pub(crate) fn iter_not_eq(
+        &self,
+        own: DatabaseKeyIndex,
+    ) -> impl DoubleEndedIterator<Item = &CycleHead> {
+        self.iter()
+            .filter(move |head| head.database_key_index != own)
     }
 
     pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
@@ -159,17 +269,25 @@ impl CycleHeads {
             .any(|head| head.database_key_index == *value)
     }
 
-    pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
-        let found = self
-            .0
-            .iter()
-            .position(|&head| head.database_key_index == *value);
-        let Some(found) = found else { return false };
-        self.0.swap_remove(found);
-        true
+    /// Removes all cycle heads except `except` by marking them as removed.
+    ///
+    /// Note that the heads aren't actually removed. They're only marked as removed and will be
+    /// skipped when iterating. This is because we might not have a mutable reference.
+    pub(crate) fn remove_all_except(&self, except: DatabaseKeyIndex) {
+        for head in self.0.iter() {
+            if head.database_key_index == except {
+                continue;
+            }
+
+            head.removed.store(true, Ordering::Release);
+        }
     }
 
-    pub(crate) fn update_iteration_count(
+    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
+    ///
+    /// Unlike [`update_iteration_count`], this method takes a `&mut self` reference. It should
+    /// be preferred if possible, as it avoids atomic operations.
+    pub(crate) fn update_iteration_count_mut(
         &mut self,
         cycle_head_index: DatabaseKeyIndex,
         new_iteration_count: IterationCount,
@@ -179,7 +297,24 @@ impl CycleHeads {
             .iter_mut()
             .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
         {
-            cycle_head.iteration_count = new_iteration_count;
+            cycle_head.iteration_count.store_mut(new_iteration_count);
+        }
+    }
+
+    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
+    ///
+    /// Unlike [`update_iteration_count_mut`], this method takes a `&self` reference.
+    pub(crate) fn update_iteration_count(
+        &self,
+        cycle_head_index: DatabaseKeyIndex,
+        new_iteration_count: IterationCount,
+    ) {
+        if let Some(cycle_head) = self
+            .0
+            .iter()
+            .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
+        {
+            cycle_head.iteration_count.store(new_iteration_count);
         }
     }
 
@@ -188,21 +323,79 @@ impl CycleHeads {
         self.0.reserve(other.0.len());
 
         for head in other {
-            if let Some(existing) = self
-                .0
-                .iter()
-                .find(|candidate| candidate.database_key_index == head.database_key_index)
-            {
-                assert_eq!(existing.iteration_count, head.iteration_count);
+            debug_assert!(!head.removed.load(Ordering::Relaxed));
+            self.insert(head.database_key_index, head.iteration_count.load());
+        }
+    }
+
+    pub(crate) fn insert(
+        &mut self,
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+    ) -> bool {
+        if let Some(existing) = self
+            .0
+            .iter_mut()
+            .find(|candidate| candidate.database_key_index == database_key_index)
+        {
+            let removed = existing.removed.get_mut();
+
+            if *removed {
+                *removed = false;
+
+                true
             } else {
-                self.0.push(*head);
+                let existing_count = existing.iteration_count.load_mut();
+
+                assert_eq!(
+                    existing_count, iteration_count,
+                    "Can't merge cycle heads {:?} with different iteration counts ({existing_count:?}, {iteration_count:?})",
+                    existing.database_key_index
+                );
+
+                false
             }
+        } else {
+            self.0
+                .push(CycleHead::new(database_key_index, iteration_count));
+            true
         }
     }
 
     #[cfg(feature = "salsa_unstable")]
     pub(crate) fn allocation_size(&self) -> usize {
         std::mem::size_of_val(self.0.as_slice())
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for CycleHeads {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeSeq;
+
+        let mut seq = serializer.serialize_seq(None)?;
+        for e in self {
+            if e.removed.load(Ordering::Relaxed) {
+                continue;
+            }
+
+            seq.serialize_element(e)?;
+        }
+        seq.end()
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for CycleHeads {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let vec: ThinVec<CycleHead> = serde::Deserialize::deserialize(deserializer)?;
+        Ok(CycleHeads(vec))
     }
 }
 
@@ -215,9 +408,44 @@ impl IntoIterator for CycleHeads {
     }
 }
 
+pub struct CycleHeadsIterator<'a> {
+    inner: std::slice::Iter<'a, CycleHead>,
+}
+
+impl<'a> Iterator for CycleHeadsIterator<'a> {
+    type Item = &'a CycleHead;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let next = self.inner.next()?;
+
+            if next.removed.load(Ordering::Relaxed) {
+                continue;
+            }
+
+            return Some(next);
+        }
+    }
+}
+
+impl FusedIterator for CycleHeadsIterator<'_> {}
+impl DoubleEndedIterator for CycleHeadsIterator<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        loop {
+            let next = self.inner.next_back()?;
+
+            if next.removed.load(Ordering::Relaxed) {
+                continue;
+            }
+
+            return Some(next);
+        }
+    }
+}
+
 impl<'a> std::iter::IntoIterator for &'a CycleHeads {
     type Item = &'a CycleHead;
-    type IntoIter = std::slice::Iter<'a, CycleHead>;
+    type IntoIter = CycleHeadsIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -247,22 +475,4 @@ pub enum ProvisionalStatus {
         verified_at: Revision,
     },
     FallbackImmediate,
-}
-
-impl ProvisionalStatus {
-    pub(crate) const fn iteration(&self) -> Option<IterationCount> {
-        match self {
-            ProvisionalStatus::Provisional { iteration, .. } => Some(*iteration),
-            ProvisionalStatus::Final { iteration, .. } => Some(*iteration),
-            ProvisionalStatus::FallbackImmediate => None,
-        }
-    }
-
-    pub(crate) const fn verified_at(&self) -> Option<Revision> {
-        match self {
-            ProvisionalStatus::Provisional { verified_at, .. } => Some(*verified_at),
-            ProvisionalStatus::Final { verified_at, .. } => Some(*verified_at),
-            ProvisionalStatus::FallbackImmediate => None,
-        }
-    }
 }

@@ -76,9 +76,18 @@ fn the_test() {
         let db_t2 = db_t1.clone();
         let db_t3 = db_t1.clone();
 
-        let t1 = thread::spawn(move || query_a(&db_t1));
-        let t2 = thread::spawn(move || query_b(&db_t2));
-        let t3 = thread::spawn(move || query_c(&db_t3));
+        let t1 = thread::spawn(move || {
+            let _span = tracing::info_span!("t1", thread_id = ?thread::current().id()).entered();
+            query_a(&db_t1)
+        });
+        let t2 = thread::spawn(move || {
+            let _span = tracing::info_span!("t2", thread_id = ?thread::current().id()).entered();
+            query_b(&db_t2)
+        });
+        let t3 = thread::spawn(move || {
+            let _span = tracing::info_span!("t3", thread_id = ?thread::current().id()).entered();
+            query_c(&db_t3)
+        });
 
         let r_t1 = t1.join().unwrap();
         let r_t2 = t2.join().unwrap();

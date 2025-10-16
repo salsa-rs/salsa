@@ -7,6 +7,12 @@ macro_rules! trace {
     };
 }
 
+macro_rules! warn_event {
+    ($($x:tt)*) => {
+        crate::tracing::event!(WARN, $($x)*)
+    };
+}
+
 macro_rules! info {
     ($($x:tt)*) => {
         crate::tracing::event!(INFO, $($x)*)
@@ -22,6 +28,13 @@ macro_rules! debug {
 macro_rules! debug_span {
     ($($x:tt)*) => {
         crate::tracing::span!(DEBUG, $($x)*)
+    };
+}
+
+#[expect(unused_macros)]
+macro_rules! info_span {
+    ($($x:tt)*) => {
+        crate::tracing::span!(INFO, $($x)*)
     };
 }
 
@@ -51,4 +64,5 @@ macro_rules! span {
     }};
 }
 
-pub(crate) use {debug, debug_span, event, info, span, trace};
+#[expect(unused_imports)]
+pub(crate) use {debug, debug_span, event, info, info_span, span, trace, warn_event as warn};

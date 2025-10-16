@@ -498,7 +498,7 @@ impl fmt::Display for Backtrace {
             if full {
                 write!(fmt, " -> ({changed_at:?}, {durability:#?}")?;
                 if !cycle_heads.is_empty() || !iteration_count.is_initial() {
-                    write!(fmt, ", iteration = {iteration_count:?}")?;
+                    write!(fmt, ", iteration = {iteration_count}")?;
                 }
                 write!(fmt, ")")?;
             }
@@ -517,7 +517,7 @@ impl fmt::Display for Backtrace {
                         }
                         write!(
                             fmt,
-                            "{:?} -> {:?}",
+                            "{:?} -> iteration = {}",
                             head.database_key_index, head.iteration_count
                         )?;
                     }

@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
+use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -93,9 +93,19 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// on an other thread, it's up to caller to block until the result becomes available if desired.
     /// A return value of [`WaitForResult::Cycle`] means that a cycle was encountered; the waited-on query is either already claimed
     /// by the current thread, or by a thread waiting on the current thread.
-    fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
-        _ = (zalsa, key_index);
-        WaitForResult::Available
+    fn wait_for<'me>(&'me self, _zalsa: &'me Zalsa, _key_index: Id) -> WaitForResult<'me> {
+        unreachable!(
+            "wait_for should only be called on cycle heads and only functions can be cycle heads"
+        );
+    }
+
+    /// Invoked when a query transfers its lock-ownership to `_key_index`. Returns the thread
+    /// owning the lock for `_key_index` or `None` if `_key_index` is not claimed.
+    ///
+    /// Note: The returned `SyncOwnerId` may be outdated as soon as this function returns **unless**
+    /// it's guaranteed that `_key_index` is blocked on the current thread.
+    fn mark_as_transfer_target(&self, _key_index: Id) -> Option<crate::function::SyncOwner> {
+        unreachable!("mark_as_transfer_target should only be called on functions");
     }
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
@@ -157,11 +167,27 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     }
     // Function ingredient methods
 
-    /// If this ingredient is a participant in a cycle, what is its cycle recovery strategy?
-    /// (Really only relevant to [`crate::function::FunctionIngredient`],
-    /// since only function ingredients push themselves onto the active query stack.)
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        unreachable!("only function ingredients can be part of a cycle")
+    /// Tests if the (nested) cycle head `_input` has converged in the most recent iteration.
+    ///
+    /// Returns `false` if the Memo doesn't exist or if called on a non-cycle head.
+    fn cycle_converged(&self, _zalsa: &Zalsa, _input: Id) -> bool {
+        unreachable!("cycle_converged should only be called on cycle heads and only functions can be cycle heads");
+    }
+
+    /// Updates the iteration count for the (nested) cycle head `_input` to `iteration_count`.
+    ///
+    /// This is a no-op if the memo doesn't exist or if called on a Memo without cycle heads.
+    fn set_cycle_iteration_count(
+        &self,
+        _zalsa: &Zalsa,
+        _input: Id,
+        _iteration_count: IterationCount,
+    ) {
+        unreachable!("increment_iteration_count should only be called on cycle heads and only functions can be cycle heads");
+    }
+
+    fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
+        unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
     }
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
@@ -302,14 +328,9 @@ pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) 
     write!(fmt, "{debug_name}({id:?})")
 }
 
+#[derive(Debug)]
 pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available,
-    Cycle,
-}
-
-impl WaitForResult<'_> {
-    pub const fn is_cycle(&self) -> bool {
-        matches!(self, WaitForResult::Cycle)
-    }
+    Cycle { inner: bool },
 }

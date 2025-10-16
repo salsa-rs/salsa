@@ -4,7 +4,7 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::maybe_changed_after::VerifyCycleHeads;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl};
+use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
@@ -13,6 +13,7 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
+    #[inline]
     pub fn fetch<'db>(
         &'db self,
         db: &'db C::DbView,
@@ -57,11 +58,19 @@ where
         id: Id,
     ) -> &'db Memo<'db, C> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        let mut retry_count = 0;
         loop {
             if let Some(memo) = self
                 .fetch_hot(zalsa, id, memo_ingredient_index)
                 .or_else(|| {
-                    self.fetch_cold_with_retry(zalsa, zalsa_local, db, id, memo_ingredient_index)
+                    self.fetch_cold_with_retry(
+                        zalsa,
+                        zalsa_local,
+                        db,
+                        id,
+                        memo_ingredient_index,
+                        &mut retry_count,
+                    )
                 })
             {
                 return memo;
@@ -95,7 +104,6 @@ where
         }
     }
 
-    #[inline(never)]
     fn fetch_cold_with_retry<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -103,6 +111,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
+        retry_count: &mut u32,
     ) -> Option<&'db Memo<'db, C>> {
         let memo = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)?;
 
@@ -114,7 +123,7 @@ where
         // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
         // never have provisional entries.
         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-            || !memo.provisional_retry(zalsa, zalsa_local, self.database_key_index(id))
+            || !memo.provisional_retry(zalsa, zalsa_local, self.database_key_index(id), retry_count)
         {
             Some(memo)
         } else {
@@ -132,21 +141,21 @@ where
     ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let claim_guard = match self.sync_table.try_claim(zalsa, id) {
+        let claim_guard = match self.sync_table.try_claim(zalsa, id, Reentrancy::Allow) {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
 
-                let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                    let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
-                if let Some(memo) = memo {
-                    // This isn't strictly necessary, but if this is a provisional memo for an inner cycle,
-                    // await all outer cycle heads to give the thread driving it a chance to complete
-                    // (we don't want multiple threads competing for the queries participating in the same cycle).
-                    if memo.value.is_some() && memo.may_be_provisional() {
-                        memo.block_on_heads(zalsa, zalsa_local);
+                    if let Some(memo) = memo {
+                        if memo.value.is_some() {
+                            memo.block_on_heads(zalsa, zalsa_local);
+                        }
                     }
                 }
+
                 return None;
             }
             ClaimResult::Cycle { .. } => {
@@ -200,39 +209,10 @@ where
                     // still valid for the current revision.
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
-
-                // If this is a provisional memo from the same revision, await all its cycle heads because
-                // we need to ensure that only one thread is iterating on a cycle at a given time.
-                // For example, if we have a nested cycle like so:
-                // ```
-                // a -> b -> c -> b
-                //        -> a
-                //
-                // d -> b
-                // ```
-                // thread 1 calls `a` and `a` completes the inner cycle `b -> c` but hasn't finished the outer cycle `a` yet.
-                // thread 2 now calls `b`. We don't want that thread 2 iterates `b` while thread 1 is iterating `a` at the same time
-                // because it can result in thread b overriding provisional memos that thread a has accessed already and still relies upon.
-                //
-                // By waiting, we ensure that thread 1 completes a (based on a provisional value for `b`) and `b`
-                // becomes the new outer cycle, which thread 2 drives to completion.
-                if old_memo.may_be_provisional()
-                    && old_memo.verified_at.load() == zalsa.current_revision()
-                {
-                    // Try to claim all cycle heads of the provisional memo. If we can't because
-                    // some head is running on another thread, drop our claim guard to give that thread
-                    // a chance to take ownership of this query and complete it as part of its fixpoint iteration.
-                    // We will then block on the cycle head and retry once all cycle heads completed.
-                    if !old_memo.try_claim_heads(zalsa, zalsa_local) {
-                        drop(claim_guard);
-                        old_memo.block_on_heads(zalsa, zalsa_local);
-                        return None;
-                    }
-                }
             }
         }
 
-        let memo = self.execute(db, zalsa, zalsa_local, database_key_index, opt_old_memo);
+        let memo = self.execute(db, claim_guard, zalsa_local, opt_old_memo);
 
         Some(memo)
     }
@@ -257,6 +237,19 @@ where
                 let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
                 if can_shallow_update.yes() {
                     self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
+
+                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
+                        memo.revisions
+                            .cycle_heads()
+                            .remove_all_except(database_key_index);
+                    }
+
+                    crate::tracing::debug!(
+                        "hit cycle at {database_key_index:#?}, \
+                        returning last provisional value: {:#?}",
+                        memo.revisions
+                    );
+
                     // SAFETY: memo is present in memo_map.
                     return unsafe { self.extend_memo_lifetime(memo) };
                 }
@@ -299,7 +292,10 @@ where
                 let mut completed_query = active_query.pop();
                 completed_query
                     .revisions
-                    .set_cycle_heads(CycleHeads::initial(database_key_index));
+                    .set_cycle_heads(CycleHeads::initial(
+                        database_key_index,
+                        IterationCount::initial(),
+                    ));
                 // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
                 *completed_query.revisions.verified_final.get_mut() = false;
                 self.insert_memo(

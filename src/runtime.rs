@@ -1,6 +1,6 @@
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
-use crate::function::SyncGuard;
+use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
@@ -58,6 +58,57 @@ pub(crate) enum BlockResult<'me> {
     Cycle,
 }
 
+pub(crate) enum BlockTransferredResult<'me> {
+    /// The current thread is the owner of the transferred query
+    /// and it can claim it if it wants to.
+    ImTheOwner,
+
+    /// The query is owned/running on another thread.
+    OwnedBy(Box<BlockOnTransferredOwner<'me>>),
+
+    /// The query has transferred its ownership to another query previously but that query has
+    /// since then completed and released the lock.
+    Released,
+}
+
+pub(super) struct BlockOnTransferredOwner<'me> {
+    dg: crate::sync::MutexGuard<'me, DependencyGraph>,
+    /// The query that we're trying to claim.
+    database_key: DatabaseKeyIndex,
+    /// The thread that currently owns the lock for the transferred query.
+    other_id: ThreadId,
+    /// The current thread that is trying to claim the transferred query.
+    thread_id: ThreadId,
+}
+
+impl<'me> BlockOnTransferredOwner<'me> {
+    /// Block on the other thread to complete the computation.
+    pub(super) fn block(self, query_mutex_guard: SyncGuard<'me>) -> BlockResult<'me> {
+        // Cycle in the same thread.
+        if self.thread_id == self.other_id {
+            return BlockResult::Cycle;
+        }
+
+        if self.dg.depends_on(self.other_id, self.thread_id) {
+            crate::tracing::debug!(
+                "block_on: cycle detected for {:?} in thread {thread_id:?} on {:?}",
+                self.database_key,
+                self.other_id,
+                thread_id = self.thread_id
+            );
+            return BlockResult::Cycle;
+        }
+
+        BlockResult::Running(Running(Box::new(BlockedOnInner {
+            dg: self.dg,
+            query_mutex_guard,
+            database_key: self.database_key,
+            other_id: self.other_id,
+            thread_id: self.thread_id,
+        })))
+    }
+}
+
 pub struct Running<'me>(Box<BlockedOnInner<'me>>);
 
 struct BlockedOnInner<'me> {
@@ -69,10 +120,6 @@ struct BlockedOnInner<'me> {
 }
 
 impl Running<'_> {
-    pub(crate) fn database_key(&self) -> DatabaseKeyIndex {
-        self.0.database_key
-    }
-
     /// Blocks on the other thread to complete the computation.
     pub(crate) fn block_on(self, zalsa: &Zalsa) {
         let BlockedOnInner {
@@ -210,7 +257,7 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
-        crate::tracing::debug!("new_revision: {r_old:?} -> {r_new:?}");
+        crate::tracing::info!("new_revision: {r_old:?} -> {r_new:?}");
         r_new
     }
 
@@ -253,9 +300,40 @@ impl Runtime {
         })))
     }
 
+    /// Tries to claim ownership of a transferred query where `thread_id` is the current thread and `query`
+    /// is the query (that had its ownership transferred) to claim.
+    ///
+    /// For this operation to be reasonable, the caller must ensure that the sync table lock on `query` is not released
+    /// before this operation completes.
+    pub(super) fn block_transferred(
+        &self,
+        query: DatabaseKeyIndex,
+        current_id: ThreadId,
+    ) -> BlockTransferredResult<'_> {
+        let dg = self.dependency_graph.lock();
+
+        let owner_thread = dg.thread_id_of_transferred_query(query, None);
+
+        let Some(owner_thread_id) = owner_thread else {
+            // The query transferred its ownership but the owner has since then released the lock.
+            return BlockTransferredResult::Released;
+        };
+
+        if owner_thread_id == current_id || dg.depends_on(owner_thread_id, current_id) {
+            BlockTransferredResult::ImTheOwner
+        } else {
+            // Lock is owned by another thread, wait for it to be released.
+            BlockTransferredResult::OwnedBy(Box::new(BlockOnTransferredOwner {
+                dg,
+                database_key: query,
+                other_id: owner_thread_id,
+                thread_id: current_id,
+            }))
+        }
+    }
+
     /// Invoked when this runtime completed computing `database_key` with
-    /// the given result `wait_result` (`wait_result` should be `None` if
-    /// computing `database_key` panicked and could not complete).
+    /// the given result `wait_result`.
     /// This function unblocks any dependent queries and allows them
     /// to continue executing.
     pub(crate) fn unblock_queries_blocked_on(
@@ -266,6 +344,52 @@ impl Runtime {
         self.dependency_graph
             .lock()
             .unblock_runtimes_blocked_on(database_key, wait_result);
+    }
+
+    /// Unblocks all transferred queries that are owned by `database_key` recursively.
+    ///
+    /// Invoked when a query completes that has been marked as transfer target (it has
+    /// queries that transferred their lock ownership to it) with the given `wait_result`.
+    ///
+    /// This function unblocks any dependent queries and allows them to continue executing. The
+    /// query `database_key` is not unblocked by this function.
+    #[cold]
+    pub(crate) fn unblock_transferred_queries_owned_by(
+        &self,
+        database_key: DatabaseKeyIndex,
+        wait_result: WaitResult,
+    ) {
+        self.dependency_graph
+            .lock()
+            .unblock_runtimes_blocked_on_transferred_queries_owned_by(database_key, wait_result);
+    }
+
+    /// Removes the ownership transfer of `query`'s lock if it exists.
+    ///
+    /// If `query` has transferred its lock ownership to another query, this function will remove that transfer,
+    /// so that `query` now owns its lock again.
+    #[cold]
+    pub(super) fn undo_transfer_lock(&self, query: DatabaseKeyIndex) {
+        self.dependency_graph.lock().undo_transfer_lock(query);
+    }
+
+    /// Transfers ownership of the lock for `query` to `new_owner_key`.
+    ///
+    /// For this operation to be reasonable, the caller must ensure that the sync table lock on `query` is not released
+    /// and that `new_owner_key` is currently blocked on `query`. Otherwise, `new_owner_key` might
+    /// complete before the lock is transferred, leaving `query` locked forever.
+    pub(super) fn transfer_lock(
+        &self,
+        query: DatabaseKeyIndex,
+        new_owner_key: DatabaseKeyIndex,
+        new_owner_id: SyncOwner,
+    ) {
+        self.dependency_graph.lock().transfer_lock(
+            query,
+            thread::current().id(),
+            new_owner_key,
+            new_owner_id,
+        );
     }
 
     #[cfg(feature = "persistence")]

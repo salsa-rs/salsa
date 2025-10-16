@@ -1,5 +1,5 @@
 pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
-pub(crate) use sync::SyncGuard;
+pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrancy, SyncGuard, SyncOwner, SyncTable};
 
 use std::any::Any;
 use std::fmt;
@@ -8,11 +8,11 @@ use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use crate::cycle::{
-    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, ProvisionalStatus,
+    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, IterationCount,
+    ProvisionalStatus,
 };
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
-use crate::function::sync::{ClaimResult, SyncTable};
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
@@ -92,7 +92,18 @@ pub trait Configuration: Any {
 
     /// Decide whether to iterate a cycle again or fallback. `value` is the provisional return
     /// value from the latest iteration of this cycle. `count` is the number of cycle iterations
-    /// we've already completed.
+    /// completed so far.
+    ///
+    /// # Iteration count semantics
+    ///
+    /// The `count` parameter isn't guaranteed to start from zero or to be contiguous:
+    ///
+    /// * **Initial value**: `count` may be non-zero on the first call for a given query if that
+    ///   query becomes the outermost cycle head after a nested cycle complete a few iterations. In this case,
+    ///   `count` continues from the nested cycle's iteration count rather than resetting to zero.
+    /// * **Non-contiguous values**: This function isn't called if this cycle is part of an outer cycle
+    ///   and the value for this query remains unchanged for one iteration. But the outer cycle might
+    ///   keep iterating because other heads keep changing.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         value: &Self::Output<'db>,
@@ -358,6 +369,41 @@ where
         })
     }
 
+    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return;
+        };
+
+        memo.revisions
+            .set_iteration_count(Self::database_key_index(self, input), iteration_count);
+    }
+
+    fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return;
+        };
+
+        memo.revisions.verified_final.store(true, Ordering::Release);
+    }
+
+    fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return true;
+        };
+
+        memo.revisions.cycle_converged()
+    }
+
+    fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
+        self.sync_table.mark_as_transfer_target(key_index)
+    }
+
     fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
         self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .map(|memo| memo.cycle_heads())
@@ -372,9 +418,12 @@ where
     /// * [`WaitResult::Cycle`] Claiming the `key_index` results in a cycle because it's on the current's thread query stack or
     ///   running on another thread that is blocked on this thread.
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
-        match self.sync_table.try_claim(zalsa, key_index) {
+        match self
+            .sync_table
+            .try_claim(zalsa, key_index, Reentrancy::Deny)
+        {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle => WaitForResult::Cycle,
+            ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
             ClaimResult::Claimed(_) => WaitForResult::Available,
         }
     }
@@ -433,10 +482,6 @@ where
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("function does not allocate pages")
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        C::CYCLE_STRATEGY
     }
 
     #[cfg(feature = "accumulator")]
