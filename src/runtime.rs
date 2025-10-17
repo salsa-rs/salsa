@@ -44,6 +44,7 @@ pub struct Runtime {
 pub(super) enum WaitResult {
     Completed,
     Panicked,
+    Canceled,
 }
 
 #[derive(Debug)]
@@ -121,7 +122,7 @@ struct BlockedOnInner<'me> {
 
 impl Running<'_> {
     /// Blocks on the other thread to complete the computation.
-    pub(crate) fn block_on(self, zalsa: &Zalsa) {
+    pub(crate) fn block_on(self, zalsa: &Zalsa) -> bool {
         let BlockedOnInner {
             dg,
             query_mutex_guard,
@@ -151,7 +152,8 @@ impl Running<'_> {
                 // by the other thread and responded to appropriately.
                 Cancelled::PropagatedPanic.throw()
             }
-            WaitResult::Completed => {}
+            WaitResult::Canceled => true,
+            WaitResult::Completed => false,
         }
     }
 }

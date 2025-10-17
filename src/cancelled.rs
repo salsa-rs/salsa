@@ -1,6 +1,8 @@
 use std::fmt;
 use std::panic::{self, UnwindSafe};
 
+use crate::CancellationToken;
+
 /// A panic payload indicating that execution of a salsa query was cancelled.
 ///
 /// This can occur for a few reasons:
@@ -10,13 +12,23 @@ use std::panic::{self, UnwindSafe};
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Cancelled {
+    /// The query was operating but the local database execution has been cancelled.
+    Cancelled(UncancelGuard),
+
     /// The query was operating on revision R, but there is a pending write to move to revision R+1.
-    #[non_exhaustive]
     PendingWrite,
 
     /// The query was blocked on another thread, and that thread panicked.
-    #[non_exhaustive]
     PropagatedPanic,
+}
+
+#[derive(Debug)]
+pub struct UncancelGuard(pub(crate) CancellationToken);
+
+impl Drop for UncancelGuard {
+    fn drop(&mut self) {
+        self.0.uncancel();
+    }
 }
 
 impl Cancelled {
@@ -45,6 +57,7 @@ impl Cancelled {
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let why = match self {
+            Cancelled::Cancelled(_) => "canellation request",
             Cancelled::PendingWrite => "pending write",
             Cancelled::PropagatedPanic => "propagated panic",
         };

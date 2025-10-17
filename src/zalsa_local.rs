@@ -3,6 +3,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 use thin_vec::ThinVec;
@@ -13,6 +15,7 @@ use crate::accumulator::{
     Accumulator,
 };
 use crate::active_query::{CompletedQuery, QueryStack};
+use crate::cancelled::UncancelGuard;
 use crate::cycle::{empty_cycle_heads, AtomicIterationCount, CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
@@ -39,6 +42,28 @@ pub struct ZalsaLocal {
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
     most_recent_pages: UnsafeCell<FxHashMap<IngredientIndex, PageIndex>>,
+
+    cancelled: CancellationToken,
+}
+
+/// A cancellation token that can be used to cancel a query computation for a specific local `Database`.
+#[derive(Default, Clone, Debug)]
+pub struct CancellationToken(Arc<AtomicBool>);
+
+impl CancellationToken {
+    /// Inform the database to cancel the current query computation.
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    /// Check if the query computation has been requested to be cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn uncancel(&self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
 }
 
 impl ZalsaLocal {
@@ -46,6 +71,7 @@ impl ZalsaLocal {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: UnsafeCell::new(FxHashMap::default()),
+            cancelled: CancellationToken::default(),
         }
     }
 
@@ -401,11 +427,24 @@ impl ZalsaLocal {
         }
     }
 
+    #[inline]
+    pub(crate) fn cancellation_token(&self) -> CancellationToken {
+        self.cancelled.clone()
+    }
+
+    #[inline]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.0.load(Ordering::Relaxed)
+    }
+
     #[cold]
-    pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
-        // Why is this reporting an untracked read? We do not store the query revisions on unwind do we?
-        self.report_untracked_read(current_revision);
+    pub(crate) fn unwind_pending_write(&self) {
         Cancelled::PendingWrite.throw();
+    }
+
+    #[cold]
+    pub(crate) fn unwind_cancelled(&self) {
+        Cancelled::Cancelled(UncancelGuard(self.cancellation_token())).throw();
     }
 }
 

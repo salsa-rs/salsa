@@ -838,6 +838,7 @@ where
             let id = unsafe { (*value.shared.get()).id };
 
             StructEntry {
+                #[cfg(feature = "salsa_unstable")]
                 value,
                 key: self.database_key_index(id),
             }
@@ -850,6 +851,7 @@ pub struct StructEntry<'db, C>
 where
     C: Configuration,
 {
+    #[cfg(feature = "salsa_unstable")]
     value: &'db Value<C>,
     key: DatabaseKeyIndex,
 }
