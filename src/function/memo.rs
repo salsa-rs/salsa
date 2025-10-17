@@ -180,7 +180,10 @@ impl<'db, C: Configuration> Memo<'db, C> {
                     }
                     TryClaimHeadsResult::Running(running) => {
                         all_cycles = false;
-                        running.block_on(zalsa);
+                        if !running.block_on(zalsa) {
+                            // FIXME: Handle cancellation properly?
+                            crate::Cancelled::PropagatedPanic.throw();
+                        }
                     }
                 }
             }

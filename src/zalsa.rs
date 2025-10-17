@@ -296,8 +296,11 @@ impl Zalsa {
     #[inline]
     pub(crate) fn unwind_if_revision_cancelled(&self, zalsa_local: &ZalsaLocal) {
         self.event(&|| crate::Event::new(crate::EventKind::WillCheckCancellation));
+        if zalsa_local.is_cancelled() {
+            zalsa_local.unwind_cancelled();
+        }
         if self.runtime().load_cancellation_flag() {
-            zalsa_local.unwind_cancelled(self.current_revision());
+            zalsa_local.unwind_pending_write();
         }
     }
 

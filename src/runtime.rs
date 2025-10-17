@@ -13,11 +13,11 @@ mod dependency_graph;
 
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Runtime {
-    /// Set to true when the current revision has been canceled.
+    /// Set to true when the current revision has been cancelled.
     /// This is done when we an input is being changed. The flag
     /// is set back to false once the input has been changed.
     #[cfg_attr(feature = "persistence", serde(skip))]
-    revision_canceled: AtomicBool,
+    revision_cancelled: AtomicBool,
 
     /// Stores the "last change" revision for values of each duration.
     /// This vector is always of length at least 1 (for Durability 0)
@@ -44,6 +44,7 @@ pub struct Runtime {
 pub(super) enum WaitResult {
     Completed,
     Panicked,
+    Cancelled,
 }
 
 #[derive(Debug)]
@@ -121,7 +122,11 @@ struct BlockedOnInner<'me> {
 
 impl Running<'_> {
     /// Blocks on the other thread to complete the computation.
-    pub(crate) fn block_on(self, zalsa: &Zalsa) {
+    ///
+    /// Returns `true` if the computation was successful, and `false` if the other thread was cancelled.
+    #[must_use]
+    #[cold]
+    pub(crate) fn block_on(self, zalsa: &Zalsa) -> bool {
         let BlockedOnInner {
             dg,
             query_mutex_guard,
@@ -151,7 +156,8 @@ impl Running<'_> {
                 // by the other thread and responded to appropriately.
                 Cancelled::PropagatedPanic.throw()
             }
-            WaitResult::Completed => {}
+            WaitResult::Cancelled => false,
+            WaitResult::Completed => true,
         }
     }
 }
@@ -183,7 +189,7 @@ impl Default for Runtime {
     fn default() -> Self {
         Runtime {
             revisions: [Revision::start(); Durability::LEN],
-            revision_canceled: Default::default(),
+            revision_cancelled: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
         }
@@ -194,7 +200,7 @@ impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
             .field("revisions", &self.revisions)
-            .field("revision_canceled", &self.revision_canceled)
+            .field("revision_cancelled", &self.revision_cancelled)
             .field("dependency_graph", &self.dependency_graph)
             .finish()
     }
@@ -227,16 +233,16 @@ impl Runtime {
     }
 
     pub(crate) fn load_cancellation_flag(&self) -> bool {
-        self.revision_canceled.load(Ordering::Acquire)
+        self.revision_cancelled.load(Ordering::Acquire)
     }
 
     pub(crate) fn set_cancellation_flag(&self) {
         crate::tracing::trace!("set_cancellation_flag");
-        self.revision_canceled.store(true, Ordering::Release);
+        self.revision_cancelled.store(true, Ordering::Release);
     }
 
     pub(crate) fn reset_cancellation_flag(&mut self) {
-        *self.revision_canceled.get_mut() = false;
+        *self.revision_cancelled.get_mut() = false;
     }
 
     /// Returns the [`Table`] used to store the value of salsa structs
