@@ -3,6 +3,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 use thin_vec::ThinVec;
@@ -39,6 +41,21 @@ pub struct ZalsaLocal {
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
     most_recent_pages: UnsafeCell<FxHashMap<IngredientIndex, PageIndex>>,
+
+    cancelled: CancellationToken,
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct CancellationToken(Arc<AtomicBool>);
+
+impl CancellationToken {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
 }
 
 impl ZalsaLocal {
@@ -46,6 +63,7 @@ impl ZalsaLocal {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: UnsafeCell::new(FxHashMap::default()),
+            cancelled: CancellationToken::default(),
         }
     }
 
@@ -401,10 +419,22 @@ impl ZalsaLocal {
         }
     }
 
+    pub(crate) fn cancellation_token(&self) -> CancellationToken {
+        self.cancelled.clone()
+    }
+
+    #[inline]
+    pub fn take_cancellation(&self) -> bool {
+        self.cancelled.0.swap(false, Ordering::Relaxed)
+    }
+
     #[cold]
-    pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
-        // Why is this reporting an untracked read? We do not store the query revisions on unwind do we?
-        self.report_untracked_read(current_revision);
+    pub(crate) fn unwind_pending_write(&self) {
+        Cancelled::PendingWrite.throw();
+    }
+
+    #[cold]
+    pub(crate) fn unwind_cancelled(&self) {
         Cancelled::PendingWrite.throw();
     }
 }
