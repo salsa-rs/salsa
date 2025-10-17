@@ -105,32 +105,39 @@ where
     ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let claim_guard = match self.sync_table.try_claim(zalsa, id, Reentrancy::Allow) {
-            ClaimResult::Claimed(guard) => guard,
-            ClaimResult::Running(blocked_on) => {
-                blocked_on.block_on(zalsa);
+        let claim_guard = loop {
+            match self
+                .sync_table
+                .try_claim(zalsa, zalsa_local, id, Reentrancy::Allow)
+            {
+                ClaimResult::Claimed(guard) => break guard,
+                ClaimResult::Running(blocked_on) => {
+                    if !blocked_on.block_on(zalsa) {
+                        continue;
+                    }
 
-                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-                    let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                        let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
-                    if let Some(memo) = memo {
-                        if memo.value.is_some() {
-                            memo.block_on_heads(zalsa);
+                        if let Some(memo) = memo {
+                            if memo.value.is_some() {
+                                memo.block_on_heads(zalsa);
+                            }
                         }
                     }
-                }
 
-                return None;
-            }
-            ClaimResult::Cycle { .. } => {
-                return Some(self.fetch_cold_cycle(
-                    zalsa,
-                    zalsa_local,
-                    db,
-                    id,
-                    database_key_index,
-                    memo_ingredient_index,
-                ));
+                    return None;
+                }
+                ClaimResult::Cycle { .. } => {
+                    return Some(self.fetch_cold_cycle(
+                        zalsa,
+                        zalsa_local,
+                        db,
+                        id,
+                        database_key_index,
+                        memo_ingredient_index,
+                    ));
+                }
             }
         };
 
