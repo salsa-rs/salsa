@@ -3,7 +3,7 @@ use std::pin::Pin;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-use crate::function::SyncOwner;
+use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
@@ -219,28 +219,30 @@ impl DependencyGraph {
     /// Modifies the graph so that the lock on `query` (currently owned by `current_thread`) is
     /// transferred to `new_owner` (which is owned by `new_owner_id`).
     pub(super) fn transfer_lock(
-        &mut self,
+        mut me: MutexGuard<Self>,
         query: DatabaseKeyIndex,
         current_thread: ThreadId,
         new_owner: DatabaseKeyIndex,
         new_owner_id: SyncOwner,
+        guard: SyncGuard,
     ) {
+        let dg = &mut *me;
         let new_owner_thread = match new_owner_id {
             SyncOwner::Thread(thread) => thread,
             SyncOwner::Transferred => {
                 // Skip over `query` to skip over any existing mapping from `new_owner` to `query` that may
                 // exist from previous transfers.
-                self.thread_id_of_transferred_query(new_owner, Some(query))
+                dg.thread_id_of_transferred_query(new_owner, Some(query))
                     .expect("new owner should be blocked on `query`")
             }
         };
 
         debug_assert!(
-            new_owner_thread == current_thread || self.depends_on(new_owner_thread, current_thread),
+            new_owner_thread == current_thread || dg.depends_on(new_owner_thread, current_thread),
             "new owner {new_owner:?} ({new_owner_thread:?}) must be blocked on {query:?} ({current_thread:?})"
         );
 
-        let thread_changed = match self.transferred.entry(query) {
+        let thread_changed = match dg.transferred.entry(query) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 // Transfer `c -> b` and there's no existing entry for `c`.
                 entry.insert((new_owner_thread, new_owner));
@@ -257,7 +259,7 @@ impl DependencyGraph {
                 let &(old_owner_thread, old_owner) = entry.get();
 
                 // For the example below, remove `d` from `b`'s dependents.`
-                self.transferred_dependents
+                dg.transferred_dependents
                     .get_mut(&old_owner)
                     .unwrap()
                     .remove(&query);
@@ -276,7 +278,7 @@ impl DependencyGraph {
                 //
                 // A cycle between transfers can occur when a later iteration has a different outer most query than
                 // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
-                let mut last_segment = self.transferred.entry(new_owner);
+                let mut last_segment = dg.transferred.entry(new_owner);
 
                 while let std::collections::hash_map::Entry::Occupied(mut entry) = last_segment {
                     let source = *entry.key();
@@ -289,7 +291,7 @@ impl DependencyGraph {
                         );
 
                         // Remove `a` from the dependents of `d` and remove the mapping from `a -> d`.
-                        self.transferred_dependents
+                        dg.transferred_dependents
                             .get_mut(&query)
                             .unwrap()
                             .remove(&source);
@@ -301,7 +303,7 @@ impl DependencyGraph {
                             // otherwise (when `d` pointed to some other query, e.g. `b` in the example),
                             // add an edge from `a` to `b`
                             entry.insert((old_owner_thread, old_owner));
-                            self.transferred_dependents
+                            dg.transferred_dependents
                                 .get_mut(&old_owner)
                                 .unwrap()
                                 .push(source);
@@ -310,7 +312,7 @@ impl DependencyGraph {
                         break;
                     }
 
-                    last_segment = self.transferred.entry(next_target);
+                    last_segment = dg.transferred.entry(next_target);
                 }
 
                 // We simply assume here that the thread has changed because we'd have to walk the entire
@@ -321,14 +323,26 @@ impl DependencyGraph {
         };
 
         // Register `c` as a dependent of `b`.
-        let all_dependents = self.transferred_dependents.entry(new_owner).or_default();
+        let all_dependents = dg.transferred_dependents.entry(new_owner).or_default();
         debug_assert!(!all_dependents.contains(&new_owner));
         all_dependents.push(query);
 
         if thread_changed {
             tracing::debug!("Unblocking new owner of transfer target {new_owner:?}");
-            self.unblock_transfer_target(query, new_owner_thread);
-            self.update_transferred_edges(query, new_owner_thread);
+            dg.unblock_transfer_target(query, new_owner_thread);
+            dg.update_transferred_edges(query, new_owner_thread);
+
+            // Block on the new owner, unless new owner is blocked on this query.
+            // This is necessary to avoid a race between `fetch` completing and `provisional_retry` blocking on the
+            // first cycle head.
+            if current_thread != new_owner_thread
+                && !dg.depends_on(new_owner_thread, current_thread)
+            {
+                crate::tracing::info!(
+                    "block_on: thread {current_thread:?} is blocking on {new_owner:?} in thread {new_owner_thread:?}",
+                );
+                Self::block_on(me, current_thread, new_owner, new_owner_thread, guard);
+            }
         }
     }
 

@@ -383,12 +383,16 @@ impl Runtime {
         query: DatabaseKeyIndex,
         new_owner_key: DatabaseKeyIndex,
         new_owner_id: SyncOwner,
+        guard: SyncGuard,
     ) {
-        self.dependency_graph.lock().transfer_lock(
+        let dg = self.dependency_graph.lock();
+        DependencyGraph::transfer_lock(
+            dg,
             query,
             thread::current().id(),
             new_owner_key,
             new_owner_id,
+            guard,
         );
     }
 
