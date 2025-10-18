@@ -122,12 +122,19 @@ where
         // our no-longer-provisional memo.
         // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
         // never have provisional entries.
-        if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-            || !memo.provisional_retry(zalsa, zalsa_local, self.database_key_index(id), retry_count)
-        {
-            Some(memo)
-        } else {
-            None
+        match C::CYCLE_STRATEGY {
+            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Panic => Some(memo),
+            CycleRecoveryStrategy::Fixpoint => {
+                if !memo.provisional_retry(
+                    zalsa,
+                    zalsa_local,
+                    self.database_key_index(id),
+                    retry_count,
+                ) {
+                    return Some(memo);
+                }
+                None
+            }
         }
     }
 
