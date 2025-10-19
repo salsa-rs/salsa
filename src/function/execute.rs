@@ -28,6 +28,11 @@ where
     /// * `db`, the database.
     /// * `active_query`, the active stack frame for the query to execute.
     /// * `opt_old_memo`, the older memo, if any existed. Used for backdating.
+    ///
+    /// # Returns
+    /// The newly computed memo or `None` if this query is part of a larger cycle
+    /// and `execute` blocked on a cycle head running on another thread. In this case,
+    /// the memo is potentially outdated and needs to be refetched.
     #[inline(never)]
     pub(super) fn execute<'db>(
         &'db self,
@@ -35,7 +40,7 @@ where
         mut claim_guard: ClaimGuard<'db>,
         zalsa_local: &'db ZalsaLocal,
         opt_old_memo: Option<&Memo<'db, C>>,
-    ) -> &'db Memo<'db, C> {
+    ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
 
@@ -80,7 +85,7 @@ where
                         // We need to mark the memo as finalized so other cycle participants that have fallbacks
                         // will be verified (participants that don't have fallbacks will not be verified).
                         memo.revisions.verified_final.store(true, Ordering::Release);
-                        return memo;
+                        return Some(memo);
                     }
 
                     // If we're in the middle of a cycle and we have a fallback, use it instead.
@@ -125,7 +130,7 @@ where
             self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
 
-        self.insert_memo(
+        let memo = self.insert_memo(
             zalsa,
             id,
             Memo::new(
@@ -134,7 +139,13 @@ where
                 completed_query.revisions,
             ),
             memo_ingredient_index,
-        )
+        );
+
+        if claim_guard.drop() {
+            None
+        } else {
+            Some(memo)
+        }
     }
 
     fn execute_maybe_iterate<'db>(

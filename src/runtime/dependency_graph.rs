@@ -199,18 +199,23 @@ impl DependencyGraph {
     pub(super) fn thread_id_of_transferred_query(
         &self,
         database_key: DatabaseKeyIndex,
-        ignore: Option<DatabaseKeyIndex>,
+        skip_over: Option<DatabaseKeyIndex>,
     ) -> Option<ThreadId> {
         let &(mut resolved_thread, owner) = self.transferred.get(&database_key)?;
 
         let mut current_owner = owner;
 
         while let Some(&(next_thread, next_key)) = self.transferred.get(&current_owner) {
-            if Some(next_key) == ignore {
-                break;
-            }
-            resolved_thread = next_thread;
             current_owner = next_key;
+
+            // Ignore the `skip_over` key. E.g. if we have `a -> b -> c` and we want to resolve `a` but are transferring `b` to `c`, then
+            // we don't want to resolve `a` to the owner of `c`. But for `a -> c -> b`, we want resolve `a` to the owner of `c` and not `b`
+            // (because `b` will be owned by `a`).
+            if Some(next_key) == skip_over {
+                continue;
+            }
+
+            resolved_thread = next_thread;
         }
 
         Some(resolved_thread)
@@ -218,6 +223,11 @@ impl DependencyGraph {
 
     /// Modifies the graph so that the lock on `query` (currently owned by `current_thread`) is
     /// transferred to `new_owner` (which is owned by `new_owner_id`).
+    ///
+    /// Note, this function will block if `new_owner` runs on a different thread, unless `new_owner` is blocked
+    /// on current thread after transferring the query ownership.
+    ///
+    /// Returns `true` if the transfer blocked on `new_owner` (in which case it might be necessary to refetch any previously computed memos).
     pub(super) fn transfer_lock(
         mut me: MutexGuard<Self>,
         query: DatabaseKeyIndex,
@@ -225,7 +235,7 @@ impl DependencyGraph {
         new_owner: DatabaseKeyIndex,
         new_owner_id: SyncOwner,
         guard: SyncGuard,
-    ) {
+    ) -> bool {
         let dg = &mut *me;
         let new_owner_thread = match new_owner_id {
             SyncOwner::Thread(thread) => thread,
@@ -251,7 +261,7 @@ impl DependencyGraph {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 // If we transfer to the same owner as before, return immediately as this is a no-op.
                 if entry.get() == &(new_owner_thread, new_owner) {
-                    return;
+                    return false;
                 }
 
                 // `Transfer `c -> b` after a previous `c -> d` mapping.
@@ -275,7 +285,6 @@ impl DependencyGraph {
                 // d /
                 // ```
                 //
-                //
                 // A cycle between transfers can occur when a later iteration has a different outer most query than
                 // a previous iteration. The second iteration then hits `cycle_initial` for a different head, (e.g. for `c` where it previously was `d`).
                 let mut last_segment = dg.transferred.entry(new_owner);
@@ -296,7 +305,7 @@ impl DependencyGraph {
                             .unwrap()
                             .remove(&source);
 
-                        // if the old mapping was `c -> d` and we now insert `d -> c`, remove `d -> c`
+                        // if the old mapping was `c -> d` and we now insert `d -> c`, remove `c -> d`
                         if old_owner == new_owner {
                             entry.remove();
                         } else {
@@ -342,8 +351,11 @@ impl DependencyGraph {
                     "block_on: thread {current_thread:?} is blocking on {new_owner:?} in thread {new_owner_thread:?}",
                 );
                 Self::block_on(me, current_thread, new_owner, new_owner_thread, guard);
+                return true;
             }
         }
+
+        false
     }
 
     /// Finds the one query in the dependents of the `source_query` (the one that is transferred to a new owner)

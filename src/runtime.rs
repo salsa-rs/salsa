@@ -384,7 +384,7 @@ impl Runtime {
         new_owner_key: DatabaseKeyIndex,
         new_owner_id: SyncOwner,
         guard: SyncGuard,
-    ) {
+    ) -> bool {
         let dg = self.dependency_graph.lock();
         DependencyGraph::transfer_lock(
             dg,
@@ -393,7 +393,7 @@ impl Runtime {
             new_owner_key,
             new_owner_id,
             guard,
-        );
+        )
     }
 
     #[cfg(feature = "persistence")]

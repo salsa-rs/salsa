@@ -14,7 +14,7 @@ use crate::runtime::Running;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryOriginRef, QueryRevisions, ZalsaLocal};
+use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -132,50 +132,12 @@ impl<'db, C: Configuration> Memo<'db, C> {
         !self.revisions.verified_final.load(Ordering::Relaxed)
     }
 
-    /// Invoked when `refresh_memo` is about to return a memo to the caller; if that memo is
-    /// provisional, and its cycle head is claimed by another thread, we need to wait for that
-    /// other thread to complete the fixpoint iteration, and then retry fetching our own memo.
-    ///
-    /// Return `true` if the caller should retry, `false` if the caller should go ahead and return
-    /// this memo to the caller.
-    #[inline(always)]
-    pub(super) fn provisional_retry(
-        &self,
-        zalsa: &Zalsa,
-        zalsa_local: &ZalsaLocal,
-        database_key_index: DatabaseKeyIndex,
-        retry_count: &mut u32,
-    ) -> bool {
-        if self.block_on_heads(zalsa, zalsa_local) {
-            // If we get here, we are a provisional value of
-            // the cycle head (either initial value, or from a later iteration) and should be
-            // returned to caller to allow fixpoint iteration to proceed.
-            false
-        } else {
-            assert!(
-                *retry_count <= 20000,
-                "Provisional memo retry limit exceeded for {database_key_index:?}; \
-                     this usually indicates a bug in salsa's cycle caching/locking. \
-                     (retried {retry_count} times)",
-            );
-
-            *retry_count += 1;
-
-            // all our cycle heads are complete; re-fetch
-            // and we should get a non-provisional memo.
-            crate::tracing::debug!(
-                "Retrying provisional memo {database_key_index:?} after awaiting cycle heads."
-            );
-            true
-        }
-    }
-
     /// Blocks on all cycle heads (recursively) that this memo depends on.
     ///
     /// Returns `true` if awaiting all cycle heads results in a cycle. This means, they're all waiting
     /// for us to make progress.
     #[inline(always)]
-    pub(super) fn block_on_heads(&self, zalsa: &Zalsa, zalsa_local: &ZalsaLocal) -> bool {
+    pub(super) fn block_on_heads(&self, zalsa: &Zalsa) -> bool {
         // IMPORTANT: If you make changes to this function, make sure to run `cycle_nested_deep` with
         // shuttle with at least 10k iterations.
 
@@ -184,16 +146,12 @@ impl<'db, C: Configuration> Memo<'db, C> {
             return true;
         }
 
-        return block_on_heads_cold(zalsa, zalsa_local, cycle_heads);
+        return block_on_heads_cold(zalsa, cycle_heads);
 
         #[inline(never)]
-        fn block_on_heads_cold(
-            zalsa: &Zalsa,
-            zalsa_local: &ZalsaLocal,
-            heads: &CycleHeads,
-        ) -> bool {
+        fn block_on_heads_cold(zalsa: &Zalsa, heads: &CycleHeads) -> bool {
             let _entered = crate::tracing::debug_span!("block_on_heads").entered();
-            let cycle_heads = TryClaimCycleHeadsIter::new(zalsa, zalsa_local, heads);
+            let cycle_heads = TryClaimCycleHeadsIter::new(zalsa, heads);
             let mut all_cycles = true;
 
             for claim_result in cycle_heads {
@@ -447,6 +405,7 @@ mod persistence {
     }
 }
 
+#[derive(Debug)]
 pub(super) enum TryClaimHeadsResult<'me> {
     /// Claiming the cycle head results in a cycle.
     Cycle {
@@ -465,19 +424,15 @@ pub(super) enum TryClaimHeadsResult<'me> {
 /// Iterator to try claiming the transitive cycle heads of a memo.
 pub(super) struct TryClaimCycleHeadsIter<'a> {
     zalsa: &'a Zalsa,
-    zalsa_local: &'a ZalsaLocal,
+
     cycle_heads: CycleHeadsIterator<'a>,
 }
 
 impl<'a> TryClaimCycleHeadsIter<'a> {
-    pub(super) fn new(
-        zalsa: &'a Zalsa,
-        zalsa_local: &'a ZalsaLocal,
-        cycle_heads: &'a CycleHeads,
-    ) -> Self {
+    pub(super) fn new(zalsa: &'a Zalsa, cycle_heads: &'a CycleHeads) -> Self {
         Self {
             zalsa,
-            zalsa_local,
+
             cycle_heads: cycle_heads.iter(),
         }
     }
@@ -488,31 +443,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let head = self.cycle_heads.next()?;
-
         let head_database_key = head.database_key_index;
-        let head_iteration_count = head.iteration_count.load();
-
-        // The most common case is that the head is already in the query stack. So let's check that first.
-        // SAFETY: We do not access the query stack reentrantly.
-        if let Some(current_iteration_count) = unsafe {
-            self.zalsa_local.with_query_stack_unchecked(|stack| {
-                stack
-                    .iter()
-                    .rev()
-                    .find(|query| query.database_key_index == head_database_key)
-                    .map(|query| query.iteration_count())
-            })
-        } {
-            crate::tracing::trace!(
-                "Waiting for {head_database_key:?} results in a cycle (because it is already in the query stack)"
-            );
-            return Some(TryClaimHeadsResult::Cycle {
-                head_iteration_count,
-                memo_iteration_count: current_iteration_count,
-                verified_at: self.zalsa.current_revision(),
-            });
-        }
-
         let head_key_index = head_database_key.key_index();
         let ingredient = self
             .zalsa
@@ -543,7 +474,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
 
                 Some(TryClaimHeadsResult::Cycle {
                     memo_iteration_count: current_iteration_count,
-                    head_iteration_count,
+                    head_iteration_count: head.iteration_count.load(),
                     verified_at,
                 })
             }
