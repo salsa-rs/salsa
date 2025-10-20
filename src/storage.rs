@@ -1,6 +1,5 @@
 //! Public API facades for the implementation details of [`Zalsa`] and [`ZalsaLocal`].
 use std::marker::PhantomData;
-use std::mem;
 use std::panic::RefUnwindSafe;
 
 use crate::database::RawDatabase;
@@ -158,9 +157,10 @@ impl<Db: Database> Storage<Db> {
 
         let mut coordinate_lock = self.handle.coordinate.coordinate_lock.lock();
         let zalsa = loop {
-            if let Some(zalsa) = Arc::get_mut(&mut self.handle.zalsa_impl) {
-                // SAFETY: Polonius when ... https://github.com/rust-lang/rfcs/blob/master/text/2094-nll.md#problem-case-3-conditional-control-flow-across-functions
-                break unsafe { mem::transmute::<&mut Zalsa, &mut Zalsa>(zalsa) };
+            if Arc::strong_count(&self.handle.zalsa_impl) == 1 {
+                // SAFETY: The strong count is 1, and we never create any weak pointers,
+                // so we have a unique reference.
+                break unsafe { &mut *(Arc::as_ptr(&self.handle.zalsa_impl).cast_mut()) };
             }
             coordinate_lock = self.handle.coordinate.cvar.wait(coordinate_lock);
         };
