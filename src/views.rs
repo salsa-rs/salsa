@@ -108,7 +108,11 @@ impl Views {
         &self,
         func: fn(NonNull<Concrete>) -> NonNull<DbView>,
     ) -> &DatabaseDownCaster<DbView> {
-        assert_eq!(self.source_type_id, TypeId::of::<Concrete>());
+        assert_eq!(
+            self.source_type_id,
+            TypeId::of::<Concrete>(),
+            "mismatched source type"
+        );
         let target_type_id = TypeId::of::<DbView>();
         if let Some((_, caster)) = self
             .view_casters

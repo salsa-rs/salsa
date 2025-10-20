@@ -1173,7 +1173,7 @@ impl ActiveQueryGuard<'_> {
         unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
                 #[cfg(debug_assertions)]
-                assert_eq!(stack.len(), self.push_len);
+                assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
                 let frame = stack.last_mut().unwrap();
                 frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
             })
@@ -1195,7 +1195,7 @@ impl ActiveQueryGuard<'_> {
         unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
                 #[cfg(debug_assertions)]
-                assert_eq!(stack.len(), self.push_len);
+                assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
                 let frame = stack.last_mut().unwrap();
                 frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
             })
