@@ -65,6 +65,8 @@ fn query_e(db: &dyn salsa::Database, input: Input) -> CycleValue {
 
 fn cycle_fn(
     _db: &dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: &CycleValue,
     _value: &CycleValue,
     _count: u32,
     _input: Input,

@@ -46,6 +46,8 @@ fn cycle_initial(_db: &dyn Db, _input: InputValue) -> u32 {
 
 fn cycle_fn(
     _db: &dyn Db,
+    _id: salsa::Id,
+    _last_provisional_value: &u32,
     _value: &u32,
     _count: u32,
     _input: InputValue,

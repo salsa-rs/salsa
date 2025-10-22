@@ -125,6 +125,8 @@ const MAX_ITERATIONS: u32 = 3;
 /// iterating again.
 fn cycle_recover(
     _db: &dyn Db,
+    _id: salsa::Id,
+    _last_provisional_value: &Value,
     value: &Value,
     count: u32,
     _inputs: Inputs,
@@ -1180,6 +1182,8 @@ fn repeat_query_participating_in_cycle() {
 
     fn cycle_recover(
         _db: &dyn Db,
+        _id: salsa::Id,
+        _last_provisional_value: &u32,
         _value: &u32,
         _count: u32,
         _input: Input,
@@ -1294,6 +1298,8 @@ fn repeat_query_participating_in_cycle2() {
 
     fn cycle_recover(
         _db: &dyn Db,
+        _id: salsa::Id,
+        _last_provisional_value: &u32,
         _value: &u32,
         _count: u32,
         _input: Input,

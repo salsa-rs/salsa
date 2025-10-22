@@ -49,6 +49,8 @@ fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
 
 fn cycle_fn(
     _db: &dyn KnobsDatabase,
+    _id: salsa::Id,
+    _last_provisional_value: &CycleValue,
     _value: &CycleValue,
     _count: u32,
 ) -> CycleRecoveryAction<CycleValue> {

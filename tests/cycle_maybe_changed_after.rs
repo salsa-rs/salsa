@@ -42,6 +42,8 @@ fn query_a_initial(_db: &dyn Database, _input: Input) -> u32 {
 
 fn query_a_recover(
     _db: &dyn Database,
+    _id: salsa::Id,
+    _last_provisional_value: &u32,
     _output: &u32,
     _count: u32,
     _input: Input,
@@ -143,6 +145,8 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
 
     fn head_recover<'db>(
         _db: &'db dyn Database,
+        _id: salsa::Id,
+        _last_provisional_value: &Option<ClassLiteral<'db>>,
         _output: &Option<ClassLiteral<'db>>,
         _count: u32,
         _input: Input,

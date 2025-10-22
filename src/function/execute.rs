@@ -341,6 +341,8 @@ where
                 // cycle-recovery function what to do:
                 match C::recover_from_cycle(
                     db,
+                    id,
+                    last_provisional_value,
                     &new_value,
                     iteration_count.as_u32(),
                     C::id_to_input(zalsa, id),

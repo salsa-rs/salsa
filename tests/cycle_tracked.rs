@@ -116,6 +116,8 @@ fn max_initial(_db: &dyn Database, _node: Node) -> usize {
 
 fn cycle_recover(
     _db: &dyn Database,
+    _id: salsa::Id,
+    _last_provisional_value: &usize,
     _value: &usize,
     _count: u32,
     _inputs: Node,
@@ -262,6 +264,8 @@ fn initial_with_structs(_db: &dyn Database, _input: GraphInput) -> Vec<Iteration
 #[allow(clippy::ptr_arg)]
 fn cycle_recover_with_structs<'db>(
     _db: &'db dyn Database,
+    _id: salsa::Id,
+    _last_provisional_value: &Vec<IterationNode<'db>>,
     _value: &Vec<IterationNode<'db>>,
     _iteration: u32,
     _input: GraphInput,

@@ -15,6 +15,8 @@ fn memoized_a<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> u32 {
 
 fn cycle_fn<'db>(
     _db: &'db dyn Database,
+    _id: salsa::Id,
+    _last_provisional_value: &u32,
     _value: &u32,
     _count: u32,
     _input: MyTracked<'db>,

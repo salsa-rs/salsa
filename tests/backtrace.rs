@@ -58,6 +58,8 @@ fn cycle_initial(_db: &dyn salsa::Database, _thing: Thing) -> String {
 
 fn cycle_fn(
     _db: &dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: &str,
     _value: &str,
     _count: u32,
     _thing: Thing,

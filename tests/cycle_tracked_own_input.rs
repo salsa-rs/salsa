@@ -87,7 +87,9 @@ fn infer_class_initial(_db: &'_ dyn Database, _node: ClassNode) -> Type<'_> {
 
 fn infer_class_recover<'db>(
     _db: &'db dyn Database,
-    _type: &Type<'db>,
+    _id: salsa::Id,
+    _last_provisional_value: &Type<'db>,
+    _value: &Type<'db>,
     _count: u32,
     _inputs: ClassNode,
 ) -> CycleRecoveryAction<Type<'db>> {
