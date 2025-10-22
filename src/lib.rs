@@ -37,11 +37,6 @@ mod zalsa_local;
 #[cfg(not(feature = "inventory"))]
 mod nonce;
 
-#[cfg(feature = "rayon")]
-mod parallel;
-
-#[cfg(feature = "rayon")]
-pub use parallel::{join, par_map};
 #[cfg(feature = "macros")]
 pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 
