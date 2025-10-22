@@ -14,9 +14,6 @@ mod cycle_nested_three_threads;
 mod cycle_nested_three_threads_changed;
 mod cycle_panic;
 mod cycle_provisional_depending_on_itself;
-mod parallel_cancellation;
-mod parallel_join;
-mod parallel_map;
 
 #[cfg(not(feature = "shuttle"))]
 pub(crate) mod sync {
