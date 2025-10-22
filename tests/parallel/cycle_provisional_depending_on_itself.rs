@@ -19,7 +19,6 @@
 //! 3. `t1`: Iterates on `a`, finalizes the memo
 
 use crate::sync::thread;
-use salsa::CycleRecoveryAction;
 
 use crate::setup::{Knobs, KnobsDatabase};
 
@@ -29,12 +28,12 @@ struct CycleValue(u32);
 const MIN: CycleValue = CycleValue(0);
 const MAX: CycleValue = CycleValue(1);
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     query_b(db)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     // Wait for thread 2 to have entered `query_c`.
     tracing::debug!("Wait for signal 1 from thread 2");
@@ -55,7 +54,7 @@ fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     CycleValue(a_value.0 + 1).min(MAX)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     tracing::debug!("query_c: signaling thread1 to call c");
     db.signal(1);
@@ -66,16 +65,6 @@ fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     let b = query_b(db);
     tracing::debug!("query_c: b = {:?}", b);
     b
-}
-
-fn cycle_fn(
-    _db: &dyn KnobsDatabase,
-    _id: salsa::Id,
-    _last_provisional_value: &CycleValue,
-    _value: &CycleValue,
-    _count: u32,
-) -> CycleRecoveryAction<CycleValue> {
-    CycleRecoveryAction::Iterate
 }
 
 fn cycle_initial(_db: &dyn KnobsDatabase) -> CycleValue {

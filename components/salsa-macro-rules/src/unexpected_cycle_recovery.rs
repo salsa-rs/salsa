@@ -4,9 +4,9 @@
 #[macro_export]
 macro_rules! unexpected_cycle_recovery {
     ($db:ident, $id:ident, $last_provisional_value:ident, $new_value:ident, $count:ident, $($other_inputs:ident),*) => {{
-        std::mem::drop($db);
+        let (_db, _id, _last_provisional_value, _new_value, _count) = ($db, $id, $last_provisional_value, $new_value, $count);
         std::mem::drop(($($other_inputs,)*));
-        panic!("cannot recover from cycle")
+        salsa::CycleRecoveryAction::Iterate
     }};
 }
 

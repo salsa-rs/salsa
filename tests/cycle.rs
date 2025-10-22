@@ -1168,7 +1168,7 @@ fn repeat_query_participating_in_cycle() {
         value: u32,
     }
 
-    #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=initial)]
+    #[salsa::tracked(cycle_initial=initial)]
     fn head(db: &dyn Db, input: Input) -> u32 {
         let a = query_a(db, input);
 
@@ -1177,17 +1177,6 @@ fn repeat_query_participating_in_cycle() {
 
     fn initial(_db: &dyn Db, _input: Input) -> u32 {
         0
-    }
-
-    fn cycle_recover(
-        _db: &dyn Db,
-        _id: salsa::Id,
-        _last_provisional_value: &u32,
-        _value: &u32,
-        _count: u32,
-        _input: Input,
-    ) -> CycleRecoveryAction<u32> {
-        CycleRecoveryAction::Iterate
     }
 
     #[salsa::tracked]
@@ -1284,7 +1273,7 @@ fn repeat_query_participating_in_cycle2() {
         value: u32,
     }
 
-    #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=initial)]
+    #[salsa::tracked(cycle_initial=initial)]
     fn head(db: &dyn Db, input: Input) -> u32 {
         let a = query_a(db, input);
 
@@ -1295,18 +1284,7 @@ fn repeat_query_participating_in_cycle2() {
         0
     }
 
-    fn cycle_recover(
-        _db: &dyn Db,
-        _id: salsa::Id,
-        _last_provisional_value: &u32,
-        _value: &u32,
-        _count: u32,
-        _input: Input,
-    ) -> CycleRecoveryAction<u32> {
-        CycleRecoveryAction::Iterate
-    }
-
-    #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=initial)]
+    #[salsa::tracked(cycle_initial=initial)]
     fn query_a(db: &dyn Db, input: Input) -> u32 {
         let _ = query_hot(db, input);
         query_b(db, input)

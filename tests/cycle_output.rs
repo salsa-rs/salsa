@@ -35,24 +35,13 @@ fn query_a(db: &dyn Db, input: InputValue) -> u32 {
     }
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_b(db: &dyn Db, input: InputValue) -> u32 {
     query_a(db, input)
 }
 
 fn cycle_initial(_db: &dyn Db, _input: InputValue) -> u32 {
     0
-}
-
-fn cycle_fn(
-    _db: &dyn Db,
-    _id: salsa::Id,
-    _last_provisional_value: &u32,
-    _value: &u32,
-    _count: u32,
-    _input: InputValue,
-) -> salsa::CycleRecoveryAction<u32> {
-    salsa::CycleRecoveryAction::Iterate
 }
 
 #[salsa::tracked]

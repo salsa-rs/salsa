@@ -7,7 +7,6 @@
 
 use crate::sync::thread;
 use crate::{Knobs, KnobsDatabase};
-use salsa::CycleRecoveryAction;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
 struct CycleValue(u32);
@@ -16,14 +15,14 @@ const MIN: CycleValue = CycleValue(0);
 const MAX: CycleValue = CycleValue(5);
 
 // Query A: First cycle head - will iterate multiple times
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     let b = query_b(db);
     CycleValue(b.0 + 1).min(MAX)
 }
 
 // Query B: Depends on C and D, creating complex dependencies
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     let c = query_c(db);
     let d = query_d(db);
@@ -31,7 +30,7 @@ fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
 }
 
 // Query C: Creates a cycle back to A
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     let a = query_a(db);
     // Also depends on E to create more complex cycle structure
@@ -40,14 +39,14 @@ fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
 }
 
 // Query D: Part of a separate cycle with E
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_d(db: &dyn KnobsDatabase) -> CycleValue {
     let e = query_e(db);
     CycleValue(e.0 + 1).min(MAX)
 }
 
 // Query E: Depends back on D and F
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_e(db: &dyn KnobsDatabase) -> CycleValue {
     let d = query_d(db);
     let f = query_f(db);
@@ -55,20 +54,12 @@ fn query_e(db: &dyn KnobsDatabase) -> CycleValue {
 }
 
 // Query F: Creates another cycle that might have different iteration count
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_f(db: &dyn KnobsDatabase) -> CycleValue {
     // Create a cycle that depends on earlier queries
     let b = query_b(db);
     let e = query_e(db);
     CycleValue(b.0.max(e.0))
-}
-
-fn cycle_fn(
-    _db: &dyn KnobsDatabase,
-    _value: &CycleValue,
-    _count: u32,
-) -> CycleRecoveryAction<CycleValue> {
-    CycleRecoveryAction::Iterate
 }
 
 fn initial(_db: &dyn KnobsDatabase) -> CycleValue {

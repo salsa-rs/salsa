@@ -11,7 +11,7 @@ mod common;
 
 use crate::common::{EventLoggerDatabase, LogDatabase};
 use expect_test::expect;
-use salsa::{CycleRecoveryAction, Database, Setter};
+use salsa::{Database, Setter};
 
 #[salsa::input(debug)]
 struct ClassNode {
@@ -52,7 +52,7 @@ impl Type<'_> {
     }
 }
 
-#[salsa::tracked(cycle_fn=infer_class_recover, cycle_initial=infer_class_initial)]
+#[salsa::tracked(cycle_initial=infer_class_initial)]
 fn infer_class<'db>(db: &'db dyn salsa::Database, node: ClassNode) -> Type<'db> {
     Type::Class(Class::new(
         db,
@@ -83,17 +83,6 @@ fn infer_type_param<'db>(db: &'db dyn salsa::Database, node: TypeParamNode) -> T
 
 fn infer_class_initial(_db: &'_ dyn Database, _node: ClassNode) -> Type<'_> {
     Type::Unknown
-}
-
-fn infer_class_recover<'db>(
-    _db: &'db dyn Database,
-    _id: salsa::Id,
-    _last_provisional_value: &Type<'db>,
-    _value: &Type<'db>,
-    _count: u32,
-    _inputs: ClassNode,
-) -> CycleRecoveryAction<Type<'db>> {
-    CycleRecoveryAction::Iterate
 }
 
 #[test]

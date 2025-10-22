@@ -4,7 +4,7 @@
 mod common;
 
 use crate::common::EventLoggerDatabase;
-use salsa::{CycleRecoveryAction, Database, Durability, Setter};
+use salsa::{Database, Durability, Setter};
 
 #[salsa::input(debug)]
 struct Input {
@@ -17,7 +17,7 @@ struct Output<'db> {
     value: u32,
 }
 
-#[salsa::tracked(cycle_fn=query_a_recover, cycle_initial=query_a_initial)]
+#[salsa::tracked(cycle_initial=query_a_initial)]
 fn query_c<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
     query_d(db, input)
 }
@@ -40,23 +40,12 @@ fn query_a_initial(_db: &dyn Database, _input: Input) -> u32 {
     0
 }
 
-fn query_a_recover(
-    _db: &dyn Database,
-    _id: salsa::Id,
-    _last_provisional_value: &u32,
-    _output: &u32,
-    _count: u32,
-    _input: Input,
-) -> CycleRecoveryAction<u32> {
-    CycleRecoveryAction::Iterate
-}
-
 /// Only the first iteration depends on `input.value`. It's important that the entire query
 /// reruns if `input.value` changes. That's why salsa has to carry-over the inputs and outputs
 /// from the previous iteration.
 #[test_log::test]
 fn first_iteration_input_only() {
-    #[salsa::tracked(cycle_fn=query_a_recover, cycle_initial=query_a_initial)]
+    #[salsa::tracked(cycle_initial=query_a_initial)]
     fn query_a<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
         query_b(db, input)
     }
@@ -128,7 +117,7 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         scope: Scope<'db>,
     }
 
-    #[salsa::tracked(cycle_fn=head_recover, cycle_initial=head_initial)]
+    #[salsa::tracked(cycle_initial=head_initial)]
     fn cycle_head<'db>(db: &'db dyn salsa::Database, input: Input) -> Option<ClassLiteral<'db>> {
         let b = cycle_outer(db, input);
         tracing::info!("query_b = {b:?}");
@@ -141,17 +130,6 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
 
     fn head_initial(_db: &dyn Database, _input: Input) -> Option<ClassLiteral<'_>> {
         None
-    }
-
-    fn head_recover<'db>(
-        _db: &'db dyn Database,
-        _id: salsa::Id,
-        _last_provisional_value: &Option<ClassLiteral<'db>>,
-        _output: &Option<ClassLiteral<'db>>,
-        _count: u32,
-        _input: Input,
-    ) -> CycleRecoveryAction<Option<ClassLiteral<'db>>> {
-        CycleRecoveryAction::Iterate
     }
 
     #[salsa::tracked]
