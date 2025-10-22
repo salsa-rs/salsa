@@ -442,7 +442,6 @@ fn two_fallback_count() {
 ///
 /// Two-query cycle, falls back but fallback does not converge.
 #[test]
-#[should_panic(expected = "too many cycle iterations")]
 fn two_fallback_diverge() {
     let mut db = DbImpl::new();
     let a_in = Inputs::new(&db, vec![]);
