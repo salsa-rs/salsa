@@ -273,11 +273,11 @@ impl<'me> ClaimGuard<'me> {
             runtime.undo_transfer_lock(database_key_index);
         }
 
+        runtime.unblock_queries_blocked_on(database_key_index, wait_result);
+
         if is_transfer_target {
             runtime.unblock_transferred_queries_owned_by(database_key_index, wait_result);
         }
-
-        runtime.unblock_queries_blocked_on(database_key_index, wait_result);
     }
 
     #[cold]
@@ -299,7 +299,7 @@ impl<'me> ClaimGuard<'me> {
 
     #[cold]
     #[inline(never)]
-    pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) {
+    pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) -> bool {
         let owner_ingredient = self.zalsa.lookup_ingredient(new_owner.ingredient_index());
 
         // Get the owning thread of `new_owner`.
@@ -333,12 +333,43 @@ impl<'me> ClaimGuard<'me> {
             .get_mut(&self.key_index)
             .expect("key should only be claimed/released once");
 
-        self.zalsa
-            .runtime()
-            .transfer_lock(self_key, new_owner, new_owner_thread_id);
-
         *id = SyncOwner::Transferred;
         *claimed_twice = false;
+
+        self.zalsa
+            .runtime()
+            .transfer_lock(self_key, new_owner, new_owner_thread_id, syncs)
+    }
+
+    /// Drops the claim on the memo.
+    ///
+    /// Returns `true` if the lock was transferred to another query and
+    /// this thread blocked waiting for the new owner's lock to be released.
+    /// In that case, any computed memo need to be refetched because they may have
+    /// changed since `drop` was called.
+    pub(crate) fn drop(mut self) -> bool {
+        let refetch = self.drop_impl();
+        std::mem::forget(self);
+        refetch
+    }
+
+    fn drop_impl(&mut self) -> bool {
+        match self.mode {
+            ReleaseMode::Default => {
+                let mut syncs = self.sync_table.syncs.lock();
+                let state = syncs
+                    .remove(&self.key_index)
+                    .expect("key should only be claimed/released once");
+
+                self.release(state, WaitResult::Completed);
+                false
+            }
+            ReleaseMode::SelfOnly => {
+                self.release_self();
+                false
+            }
+            ReleaseMode::TransferTo(new_owner) => self.transfer(new_owner),
+        }
     }
 }
 
@@ -349,22 +380,7 @@ impl Drop for ClaimGuard<'_> {
             return;
         }
 
-        match self.mode {
-            ReleaseMode::Default => {
-                let mut syncs = self.sync_table.syncs.lock();
-                let state = syncs
-                    .remove(&self.key_index)
-                    .expect("key should only be claimed/released once");
-
-                self.release(state, WaitResult::Completed);
-            }
-            ReleaseMode::SelfOnly => {
-                self.release_self();
-            }
-            ReleaseMode::TransferTo(new_owner) => {
-                self.transfer(new_owner);
-            }
-        }
+        self.drop_impl();
     }
 }
 

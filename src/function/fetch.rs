@@ -58,20 +58,11 @@ where
         id: Id,
     ) -> &'db Memo<'db, C> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
-        let mut retry_count = 0;
+
         loop {
             if let Some(memo) = self
                 .fetch_hot(zalsa, id, memo_ingredient_index)
-                .or_else(|| {
-                    self.fetch_cold_with_retry(
-                        zalsa,
-                        zalsa_local,
-                        db,
-                        id,
-                        memo_ingredient_index,
-                        &mut retry_count,
-                    )
-                })
+                .or_else(|| self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index))
             {
                 return memo;
             }
@@ -104,33 +95,6 @@ where
         }
     }
 
-    fn fetch_cold_with_retry<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        db: &'db C::DbView,
-        id: Id,
-        memo_ingredient_index: MemoIngredientIndex,
-        retry_count: &mut u32,
-    ) -> Option<&'db Memo<'db, C>> {
-        let memo = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)?;
-
-        // If we get back a provisional cycle memo, and it's provisional on any cycle heads
-        // that are claimed by a different thread, we can't propagate the provisional memo
-        // any further (it could escape outside the cycle); we need to block on the other
-        // thread completing fixpoint iteration of the cycle, and then we can re-query for
-        // our no-longer-provisional memo.
-        // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
-        // never have provisional entries.
-        if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
-            || !memo.provisional_retry(zalsa, zalsa_local, self.database_key_index(id), retry_count)
-        {
-            Some(memo)
-        } else {
-            None
-        }
-    }
-
     fn fetch_cold<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -151,7 +115,7 @@ where
 
                     if let Some(memo) = memo {
                         if memo.value.is_some() {
-                            memo.block_on_heads(zalsa, zalsa_local);
+                            memo.block_on_heads(zalsa);
                         }
                     }
                 }
@@ -212,9 +176,7 @@ where
             }
         }
 
-        let memo = self.execute(db, claim_guard, zalsa_local, opt_old_memo);
-
-        Some(memo)
+        self.execute(db, claim_guard, zalsa_local, opt_old_memo)
     }
 
     #[cold]

@@ -158,10 +158,6 @@ impl ActiveQuery {
         }
     }
 
-    pub(super) fn iteration_count(&self) -> IterationCount {
-        self.iteration_count
-    }
-
     pub(crate) fn tracked_struct_ids(&self) -> &IdentityMap {
         &self.tracked_struct_ids
     }

@@ -383,13 +383,17 @@ impl Runtime {
         query: DatabaseKeyIndex,
         new_owner_key: DatabaseKeyIndex,
         new_owner_id: SyncOwner,
-    ) {
-        self.dependency_graph.lock().transfer_lock(
+        guard: SyncGuard,
+    ) -> bool {
+        let dg = self.dependency_graph.lock();
+        DependencyGraph::transfer_lock(
+            dg,
             query,
             thread::current().id(),
             new_owner_key,
             new_owner_id,
-        );
+            guard,
+        )
     }
 
     #[cfg(feature = "persistence")]
