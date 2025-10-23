@@ -9,8 +9,6 @@
 use crate::sync::thread;
 use crate::{Knobs, KnobsDatabase};
 
-use salsa::CycleRecoveryAction;
-
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
 struct CycleValue(u32);
 
@@ -18,7 +16,7 @@ const MIN: CycleValue = CycleValue(0);
 const MID: CycleValue = CycleValue(5);
 const MAX: CycleValue = CycleValue(10);
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     let b_value = query_b(db);
 
@@ -32,19 +30,11 @@ fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     b_value
 }
 
-fn cycle_fn(
-    _db: &dyn KnobsDatabase,
-    _value: &CycleValue,
-    _count: u32,
-) -> CycleRecoveryAction<CycleValue> {
-    CycleRecoveryAction::Iterate
-}
-
 fn cycle_initial(_db: &dyn KnobsDatabase) -> CycleValue {
     MIN
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     let a_value = query_a(db);
 

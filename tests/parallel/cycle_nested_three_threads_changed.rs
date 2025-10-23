@@ -19,7 +19,7 @@
 use crate::sync;
 use crate::sync::thread;
 
-use salsa::{CycleRecoveryAction, DatabaseImpl, Setter as _};
+use salsa::{DatabaseImpl, Setter as _};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
 struct CycleValue(u32);
@@ -36,31 +36,22 @@ struct Input {
 // Signal 2: T2 has entered `query_b`
 // Signal 3: T3 has entered `query_c`
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_a(db: &dyn salsa::Database, input: Input) -> CycleValue {
     query_b(db, input)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_b(db: &dyn salsa::Database, input: Input) -> CycleValue {
     let c_value = query_c(db, input);
     CycleValue(c_value.0 + input.value(db)).min(MAX)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_c(db: &dyn salsa::Database, input: Input) -> CycleValue {
     let a_value = query_a(db, input);
     let b_value = query_b(db, input);
     CycleValue(a_value.0.max(b_value.0))
-}
-
-fn cycle_fn(
-    _db: &dyn salsa::Database,
-    _value: &CycleValue,
-    _count: u32,
-    _input: Input,
-) -> CycleRecoveryAction<CycleValue> {
-    CycleRecoveryAction::Iterate
 }
 
 fn initial(_db: &dyn salsa::Database, _input: Input) -> CycleValue {

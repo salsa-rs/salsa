@@ -70,7 +70,11 @@ pub enum CycleRecoveryAction<T> {
     /// Iterate the cycle again to look for a fixpoint.
     Iterate,
 
-    /// Cut off iteration and use the given result value for this query.
+    /// Use the given value as the result for the current iteration instead
+    /// of the value computed by the query function.
+    ///
+    /// Returning `Fallback` doesn't stop the fixpoint iteration. It only
+    /// allows the iterate function to return a different value.
     Fallback(T),
 }
 

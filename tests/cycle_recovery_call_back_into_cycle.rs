@@ -25,7 +25,13 @@ fn cycle_initial(_db: &dyn ValueDatabase) -> u32 {
     0
 }
 
-fn cycle_fn(db: &dyn ValueDatabase, _value: &u32, _count: u32) -> salsa::CycleRecoveryAction<u32> {
+fn cycle_fn(
+    db: &dyn ValueDatabase,
+    _id: salsa::Id,
+    _last_provisional_value: &u32,
+    _value: &u32,
+    _count: u32,
+) -> salsa::CycleRecoveryAction<u32> {
     salsa::CycleRecoveryAction::Fallback(fallback_value(db))
 }
 

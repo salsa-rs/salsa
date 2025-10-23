@@ -3,10 +3,10 @@
 // a macro because it can take a variadic number of arguments.
 #[macro_export]
 macro_rules! unexpected_cycle_recovery {
-    ($db:ident, $value:ident, $count:ident, $($other_inputs:ident),*) => {{
-        std::mem::drop($db);
+    ($db:ident, $id:ident, $last_provisional_value:ident, $new_value:ident, $count:ident, $($other_inputs:ident),*) => {{
+        let (_db, _id, _last_provisional_value, _new_value, _count) = ($db, $id, $last_provisional_value, $new_value, $count);
         std::mem::drop(($($other_inputs,)*));
-        panic!("cannot recover from cycle")
+        salsa::CycleRecoveryAction::Iterate
     }};
 }
 

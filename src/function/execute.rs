@@ -320,7 +320,7 @@ where
                 I am a cycle head, comparing last provisional value with new value"
             );
 
-            let this_converged = C::values_equal(&new_value, last_provisional_value);
+            let mut this_converged = C::values_equal(&new_value, last_provisional_value);
 
             // If this is the outermost cycle, use the maximum iteration count of all cycles.
             // This is important for when later iterations introduce new cycle heads (that then
@@ -341,6 +341,8 @@ where
                 // cycle-recovery function what to do:
                 match C::recover_from_cycle(
                     db,
+                    id,
+                    last_provisional_value,
                     &new_value,
                     iteration_count.as_u32(),
                     C::id_to_input(zalsa, id),
@@ -351,6 +353,8 @@ where
                             "{database_key_index:?}: execute: user cycle_fn says to fall back"
                         );
                         new_value = fallback_value;
+
+                        this_converged = C::values_equal(&new_value, last_provisional_value);
                     }
                 }
             }

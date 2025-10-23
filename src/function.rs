@@ -94,20 +94,32 @@ pub trait Configuration: Any {
     /// value from the latest iteration of this cycle. `count` is the number of cycle iterations
     /// completed so far.
     ///
-    /// # Iteration count semantics
+    /// # Id
     ///
-    /// The `count` parameter isn't guaranteed to start from zero or to be contiguous:
+    /// The id can be used to uniquely identify the query instance. This can be helpful
+    /// if the cycle function has to re-identify a value it returned previously.
     ///
-    /// * **Initial value**: `count` may be non-zero on the first call for a given query if that
+    /// # Values
+    ///
+    /// The `last_provisional_value` is the value from the previous iteration of this cycle
+    /// and `value` is the new value that was computed in the current iteration.
+    ///
+    /// # Iteration count
+    ///
+    /// The `iteration` parameter isn't guaranteed to start from zero or to be contiguous:
+    ///
+    /// * **Initial value**: `iteration` may be non-zero on the first call for a given query if that
     ///   query becomes the outermost cycle head after a nested cycle complete a few iterations. In this case,
-    ///   `count` continues from the nested cycle's iteration count rather than resetting to zero.
+    ///   `iteration` continues from the nested cycle's iteration count rather than resetting to zero.
     /// * **Non-contiguous values**: This function isn't called if this cycle is part of an outer cycle
     ///   and the value for this query remains unchanged for one iteration. But the outer cycle might
     ///   keep iterating because other heads keep changing.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
-        value: &Self::Output<'db>,
-        count: u32,
+        id: Id,
+        last_provisional_value: &Self::Output<'db>,
+        new_value: &Self::Output<'db>,
+        iteration: u32,
         input: Self::Input<'db>,
     ) -> CycleRecoveryAction<Self::Output<'db>>;
 

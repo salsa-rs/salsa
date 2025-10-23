@@ -286,9 +286,10 @@ impl Macro {
                 self.args.cycle_fn.as_ref().unwrap(),
                 "must provide `cycle_initial` along with `cycle_fn`",
             )),
-            (None, Some(_), None) => Err(syn::Error::new_spanned(
-                self.args.cycle_initial.as_ref().unwrap(),
-                "must provide `cycle_fn` along with `cycle_initial`",
+            (None, Some(cycle_initial), None) => Ok((
+                quote!((salsa::plumbing::unexpected_cycle_recovery!)),
+                quote!((#cycle_initial)),
+                quote!(Fixpoint),
             )),
             (None, None, Some(cycle_result)) => Ok((
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),

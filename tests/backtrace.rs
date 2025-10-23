@@ -42,7 +42,7 @@ fn query_f(db: &dyn Database, thing: Thing) -> String {
     query_cycle(db, thing)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_cycle(db: &dyn Database, thing: Thing) -> String {
     let backtrace = query_cycle(db, thing);
     if backtrace.is_empty() {
@@ -54,15 +54,6 @@ fn query_cycle(db: &dyn Database, thing: Thing) -> String {
 
 fn cycle_initial(_db: &dyn salsa::Database, _thing: Thing) -> String {
     String::new()
-}
-
-fn cycle_fn(
-    _db: &dyn salsa::Database,
-    _value: &str,
-    _count: u32,
-    _thing: Thing,
-) -> salsa::CycleRecoveryAction<String> {
-    salsa::CycleRecoveryAction::Iterate
 }
 
 #[test]

@@ -8,20 +8,18 @@ use crate::{Knobs, KnobsDatabase};
 use std::fmt;
 use std::panic::catch_unwind;
 
-use salsa::CycleRecoveryAction;
-
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
 struct CycleValue(u32);
 
 const MIN: CycleValue = CycleValue(0);
 const MAX: CycleValue = CycleValue(3);
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     query_b(db)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     let c_value = query_c(db);
     CycleValue(c_value.0 + 1).min(MAX)
@@ -41,22 +39,14 @@ fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     }
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_d(db: &dyn KnobsDatabase) -> CycleValue {
     query_b(db)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(cycle_initial=initial)]
 fn query_e(db: &dyn KnobsDatabase) -> CycleValue {
     query_c(db)
-}
-
-fn cycle_fn(
-    _db: &dyn KnobsDatabase,
-    _value: &CycleValue,
-    _count: u32,
-) -> CycleRecoveryAction<CycleValue> {
-    CycleRecoveryAction::Iterate
 }
 
 fn initial(_db: &dyn KnobsDatabase) -> CycleValue {

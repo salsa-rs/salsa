@@ -4,7 +4,7 @@ mod common;
 
 use crate::common::{EventLoggerDatabase, LogDatabase};
 use expect_test::expect;
-use salsa::{CycleRecoveryAction, Database, Setter};
+use salsa::{Database, Setter};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, salsa::Update)]
 struct Graph<'db> {
@@ -86,7 +86,7 @@ fn create_graph(db: &dyn salsa::Database, input: GraphInput) -> Graph<'_> {
 }
 
 /// Computes the minimum cost from the node with offset `0` to the given node.
-#[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=max_initial)]
+#[salsa::tracked(cycle_initial=max_initial)]
 fn cost_to_start<'db>(db: &'db dyn Database, node: Node<'db>) -> usize {
     let mut min_cost = usize::MAX;
     let graph = create_graph(db, node.graph(db));
@@ -112,15 +112,6 @@ fn cost_to_start<'db>(db: &'db dyn Database, node: Node<'db>) -> usize {
 
 fn max_initial(_db: &dyn Database, _node: Node) -> usize {
     usize::MAX
-}
-
-fn cycle_recover(
-    _db: &dyn Database,
-    _value: &usize,
-    _count: u32,
-    _inputs: Node,
-) -> CycleRecoveryAction<usize> {
-    CycleRecoveryAction::Iterate
 }
 
 /// Tests for cycles where the cycle head is stored on a tracked struct
@@ -215,7 +206,7 @@ struct IterationNode<'db> {
 /// 3. Second iteration: returns `[iter_0, iter_1]`
 /// 4. Third iteration (only for variant=1): returns `[iter_0, iter_1, iter_2]`
 /// 5. Further iterations: no change, fixpoint reached
-#[salsa::tracked(cycle_fn=cycle_recover_with_structs, cycle_initial=initial_with_structs)]
+#[salsa::tracked(cycle_initial=initial_with_structs)]
 fn create_tracked_in_cycle<'db>(
     db: &'db dyn Database,
     input: GraphInput,
@@ -257,16 +248,6 @@ fn create_tracked_in_cycle<'db>(
 
 fn initial_with_structs(_db: &dyn Database, _input: GraphInput) -> Vec<IterationNode<'_>> {
     vec![]
-}
-
-#[allow(clippy::ptr_arg)]
-fn cycle_recover_with_structs<'db>(
-    _db: &'db dyn Database,
-    _value: &Vec<IterationNode<'db>>,
-    _iteration: u32,
-    _input: GraphInput,
-) -> CycleRecoveryAction<Vec<IterationNode<'db>>> {
-    CycleRecoveryAction::Iterate
 }
 
 #[test_log::test]
