@@ -521,7 +521,22 @@ where
                     }
 
                     // Check if the memo is still a cycle head and hasn't changed
-                    // to a normal cycle participant.
+                    // to a normal cycle participant. This is to force re-execution in
+                    // a scenario like this:
+                    //
+                    // * There's a nested cycle with the outermost query A
+                    // * B participates in the cycle and is a cycle head in the first few iterations
+                    // * B becomes a non-cycle head in a later iteration
+                    // * There's a query `C` that has `B` as its cycle head
+                    //
+                    // The crucial point is that `B` switches from being a cycle head to being a regular cycle participant.
+                    // The issue with that is that `A` doesn't update `B`'s `iteration_count `when the iteration completes
+                    // because it only does that for cycle heads (and collecting all queries participating in a query would be sort of expensive?).
+                    //
+                    // When we now pull `C` in a later iteration, `validate_same_iteration` iterates over all its cycle heads (`B`),
+                    // and check if the iteration count still matches. Which is the case because `A` didn't update `B`'s iteration count.
+                    //
+                    // That's why we also check if `B` is still a cycle head in the current iteration.
                     if !cycle_heads.contains(&head_database_key) {
                         return false;
                     }
