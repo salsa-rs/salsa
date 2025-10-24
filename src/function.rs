@@ -428,11 +428,11 @@ where
     fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
         match self
             .sync_table
-            .try_claim(zalsa, key_index, Reentrancy::Deny)
+            .peek_claim(zalsa, key_index, Reentrancy::Deny)
         {
             ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
             ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
-            ClaimResult::Claimed(_) => WaitForResult::Available,
+            ClaimResult::Claimed(()) => WaitForResult::Available,
         }
     }
 
