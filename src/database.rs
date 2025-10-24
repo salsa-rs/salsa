@@ -42,7 +42,7 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
     /// is owned by the current thread, this could trigger deadlock.
     fn trigger_lru_eviction(&mut self) {
         let zalsa_mut = self.zalsa_mut();
-        zalsa_mut.evict_lru();
+        zalsa_mut.reset_for_new_revision();
     }
 
     /// A "synthetic write" causes the system to act *as though* some
