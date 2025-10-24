@@ -141,23 +141,24 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let claim_guard = match self
-            .sync_table
-            .try_claim(zalsa, key_index, Reentrancy::Deny)
-        {
-            ClaimResult::Claimed(guard) => guard,
-            ClaimResult::Running(blocked_on) => {
-                blocked_on.block_on(zalsa);
-                return None;
-            }
-            ClaimResult::Cycle { .. } => {
-                return Some(self.maybe_changed_after_cold_cycle(
-                    zalsa_local,
-                    database_key_index,
-                    cycle_heads,
-                ))
-            }
-        };
+        let claim_guard =
+            match self
+                .sync_table
+                .try_claim(zalsa, zalsa_local, key_index, Reentrancy::Deny)
+            {
+                ClaimResult::Claimed(guard) => guard,
+                ClaimResult::Running(blocked_on) => {
+                    blocked_on.block_on(zalsa);
+                    return None;
+                }
+                ClaimResult::Cycle { .. } => {
+                    return Some(self.maybe_changed_after_cold_cycle(
+                        zalsa_local,
+                        database_key_index,
+                        cycle_heads,
+                    ))
+                }
+            };
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
         else {
