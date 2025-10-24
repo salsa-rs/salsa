@@ -409,9 +409,11 @@ mod persistence {
 pub(super) enum TryClaimHeadsResult<'me> {
     /// Claiming the cycle head results in a cycle.
     Cycle {
+        database_key_index: DatabaseKeyIndex,
         head_iteration_count: IterationCount,
         memo_iteration_count: IterationCount,
         verified_at: Revision,
+        cycle_heads: &'me CycleHeads,
     },
 
     /// The cycle head is not finalized, but it can be claimed.
@@ -458,23 +460,28 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
                 let provisional_status = ingredient
                     .provisional_status(self.zalsa, head_key_index)
                     .expect("cycle head memo to exist");
-                let (current_iteration_count, verified_at) = match provisional_status {
+                let (current_iteration_count, verified_at, cycle_heads) = match provisional_status {
                     ProvisionalStatus::Provisional {
                         iteration,
                         verified_at,
-                    }
-                    | ProvisionalStatus::Final {
+                        cycle_heads,
+                    } => (iteration, verified_at, cycle_heads),
+                    ProvisionalStatus::Final {
                         iteration,
                         verified_at,
-                    } => (iteration, verified_at),
-                    ProvisionalStatus::FallbackImmediate => {
-                        (IterationCount::initial(), self.zalsa.current_revision())
-                    }
+                    } => (iteration, verified_at, empty_cycle_heads()),
+                    ProvisionalStatus::FallbackImmediate => (
+                        IterationCount::initial(),
+                        self.zalsa.current_revision(),
+                        empty_cycle_heads(),
+                    ),
                 };
 
                 Some(TryClaimHeadsResult::Cycle {
+                    database_key_index: head_database_key,
                     memo_iteration_count: current_iteration_count,
                     head_iteration_count: head.iteration_count.load(),
+                    cycle_heads,
                     verified_at,
                 })
             }

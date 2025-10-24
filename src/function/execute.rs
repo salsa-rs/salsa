@@ -248,9 +248,11 @@ where
                 let ingredient =
                     zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
 
-                for nested_head in
-                    ingredient.cycle_heads(zalsa, head.database_key_index.key_index())
-                {
+                let provisional_status = ingredient
+                    .provisional_status(zalsa, head.database_key_index.key_index())
+                    .expect("cycle head memo must have been created during the execution");
+
+                for nested_head in provisional_status.cycle_heads() {
                     let nested_as_tuple = (
                         nested_head.database_key_index,
                         nested_head.iteration_count.load(),
@@ -442,6 +444,8 @@ where
 
             // Update the iteration count of this cycle head, but only after restoring
             // the cycle heads array (or this becomes a no-op).
+            // We don't call the same method on `cycle_heads` because that one doens't update
+            // the `memo.iteration_count`
             completed_query.revisions.set_cycle_heads(cycle_heads);
             completed_query
                 .revisions
