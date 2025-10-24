@@ -346,6 +346,7 @@ impl CycleHeads {
 
             if *removed {
                 *removed = false;
+                existing.iteration_count.store_mut(iteration_count);
 
                 true
             } else {
@@ -468,15 +469,25 @@ pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
     EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum ProvisionalStatus {
+#[derive(Debug)]
+pub enum ProvisionalStatus<'db> {
     Provisional {
         iteration: IterationCount,
         verified_at: Revision,
+        cycle_heads: &'db CycleHeads,
     },
     Final {
         iteration: IterationCount,
         verified_at: Revision,
     },
     FallbackImmediate,
+}
+
+impl<'db> ProvisionalStatus<'db> {
+    pub(crate) fn cycle_heads(&self) -> &'db CycleHeads {
+        match self {
+            ProvisionalStatus::Provisional { cycle_heads, .. } => cycle_heads,
+            _ => empty_cycle_heads(),
+        }
+    }
 }

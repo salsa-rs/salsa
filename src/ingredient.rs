@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{empty_cycle_heads, CycleHeads, IterationCount, ProvisionalStatus};
+use crate::cycle::{IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::{VerifyCycleHeads, VerifyResult};
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -74,14 +74,12 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Is it a provisional value or has it been finalized and in which iteration.
     ///
     /// Returns `None` if `input` doesn't exist.
-    fn provisional_status(&self, _zalsa: &Zalsa, _input: Id) -> Option<ProvisionalStatus> {
+    fn provisional_status<'db>(
+        &self,
+        _zalsa: &'db Zalsa,
+        _input: Id,
+    ) -> Option<ProvisionalStatus<'db>> {
         unreachable!("provisional_status should only be called on cycle heads and only functions can be cycle heads");
-    }
-
-    /// Returns the cycle heads for this ingredient.
-    fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
-        _ = (zalsa, input);
-        empty_cycle_heads()
     }
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.

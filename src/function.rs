@@ -7,10 +7,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
-use crate::cycle::{
-    empty_cycle_heads, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy, IterationCount,
-    ProvisionalStatus,
-};
+use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -357,7 +354,11 @@ where
     ///
     /// Otherwise, the value is still provisional. For both final and provisional, it also
     /// returns the iteration in which this memo was created (always 0 except for cycle heads).
-    fn provisional_status(&self, zalsa: &Zalsa, input: Id) -> Option<ProvisionalStatus> {
+    fn provisional_status<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        input: Id,
+    ) -> Option<ProvisionalStatus<'db>> {
         let memo =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
 
@@ -377,6 +378,7 @@ where
             ProvisionalStatus::Provisional {
                 iteration,
                 verified_at: memo.verified_at.load(),
+                cycle_heads: memo.cycle_heads(),
             }
         })
     }
@@ -414,12 +416,6 @@ where
 
     fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
         self.sync_table.mark_as_transfer_target(key_index)
-    }
-
-    fn cycle_heads<'db>(&self, zalsa: &'db Zalsa, input: Id) -> &'db CycleHeads {
-        self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .map(|memo| memo.cycle_heads())
-            .unwrap_or(empty_cycle_heads())
     }
 
     /// Attempts to claim `key_index` without blocking.

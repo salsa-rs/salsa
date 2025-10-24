@@ -484,8 +484,9 @@ where
 
         // Always return `false` for cycle initial values "unless" they are running in the same thread.
         if cycle_heads
-            .iter()
-            .all(|head| head.database_key_index == memo_database_key_index)
+            .iter_not_eq(memo_database_key_index)
+            .next()
+            .is_none()
         {
             // SAFETY: We do not access the query stack reentrantly.
             let on_stack = unsafe {
@@ -508,12 +509,20 @@ where
                     head_iteration_count,
                     memo_iteration_count: current_iteration_count,
                     verified_at: head_verified_at,
+                    cycle_heads,
+                    database_key_index: head_database_key,
                 } => {
                     if head_verified_at != memo_verified_at {
                         return false;
                     }
 
                     if head_iteration_count != current_iteration_count {
+                        return false;
+                    }
+
+                    // Check if the memo is still a cycle head and hasn't changed
+                    // to a normal cycle participant.
+                    if !cycle_heads.contains(&head_database_key) {
                         return false;
                     }
                 }
