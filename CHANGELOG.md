@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.24.0...salsa-v0.25.0) - 2025-10-24
+
+### Other
+
+- Fix cache invalidation when cycle head becomes non-head ([#1014](https://github.com/salsa-rs/salsa/pull/1014))
+- Expose the query ID and the last provisional value to the cycle recovery function ([#1012](https://github.com/salsa-rs/salsa/pull/1012))
+- Fix hangs in multithreaded fixpoint iteration ([#1010](https://github.com/salsa-rs/salsa/pull/1010))
+- Remove experimental parallel feature ([#1013](https://github.com/salsa-rs/salsa/pull/1013))
+- Simplify `WaitGroup` implementation  ([#958](https://github.com/salsa-rs/salsa/pull/958))
+- Fix missing license files in published macros/macro-rules crates ([#1009](https://github.com/salsa-rs/salsa/pull/1009))
+- Run fixpoint per strongly connected component ([#999](https://github.com/salsa-rs/salsa/pull/999))
+- Add benchmark for a fixpoint iteration with nested cycles ([#1001](https://github.com/salsa-rs/salsa/pull/1001))
+
 ## [0.24.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.23.0...salsa-v0.24.0) - 2025-09-30
 
 ### Fixed
