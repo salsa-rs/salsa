@@ -12,7 +12,7 @@ fn memoized_a<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> u32 {
     MyTracked::new(db, 0);
     memoized_b(db, tracked)
 }
-fn cycle_initial(_db: &dyn Database, _input: MyTracked) -> u32 {
+fn cycle_initial(_db: &dyn Database, _id: salsa::Id, _input: MyTracked) -> u32 {
     0
 }
 

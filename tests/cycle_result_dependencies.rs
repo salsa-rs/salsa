@@ -12,7 +12,7 @@ fn has_cycle(db: &dyn Database, input: Input) -> i32 {
     has_cycle(db, input)
 }
 
-fn cycle_result(db: &dyn Database, input: Input) -> i32 {
+fn cycle_result(db: &dyn Database, _id: salsa::Id, input: Input) -> i32 {
     input.value(db)
 }
 

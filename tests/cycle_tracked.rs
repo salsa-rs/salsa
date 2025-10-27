@@ -110,7 +110,7 @@ fn cost_to_start<'db>(db: &'db dyn Database, node: Node<'db>) -> usize {
     min_cost
 }
 
-fn max_initial(_db: &dyn Database, _node: Node) -> usize {
+fn max_initial(_db: &dyn Database, _id: salsa::Id, _node: Node) -> usize {
     usize::MAX
 }
 
@@ -246,7 +246,11 @@ fn create_tracked_in_cycle<'db>(
     }
 }
 
-fn initial_with_structs(_db: &dyn Database, _input: GraphInput) -> Vec<IterationNode<'_>> {
+fn initial_with_structs(
+    _db: &dyn Database,
+    _id: salsa::Id,
+    _input: GraphInput,
+) -> Vec<IterationNode<'_>> {
     vec![]
 }
 

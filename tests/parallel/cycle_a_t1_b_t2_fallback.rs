@@ -41,11 +41,11 @@ fn query_b(db: &dyn KnobsDatabase) -> u32 {
     query_a(db) | OFFSET_B
 }
 
-fn cycle_result_a(_db: &dyn KnobsDatabase) -> u32 {
+fn cycle_result_a(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
     FALLBACK_A
 }
 
-fn cycle_result_b(_db: &dyn KnobsDatabase) -> u32 {
+fn cycle_result_b(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
     FALLBACK_B
 }
 

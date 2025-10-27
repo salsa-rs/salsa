@@ -30,7 +30,7 @@ fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     b_value
 }
 
-fn cycle_initial(_db: &dyn KnobsDatabase) -> CycleValue {
+fn cycle_initial(_db: &dyn KnobsDatabase, _id: salsa::Id) -> CycleValue {
     MIN
 }
 

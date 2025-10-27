@@ -40,7 +40,7 @@ fn query_b(db: &dyn Db, input: InputValue) -> u32 {
     query_a(db, input)
 }
 
-fn cycle_initial(_db: &dyn Db, _input: InputValue) -> u32 {
+fn cycle_initial(_db: &dyn Db, _id: salsa::Id, _input: InputValue) -> u32 {
     0
 }
 

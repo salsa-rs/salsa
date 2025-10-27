@@ -94,7 +94,7 @@ where
                     let cycle_heads = std::mem::take(cycle_heads);
                     let active_query =
                         zalsa_local.push_query(database_key_index, IterationCount::initial());
-                    new_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
+                    new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                     completed_query = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
                     // When verifying this, we will see we have fallback and mark ourselves verified.

@@ -558,7 +558,11 @@ mod _memory_usage {
             unimplemented!()
         }
 
-        fn cycle_initial<'db>(_: &'db Self::DbView, _: Self::Input<'db>) -> Self::Output<'db> {
+        fn cycle_initial<'db>(
+            _: &'db Self::DbView,
+            _: Id,
+            _: Self::Input<'db>,
+        ) -> Self::Output<'db> {
             unimplemented!()
         }
 
