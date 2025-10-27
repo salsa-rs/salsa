@@ -21,7 +21,7 @@ fn query(db: &dyn ValueDatabase) -> u32 {
     }
 }
 
-fn cycle_initial(_db: &dyn ValueDatabase) -> u32 {
+fn cycle_initial(_db: &dyn ValueDatabase, _id: salsa::Id) -> u32 {
     0
 }
 

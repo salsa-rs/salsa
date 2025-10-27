@@ -55,7 +55,7 @@ fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     CycleValue(a_value.0.max(b_value.0))
 }
 
-fn initial(_db: &dyn KnobsDatabase) -> CycleValue {
+fn initial(_db: &dyn KnobsDatabase, _id: salsa::Id) -> CycleValue {
     MIN
 }
 

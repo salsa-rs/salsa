@@ -70,7 +70,7 @@ fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
     }
 }
 
-fn def_cycle_initial(_db: &dyn Db, _def: Definition) -> Type {
+fn def_cycle_initial(_db: &dyn Db, _id: salsa::Id, _def: Definition) -> Type {
     Type::Bottom
 }
 
@@ -85,7 +85,7 @@ fn def_cycle_recover(
     cycle_recover(value, count)
 }
 
-fn use_cycle_initial(_db: &dyn Db, _use: Use) -> Type {
+fn use_cycle_initial(_db: &dyn Db, _id: salsa::Id, _use: Use) -> Type {
     Type::Bottom
 }
 

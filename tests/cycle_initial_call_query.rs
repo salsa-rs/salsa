@@ -17,7 +17,7 @@ fn query(db: &dyn salsa::Database) -> u32 {
     }
 }
 
-fn cycle_initial(db: &dyn salsa::Database) -> u32 {
+fn cycle_initial(db: &dyn salsa::Database, _id: salsa::Id) -> u32 {
     initial_value(db)
 }
 

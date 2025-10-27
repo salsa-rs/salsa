@@ -44,7 +44,7 @@ fn check_file(db: &dyn LogDatabase, file: File) -> Vec<u32> {
     sorted_issues
 }
 
-fn cycle_initial(_db: &dyn LogDatabase, _file: File) -> Vec<u32> {
+fn cycle_initial(_db: &dyn LogDatabase, _id: salsa::Id, _file: File) -> Vec<u32> {
     vec![]
 }
 

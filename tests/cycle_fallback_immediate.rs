@@ -11,7 +11,7 @@ fn one_o_one(db: &dyn salsa::Database) -> u32 {
     val + 1
 }
 
-fn cycle_result(_db: &dyn salsa::Database) -> u32 {
+fn cycle_result(_db: &dyn salsa::Database, _id: salsa::Id) -> u32 {
     100
 }
 
@@ -38,7 +38,7 @@ fn two_queries2(db: &dyn salsa::Database) -> i32 {
     CALLS_COUNT.fetch_add(1, Ordering::Relaxed)
 }
 
-fn two_queries_cycle_result(_db: &dyn salsa::Database) -> i32 {
+fn two_queries_cycle_result(_db: &dyn salsa::Database, _id: salsa::Id) -> i32 {
     1
 }
 

@@ -302,8 +302,8 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
-                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_initial)*(db, $($input_id),*)
+                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, id: salsa::Id, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
+                    $($cycle_recovery_initial)*(db, id, $($input_id),*)
                 }
 
                 fn recover_from_cycle<$db_lt>(

@@ -36,7 +36,7 @@ fn query_d<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
     }
 }
 
-fn query_a_initial(_db: &dyn Database, _input: Input) -> u32 {
+fn query_a_initial(_db: &dyn Database, _id: salsa::Id, _input: Input) -> u32 {
     0
 }
 
@@ -128,7 +128,7 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         })
     }
 
-    fn head_initial(_db: &dyn Database, _input: Input) -> Option<ClassLiteral<'_>> {
+    fn head_initial(_db: &dyn Database, _id: salsa::Id, _input: Input) -> Option<ClassLiteral<'_>> {
         None
     }
 

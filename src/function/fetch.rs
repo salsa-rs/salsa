@@ -236,7 +236,7 @@ where
                     inserting and returning fixpoint initial value"
                 );
                 let revisions = QueryRevisions::fixpoint_initial(database_key_index);
-                let initial_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
+                let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                 self.insert_memo(
                     zalsa,
                     id,
@@ -250,7 +250,7 @@ where
                 );
                 let active_query =
                     zalsa_local.push_query(database_key_index, IterationCount::initial());
-                let fallback_value = C::cycle_initial(db, C::id_to_input(zalsa, id));
+                let fallback_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                 let mut completed_query = active_query.pop();
                 completed_query
                     .revisions
