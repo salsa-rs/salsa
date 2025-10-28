@@ -172,11 +172,7 @@ where
         let mut iteration_count = IterationCount::initial();
 
         if let Some(old_memo) = opt_old_memo {
-            if old_memo.verified_at.load() == zalsa.current_revision()
-                && old_memo.cycle_heads().contains(&database_key_index)
-            {
-                let memo_iteration_count = old_memo.revisions.iteration();
-
+            if old_memo.verified_at.load() == zalsa.current_revision() {
                 // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
                 // However, the locking doesn't handle the case where a thread fetches the result of a panicking
                 // cycle head query **after** all locks were released. That's what we do here.
@@ -189,8 +185,14 @@ where
                     tracing::warn!("Propagating panic for cycle head that panicked in an earlier execution in that revision");
                     Cancelled::PropagatedPanic.throw();
                 }
-                last_provisional_memo = Some(old_memo);
-                iteration_count = memo_iteration_count;
+
+                // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
+                // force at least two executions.
+                if old_memo.cycle_heads().contains(&database_key_index) {
+                    last_provisional_memo = Some(old_memo);
+                }
+
+                iteration_count = old_memo.revisions.iteration();
             }
         }
 
@@ -216,6 +218,14 @@ where
 
             // If there are no cycle heads, break out of the loop (`cycle_heads_mut` returns `None` if the cycle head list is empty)
             let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() else {
+                iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                    tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
+                    panic!("{database_key_index:?}: execute: too many cycle iterations")
+                });
+                completed_query
+                    .revisions
+                    .update_iteration_count_mut(database_key_index, iteration_count);
+
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
                 break (new_value, completed_query);
             };
@@ -289,6 +299,15 @@ where
                 }
 
                 completed_query.revisions.set_cycle_heads(cycle_heads);
+
+                iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                    tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
+                    panic!("{database_key_index:?}: execute: too many cycle iterations")
+                });
+                completed_query
+                    .revisions
+                    .update_iteration_count_mut(database_key_index, iteration_count);
+
                 break (new_value, completed_query);
             }
 
@@ -555,8 +574,10 @@ impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
 impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
     fn drop(&mut self) {
         if thread::panicking() {
-            let revisions =
-                QueryRevisions::fixpoint_initial(self.ingredient.database_key_index(self.id));
+            let revisions = QueryRevisions::fixpoint_initial(
+                self.ingredient.database_key_index(self.id),
+                IterationCount::initial(),
+            );
 
             let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
             self.ingredient
