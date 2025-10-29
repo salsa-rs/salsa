@@ -7,23 +7,23 @@ Salsa also supports recovering from query cycles via fixed-point iteration. Fixe
 In order to support fixed-point iteration for a query, provide the `cycle_fn` and `cycle_initial` arguments to `salsa::tracked`:
 
 ```rust
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial_fn)]
+#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
 fn query(db: &dyn salsa::Database) -> u32 {
     // ...
 }
 
-fn cycle_fn(_db: &dyn KnobsDatabase, _value: &u32, _count: u32) -> salsa::CycleRecoveryAction<u32> {
+fn cycle_fn(_db: &dyn KnobsDatabase, _id: salsa::Id, _last_provisional_value: &u32, _value: &u32, _count: u32) -> salsa::CycleRecoveryAction<u32> {
     salsa::CycleRecoveryAction::Iterate
 }
 
-fn initial(_db: &dyn KnobsDatabase) -> u32 {
+fn cycle_initial(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
     0
 }
 ```
 
 The `cycle_fn` is optional. The default implementation always returns `Iterate`.
 
-If `query` becomes the head of a cycle (that is, `query` is executing and on the active query stack, it calls `query2`, `query2` calls `query3`, and `query3` calls `query` again -- there could be any number of queries involved in the cycle), the `initial_fn` will be called to generate an "initial" value for `query` in the fixed-point computation. (The initial value should usually be the "bottom" value in the partial order.) All queries in the cycle will compute a provisional result based on this initial value for the cycle head. That is, `query3` will compute a provisional result using the initial value for `query`, `query2` will compute a provisional result using this provisional value for `query3`. When `cycle2` returns its provisional result back to `cycle`, `cycle` will observe that it has received a provisional result from its own cycle, and will call the `cycle_fn` (with the current value and the number of iterations that have occurred so far). The `cycle_fn` can return `salsa::CycleRecoveryAction::Iterate` to indicate that the cycle should iterate again, or `salsa::CycleRecoveryAction::Fallback(value)` to indicate that fixpoint iteration should resume starting with the given value (which should be a value that will converge quickly).
+If `query` becomes the head of a cycle (that is, `query` is executing and on the active query stack, it calls `query2`, `query2` calls `query3`, and `query3` calls `query` again -- there could be any number of queries involved in the cycle), the `cycle_initial` will be called to generate an "initial" value for `query` in the fixed-point computation. (The initial value should usually be the "bottom" value in the partial order.) All queries in the cycle will compute a provisional result based on this initial value for the cycle head. That is, `query3` will compute a provisional result using the initial value for `query`, `query2` will compute a provisional result using this provisional value for `query3`. When `cycle2` returns its provisional result back to `cycle`, `cycle` will observe that it has received a provisional result from its own cycle, and will call the `cycle_fn` (with the current value and the number of iterations that have occurred so far). The `cycle_fn` can return `salsa::CycleRecoveryAction::Iterate` to indicate that the cycle should iterate again, or `salsa::CycleRecoveryAction::Fallback(value)` to indicate that fixpoint iteration should continue with the given value (which should be a value that will converge quickly).
 
 The cycle will iterate until it converges: that is, until two successive iterations produce the same result.
 
@@ -38,6 +38,11 @@ Consider a two-query cycle where `query_a` calls `query_b`, and `query_b` calls 
 ## Ensuring convergence
 
 Fixed-point iteration is a powerful tool, but is also easy to misuse, potentially resulting in infinite iteration. To avoid this, ensure that all queries participating in fixpoint iteration are deterministic and monotone.
+
+To guarantee convergence, you can leverage the `last_provisional_value` (3rd parameter) received by `cycle_fn`.
+When the `cycle_fn` recalculates a value, you can implement a strategy that references the last provisional value to "join" values ​​or "widen" it and return a fallback value. This ensures monotonicity of the calculation and suppresses infinite oscillation of values ​​between cycles.
+
+Also, in fixed-point iteration, it is advantageous to be able to identify which cycle head seeded a value. By embedding a `salsa::Id` (2nd parameter) in the initial value as a "cycle marker", the recovery function can detect self-originated recursion.
 
 ## Calling Salsa queries from within `cycle_fn` or `cycle_initial`
 
