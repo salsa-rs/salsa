@@ -91,6 +91,10 @@ impl ActiveQuery {
             .mark_all_active(active_tracked_ids.iter().copied());
     }
 
+    pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
+        std::mem::take(&mut self.cycle_heads)
+    }
+
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,

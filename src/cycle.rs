@@ -490,4 +490,8 @@ impl<'db> ProvisionalStatus<'db> {
             _ => empty_cycle_heads(),
         }
     }
+
+    pub(crate) const fn is_provisional(&self) -> bool {
+        matches!(self, ProvisionalStatus::Provisional { .. })
+    }
 }
