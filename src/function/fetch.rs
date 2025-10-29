@@ -195,26 +195,24 @@ where
         // existing provisional memo if it exists
         let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(memo) = memo_guard {
-            if memo.value.is_some() && memo.revisions.cycle_heads().contains(&database_key_index) {
-                let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
-                if can_shallow_update.yes() {
-                    self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
-
-                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
-                        memo.revisions
-                            .cycle_heads()
-                            .remove_all_except(database_key_index);
-                    }
-
-                    crate::tracing::debug!(
-                        "hit cycle at {database_key_index:#?}, \
-                        returning last provisional value: {:#?}",
-                        memo.revisions
-                    );
-
-                    // SAFETY: memo is present in memo_map.
-                    return unsafe { self.extend_memo_lifetime(memo) };
+            if memo.verified_at.load() == zalsa.current_revision()
+                && memo.value.is_some()
+                && memo.revisions.cycle_heads().contains(&database_key_index)
+            {
+                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
+                    memo.revisions
+                        .cycle_heads()
+                        .remove_all_except(database_key_index);
                 }
+
+                crate::tracing::debug!(
+                    "hit cycle at {database_key_index:#?}, \
+                        returning last provisional value: {:#?}",
+                    memo.revisions
+                );
+
+                // SAFETY: memo is present in memo_map.
+                return unsafe { self.extend_memo_lifetime(memo) };
             }
         }
 
