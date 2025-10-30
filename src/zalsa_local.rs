@@ -448,7 +448,7 @@ impl ZalsaLocal {
 
     #[cold]
     pub(crate) fn unwind_cancelled(&self) {
-        Cancelled::Cancelled.throw();
+        Cancelled::Local.throw();
     }
 }
 

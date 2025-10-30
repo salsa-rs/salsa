@@ -11,7 +11,7 @@ use std::panic::{self, UnwindSafe};
 #[non_exhaustive]
 pub enum Cancelled {
     /// The query was operating but the local database execution has been cancelled.
-    Cancelled,
+    Local,
 
     /// The query was operating on revision R, but there is a pending write to move to revision R+1.
     PendingWrite,
@@ -46,7 +46,7 @@ impl Cancelled {
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let why = match self {
-            Cancelled::Cancelled => "canellation request",
+            Cancelled::Local => "local canellation request",
             Cancelled::PendingWrite => "pending write",
             Cancelled::PropagatedPanic => "propagated panic",
         };

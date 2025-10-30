@@ -68,7 +68,7 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
         let _ = self.zalsa_mut();
     }
 
-    /// Retrives a [`CancellationToken`] for the current database.
+    /// Retrieves a [`CancellationToken`] for the current database handle.
     fn cancellation_token(&self) -> CancellationToken {
         self.zalsa_local().cancellation_token()
     }

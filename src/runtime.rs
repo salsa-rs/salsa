@@ -123,9 +123,12 @@ struct BlockedOnInner<'me> {
 impl Running<'_> {
     /// Blocks on the other thread to complete the computation.
     ///
-    /// Returns `true` if the computation was successful, and `false` if the other thread was cancelled.
+    /// Returns `true` if the computation was successful, and `false` if the other thread was locally cancelled.
+    ///
+    /// # Panics
+    ///
+    /// If the other thread panics, this function will panic as well.
     #[must_use]
-    #[cold]
     pub(crate) fn block_on(self, zalsa: &Zalsa) -> bool {
         let BlockedOnInner {
             dg,

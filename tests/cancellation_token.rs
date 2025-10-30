@@ -44,7 +44,7 @@ fn cancellation_token() {
             a(&db, input)
         })
     });
-    assert!(matches!(res, Err(Cancelled::Cancelled)), "{res:?}");
+    assert!(matches!(res, Err(Cancelled::Local)), "{res:?}");
     drop(res);
     db.assert_logs(expect![[r#"
         [

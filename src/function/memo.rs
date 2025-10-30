@@ -504,7 +504,7 @@ mod _memory_usage {
     use std::any::TypeId;
     use std::num::NonZeroUsize;
 
-    // Memo's are stored a lot, make sure their size is doesn't randomly increase.
+    // Memo's are stored a lot, make sure their size doesn't randomly increase.
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 6]>()];
 

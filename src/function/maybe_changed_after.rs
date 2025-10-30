@@ -141,16 +141,15 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let claim_guard = loop {
+        let claim_guard =
             match self
                 .sync_table
                 .try_claim(zalsa, zalsa_local, key_index, Reentrancy::Deny)
             {
-                ClaimResult::Claimed(guard) => break guard,
+                ClaimResult::Claimed(guard) => guard,
                 ClaimResult::Running(blocked_on) => {
-                    if blocked_on.block_on(zalsa) {
-                        return None;
-                    }
+                    _ = blocked_on.block_on(zalsa);
+                    return None;
                 }
                 ClaimResult::Cycle { .. } => {
                     return Some(self.maybe_changed_after_cold_cycle(
@@ -159,8 +158,7 @@ where
                         cycle_heads,
                     ))
                 }
-            }
-        };
+            };
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
         else {
