@@ -38,6 +38,6 @@ fn execute() {
     db_signaler.signal(3);
     let (r1, r2) = (t1.join(), t2.join());
     let r1 = *r1.unwrap_err().downcast::<salsa::Cancelled>().unwrap();
-    assert!(matches!(r1, Cancelled::Cancelled), "{r1:?}");
+    assert!(matches!(r1, Cancelled::Local), "{r1:?}");
     assert_eq!(r2.unwrap(), 1);
 }
