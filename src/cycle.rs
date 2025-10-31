@@ -67,7 +67,7 @@ pub const MAX_ITERATIONS: IterationCount = IterationCount(200);
 /// Return value from a cycle recovery function.
 #[derive(Debug)]
 pub enum CycleRecoveryAction<T> {
-    /// Iterate the cycle again to look for a fixpoint.
+    /// Iterate the cycle again to look for a fixpoint unless the values are now equal.
     Iterate,
 
     /// Use the given value as the result for the current iteration instead
