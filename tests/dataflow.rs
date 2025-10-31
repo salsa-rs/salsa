@@ -78,12 +78,16 @@ fn def_cycle_initial(_db: &dyn Db, _id: salsa::Id, _def: Definition) -> Type {
 fn def_cycle_recover(
     _db: &dyn Db,
     _id: salsa::Id,
-    _last_provisional_value: &Type,
+    last_provisional_value: &Type,
     value: &Type,
     count: u32,
     _def: Definition,
 ) -> CycleRecoveryAction<Type> {
-    cycle_recover(value, count)
+    if value == last_provisional_value {
+        CycleRecoveryAction::Iterate
+    } else {
+        cycle_recover(value, count)
+    }
 }
 
 fn use_cycle_initial(_db: &dyn Db, _id: salsa::Id, _use: Use) -> Type {
@@ -93,12 +97,16 @@ fn use_cycle_initial(_db: &dyn Db, _id: salsa::Id, _use: Use) -> Type {
 fn use_cycle_recover(
     _db: &dyn Db,
     _id: salsa::Id,
-    _last_provisional_value: &Type,
+    last_provisional_value: &Type,
     value: &Type,
     count: u32,
     _use: Use,
 ) -> CycleRecoveryAction<Type> {
-    cycle_recover(value, count)
+    if value != last_provisional_value {
+        cycle_recover(value, count)
+    } else {
+        CycleRecoveryAction::Iterate
+    }
 }
 
 fn cycle_recover(value: &Type, count: u32) -> CycleRecoveryAction<Type> {
