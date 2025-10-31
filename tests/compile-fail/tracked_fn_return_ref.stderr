@@ -9,6 +9,26 @@ help: consider using the `'db` lifetime
 33 | ) -> ContainsRef<'db> {
    |                 +++++
 
+warning: elided lifetime has a name
+  --> tests/compile-fail/tracked_fn_return_ref.rs:33:6
+   |
+30 | fn tracked_fn_return_struct_containing_ref_elided_implicit<'db>(
+   |                                                            --- lifetime `'db` declared here
+...
+33 | ) -> ContainsRef {
+   |      ^^^^^^^^^^^ this elided lifetime gets resolved as `'db`
+   |
+   = note: `#[warn(elided_named_lifetimes)]` on by default
+
+warning: elided lifetime has a name
+  --> tests/compile-fail/tracked_fn_return_ref.rs:43:18
+   |
+40 | fn tracked_fn_return_struct_containing_ref_elided_explicit<'db>(
+   |                                                            --- lifetime `'db` declared here
+...
+43 | ) -> ContainsRef<'_> {
+   |                  ^^ this elided lifetime gets resolved as `'db`
+
 error: lifetime may not live long enough
   --> tests/compile-fail/tracked_fn_return_ref.rs:15:67
    |

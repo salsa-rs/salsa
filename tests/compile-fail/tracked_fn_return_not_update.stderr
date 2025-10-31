@@ -7,39 +7,39 @@ error[E0369]: binary operation `==` cannot be applied to type `&NotUpdate`
 note: an implementation of `PartialEq` might be missing for `NotUpdate`
   --> tests/compile-fail/tracked_fn_return_not_update.rs:7:1
    |
- 7 | struct NotUpdate;
+7  | struct NotUpdate;
    | ^^^^^^^^^^^^^^^^ must implement `PartialEq`
 help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
    |
- 7 + #[derive(PartialEq)]
- 8 | struct NotUpdate;
+7  + #[derive(PartialEq)]
+8  | struct NotUpdate;
    |
 
 error[E0599]: the function or associated item `maybe_update` exists for struct `UpdateDispatch<NotUpdate>`, but its trait bounds were not satisfied
- --> tests/compile-fail/tracked_fn_return_not_update.rs:10:56
-  |
-  7 | struct NotUpdate;
-    | ---------------- doesn't satisfy `NotUpdate: PartialEq` or `NotUpdate: Update`
+  --> tests/compile-fail/tracked_fn_return_not_update.rs:10:56
+   |
+7  | struct NotUpdate;
+   | ---------------- doesn't satisfy `NotUpdate: PartialEq` or `NotUpdate: Update`
 ...
- 10 | fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> NotUpdate {
-    |                                                        ^^^^^^^^^ function or associated item cannot be called on `UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
-    |
-   ::: src/update.rs
-    |
- 33 |     pub struct Dispatch<D>(PhantomData<D>);
-    |     ---------------------- doesn't satisfy `_: UpdateFallback<NotUpdate>`
-    |
-    = note: the following trait bounds were not satisfied:
-            `NotUpdate: Update`
-            `NotUpdate: PartialEq`
-            which is required by `UpdateDispatch<NotUpdate>: UpdateFallback<NotUpdate>`
+10 | fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> NotUpdate {
+   |                                                        ^^^^^^^^^ function or associated item cannot be called on `UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
+   |
+  ::: src/update.rs
+   |
+   |     pub struct Dispatch<D>(PhantomData<D>);
+   |     ---------------------- doesn't satisfy `_: UpdateFallback<NotUpdate>`
+   |
+   = note: the following trait bounds were not satisfied:
+           `NotUpdate: Update`
+           `NotUpdate: PartialEq`
+           which is required by `UpdateDispatch<NotUpdate>: UpdateFallback<NotUpdate>`
 note: the trait `Update` must be implemented
-   --> src/update.rs
-    |
-    | pub unsafe trait Update {
-    | ^^^^^^^^^^^^^^^^^^^^^^^
+  --> src/update.rs
+   |
+   | pub unsafe trait Update {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
 help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
-    |
-  7 + #[derive(PartialEq)]
-  8 | struct NotUpdate;
+   |
+7   + #[derive(PartialEq)]
+8   | struct NotUpdate;
     |

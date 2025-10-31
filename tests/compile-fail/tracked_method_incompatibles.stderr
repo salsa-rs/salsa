@@ -52,7 +52,7 @@ warning: unused variable: `db`
 9 |     fn ref_self(&self, db: &dyn salsa::Database) {}
   |                        ^^ help: if this is intentional, prefix it with an underscore: `_db`
   |
-  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+  = note: `#[warn(unused_variables)]` on by default
 
 warning: unused variable: `db`
   --> tests/compile-fail/tracked_method_incompatibles.rs:15:32

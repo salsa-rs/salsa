@@ -1,17 +1,12 @@
-error[E0277]: the trait bound `NotPersistable<'_>: Serialize` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'_>: serde::Serialize` is not satisfied
  --> tests/compile-fail/incomplete_persistence.rs:1:1
   |
 1 | #[salsa::tracked(persist)]
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
   | |
-  | unsatisfied trait bound
+  | the trait `Serialize` is not implemented for `NotPersistable<'_>`
   | required by a bound introduced by this call
   |
-help: the trait `Serialize` is not implemented for `NotPersistable<'_>`
- --> tests/compile-fail/incomplete_persistence.rs:6:1
-  |
-6 | #[salsa::tracked]
-  | ^^^^^^^^^^^^^^^^^
   = note: for local types consider adding `#[derive(serde::Serialize)]` to your `NotPersistable<'_>` type
   = note: for types from other crates check whether the crate offers a `serde` feature flag
   = help: the following other types implement trait `Serialize`:
@@ -23,176 +18,16 @@ help: the trait `Serialize` is not implemented for `NotPersistable<'_>`
             (T0, T1, T2)
             (T0, T1, T2, T3)
             (T0, T1, T2, T3, T4)
-            (T0, T1, T2, T3, T4, T5)
-            (T0, T1, T2, T3, T4, T5, T6)
-            (T0, T1, T2, T3, T4, T5, T6, T7)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)
-            (dyn erased_serde::ser::Serialize + 'erased)
-            (dyn erased_serde::ser::Serialize + Send + 'erased)
-            (dyn erased_serde::ser::Serialize + Send + Sync + 'erased)
-            (dyn erased_serde::ser::Serialize + Sync + 'erased)
-            AdjacentlyTaggedEnumVariant
-            Arguments<'a>
-            AtomicBool
-            AtomicI16
-            AtomicI32
-            AtomicI64
-            AtomicI8
-            AtomicIsize
-            AtomicU16
-            AtomicU32
-            AtomicU64
-            AtomicU8
-            AtomicUsize
-            BTreeMap<K, V>
-            BTreeSet<T>
-            BinaryHeap<T>
-            Bound<T>
-            Box<T>
-            CStr
-            CString
-            Cell<T>
-            Cow<'a, T>
-            DatabaseKeyIndex
-            Durability
-            Duration
-            HashMap<K, V, H>
-            HashSet<T, H>
-            Id
-            IngredientIndex
-            IpAddr
-            Ipv4Addr
-            Ipv6Addr
-            LinkedList<T>
-            NonZero<i128>
-            NonZero<i16>
-            NonZero<i32>
-            NonZero<i64>
-            NonZero<i8>
-            NonZero<isize>
-            NonZero<u128>
-            NonZero<u16>
-            NonZero<u32>
-            NonZero<u64>
-            NonZero<u8>
-            NonZero<usize>
-            OsStr
-            OsString
-            Path
-            PathBuf
-            Persistable<'_>
-            PhantomData<T>
-            RangeTo<Idx>
-            RefCell<T>
-            Result<T, E>
-            Reverse<T>
-            Revision
-            Runtime
-            Saturating<T>
-            SocketAddrV4
-            SocketAddrV6
-            SystemTime
-            Vec<T>
-            VecDeque<T>
-            Wrapping<T>
-            [T; 0]
-            [T; 10]
-            [T; 11]
-            [T; 12]
-            [T; 13]
-            [T; 14]
-            [T; 15]
-            [T; 16]
-            [T; 17]
-            [T; 18]
-            [T; 19]
-            [T; 1]
-            [T; 20]
-            [T; 21]
-            [T; 22]
-            [T; 23]
-            [T; 24]
-            [T; 25]
-            [T; 26]
-            [T; 27]
-            [T; 28]
-            [T; 29]
-            [T; 2]
-            [T; 30]
-            [T; 31]
-            [T; 32]
-            [T; 3]
-            [T; 4]
-            [T; 5]
-            [T; 6]
-            [T; 7]
-            [T; 8]
-            [T; 9]
-            [T]
-            bool
-            char
-            f32
-            f64
-            i128
-            i16
-            i32
-            i64
-            i8
-            isize
-            salsa::cycle::CycleHead
-            salsa::cycle::CycleHeads
-            salsa::cycle::IterationCount
-            salsa::database::persistence::SerializeDatabase<'db>
-            salsa::database::persistence::SerializeIngredients<'_>
-            salsa::function::persistence::SerializeIngredient<'_, C>
-            salsa::input::Value<C>
-            salsa::input::persistence::SerializeIngredient<'_, C>
-            salsa::interned::Value<C>
-            salsa::interned::persistence::SerializeIngredient<'_, C>
-            salsa::tracked_struct::Disambiguator
-            salsa::tracked_struct::Value<C>
-            salsa::tracked_struct::persistence::SerializeIngredient<'_, C>
-            salsa::zalsa_local::QueryEdge
-            salsa::zalsa_local::QueryOrigin
-            salsa::zalsa_local::QueryOriginRef<'a>
-            serde::__private::ser::content::Content
-            std::net::SocketAddr
-            std::ops::Range<Idx>
-            std::ops::RangeFrom<Idx>
-            std::ops::RangeInclusive<Idx>
-            std::option::Option<T>
-            std::string::String
-            std::sync::Mutex<T>
-            std::sync::RwLock<T>
-            str
-            thin_vec::ThinVec<T>
-            u128
-            u16
-            u32
-            u64
-            u8
-            usize
+          and $N others
   = note: required for `(NotPersistable<'_>,)` to implement `Serialize`
   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `NotPersistable<'_>: Deserialize<'_>` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'_>: serde::Deserialize<'de>` is not satisfied
  --> tests/compile-fail/incomplete_persistence.rs:1:1
   |
 1 | #[salsa::tracked(persist)]
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Deserialize<'_>` is not implemented for `NotPersistable<'_>`
   |
-help: the trait `Deserialize<'_>` is not implemented for `NotPersistable<'_>`
- --> tests/compile-fail/incomplete_persistence.rs:6:1
-  |
-6 | #[salsa::tracked]
-  | ^^^^^^^^^^^^^^^^^
   = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `NotPersistable<'_>` type
   = note: for types from other crates check whether the crate offers a `serde` feature flag
   = help: the following other types implement trait `Deserialize<'de>`:
@@ -204,179 +39,16 @@ help: the trait `Deserialize<'_>` is not implemented for `NotPersistable<'_>`
             (T0, T1)
             (T0, T1, T2)
             (T0, T1, T2, T3)
-            (T0, T1, T2, T3, T4)
-            (T0, T1, T2, T3, T4, T5)
-            (T0, T1, T2, T3, T4, T5, T6)
-            (T0, T1, T2, T3, T4, T5, T6, T7)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)
-            (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)
-            <salsa::zalsa_local::QueryOrigin as Deserialize<'de>>::deserialize::QueryOriginOwned
-            AtomicBool
-            AtomicI16
-            AtomicI32
-            AtomicI64
-            AtomicI8
-            AtomicIsize
-            AtomicU16
-            AtomicU32
-            AtomicU64
-            AtomicU8
-            AtomicUsize
-            BTreeMap<K, V>
-            BTreeSet<T>
-            BinaryHeap<T>
-            Bound<T>
-            Box<CStr>
-            Box<OsStr>
-            Box<Path>
-            Box<T>
-            Box<[T]>
-            Box<str>
-            CString
-            Cell<T>
-            Cow<'a, T>
-            DatabaseKeyIndex
-            Durability
-            Duration
-            HashMap<K, V, S>
-            HashSet<T, S>
-            Id
-            IgnoredAny
-            IngredientIndex
-            IpAddr
-            Ipv4Addr
-            Ipv6Addr
-            LinkedList<T>
-            NonZero<i128>
-            NonZero<i16>
-            NonZero<i32>
-            NonZero<i64>
-            NonZero<i8>
-            NonZero<isize>
-            NonZero<u128>
-            NonZero<u16>
-            NonZero<u32>
-            NonZero<u64>
-            NonZero<u8>
-            NonZero<usize>
-            OsString
-            PathBuf
-            Persistable<'_>
-            PhantomData<T>
-            RangeTo<Idx>
-            RefCell<T>
-            Result<T, E>
-            Reverse<T>
-            Revision
-            Runtime
-            Saturating<i128>
-            Saturating<i16>
-            Saturating<i32>
-            Saturating<i64>
-            Saturating<i8>
-            Saturating<isize>
-            Saturating<u128>
-            Saturating<u16>
-            Saturating<u32>
-            Saturating<u64>
-            Saturating<u8>
-            Saturating<usize>
-            SocketAddrV4
-            SocketAddrV6
-            SystemTime
-            Vec<T>
-            VecDeque<T>
-            Wrapping<T>
-            [T; 0]
-            [T; 10]
-            [T; 11]
-            [T; 12]
-            [T; 13]
-            [T; 14]
-            [T; 15]
-            [T; 16]
-            [T; 17]
-            [T; 18]
-            [T; 19]
-            [T; 1]
-            [T; 20]
-            [T; 21]
-            [T; 22]
-            [T; 23]
-            [T; 24]
-            [T; 25]
-            [T; 26]
-            [T; 27]
-            [T; 28]
-            [T; 29]
-            [T; 2]
-            [T; 30]
-            [T; 31]
-            [T; 32]
-            [T; 3]
-            [T; 4]
-            [T; 5]
-            [T; 6]
-            [T; 7]
-            [T; 8]
-            [T; 9]
-            bool
-            char
-            f32
-            f64
-            i128
-            i16
-            i32
-            i64
-            i8
-            isize
-            salsa::cycle::CycleHead
-            salsa::cycle::CycleHeads
-            salsa::cycle::IterationCount
-            salsa::function::memo::Memo<'static, C>
-            salsa::function::memo::persistence::<impl Deserialize<'de> for salsa::function::memo::Memo<'static, C>>::deserialize::DeserializeMemo<C>
-            salsa::input::persistence::DeserializeValue<C>
-            salsa::interned::persistence::DeserializeValue<C>
-            salsa::tracked_struct::Disambiguator
-            salsa::tracked_struct::persistence::DeserializeValue<C>
-            salsa::zalsa_local::QueryEdge
-            salsa::zalsa_local::QueryOrigin
-            serde::__private::de::content::Content<'de>
-            std::net::SocketAddr
-            std::ops::Range<Idx>
-            std::ops::RangeFrom<Idx>
-            std::ops::RangeInclusive<Idx>
-            std::option::Option<T>
-            std::string::String
-            std::sync::Mutex<T>
-            std::sync::RwLock<T>
-            thin_vec::ThinVec<T>
-            u128
-            u16
-            u32
-            u64
-            u8
-            usize
+          and $N others
   = note: required for `(NotPersistable<'_>,)` to implement `Deserialize<'_>`
   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `NotPersistable<'db>: Serialize` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'db>: serde::Serialize` is not satisfied
   --> tests/compile-fail/incomplete_persistence.rs:12:45
    |
 12 | fn query(_db: &dyn salsa::Database, _input: NotPersistable<'_>) {}
-   |                                             ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                                             ^^^^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `NotPersistable<'db>`
    |
-help: the trait `Serialize` is not implemented for `NotPersistable<'db>`
-  --> tests/compile-fail/incomplete_persistence.rs:6:1
-   |
- 6 | #[salsa::tracked]
-   | ^^^^^^^^^^^^^^^^^
    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `NotPersistable<'db>` type
    = note: for types from other crates check whether the crate offers a `serde` feature flag
    = help: the following other types implement trait `Serialize`:
@@ -388,162 +60,7 @@ help: the trait `Serialize` is not implemented for `NotPersistable<'db>`
              (T0, T1, T2)
              (T0, T1, T2, T3)
              (T0, T1, T2, T3, T4)
-             (T0, T1, T2, T3, T4, T5)
-             (T0, T1, T2, T3, T4, T5, T6)
-             (T0, T1, T2, T3, T4, T5, T6, T7)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)
-             (dyn erased_serde::ser::Serialize + 'erased)
-             (dyn erased_serde::ser::Serialize + Send + 'erased)
-             (dyn erased_serde::ser::Serialize + Send + Sync + 'erased)
-             (dyn erased_serde::ser::Serialize + Sync + 'erased)
-             AdjacentlyTaggedEnumVariant
-             Arguments<'a>
-             AtomicBool
-             AtomicI16
-             AtomicI32
-             AtomicI64
-             AtomicI8
-             AtomicIsize
-             AtomicU16
-             AtomicU32
-             AtomicU64
-             AtomicU8
-             AtomicUsize
-             BTreeMap<K, V>
-             BTreeSet<T>
-             BinaryHeap<T>
-             Bound<T>
-             Box<T>
-             CStr
-             CString
-             Cell<T>
-             Cow<'a, T>
-             DatabaseKeyIndex
-             Durability
-             Duration
-             HashMap<K, V, H>
-             HashSet<T, H>
-             Id
-             IngredientIndex
-             IpAddr
-             Ipv4Addr
-             Ipv6Addr
-             LinkedList<T>
-             NonZero<i128>
-             NonZero<i16>
-             NonZero<i32>
-             NonZero<i64>
-             NonZero<i8>
-             NonZero<isize>
-             NonZero<u128>
-             NonZero<u16>
-             NonZero<u32>
-             NonZero<u64>
-             NonZero<u8>
-             NonZero<usize>
-             OsStr
-             OsString
-             Path
-             PathBuf
-             Persistable<'_>
-             PhantomData<T>
-             RangeTo<Idx>
-             RefCell<T>
-             Result<T, E>
-             Reverse<T>
-             Revision
-             Runtime
-             Saturating<T>
-             SocketAddrV4
-             SocketAddrV6
-             SystemTime
-             Vec<T>
-             VecDeque<T>
-             Wrapping<T>
-             [T; 0]
-             [T; 10]
-             [T; 11]
-             [T; 12]
-             [T; 13]
-             [T; 14]
-             [T; 15]
-             [T; 16]
-             [T; 17]
-             [T; 18]
-             [T; 19]
-             [T; 1]
-             [T; 20]
-             [T; 21]
-             [T; 22]
-             [T; 23]
-             [T; 24]
-             [T; 25]
-             [T; 26]
-             [T; 27]
-             [T; 28]
-             [T; 29]
-             [T; 2]
-             [T; 30]
-             [T; 31]
-             [T; 32]
-             [T; 3]
-             [T; 4]
-             [T; 5]
-             [T; 6]
-             [T; 7]
-             [T; 8]
-             [T; 9]
-             [T]
-             bool
-             char
-             f32
-             f64
-             i128
-             i16
-             i32
-             i64
-             i8
-             isize
-             salsa::cycle::CycleHead
-             salsa::cycle::CycleHeads
-             salsa::cycle::IterationCount
-             salsa::database::persistence::SerializeDatabase<'db>
-             salsa::database::persistence::SerializeIngredients<'_>
-             salsa::function::persistence::SerializeIngredient<'_, C>
-             salsa::input::Value<C>
-             salsa::input::persistence::SerializeIngredient<'_, C>
-             salsa::interned::Value<C>
-             salsa::interned::persistence::SerializeIngredient<'_, C>
-             salsa::tracked_struct::Disambiguator
-             salsa::tracked_struct::Value<C>
-             salsa::tracked_struct::persistence::SerializeIngredient<'_, C>
-             salsa::zalsa_local::QueryEdge
-             salsa::zalsa_local::QueryOrigin
-             salsa::zalsa_local::QueryOriginRef<'a>
-             serde::__private::ser::content::Content
-             std::net::SocketAddr
-             std::ops::Range<Idx>
-             std::ops::RangeFrom<Idx>
-             std::ops::RangeInclusive<Idx>
-             std::option::Option<T>
-             std::string::String
-             std::sync::Mutex<T>
-             std::sync::RwLock<T>
-             str
-             thin_vec::ThinVec<T>
-             u128
-             u16
-             u32
-             u64
-             u8
-             usize
+           and $N others
 note: required by a bound in `query_input_is_persistable`
   --> tests/compile-fail/incomplete_persistence.rs:11:1
    |
@@ -552,19 +69,14 @@ note: required by a bound in `query_input_is_persistable`
    | |
    | required by a bound in this function
    | required by this bound in `query_input_is_persistable`
-   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `for<'de> NotPersistable<'db>: Deserialize<'de>` is not satisfied
+error[E0277]: the trait bound `NotPersistable<'db>: serde::Deserialize<'de>` is not satisfied
   --> tests/compile-fail/incomplete_persistence.rs:12:45
    |
 12 | fn query(_db: &dyn salsa::Database, _input: NotPersistable<'_>) {}
-   |                                             ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                                             ^^^^^^^^^^^^^^^^^^ the trait `for<'de> Deserialize<'de>` is not implemented for `NotPersistable<'db>`
    |
-help: the trait `for<'de> Deserialize<'de>` is not implemented for `NotPersistable<'db>`
-  --> tests/compile-fail/incomplete_persistence.rs:6:1
-   |
- 6 | #[salsa::tracked]
-   | ^^^^^^^^^^^^^^^^^
    = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `NotPersistable<'db>` type
    = note: for types from other crates check whether the crate offers a `serde` feature flag
    = help: the following other types implement trait `Deserialize<'de>`:
@@ -576,165 +88,7 @@ help: the trait `for<'de> Deserialize<'de>` is not implemented for `NotPersistab
              (T0, T1)
              (T0, T1, T2)
              (T0, T1, T2, T3)
-             (T0, T1, T2, T3, T4)
-             (T0, T1, T2, T3, T4, T5)
-             (T0, T1, T2, T3, T4, T5, T6)
-             (T0, T1, T2, T3, T4, T5, T6, T7)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)
-             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)
-             <salsa::zalsa_local::QueryOrigin as Deserialize<'de>>::deserialize::QueryOriginOwned
-             AtomicBool
-             AtomicI16
-             AtomicI32
-             AtomicI64
-             AtomicI8
-             AtomicIsize
-             AtomicU16
-             AtomicU32
-             AtomicU64
-             AtomicU8
-             AtomicUsize
-             BTreeMap<K, V>
-             BTreeSet<T>
-             BinaryHeap<T>
-             Bound<T>
-             Box<CStr>
-             Box<OsStr>
-             Box<Path>
-             Box<T>
-             Box<[T]>
-             Box<str>
-             CString
-             Cell<T>
-             Cow<'a, T>
-             DatabaseKeyIndex
-             Durability
-             Duration
-             HashMap<K, V, S>
-             HashSet<T, S>
-             Id
-             IgnoredAny
-             IngredientIndex
-             IpAddr
-             Ipv4Addr
-             Ipv6Addr
-             LinkedList<T>
-             NonZero<i128>
-             NonZero<i16>
-             NonZero<i32>
-             NonZero<i64>
-             NonZero<i8>
-             NonZero<isize>
-             NonZero<u128>
-             NonZero<u16>
-             NonZero<u32>
-             NonZero<u64>
-             NonZero<u8>
-             NonZero<usize>
-             OsString
-             PathBuf
-             Persistable<'_>
-             PhantomData<T>
-             RangeTo<Idx>
-             RefCell<T>
-             Result<T, E>
-             Reverse<T>
-             Revision
-             Runtime
-             Saturating<i128>
-             Saturating<i16>
-             Saturating<i32>
-             Saturating<i64>
-             Saturating<i8>
-             Saturating<isize>
-             Saturating<u128>
-             Saturating<u16>
-             Saturating<u32>
-             Saturating<u64>
-             Saturating<u8>
-             Saturating<usize>
-             SocketAddrV4
-             SocketAddrV6
-             SystemTime
-             Vec<T>
-             VecDeque<T>
-             Wrapping<T>
-             [T; 0]
-             [T; 10]
-             [T; 11]
-             [T; 12]
-             [T; 13]
-             [T; 14]
-             [T; 15]
-             [T; 16]
-             [T; 17]
-             [T; 18]
-             [T; 19]
-             [T; 1]
-             [T; 20]
-             [T; 21]
-             [T; 22]
-             [T; 23]
-             [T; 24]
-             [T; 25]
-             [T; 26]
-             [T; 27]
-             [T; 28]
-             [T; 29]
-             [T; 2]
-             [T; 30]
-             [T; 31]
-             [T; 32]
-             [T; 3]
-             [T; 4]
-             [T; 5]
-             [T; 6]
-             [T; 7]
-             [T; 8]
-             [T; 9]
-             bool
-             char
-             f32
-             f64
-             i128
-             i16
-             i32
-             i64
-             i8
-             isize
-             salsa::cycle::CycleHead
-             salsa::cycle::CycleHeads
-             salsa::cycle::IterationCount
-             salsa::function::memo::Memo<'static, C>
-             salsa::function::memo::persistence::<impl Deserialize<'de> for salsa::function::memo::Memo<'static, C>>::deserialize::DeserializeMemo<C>
-             salsa::input::persistence::DeserializeValue<C>
-             salsa::interned::persistence::DeserializeValue<C>
-             salsa::tracked_struct::Disambiguator
-             salsa::tracked_struct::persistence::DeserializeValue<C>
-             salsa::zalsa_local::QueryEdge
-             salsa::zalsa_local::QueryOrigin
-             serde::__private::de::content::Content<'de>
-             std::net::SocketAddr
-             std::ops::Range<Idx>
-             std::ops::RangeFrom<Idx>
-             std::ops::RangeInclusive<Idx>
-             std::option::Option<T>
-             std::string::String
-             std::sync::Mutex<T>
-             std::sync::RwLock<T>
-             thin_vec::ThinVec<T>
-             u128
-             u16
-             u32
-             u64
-             u8
-             usize
+           and $N others
 note: required by a bound in `query_input_is_persistable`
   --> tests/compile-fail/incomplete_persistence.rs:11:1
    |
@@ -743,4 +97,4 @@ note: required by a bound in `query_input_is_persistable`
    | |
    | required by a bound in this function
    | required by this bound in `query_input_is_persistable`
-   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
