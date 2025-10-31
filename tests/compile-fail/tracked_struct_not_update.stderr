@@ -29,6 +29,6 @@ note: the trait `Update` must be implemented
   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
   |
-7   + #[derive(PartialEq)]
-8   | struct NotUpdate;
+  7 + #[derive(PartialEq)]
+  8 | struct NotUpdate;
     |
