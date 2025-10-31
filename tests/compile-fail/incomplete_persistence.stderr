@@ -4,9 +4,14 @@ error[E0277]: the trait bound `NotPersistable<'_>: serde::Serialize` is not sati
 1 | #[salsa::tracked(persist)]
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
   | |
-  | the trait `Serialize` is not implemented for `NotPersistable<'_>`
+  | unsatisfied trait bound
   | required by a bound introduced by this call
   |
+help: the trait `Serialize` is not implemented for `NotPersistable<'_>`
+ --> tests/compile-fail/incomplete_persistence.rs:6:1
+  |
+6 | #[salsa::tracked]
+  | ^^^^^^^^^^^^^^^^^
   = note: for local types consider adding `#[derive(serde::Serialize)]` to your `NotPersistable<'_>` type
   = note: for types from other crates check whether the crate offers a `serde` feature flag
   = help: the following other types implement trait `Serialize`:
@@ -26,8 +31,13 @@ error[E0277]: the trait bound `NotPersistable<'_>: serde::Deserialize<'de>` is n
  --> tests/compile-fail/incomplete_persistence.rs:1:1
   |
 1 | #[salsa::tracked(persist)]
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Deserialize<'_>` is not implemented for `NotPersistable<'_>`
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
   |
+help: the trait `Deserialize<'_>` is not implemented for `NotPersistable<'_>`
+ --> tests/compile-fail/incomplete_persistence.rs:6:1
+  |
+6 | #[salsa::tracked]
+  | ^^^^^^^^^^^^^^^^^
   = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `NotPersistable<'_>` type
   = note: for types from other crates check whether the crate offers a `serde` feature flag
   = help: the following other types implement trait `Deserialize<'de>`:
@@ -47,8 +57,13 @@ error[E0277]: the trait bound `NotPersistable<'db>: serde::Serialize` is not sat
   --> tests/compile-fail/incomplete_persistence.rs:12:45
    |
 12 | fn query(_db: &dyn salsa::Database, _input: NotPersistable<'_>) {}
-   |                                             ^^^^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `NotPersistable<'db>`
+   |                                             ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
+help: the trait `Serialize` is not implemented for `NotPersistable<'db>`
+  --> tests/compile-fail/incomplete_persistence.rs:6:1
+   |
+ 6 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^
    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `NotPersistable<'db>` type
    = note: for types from other crates check whether the crate offers a `serde` feature flag
    = help: the following other types implement trait `Serialize`:
@@ -69,14 +84,19 @@ note: required by a bound in `query_input_is_persistable`
    | |
    | required by a bound in this function
    | required by this bound in `query_input_is_persistable`
-   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotPersistable<'db>: serde::Deserialize<'de>` is not satisfied
   --> tests/compile-fail/incomplete_persistence.rs:12:45
    |
 12 | fn query(_db: &dyn salsa::Database, _input: NotPersistable<'_>) {}
-   |                                             ^^^^^^^^^^^^^^^^^^ the trait `for<'de> Deserialize<'de>` is not implemented for `NotPersistable<'db>`
+   |                                             ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
+help: the trait `for<'de> Deserialize<'de>` is not implemented for `NotPersistable<'db>`
+  --> tests/compile-fail/incomplete_persistence.rs:6:1
+   |
+ 6 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^
    = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `NotPersistable<'db>` type
    = note: for types from other crates check whether the crate offers a `serde` feature flag
    = help: the following other types implement trait `Deserialize<'de>`:
@@ -97,4 +117,4 @@ note: required by a bound in `query_input_is_persistable`
    | |
    | required by a bound in this function
    | required by this bound in `query_input_is_persistable`
-   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
