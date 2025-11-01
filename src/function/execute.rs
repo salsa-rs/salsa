@@ -272,7 +272,8 @@ where
                     .expect("cycle head memo must have been created during the execution");
 
                 // A cycle head isn't allowed to be final because that would mean that this query
-                // dependent on the initial value (or last provisional)
+                // dependents on the initial value of B, but B finalized without
+                // completing this query that also participates in the cycle.
                 assert!(provisional_status.is_provisional());
 
                 for nested_head in provisional_status.cycle_heads() {
