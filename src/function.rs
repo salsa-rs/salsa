@@ -116,7 +116,7 @@ pub trait Configuration: Any {
     ///   query becomes the outermost cycle head after a nested cycle complete a few iterations. In this case,
     ///   `iteration` continues from the nested cycle's iteration count rather than resetting to zero.
     /// * **Non-contiguous values**: The iteration count can be non-contigious for cycle heads
-    ///    that are only conditionally part of a cycle.
+    ///   that are only conditionally part of a cycle.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         id: Id,
