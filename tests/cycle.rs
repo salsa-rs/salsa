@@ -7,7 +7,7 @@
 mod common;
 use common::{ExecuteValidateLoggerDatabase, LogDatabase};
 use expect_test::expect;
-use salsa::{CycleRecoveryAction, Database as Db, DatabaseImpl as DbImpl, Durability, Setter};
+use salsa::{Database as Db, DatabaseImpl as DbImpl, Durability, Setter};
 #[cfg(not(miri))]
 use test_log::test;
 
@@ -122,26 +122,26 @@ const MAX_ITERATIONS: u32 = 3;
 
 /// Recover from a cycle by falling back to `Value::OutOfBounds` if the value is out of bounds,
 /// `Value::TooManyIterations` if we've iterated more than `MAX_ITERATIONS` times, or else
-/// iterating again.
+/// returning the computed value to continue iterating.
 fn cycle_recover(
     _db: &dyn Db,
     _id: salsa::Id,
     last_provisional_value: &Value,
-    value: &Value,
+    value: Value,
     count: u32,
     _inputs: Inputs,
-) -> CycleRecoveryAction<Value> {
-    if value == last_provisional_value {
-        CycleRecoveryAction::Iterate
+) -> Value {
+    if &value == last_provisional_value {
+        value
     } else if value
         .to_value()
         .is_some_and(|val| val <= MIN_VALUE || val >= MAX_VALUE)
     {
-        CycleRecoveryAction::Fallback(Value::OutOfBounds)
+        Value::OutOfBounds
     } else if count > MAX_ITERATIONS {
-        CycleRecoveryAction::Fallback(Value::TooManyIterations)
+        Value::TooManyIterations
     } else {
-        CycleRecoveryAction::Iterate
+        value
     }
 }
 

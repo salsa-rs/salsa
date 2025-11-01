@@ -356,23 +356,15 @@ where
             };
 
             // We are in a cycle that hasn't converged; ask the user's
-            // cycle-recovery function what to do:
-            match C::recover_from_cycle(
+            // cycle-recovery function what to do (it may return the same value or a different one):
+            new_value = C::recover_from_cycle(
                 db,
                 id,
                 last_provisional_value,
-                &new_value,
+                new_value,
                 iteration_count.as_u32(),
                 C::id_to_input(zalsa, id),
-            ) {
-                crate::CycleRecoveryAction::Iterate => {}
-                crate::CycleRecoveryAction::Fallback(fallback_value) => {
-                    tracing::debug!(
-                        "{database_key_index:?}: execute: user cycle_fn says to fall back"
-                    );
-                    new_value = fallback_value;
-                }
-            }
+            );
 
             let this_converged = C::values_equal(&new_value, last_provisional_value);
 

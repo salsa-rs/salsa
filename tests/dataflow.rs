@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 use std::iter::IntoIterator;
 
-use salsa::{CycleRecoveryAction, Database as Db, Setter};
+use salsa::{Database as Db, Setter};
 
 /// A Use of a symbol.
 #[salsa::input]
@@ -79,12 +79,12 @@ fn def_cycle_recover(
     _db: &dyn Db,
     _id: salsa::Id,
     last_provisional_value: &Type,
-    value: &Type,
+    value: Type,
     count: u32,
     _def: Definition,
-) -> CycleRecoveryAction<Type> {
-    if value == last_provisional_value {
-        CycleRecoveryAction::Iterate
+) -> Type {
+    if &value == last_provisional_value {
+        value
     } else {
         cycle_recover(value, count)
     }
@@ -98,28 +98,28 @@ fn use_cycle_recover(
     _db: &dyn Db,
     _id: salsa::Id,
     last_provisional_value: &Type,
-    value: &Type,
+    value: Type,
     count: u32,
     _use: Use,
-) -> CycleRecoveryAction<Type> {
-    if value != last_provisional_value {
-        cycle_recover(value, count)
+) -> Type {
+    if &value == last_provisional_value {
+        value
     } else {
-        CycleRecoveryAction::Iterate
+        cycle_recover(value, count)
     }
 }
 
-fn cycle_recover(value: &Type, count: u32) -> CycleRecoveryAction<Type> {
-    match value {
-        Type::Bottom => CycleRecoveryAction::Iterate,
+fn cycle_recover(value: Type, count: u32) -> Type {
+    match &value {
+        Type::Bottom => value,
         Type::Values(_) => {
             if count > 4 {
-                CycleRecoveryAction::Fallback(Type::Top)
+                Type::Top
             } else {
-                CycleRecoveryAction::Iterate
+                value
             }
         }
-        Type::Top => CycleRecoveryAction::Iterate,
+        Type::Top => value,
     }
 }
 
