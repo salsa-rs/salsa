@@ -238,7 +238,7 @@ where
                     .update_iteration_count_mut(database_key_index, iteration_count);
 
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
-                break (new_value, active_query.pop());
+                break (new_value, completed_query);
             }
 
             let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationCount); 1]> =
