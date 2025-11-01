@@ -22,9 +22,9 @@ fn cycle_fn(
     _db: &dyn KnobsDatabase,
     _id: salsa::Id,
     _last_provisional_value: &u32,
-    _value: &u32,
+    _value: u32,
     _count: u32,
-) -> salsa::CycleRecoveryAction<u32> {
+) -> u32 {
     panic!("cancel!")
 }
 

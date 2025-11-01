@@ -25,10 +25,10 @@ fn cycle_fn(
     db: &dyn salsa::Database,
     _id: salsa::Id,
     _last_provisional_value: &u32,
-    _value: &u32,
+    _value: u32,
     _count: u32,
-) -> salsa::CycleRecoveryAction<u32> {
-    salsa::CycleRecoveryAction::Fallback(fallback_value(db))
+) -> u32 {
+    fallback_value(db)
 }
 
 #[test_log::test]

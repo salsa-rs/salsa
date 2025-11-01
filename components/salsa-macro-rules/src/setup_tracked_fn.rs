@@ -310,10 +310,10 @@ macro_rules! setup_tracked_fn {
                     db: &$db_lt dyn $Db,
                     id: salsa::Id,
                     last_provisional_value: &Self::Output<$db_lt>,
-                    value: &Self::Output<$db_lt>,
+                    value: Self::Output<$db_lt>,
                     iteration_count: u32,
                     ($($input_id),*): ($($interned_input_ty),*)
-                ) -> $zalsa::CycleRecoveryAction<Self::Output<$db_lt>> {
+                ) -> Self::Output<$db_lt> {
                     $($cycle_recovery_fn)*(db, id, last_provisional_value, value, iteration_count, $($input_id),*)
                 }
 
