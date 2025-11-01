@@ -3,6 +3,7 @@
 mod setup;
 mod signal;
 
+mod cancellation_token_recomputes;
 mod cycle_a_t1_b_t2;
 mod cycle_a_t1_b_t2_fallback;
 mod cycle_ab_peeping_c;

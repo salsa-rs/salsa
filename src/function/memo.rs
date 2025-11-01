@@ -180,7 +180,10 @@ impl<'db, C: Configuration> Memo<'db, C> {
                     }
                     TryClaimHeadsResult::Running(running) => {
                         all_cycles = false;
-                        running.block_on(zalsa);
+                        if !running.block_on(zalsa) {
+                            // FIXME: Handle cancellation properly?
+                            crate::Cancelled::PropagatedPanic.throw();
+                        }
                     }
                 }
             }
@@ -501,7 +504,7 @@ mod _memory_usage {
     use std::any::TypeId;
     use std::num::NonZeroUsize;
 
-    // Memo's are stored a lot, make sure their size is doesn't randomly increase.
+    // Memo's are stored a lot, make sure their size doesn't randomly increase.
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 6]>()];
 
