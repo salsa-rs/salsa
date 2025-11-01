@@ -95,6 +95,9 @@ pub trait Configuration: Any {
     /// value from the latest iteration of this cycle. `count` is the number of cycle iterations
     /// completed so far.
     ///
+    /// The function is called for every iteration of the cycle head, regardless of whether the cycle
+    /// has converged (the values are equal).
+    ///
     /// # Id
     ///
     /// The id can be used to uniquely identify the query instance. This can be helpful
@@ -112,9 +115,8 @@ pub trait Configuration: Any {
     /// * **Initial value**: `iteration` may be non-zero on the first call for a given query if that
     ///   query becomes the outermost cycle head after a nested cycle complete a few iterations. In this case,
     ///   `iteration` continues from the nested cycle's iteration count rather than resetting to zero.
-    /// * **Non-contiguous values**: This function isn't called if this cycle is part of an outer cycle
-    ///   and the value for this query remains unchanged for one iteration. But the outer cycle might
-    ///   keep iterating because other heads keep changing.
+    /// * **Non-contiguous values**: The iteration count can be non-contigious for cycle heads
+    ///    that are only conditionally part of a cycle.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         id: Id,
