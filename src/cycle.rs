@@ -23,14 +23,12 @@
 //!
 //! When a query observes that it has just computed a result which contains itself as a cycle head,
 //! it recognizes that it is responsible for resolving this cycle and calls its `cycle_fn` to
-//! decide how to do so. The `cycle_fn` function is passed the provisional value just computed for
-//! that query and the count of iterations so far, and must return either
-//! `CycleRecoveryAction::Iterate` (which signals that the cycle head should re-iterate the cycle),
-//! or `CycleRecoveryAction::Fallback` (which signals that the cycle head should replace its
-//! computed value with the given fallback value).
+//! decide what value to use. The `cycle_fn` function is passed the provisional value just computed
+//! for that query and the count of iterations so far, and returns the value to use for this
+//! iteration. This can be the computed value itself, or a different value (e.g., a fallback value).
 //!
-//! If the cycle head ever observes that the provisional value it just recomputed is the same as
-//! the provisional value from the previous iteration, the cycle has converged. The cycle head will
+//! If the cycle head ever observes that the value returned by `cycle_fn` is the same as the
+//! provisional value from the previous iteration, this cycle has converged. The cycle head will
 //! mark that value as final (by removing itself as cycle head) and return it.
 //!
 //! Other queries in the cycle will still have provisional values recorded, but those values should
@@ -38,11 +36,6 @@
 //! Instead, we wait until the next time that provisional value is read, and then we check if all
 //! of its cycle heads have a final result, in which case it, too, can be marked final. (This is
 //! implemented in `shallow_verify_memo` and `validate_provisional`.)
-//!
-//! If the `cycle_fn` returns a fallback value, the cycle head will replace its provisional value
-//! with that fallback, and then iterate the cycle one more time. A fallback value is expected to
-//! result in a stable, converged cycle. If it does not (that is, if the result of another
-//! iteration of the cycle is not the same as the fallback value), we'll panic.
 //!
 //! In nested cycle cases, the inner cycles are iterated as part of the outer cycle iteration. This helps
 //! to significantly reduce the number of iterations needed to reach a fixpoint. For nested cycles,
@@ -63,20 +56,6 @@ use crate::Revision;
 ///
 /// Should only be relevant in case of a badly configured cycle recovery.
 pub const MAX_ITERATIONS: IterationCount = IterationCount(200);
-
-/// Return value from a cycle recovery function.
-#[derive(Debug)]
-pub enum CycleRecoveryAction<T> {
-    /// Iterate the cycle again to look for a fixpoint unless the values are now equal.
-    Iterate,
-
-    /// Use the given value as the result for the current iteration instead
-    /// of the value computed by the query function.
-    ///
-    /// Returning `Fallback` doesn't stop the fixpoint iteration. It only
-    /// allows the iterate function to return a different value.
-    Fallback(T),
-}
 
 /// Cycle recovery strategy: Is this query capable of recovering from
 /// a cycle that results from executing the function? If so, how?
