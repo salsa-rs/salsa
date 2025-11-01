@@ -592,7 +592,10 @@ where
                             cycle_heads.append_heads(&mut child_cycle_heads);
 
                             match input_result {
-                                VerifyResult::Changed => return VerifyResult::changed(),
+                                VerifyResult::Changed => {
+                                    cycle_heads.remove_head(database_key_index);
+                                    return VerifyResult::changed();
+                                }
                                 #[cfg(feature = "accumulator")]
                                 VerifyResult::Unchanged { accumulated } => {
                                     inputs |= accumulated;
