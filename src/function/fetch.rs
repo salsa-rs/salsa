@@ -195,6 +195,9 @@ where
         // existing provisional memo if it exists
         let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(memo) = memo_guard {
+            // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
+            // but that would require inserting itself as a cycle head, which either requires clone
+            // on the value OR a concurrent `Vec` for cycle heads.
             if memo.verified_at.load() == zalsa.current_revision()
                 && memo.value.is_some()
                 && memo.revisions.cycle_heads().contains(&database_key_index)
@@ -233,7 +236,20 @@ where
                     "hit cycle at {database_key_index:#?}, \
                     inserting and returning fixpoint initial value"
                 );
-                let revisions = QueryRevisions::fixpoint_initial(database_key_index);
+
+                let iteration = memo_guard
+                    .and_then(|old_memo| {
+                        if old_memo.verified_at.load() == zalsa.current_revision()
+                            && old_memo.value.is_some()
+                        {
+                            Some(old_memo.revisions.iteration())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(IterationCount::initial());
+                let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
+
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                 self.insert_memo(
                     zalsa,
