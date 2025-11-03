@@ -1213,6 +1213,18 @@ impl ActiveQueryGuard<'_> {
         }
     }
 
+    pub(crate) fn take_cycle_heads(&mut self) -> CycleHeads {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.local_state.with_query_stack_unchecked_mut(|stack| {
+                #[cfg(debug_assertions)]
+                assert_eq!(stack.len(), self.push_len);
+                let frame = stack.last_mut().unwrap();
+                frame.take_cycle_heads()
+            })
+        }
+    }
+
     /// Invoked when the query has successfully completed execution.
     fn complete(self) -> CompletedQuery {
         // SAFETY: We do not access the query stack reentrantly.

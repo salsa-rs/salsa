@@ -56,19 +56,24 @@ where
         });
 
         let (new_value, mut completed_query) = match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Panic => Self::execute_query(
-                db,
-                zalsa,
-                zalsa_local.push_query(database_key_index, IterationCount::initial()),
-                opt_old_memo,
-            ),
-            CycleRecoveryStrategy::FallbackImmediate => {
-                let (mut new_value, mut completed_query) = Self::execute_query(
+            CycleRecoveryStrategy::Panic => {
+                let (new_value, active_query) = Self::execute_query(
                     db,
                     zalsa,
                     zalsa_local.push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
                 );
+                (new_value, active_query.pop())
+            }
+            CycleRecoveryStrategy::FallbackImmediate => {
+                let (mut new_value, active_query) = Self::execute_query(
+                    db,
+                    zalsa,
+                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                    opt_old_memo,
+                );
+
+                let mut completed_query = active_query.pop();
 
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
@@ -198,9 +203,10 @@ where
 
         let _poison_guard =
             PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
-        let mut active_query = zalsa_local.push_query(database_key_index, iteration_count);
 
         let (new_value, completed_query) = loop {
+            let active_query = zalsa_local.push_query(database_key_index, iteration_count);
+
             // Tracked struct ids that existed in the previous revision
             // but weren't recreated in the last iteration. It's important that we seed the next
             // query with these ids because the query might re-create them as part of the next iteration.
@@ -209,29 +215,32 @@ where
             // if they aren't recreated when reaching the final iteration.
             active_query.seed_tracked_struct_ids(&last_stale_tracked_ids);
 
-            let (mut new_value, mut completed_query) = Self::execute_query(
+            let (mut new_value, mut active_query) = Self::execute_query(
                 db,
                 zalsa,
                 active_query,
                 last_provisional_memo.or(opt_old_memo),
             );
 
-            // If there are no cycle heads, break out of the loop (`cycle_heads_mut` returns `None` if the cycle head list is empty)
-            let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() else {
+            // Take the cycle heads to not-fight-rust's-borrow-checker.
+            let mut cycle_heads = active_query.take_cycle_heads();
+
+            // If there are no cycle heads, break out of the loop.
+            if cycle_heads.is_empty() {
                 iteration_count = iteration_count.increment().unwrap_or_else(|| {
                     tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
                     panic!("{database_key_index:?}: execute: too many cycle iterations")
                 });
+
+                let mut completed_query = active_query.pop();
                 completed_query
                     .revisions
                     .update_iteration_count_mut(database_key_index, iteration_count);
 
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
                 break (new_value, completed_query);
-            };
+            }
 
-            // Take the cycle heads to not-fight-rust's-borrow-checker.
-            let mut cycle_heads = std::mem::take(cycle_heads);
             let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationCount); 1]> =
                 SmallVec::new_const();
             let mut max_iteration_count = iteration_count;
@@ -261,6 +270,11 @@ where
                 let provisional_status = ingredient
                     .provisional_status(zalsa, head.database_key_index.key_index())
                     .expect("cycle head memo must have been created during the execution");
+
+                // A query should only ever depend on other heads that are provisional.
+                // If this invariant is violated, it means that this query participates in a cycle,
+                // but it wasn't executed in the last iteration of said cycle.
+                assert!(provisional_status.is_provisional());
 
                 for nested_head in provisional_status.cycle_heads() {
                     let nested_as_tuple = (
@@ -298,6 +312,8 @@ where
                     claim_guard.set_release_mode(ReleaseMode::SelfOnly);
                 }
 
+                let mut completed_query = active_query.pop();
+                *completed_query.revisions.verified_final.get_mut() = false;
                 completed_query.revisions.set_cycle_heads(cycle_heads);
 
                 iteration_count = iteration_count.increment().unwrap_or_else(|| {
@@ -378,7 +394,16 @@ where
                         this_converged = C::values_equal(&new_value, last_provisional_value);
                     }
                 }
+
+                let new_cycle_heads = active_query.take_cycle_heads();
+                for head in new_cycle_heads {
+                    if !cycle_heads.contains(&head.database_key_index) {
+                        panic!("Cycle recovery function for {database_key_index:?} introduced a cycle, depending on {:?}. This is not allowed.", head.database_key_index);
+                    }
+                }
             }
+
+            let mut completed_query = active_query.pop();
 
             if let Some(outer_cycle) = outer_cycle {
                 tracing::info!(
@@ -390,6 +415,7 @@ where
                 completed_query
                     .revisions
                     .set_cycle_converged(this_converged);
+                *completed_query.revisions.verified_final.get_mut() = false;
 
                 // Transfer ownership of this query to the outer cycle, so that it can claim it
                 // and other threads don't compete for the same lock.
@@ -428,9 +454,9 @@ where
                 }
 
                 *completed_query.revisions.verified_final.get_mut() = true;
-
                 break (new_value, completed_query);
             }
+            *completed_query.revisions.verified_final.get_mut() = false;
 
             // The fixpoint iteration hasn't converged. Iterate again...
             iteration_count = iteration_count.increment().unwrap_or_else(|| {
@@ -484,7 +510,6 @@ where
             last_provisional_memo = Some(new_memo);
 
             last_stale_tracked_ids = completed_query.stale_tracked_structs;
-            active_query = zalsa_local.push_query(database_key_index, iteration_count);
 
             continue;
         };
@@ -503,7 +528,7 @@ where
         zalsa: &'db Zalsa,
         active_query: ActiveQueryGuard<'db>,
         opt_old_memo: Option<&Memo<'db, C>>,
-    ) -> (C::Output<'db>, CompletedQuery) {
+    ) -> (C::Output<'db>, ActiveQueryGuard<'db>) {
         if let Some(old_memo) = opt_old_memo {
             // If we already executed this query once, then use the tracked-struct ids from the
             // previous execution as the starting point for the new one.
@@ -528,7 +553,7 @@ where
             C::id_to_input(zalsa, active_query.database_key_index.key_index()),
         );
 
-        (new_value, active_query.pop())
+        (new_value, active_query)
     }
 }
 
