@@ -271,9 +271,9 @@ where
                     .provisional_status(zalsa, head.database_key_index.key_index())
                     .expect("cycle head memo must have been created during the execution");
 
-                // A cycle head isn't allowed to be final because that would mean that this query
-                // dependents on the initial value of B, but B finalized without
-                // completing this query that also participates in the cycle.
+                // A query should only ever depend on other heads that are provisional.
+                // If this invariant is violated, it means that this query participates in a cycle,
+                // but it wasn't executed in the last iteration of said cycle.
                 assert!(provisional_status.is_provisional());
 
                 for nested_head in provisional_status.cycle_heads() {
