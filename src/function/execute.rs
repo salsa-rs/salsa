@@ -357,8 +357,6 @@ where
                 I am a cycle head, comparing last provisional value with new value"
             );
 
-            let mut this_converged = C::values_equal(&new_value, last_provisional_value);
-
             // If this is the outermost cycle, use the maximum iteration count of all cycles.
             // This is important for when later iterations introduce new cycle heads (that then
             // become the outermost cycle). We want to ensure that the iteration count keeps increasing
@@ -373,36 +371,25 @@ where
                 iteration_count
             };
 
-            if !this_converged {
-                // We are in a cycle that hasn't converged; ask the user's
-                // cycle-recovery function what to do:
-                match C::recover_from_cycle(
-                    db,
-                    id,
-                    last_provisional_value,
-                    &new_value,
-                    iteration_count.as_u32(),
-                    C::id_to_input(zalsa, id),
-                ) {
-                    crate::CycleRecoveryAction::Iterate => {}
-                    crate::CycleRecoveryAction::Fallback(fallback_value) => {
-                        tracing::debug!(
-                            "{database_key_index:?}: execute: user cycle_fn says to fall back"
-                        );
-                        new_value = fallback_value;
+            // We are in a cycle that hasn't converged; ask the user's
+            // cycle-recovery function what to do (it may return the same value or a different one):
+            new_value = C::recover_from_cycle(
+                db,
+                id,
+                last_provisional_value,
+                new_value,
+                iteration_count.as_u32(),
+                C::id_to_input(zalsa, id),
+            );
 
-                        this_converged = C::values_equal(&new_value, last_provisional_value);
-                    }
-                }
-
-                let new_cycle_heads = active_query.take_cycle_heads();
-                for head in new_cycle_heads {
-                    if !cycle_heads.contains(&head.database_key_index) {
-                        panic!("Cycle recovery function for {database_key_index:?} introduced a cycle, depending on {:?}. This is not allowed.", head.database_key_index);
-                    }
+            let new_cycle_heads = active_query.take_cycle_heads();
+            for head in new_cycle_heads {
+                if !cycle_heads.contains(&head.database_key_index) {
+                    panic!("Cycle recovery function for {database_key_index:?} introduced a cycle, depending on {:?}. This is not allowed.", head.database_key_index);
                 }
             }
 
+            let this_converged = C::values_equal(&new_value, last_provisional_value);
             let mut completed_query = active_query.pop();
 
             if let Some(outer_cycle) = outer_cycle {

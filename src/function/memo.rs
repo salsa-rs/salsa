@@ -496,7 +496,7 @@ mod _memory_usage {
     use crate::plumbing::{self, IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
     use crate::table::memo::MemoTableWithTypes;
     use crate::zalsa::Zalsa;
-    use crate::{CycleRecoveryAction, Database, Id, Revision};
+    use crate::{Database, Id, Revision};
 
     use std::any::TypeId;
     use std::num::NonZeroUsize;
@@ -564,11 +564,11 @@ mod _memory_usage {
             _: &'db Self::DbView,
             _: Id,
             _: &Self::Output<'db>,
-            _: &Self::Output<'db>,
+            value: Self::Output<'db>,
             _: u32,
             _: Self::Input<'db>,
-        ) -> CycleRecoveryAction<Self::Output<'db>> {
-            unimplemented!()
+        ) -> Self::Output<'db> {
+            value
         }
 
         fn serialize<S>(_: &Self::Output<'_>, _: S) -> Result<S::Ok, S::Error>

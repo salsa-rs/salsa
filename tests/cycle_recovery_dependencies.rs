@@ -39,12 +39,12 @@ fn cycle_fn(
     db: &dyn salsa::Database,
     _id: salsa::Id,
     _last_provisional_value: &u32,
-    _value: &u32,
+    value: u32,
     _count: u32,
     input: Input,
-) -> salsa::CycleRecoveryAction<u32> {
+) -> u32 {
     let _input = input.value(db);
-    salsa::CycleRecoveryAction::Iterate
+    value
 }
 
 #[test_log::test]
