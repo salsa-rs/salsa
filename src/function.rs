@@ -125,6 +125,7 @@ pub trait Configuration: Any {
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         id: Id,
+        cycle_heads: &crate::CycleHeads,
         last_provisional_value: &Self::Output<'db>,
         value: Self::Output<'db>,
         iteration: u32,

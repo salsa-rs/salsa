@@ -376,6 +376,7 @@ where
             new_value = C::recover_from_cycle(
                 db,
                 id,
+                &cycle_heads,
                 last_provisional_value,
                 new_value,
                 iteration_count.as_u32(),
