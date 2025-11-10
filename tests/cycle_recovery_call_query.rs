@@ -23,7 +23,6 @@ fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id) -> u32 {
 
 fn cycle_fn(
     db: &dyn salsa::Database,
-    _id: salsa::Id,
     _cycle_heads: &salsa::CycleHeads,
     _last_provisional_value: &u32,
     _value: u32,

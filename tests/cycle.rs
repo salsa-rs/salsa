@@ -125,7 +125,6 @@ const MAX_ITERATIONS: u32 = 3;
 /// returning the computed value to continue iterating.
 fn cycle_recover(
     _db: &dyn Db,
-    _id: salsa::Id,
     _cycle_heads: &salsa::CycleHeads,
     last_provisional_value: &Value,
     value: Value,

@@ -375,7 +375,6 @@ where
             // cycle-recovery function what to do (it may return the same value or a different one):
             new_value = C::recover_from_cycle(
                 db,
-                id,
                 &cycle_heads,
                 last_provisional_value,
                 new_value,
