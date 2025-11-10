@@ -239,10 +239,7 @@ impl CycleHeads {
     }
 
     pub fn ids(&self) -> impl Iterator<Item = crate::Id> + '_ {
-        self.iter().map(|head| {
-            debug_assert!(!head.removed.load(Ordering::Relaxed));
-            head.database_key_index.key_index()
-        })
+        self.iter().map(|head| head.database_key_index.key_index())
     }
 
     /// Iterates over all cycle heads that aren't equal to `own`.
