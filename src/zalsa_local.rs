@@ -934,6 +934,10 @@ impl QueryOrigin {
         }
     }
 
+    pub fn is_derived_untracked(&self) -> bool {
+        matches!(self.kind, QueryOriginKind::DerivedUntracked)
+    }
+
     /// Create a query origin of type `QueryOriginKind::Derived`, with the given edges.
     pub fn derived(input_outputs: Box<[QueryEdge]>) -> QueryOrigin {
         // Exceeding `u32::MAX` query edges should never happen in real-world usage.

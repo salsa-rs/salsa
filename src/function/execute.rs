@@ -170,7 +170,7 @@ where
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // This is different from `opt_old_memo` which might be from a different revision.
-        let mut last_provisional_memo: Option<&Memo<'db, C>> = None;
+        let mut last_provisional_memo_opt: Option<&Memo<'db, C>> = None;
 
         // TODO: Can we seed those somehow?
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
@@ -194,7 +194,7 @@ where
                 // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
                 // force at least two executions.
                 if old_memo.cycle_heads().contains(&database_key_index) {
-                    last_provisional_memo = Some(old_memo);
+                    last_provisional_memo_opt = Some(old_memo);
                 }
 
                 iteration_count = old_memo.revisions.iteration();
@@ -219,7 +219,7 @@ where
                 db,
                 zalsa,
                 active_query,
-                last_provisional_memo.or(opt_old_memo),
+                last_provisional_memo_opt.or(opt_old_memo),
             );
 
             // Take the cycle heads to not-fight-rust's-borrow-checker.
@@ -329,10 +329,7 @@ where
 
             // Get the last provisional value for this query so that we can compare it with the new value
             // to test if the cycle converged.
-            let last_provisional_value = if let Some(last_provisional) = last_provisional_memo {
-                // We have a last provisional value from our previous time around the loop.
-                last_provisional.value.as_ref()
-            } else {
+            let last_provisional_memo = last_provisional_memo_opt.unwrap_or_else(|| {
                 // This is our first time around the loop; a provisional value must have been
                 // inserted into the memo table when the cycle was hit, so let's pull our
                 // initial provisional value from there.
@@ -346,8 +343,10 @@ where
                     });
 
                 debug_assert!(memo.may_be_provisional());
-                memo.value.as_ref()
-            };
+                memo
+            });
+
+            let last_provisional_value = last_provisional_memo.value.as_ref();
 
             let last_provisional_value = last_provisional_value.expect(
                 "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
@@ -389,8 +388,23 @@ where
                 }
             }
 
-            let this_converged = C::values_equal(&new_value, last_provisional_value);
             let mut completed_query = active_query.pop();
+
+            let value_converged = C::values_equal(&new_value, last_provisional_value);
+
+            // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
+            // to ensure the reduced durability and changed propagates to all queries depending on this head.
+            let metadata_converged = last_provisional_memo.revisions.durability
+                == completed_query.revisions.durability
+                && last_provisional_memo.revisions.changed_at
+                    == completed_query.revisions.changed_at
+                && last_provisional_memo
+                    .revisions
+                    .origin
+                    .is_derived_untracked()
+                    == completed_query.revisions.origin.is_derived_untracked();
+
+            let this_converged = value_converged && metadata_converged;
 
             if let Some(outer_cycle) = outer_cycle {
                 tracing::info!(
@@ -494,7 +508,7 @@ where
                 memo_ingredient_index,
             );
 
-            last_provisional_memo = Some(new_memo);
+            last_provisional_memo_opt = Some(new_memo);
 
             last_stale_tracked_ids = completed_query.stale_tracked_structs;
 
