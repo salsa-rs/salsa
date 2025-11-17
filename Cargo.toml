@@ -25,6 +25,7 @@ rustc-hash = "2"
 smallvec = { version = "1", features = ["const_new"] }
 thin-vec = { version = "0.2.14" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
+thread_local = "1.1.9"
 
 # Automatic ingredient registration.
 inventory = { version = "0.3.20", optional = true }

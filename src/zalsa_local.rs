@@ -83,11 +83,11 @@ impl CancellationToken {
 }
 
 impl ZalsaLocal {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(cancelled: CancellationToken) -> Self {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: UnsafeCell::new(FxHashMap::default()),
-            cancelled: CancellationToken::default(),
+            cancelled,
         }
     }
 

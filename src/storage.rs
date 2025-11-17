@@ -2,6 +2,8 @@
 use std::marker::PhantomData;
 use std::panic::RefUnwindSafe;
 
+use thread_local::ThreadLocal;
+
 use crate::sync::{Arc, Condvar, Mutex};
 use crate::zalsa::{ErasedJar, HasJar, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{self, ZalsaLocal};
@@ -62,7 +64,8 @@ impl<Db: Database> StorageHandle<Db> {
     pub fn into_storage(self) -> Storage<Db> {
         Storage {
             handle: self,
-            zalsa_local: ZalsaLocal::new(),
+            cancellation_token: Default::default(),
+            zalsa_local: ThreadLocal::new(),
         }
     }
 }
@@ -83,14 +86,17 @@ pub unsafe trait HasStorage: Database + Sized {
 pub struct Storage<Db> {
     handle: StorageHandle<Db>,
 
+    cancellation_token: zalsa_local::CancellationToken,
+
     /// Per-thread state
-    zalsa_local: zalsa_local::ZalsaLocal,
+    zalsa_local: ThreadLocal<zalsa_local::ZalsaLocal>,
 }
 
 impl<Db> Drop for Storage<Db> {
     fn drop(&mut self) {
-        self.zalsa_local
-            .record_unfilled_pages(self.handle.zalsa_impl.table());
+        for zalsa_local in self.zalsa_local.iter_mut() {
+            zalsa_local.record_unfilled_pages(self.handle.zalsa_impl.table());
+        }
     }
 }
 
@@ -118,7 +124,8 @@ impl<Db: Database> Storage<Db> {
     pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
         Self {
             handle: StorageHandle::new(event_callback),
-            zalsa_local: ZalsaLocal::new(),
+            cancellation_token: Default::default(),
+            zalsa_local: ThreadLocal::new(),
         }
     }
 
@@ -132,10 +139,12 @@ impl<Db: Database> Storage<Db> {
     /// This will discard the local state of this [`Storage`], thereby returning a value that
     /// is both [`Sync`] and [`std::panic::UnwindSafe`].
     pub fn into_zalsa_handle(mut self) -> StorageHandle<Db> {
-        self.zalsa_local
-            .record_unfilled_pages(self.handle.zalsa_impl.table());
+        for zalsa_local in self.zalsa_local.iter_mut() {
+            zalsa_local.record_unfilled_pages(self.handle.zalsa_impl.table());
+        }
         let Self {
             handle,
+            cancellation_token,
             zalsa_local,
         } = &mut self;
         // Avoid rust's annoying destructure prevention rules for `Drop` types
@@ -144,9 +153,19 @@ impl<Db: Database> Storage<Db> {
         let handle = unsafe { std::ptr::read(handle) };
         // SAFETY: We forget `Self` afterwards to discard the original copy, and the destructure
         // above makes sure we won't forget to take into account newly added fields.
+        unsafe { std::ptr::drop_in_place(cancellation_token) };
+        // SAFETY: Same as above — drop zalsa_local before forgetting self.
         unsafe { std::ptr::drop_in_place(zalsa_local) };
         std::mem::forget::<Self>(self);
         handle
+    }
+
+    /// Access the per-thread local state for this storage.
+    ///
+    /// This will create the local state on first access from a thread.
+    pub(crate) fn zalsa_local(&self) -> &zalsa_local::ZalsaLocal {
+        self.zalsa_local
+            .get_or(|| zalsa_local::ZalsaLocal::new(self.cancellation_token.clone()))
     }
 
     // ANCHOR: cancel_other_workers
@@ -159,7 +178,7 @@ impl<Db: Database> Storage<Db> {
     /// Needs to be paired with a call to `reset_cancellation_flag`.
     fn cancel_others(&mut self) -> &mut Zalsa {
         debug_assert!(
-            self.zalsa_local
+            self.zalsa_local()
                 .try_with_query_stack(|stack| stack.is_empty())
                 == Some(true),
             "attempted to cancel within query computation, this is a deadlock"
@@ -226,7 +245,8 @@ impl<Db: Database> StorageBuilder<Db> {
     pub fn build(self) -> Storage<Db> {
         Storage {
             handle: StorageHandle::with_jars(self.event_callback, self.jars),
-            zalsa_local: ZalsaLocal::new(),
+            cancellation_token: Default::default(),
+            zalsa_local: ThreadLocal::new(),
         }
     }
 }
@@ -244,7 +264,7 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
 
     #[inline(always)]
     fn zalsa_local(&self) -> &ZalsaLocal {
-        &self.storage().zalsa_local
+        self.storage().zalsa_local()
     }
 }
 
@@ -252,7 +272,8 @@ impl<Db: Database> Clone for Storage<Db> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            zalsa_local: ZalsaLocal::new(),
+            cancellation_token: Default::default(),
+            zalsa_local: ThreadLocal::new(),
         }
     }
 }
