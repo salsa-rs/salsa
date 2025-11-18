@@ -181,7 +181,7 @@ macro_rules! setup_tracked_fn {
                         fn serialize<S: $zalsa::serde::Serializer>(
                             fields: &Self::Fields<'_>,
                             serializer: S,
-                        ) -> Result<S::Ok, S::Error> {
+                        ) -> std::result::Result<S::Ok, S::Error> {
                             $zalsa::macro_if! {
                                 if $persist {
                                     $zalsa::serde::Serialize::serialize(fields, serializer)
@@ -193,7 +193,7 @@ macro_rules! setup_tracked_fn {
 
                         fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
                             deserializer: D,
-                        ) -> Result<Self::Fields<'static>, D::Error> {
+                        ) -> std::result::Result<Self::Fields<'static>, D::Error> {
                             $zalsa::macro_if! {
                                 if $persist {
                                     $zalsa::serde::Deserialize::deserialize(deserializer)
@@ -330,7 +330,7 @@ macro_rules! setup_tracked_fn {
                 fn serialize<S: $zalsa::serde::Serializer>(
                     value: &Self::Output<'_>,
                     serializer: S,
-                ) -> Result<S::Ok, S::Error> {
+                ) -> std::result::Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $zalsa::serde::Serialize::serialize(value, serializer)
@@ -342,7 +342,7 @@ macro_rules! setup_tracked_fn {
 
                 fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
                     deserializer: D,
-                ) -> Result<Self::Output<'static>, D::Error> {
+                ) -> std::result::Result<Self::Output<'static>, D::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $zalsa::serde::Deserialize::deserialize(deserializer)
