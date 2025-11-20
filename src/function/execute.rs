@@ -377,7 +377,7 @@ where
                 // We are in a cycle that hasn't converged; ask the user's
                 // cycle-recovery function what to do:
                 let cycle = Cycle {
-                    cycle_head_ids: cycle_heads.ids(),
+                    head_ids: cycle_heads.ids(),
                     previous_value: last_provisional_value,
                     iteration: iteration_count.as_u32(),
                 };

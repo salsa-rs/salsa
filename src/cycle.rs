@@ -398,6 +398,7 @@ impl IntoIterator for CycleHeads {
     }
 }
 
+#[derive(Clone)]
 pub struct CycleHeadsIterator<'a> {
     inner: std::slice::Iter<'a, CycleHead>,
 }
@@ -454,6 +455,7 @@ pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
     EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
 }
 
+#[derive(Clone)]
 pub struct CycleHeadIdsIterator<'a> {
     inner: CycleHeadsIterator<'a>,
 }
@@ -467,13 +469,24 @@ impl Iterator for CycleHeadIdsIterator<'_> {
 }
 
 /// The context that the cycle recovery function receives when a query cycle occurs.
+#[derive(Clone)]
 pub struct Cycle<'a, T: ?Sized> {
     /// An iterator that outputs the IDs of the current cycle heads, which always includes the ID of the query being processed by the current cycle recovery function.
-    pub cycle_head_ids: CycleHeadIdsIterator<'a>,
+    pub head_ids: CycleHeadIdsIterator<'a>,
     /// The output of the query function from the previous cycle. This may be useful in ensuring monotonicity of the query.
     pub previous_value: &'a T,
     /// The counter of the current fixed point iteration.
     pub iteration: u32,
+}
+
+impl<'a, T: ?Sized> Cycle<'a, T> {
+    pub fn map<U, F: FnOnce(&'a T) -> &'a U>(&self, f: F) -> Cycle<'a, U> {
+        Cycle {
+            head_ids: self.head_ids.clone(),
+            previous_value: f(self.previous_value),
+            iteration: self.iteration,
+        }
+    }
 }
 
 #[derive(Debug)]
