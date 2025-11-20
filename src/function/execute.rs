@@ -371,7 +371,7 @@ where
             };
 
             let cycle = Cycle {
-                head_ids: cycle_heads.ids(),
+                heads: &cycle_heads,
                 id,
                 iteration: iteration_count.as_u32(),
             };
