@@ -1,0 +1,5 @@
+error: data name conflicts with a generated identifier; please choose a different `data` name
+ --> tests/compile-fail/interned-enum_data_name_conflict.rs:4:26
+  |
+4 | #[salsa::interned(data = ConflictingData)]
+  |                          ^^^^^^^^^^^^^^^
