@@ -382,7 +382,7 @@ where
                 };
                 new_value = C::recover_from_cycle(
                     db,
-                    cycle,
+                    &cycle,
                     last_provisional_value,
                     new_value,
                     C::id_to_input(zalsa, id),

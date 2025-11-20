@@ -308,7 +308,7 @@ macro_rules! setup_tracked_fn {
 
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
-                    cycle: salsa::Cycle<'_>,
+                    cycle: &salsa::Cycle,
                     last_provisional_value: &Self::Output<$db_lt>,
                     value: Self::Output<$db_lt>,
                     ($($input_id),*): ($($interned_input_ty),*)

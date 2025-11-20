@@ -77,7 +77,7 @@ fn def_cycle_initial(_db: &dyn Db, _id: salsa::Id, _def: Definition) -> Type {
 
 fn def_cycle_recover(
     _db: &dyn Db,
-    cycle: salsa::Cycle<'_>,
+    cycle: &salsa::Cycle,
     last_provisional_value: &Type,
     value: Type,
     _def: Definition,
@@ -95,7 +95,7 @@ fn use_cycle_initial(_db: &dyn Db, _id: salsa::Id, _use: Use) -> Type {
 
 fn use_cycle_recover(
     _db: &dyn Db,
-    cycle: salsa::Cycle<'_>,
+    cycle: &salsa::Cycle,
     last_provisional_value: &Type,
     value: Type,
     _use: Use,
