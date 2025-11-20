@@ -48,7 +48,7 @@ pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
 
-pub use self::cycle::CycleHeads;
+pub use self::cycle::Cycle;
 pub use self::database::Database;
 pub use self::database_impl::DatabaseImpl;
 pub use self::durability::Durability;

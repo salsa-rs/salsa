@@ -238,8 +238,10 @@ impl CycleHeads {
         }
     }
 
-    pub fn ids(&self) -> impl Iterator<Item = crate::Id> + '_ {
-        self.iter().map(|head| head.database_key_index.key_index())
+    pub(crate) fn ids(&self) -> CycleHeadIdsIterator<'_> {
+        CycleHeadIdsIterator {
+            inner: self.iter(),
+        }
     }
 
     /// Iterates over all cycle heads that aren't equal to `own`.
@@ -450,6 +452,28 @@ impl From<CycleHead> for CycleHeads {
 pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
     static EMPTY_CYCLE_HEADS: OnceLock<CycleHeads> = OnceLock::new();
     EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
+}
+
+pub struct CycleHeadIdsIterator<'a> {
+    inner: CycleHeadsIterator<'a>,
+}
+
+impl Iterator for CycleHeadIdsIterator<'_> {
+    type Item = crate::Id;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|head| head.database_key_index.key_index())
+    }
+}
+
+/// The context that the cycle recovery function receives when a query cycle occurs.
+pub struct Cycle<'a, T: ?Sized> {
+    /// An iterator that outputs the IDs of the current cycle heads, which always includes the ID of the query being processed by the current cycle recovery function.
+    pub cycle_head_ids: CycleHeadIdsIterator<'a>,
+    /// The output of the query function from the previous cycle. This may be useful in ensuring monotonicity of the query.
+    pub previous_value: &'a T,
+    /// The counter of the current fixed point iteration.
+    pub iteration: u32,
 }
 
 #[derive(Debug)]

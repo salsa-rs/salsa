@@ -12,7 +12,7 @@ use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
-use crate::{tracing, Cancelled};
+use crate::{Cancelled, Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -376,12 +376,15 @@ where
             if !this_converged {
                 // We are in a cycle that hasn't converged; ask the user's
                 // cycle-recovery function what to do:
+                let cycle = Cycle {
+                    cycle_head_ids: cycle_heads.ids(),
+                    previous_value: last_provisional_value,
+                    iteration: iteration_count.as_u32(),
+                };
                 new_value = C::recover_from_cycle(
                     db,
-                    &cycle_heads,
-                    last_provisional_value,
+                    cycle,
                     new_value,
-                    iteration_count.as_u32(),
                     C::id_to_input(zalsa, id),
                 );
                 this_converged = C::values_equal(&new_value, last_provisional_value);

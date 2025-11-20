@@ -308,13 +308,11 @@ macro_rules! setup_tracked_fn {
 
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
-                    cycle_heads: &salsa::CycleHeads,
-                    last_provisional_value: &Self::Output<$db_lt>,
+                    cycle: salsa::Cycle<'_, Self::Output<$db_lt>>,
                     value: Self::Output<$db_lt>,
-                    iteration_count: u32,
                     ($($input_id),*): ($($interned_input_ty),*)
                 ) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_fn)*(db, cycle_heads, last_provisional_value, value, iteration_count, $($input_id),*)
+                    $($cycle_recovery_fn)*(db, cycle, value, $($input_id),*)
                 }
 
                 fn id_to_input<$db_lt>(zalsa: &$db_lt $zalsa::Zalsa, key: salsa::Id) -> Self::Input<$db_lt> {

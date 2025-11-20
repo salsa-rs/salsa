@@ -37,10 +37,8 @@ fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id, _input: Input) -> u3
 
 fn cycle_fn(
     db: &dyn salsa::Database,
-    _cycle_heads: &salsa::CycleHeads,
-    _last_provisional_value: &u32,
+    _cycle: salsa::Cycle<'_, u32>,
     value: u32,
-    _count: u32,
     input: Input,
 ) -> u32 {
     let _input = input.value(db);

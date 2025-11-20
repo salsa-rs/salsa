@@ -27,12 +27,10 @@ fn cycle_initial(_db: &dyn ValueDatabase, _id: salsa::Id) -> u32 {
 
 fn cycle_fn(
     db: &dyn ValueDatabase,
-    _cycle_heads: &salsa::CycleHeads,
-    last_provisional_value: &u32,
+    cycle: salsa::Cycle<'_, u32>,
     value: u32,
-    _count: u32,
 ) -> u32 {
-    if &value == last_provisional_value {
+    if &value == cycle.previous_value {
         value
     } else {
         fallback_value(db)
