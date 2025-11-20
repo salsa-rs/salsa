@@ -378,12 +378,12 @@ where
                 // cycle-recovery function what to do:
                 let cycle = Cycle {
                     head_ids: cycle_heads.ids(),
-                    previous_value: last_provisional_value,
                     iteration: iteration_count.as_u32(),
                 };
                 new_value = C::recover_from_cycle(
                     db,
                     cycle,
+                    last_provisional_value,
                     new_value,
                     C::id_to_input(zalsa, id),
                 );
