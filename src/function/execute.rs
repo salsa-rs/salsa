@@ -378,6 +378,7 @@ where
                 // cycle-recovery function what to do:
                 let cycle = Cycle {
                     head_ids: cycle_heads.ids(),
+                    id,
                     iteration: iteration_count.as_u32(),
                 };
                 new_value = C::recover_from_cycle(

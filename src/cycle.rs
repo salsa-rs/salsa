@@ -50,7 +50,7 @@ use thin_vec::{thin_vec, ThinVec};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::sync::OnceLock;
-use crate::Revision;
+use crate::{Id, Revision};
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
 ///
@@ -471,8 +471,12 @@ impl Iterator for CycleHeadIdsIterator<'_> {
 /// The context that the cycle recovery function receives when a query cycle occurs.
 #[derive(Clone)]
 pub struct Cycle<'a> {
-    /// An iterator that outputs the IDs of the current cycle heads, which always includes the ID of the query being processed by the current cycle recovery function.
+    /// An iterator that outputs the [`Id`]s of the current cycle heads.
+    /// This will always contain the [`Id`] of the query being processed by the current cycle recovery function,
+    /// but its position will depend on the query execution order.
     pub head_ids: CycleHeadIdsIterator<'a>,
+    /// The [`Id`] of the query that the current cycle recovery function is processing.
+    pub id: Id,
     /// The counter of the current fixed point iteration.
     pub iteration: u32,
 }
