@@ -562,7 +562,7 @@ mod _memory_usage {
 
         fn recover_from_cycle<'db>(
             _: &'db Self::DbView,
-            _: &crate::Cycle<'_>,
+            _: &crate::Cycle,
             _: &Self::Output<'db>,
             value: Self::Output<'db>,
             _: Self::Input<'db>,
