@@ -239,9 +239,7 @@ impl CycleHeads {
     }
 
     pub(crate) fn ids(&self) -> CycleHeadIdsIterator<'_> {
-        CycleHeadIdsIterator {
-            inner: self.iter(),
-        }
+        CycleHeadIdsIterator { inner: self.iter() }
     }
 
     /// Iterates over all cycle heads that aren't equal to `own`.
@@ -464,7 +462,9 @@ impl Iterator for CycleHeadIdsIterator<'_> {
     type Item = crate::Id;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|head| head.database_key_index.key_index())
+        self.inner
+            .next()
+            .map(|head| head.database_key_index.key_index())
     }
 }
 
