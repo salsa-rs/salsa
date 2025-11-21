@@ -274,7 +274,8 @@ where
                     ));
                 // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
                 *completed_query.revisions.verified_final.get_mut() = false;
-                self.insert_memo(
+                let immutable = completed_query.revisions.origin.is_immutable();
+                let memo = self.insert_memo(
                     zalsa,
                     id,
                     Memo::new(
@@ -283,7 +284,11 @@ where
                         completed_query.revisions,
                     ),
                     memo_ingredient_index,
-                )
+                );
+                if immutable {
+                    self.immutable_memos.push(id);
+                }
+                memo
             }
         }
     }

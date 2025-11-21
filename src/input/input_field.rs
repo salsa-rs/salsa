@@ -60,7 +60,7 @@ where
         _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         let value = <IngredientImpl<C>>::data(zalsa, input);
-        VerifyResult::changed_if(value.revisions[self.field_index] > revision)
+        VerifyResult::changed_after(value.revisions[self.field_index], revision)
     }
 
     fn collect_minimum_serialized_edges(

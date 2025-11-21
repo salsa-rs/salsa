@@ -475,7 +475,7 @@ where
                 .map(|(_, stamp)| (stamp.durability, current_revision))
                 // If there is no active query this durability does not actually matter.
                 // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
-                .unwrap_or((Durability::MAX, Revision::max()));
+                .unwrap_or((Durability::IMMUTABLE, Revision::max()));
 
             let old_id = value_shared.id;
 
@@ -605,7 +605,7 @@ where
             .map(|(_, stamp)| (stamp.durability, current_revision))
             // If there is no active query this durability does not actually matter.
             // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
-            .unwrap_or((Durability::MAX, Revision::max()));
+            .unwrap_or((Durability::IMMUTABLE, Revision::max()));
 
         // Allocate the value slot.
         let (id, value) = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
