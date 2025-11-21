@@ -107,6 +107,7 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// **Container options:**
 ///
+/// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 /// - TODO
 ///
 /// **Field options:**
@@ -136,6 +137,7 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 /// **Container options:**
 ///
 /// - TODO
+/// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 ///
 /// **Field options:**
 ///
@@ -169,7 +171,7 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// **Container options:**
 ///
-/// - `debug`
+/// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 /// - `singleton`
 /// - `data`
 /// - `constructor_name`
