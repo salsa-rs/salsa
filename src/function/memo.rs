@@ -181,7 +181,11 @@ impl<'db, C: Configuration> Memo<'db, C> {
                     TryClaimHeadsResult::Running(running) => {
                         all_cycles = false;
                         if !running.block_on(zalsa) {
-                            // FIXME: Handle cancellation properly?
+                            // We cannot handle local cancellations in fixpoints
+                            // so we treat it as a general cancellation / panic.
+                            //
+                            // We shouldn't hit this though as we disable local cancellation
+                            // in cycles.
                             crate::Cancelled::PropagatedPanic.throw();
                         }
                     }
