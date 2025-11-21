@@ -288,7 +288,7 @@ pub enum SyncOwner {
 
     /// The query's lock ownership has been transferred to another query.
     /// E.g. if `a` transfers its ownership to `b`, then only the thread in the critical path
-    /// to complete b` can claim `a` (in most instances, only the thread owning `b` can claim `a`).
+    /// to complete `b` can claim `a` (in most instances, only the thread owning `b` can claim `a`).
     ///
     /// The thread owning `a` is stored in the `DependencyGraph`.
     ///
@@ -469,7 +469,7 @@ impl<'me> ClaimGuard<'me> {
 impl Drop for ClaimGuard<'_> {
     fn drop(&mut self) {
         if thread::panicking() {
-            if self.zalsa_local.is_cancelled() {
+            if self.zalsa_local.should_trigger_local_cancellation() {
                 self.release_cancelled();
             } else {
                 self.release_panicking();

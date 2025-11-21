@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
@@ -47,21 +47,32 @@ pub struct ZalsaLocal {
 
 /// A cancellation token that can be used to cancel a query computation for a specific local `Database`.
 #[derive(Default, Clone, Debug)]
-pub struct CancellationToken(Arc<AtomicBool>);
+pub struct CancellationToken(Arc<AtomicU8>);
 
 impl CancellationToken {
+    const CANCELLED_MASK: u8 = 0b01;
+    const DISABLED_MASK: u8 = 0b10;
+
     /// Inform the database to cancel the current query computation.
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::Relaxed);
+        self.0.fetch_or(Self::CANCELLED_MASK, Ordering::Relaxed);
     }
 
     /// Check if the query computation has been requested to be cancelled.
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
+        self.0.load(Ordering::Relaxed) & Self::CANCELLED_MASK != 0
     }
 
-    pub(crate) fn uncancel(&self) {
-        self.0.store(false, Ordering::Relaxed);
+    fn set_cancellation_disabled(&self, disabled: bool) -> bool {
+        self.0.fetch_or((disabled as u8) << 1, Ordering::Relaxed) & Self::DISABLED_MASK != 0
+    }
+
+    fn should_trigger_local_cancellation(&self) -> bool {
+        self.0.load(Ordering::Relaxed) == Self::CANCELLED_MASK
+    }
+
+    fn reset(&self) {
+        self.0.store(0, Ordering::Relaxed);
     }
 }
 
@@ -433,12 +444,12 @@ impl ZalsaLocal {
 
     #[inline]
     pub(crate) fn uncancel(&self) {
-        self.cancelled.uncancel();
+        self.cancelled.reset();
     }
 
     #[inline]
-    pub fn is_cancelled(&self) -> bool {
-        self.cancelled.0.load(Ordering::Relaxed)
+    pub fn should_trigger_local_cancellation(&self) -> bool {
+        self.cancelled.should_trigger_local_cancellation()
     }
 
     #[cold]
@@ -449,6 +460,10 @@ impl ZalsaLocal {
     #[cold]
     pub(crate) fn unwind_cancelled(&self) {
         Cancelled::Local.throw();
+    }
+
+    pub(crate) fn set_cancellation_disabled(&self, was_disabled: bool) -> bool {
+        self.cancelled.set_cancellation_disabled(was_disabled)
     }
 }
 
