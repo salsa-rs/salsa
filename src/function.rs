@@ -21,7 +21,7 @@ use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryEdge, QueryOriginRef};
-use crate::{Id, Revision};
+use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
 mod accumulated;
@@ -124,10 +124,9 @@ pub trait Configuration: Any {
     /// iterating until the returned value equals the previous iteration's value.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
-        id: Id,
+        cycle: &Cycle,
         last_provisional_value: &Self::Output<'db>,
         value: Self::Output<'db>,
-        iteration: u32,
         input: Self::Input<'db>,
     ) -> Self::Output<'db>;
 

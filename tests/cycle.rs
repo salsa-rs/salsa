@@ -125,10 +125,9 @@ const MAX_ITERATIONS: u32 = 3;
 /// returning the computed value to continue iterating.
 fn cycle_recover(
     _db: &dyn Db,
-    _id: salsa::Id,
+    cycle: &salsa::Cycle,
     last_provisional_value: &Value,
     value: Value,
-    count: u32,
     _inputs: Inputs,
 ) -> Value {
     if &value == last_provisional_value {
@@ -138,7 +137,7 @@ fn cycle_recover(
         .is_some_and(|val| val <= MIN_VALUE || val >= MAX_VALUE)
     {
         Value::OutOfBounds
-    } else if count > MAX_ITERATIONS {
+    } else if cycle.iteration() > MAX_ITERATIONS {
         Value::TooManyIterations
     } else {
         value
