@@ -81,7 +81,7 @@ fn def_cycle_recover(
     value: Type,
     _def: Definition,
 ) -> Type {
-    cycle_recover(value, cycle.iteration)
+    cycle_recover(value, cycle.iteration())
 }
 
 fn use_cycle_initial(_db: &dyn Db, _id: salsa::Id, _use: Use) -> Type {
@@ -95,7 +95,7 @@ fn use_cycle_recover(
     value: Type,
     _use: Use,
 ) -> Type {
-    cycle_recover(value, cycle.iteration)
+    cycle_recover(value, cycle.iteration())
 }
 
 fn cycle_recover(value: Type, count: u32) -> Type {

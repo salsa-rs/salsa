@@ -85,7 +85,7 @@ fn def_cycle_recover(
     if &value == last_provisional_value {
         value
     } else {
-        cycle_recover(value, cycle.iteration)
+        cycle_recover(value, cycle.iteration())
     }
 }
 
@@ -103,7 +103,7 @@ fn use_cycle_recover(
     if &value == last_provisional_value {
         value
     } else {
-        cycle_recover(value, cycle.iteration)
+        cycle_recover(value, cycle.iteration())
     }
 }
 

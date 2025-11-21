@@ -469,16 +469,29 @@ impl Iterator for CycleHeadIdsIterator<'_> {
 }
 
 /// The context that the cycle recovery function receives when a query cycle occurs.
-#[derive(Clone)]
 pub struct Cycle<'a> {
+    pub(crate) head_ids: CycleHeadIdsIterator<'a>,
+    pub(crate) id: Id,
+    pub(crate) iteration: u32,
+}
+
+impl Cycle<'_> {
     /// An iterator that outputs the [`Id`]s of the current cycle heads.
-    /// This will always contain the [`Id`] of the query being processed by the current cycle recovery function,
-    /// but its position will depend on the query execution order.
-    pub head_ids: CycleHeadIdsIterator<'a>,
+    /// This always contains the [`Id`] of the current query but it can contain additional cycle head [`Id`]s
+    /// if this query is nested in an outer cycle or if it has nested cycles.
+    pub fn head_ids(&self) -> CycleHeadIdsIterator<'_> {
+        self.head_ids.clone()
+    }
+
     /// The [`Id`] of the query that the current cycle recovery function is processing.
-    pub id: Id,
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
     /// The counter of the current fixed point iteration.
-    pub iteration: u32,
+    pub fn iteration(&self) -> u32 {
+        self.iteration
+    }
 }
 
 #[derive(Debug)]

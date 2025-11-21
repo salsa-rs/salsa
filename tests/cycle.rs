@@ -137,7 +137,7 @@ fn cycle_recover(
         .is_some_and(|val| val <= MIN_VALUE || val >= MAX_VALUE)
     {
         Value::OutOfBounds
-    } else if cycle.iteration > MAX_ITERATIONS {
+    } else if cycle.iteration() > MAX_ITERATIONS {
         Value::TooManyIterations
     } else {
         value
