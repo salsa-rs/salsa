@@ -180,7 +180,14 @@ impl<'db, C: Configuration> Memo<'db, C> {
                     }
                     TryClaimHeadsResult::Running(running) => {
                         all_cycles = false;
-                        running.block_on(zalsa);
+                        if !running.block_on(zalsa) {
+                            // We cannot handle local cancellations in fixpoints
+                            // so we treat it as a general cancellation / panic.
+                            //
+                            // We shouldn't hit this though as we disable local cancellation
+                            // in cycles.
+                            crate::Cancelled::PropagatedPanic.throw();
+                        }
                     }
                 }
             }
@@ -501,7 +508,7 @@ mod _memory_usage {
     use std::any::TypeId;
     use std::num::NonZeroUsize;
 
-    // Memo's are stored a lot, make sure their size is doesn't randomly increase.
+    // Memo's are stored a lot, make sure their size doesn't randomly increase.
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 6]>()];
 
