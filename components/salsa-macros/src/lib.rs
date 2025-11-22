@@ -108,6 +108,7 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// **Container options:**
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
+/// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
 /// - TODO
 ///
 /// **Field options:**
@@ -136,8 +137,9 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 ///
 /// **Container options:**
 ///
-/// - TODO
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
+/// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
+/// - TODO
 ///
 /// **Field options:**
 ///
@@ -172,13 +174,13 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// **Container options:**
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
-/// - `singleton`
-/// - `data`
-/// - `constructor_name`
+/// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
+/// - `data`: TODO
+/// - `constructor_name`: TODO
 /// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Fields) -> usize`, default: none)
 /// - `persist(serialize = <path>, deserialize = <path>)` (Only with <span class="stab portability"><code>persistence</code></span> feature)
-///   * Type of `serialize`: `fn()`
-///   * Type of `deserialize`: `fn()`
+///   * Type of `serialize`: `fn(&Fields<'_>, S) -> Result<S::Ok, S::Error> where S: serde::Serializer`
+///   * Type of `deserialize`: `fn(D) -> Result<Fields<'static>, D::Error> where D: serde::Deserializer<'de>`
 ///
 /// **Field options:**
 ///
