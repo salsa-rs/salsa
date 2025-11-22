@@ -4,13 +4,6 @@ use syn::parse::Nothing;
 use crate::hygiene::Hygiene;
 use crate::token_stream_with_error;
 
-// Source:
-//
-// #[salsa::db]
-// pub struct Database {
-//    storage: salsa::Storage<Self>,
-// }
-
 pub(crate) fn db(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
