@@ -50,10 +50,9 @@ fn cycle_initial(_db: &dyn LogDatabase, _id: salsa::Id, _file: File) -> Vec<u32>
 
 fn cycle_fn(
     _db: &dyn LogDatabase,
-    _id: salsa::Id,
+    _cycle: &salsa::Cycle,
     _last_provisional_value: &[u32],
     value: Vec<u32>,
-    _count: u32,
     _file: File,
 ) -> Vec<u32> {
     value

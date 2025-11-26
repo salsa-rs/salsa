@@ -27,10 +27,9 @@ fn cycle_initial(_db: &dyn ValueDatabase, _id: salsa::Id) -> u32 {
 
 fn cycle_fn(
     db: &dyn ValueDatabase,
-    _id: salsa::Id,
+    _cycle: &salsa::Cycle,
     last_provisional_value: &u32,
     value: u32,
-    _count: u32,
 ) -> u32 {
     if &value == last_provisional_value {
         value

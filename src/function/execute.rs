@@ -12,7 +12,7 @@ use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
-use crate::{tracing, Cancelled};
+use crate::{tracing, Cancelled, Cycle};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -370,14 +370,18 @@ where
                 iteration_count
             };
 
+            let cycle = Cycle {
+                head_ids: cycle_heads.ids(),
+                id,
+                iteration: iteration_count.as_u32(),
+            };
             // We are in a cycle that hasn't converged; ask the user's
             // cycle-recovery function what to do (it may return the same value or a different one):
             new_value = C::recover_from_cycle(
                 db,
-                id,
+                &cycle,
                 last_provisional_value,
                 new_value,
-                iteration_count.as_u32(),
                 C::id_to_input(zalsa, id),
             );
 

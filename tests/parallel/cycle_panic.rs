@@ -20,10 +20,9 @@ fn query_b(db: &dyn KnobsDatabase) -> u32 {
 
 fn cycle_fn(
     _db: &dyn KnobsDatabase,
-    _id: salsa::Id,
+    _cycle: &salsa::Cycle,
     _last_provisional_value: &u32,
     _value: u32,
-    _count: u32,
 ) -> u32 {
     panic!("cancel!")
 }

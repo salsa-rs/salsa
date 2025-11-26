@@ -50,7 +50,7 @@ use thin_vec::{thin_vec, ThinVec};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::sync::OnceLock;
-use crate::Revision;
+use crate::{Id, Revision};
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
 ///
@@ -238,6 +238,10 @@ impl CycleHeads {
         }
     }
 
+    pub(crate) fn ids(&self) -> CycleHeadIdsIterator<'_> {
+        CycleHeadIdsIterator { inner: self.iter() }
+    }
+
     /// Iterates over all cycle heads that aren't equal to `own`.
     pub(crate) fn iter_not_eq(
         &self,
@@ -392,6 +396,7 @@ impl IntoIterator for CycleHeads {
     }
 }
 
+#[derive(Clone)]
 pub struct CycleHeadsIterator<'a> {
     inner: std::slice::Iter<'a, CycleHead>,
 }
@@ -446,6 +451,47 @@ impl From<CycleHead> for CycleHeads {
 pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
     static EMPTY_CYCLE_HEADS: OnceLock<CycleHeads> = OnceLock::new();
     EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
+}
+
+#[derive(Clone)]
+pub struct CycleHeadIdsIterator<'a> {
+    inner: CycleHeadsIterator<'a>,
+}
+
+impl Iterator for CycleHeadIdsIterator<'_> {
+    type Item = crate::Id;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner
+            .next()
+            .map(|head| head.database_key_index.key_index())
+    }
+}
+
+/// The context that the cycle recovery function receives when a query cycle occurs.
+pub struct Cycle<'a> {
+    pub(crate) head_ids: CycleHeadIdsIterator<'a>,
+    pub(crate) id: Id,
+    pub(crate) iteration: u32,
+}
+
+impl Cycle<'_> {
+    /// An iterator that outputs the [`Id`]s of the current cycle heads.
+    /// This always contains the [`Id`] of the current query but it can contain additional cycle head [`Id`]s
+    /// if this query is nested in an outer cycle or if it has nested cycles.
+    pub fn head_ids(&self) -> CycleHeadIdsIterator<'_> {
+        self.head_ids.clone()
+    }
+
+    /// The [`Id`] of the query that the current cycle recovery function is processing.
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    /// The counter of the current fixed point iteration.
+    pub fn iteration(&self) -> u32 {
+        self.iteration
+    }
 }
 
 #[derive(Debug)]
