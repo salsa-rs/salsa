@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.24.0...salsa-macros-v0.25.0) - 2025-11-26
+
+### Other
+
+- Expose the query ID and the last provisional value to the cycle recovery function ([#1012](https://github.com/salsa-rs/salsa/pull/1012))
+- Fix missing license files in published macros/macro-rules crates ([#1009](https://github.com/salsa-rs/salsa/pull/1009))
+
 ## [0.24.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.23.0...salsa-macros-v0.24.0) - 2025-09-30
 
 ### Other
