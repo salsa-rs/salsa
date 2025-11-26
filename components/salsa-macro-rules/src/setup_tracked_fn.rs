@@ -89,8 +89,8 @@ macro_rules! setup_tracked_fn {
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
             $($input_id: $input_ty,)*
-        ) -> salsa::plumbing::return_mode_ty!(($return_mode, __, __), $db_lt, $output_ty) {
-            use salsa::plumbing as $zalsa;
+        ) -> ::salsa::plumbing::return_mode_ty!(($return_mode, __, __), $db_lt, $output_ty) {
+            use ::salsa::plumbing as $zalsa;
 
             struct $Configuration;
 
@@ -111,8 +111,8 @@ macro_rules! setup_tracked_fn {
                 if $needs_interner {
                     #[derive(Copy, Clone)]
                     struct $InternedData<$db_lt>(
-                        salsa::Id,
-                        std::marker::PhantomData<fn() -> &$db_lt ()>,
+                        ::salsa::Id,
+                        ::std::marker::PhantomData<fn() -> &$db_lt ()>,
                     );
 
                     static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
@@ -154,14 +154,14 @@ macro_rules! setup_tracked_fn {
 
                     impl $zalsa::AsId for $InternedData<'_> {
                         #[inline]
-                        fn as_id(&self) -> salsa::Id {
+                        fn as_id(&self) -> ::salsa::Id {
                             self.0
                         }
                     }
 
                     impl $zalsa::FromId for $InternedData<'_> {
                         #[inline]
-                        fn from_id(id: salsa::Id) -> Self {
+                        fn from_id(id: ::salsa::Id) -> Self {
                             Self(id, ::core::marker::PhantomData)
                         }
                     }
@@ -181,7 +181,7 @@ macro_rules! setup_tracked_fn {
                         fn serialize<S: $zalsa::serde::Serializer>(
                             fields: &Self::Fields<'_>,
                             serializer: S,
-                        ) -> std::result::Result<S::Ok, S::Error> {
+                        ) -> ::std::result::Result<S::Ok, S::Error> {
                             $zalsa::macro_if! {
                                 if $persist {
                                     $zalsa::serde::Serialize::serialize(fields, serializer)
@@ -193,7 +193,7 @@ macro_rules! setup_tracked_fn {
 
                         fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
                             deserializer: D,
-                        ) -> std::result::Result<Self::Fields<'static>, D::Error> {
+                        ) -> ::std::result::Result<Self::Fields<'static>, D::Error> {
                             $zalsa::macro_if! {
                                 if $persist {
                                     $zalsa::serde::Deserialize::deserialize(deserializer)
@@ -302,13 +302,13 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
-                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, id: salsa::Id, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
+                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, id: ::salsa::Id, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
                     $($cycle_recovery_initial)*(db, id, $($input_id),*)
                 }
 
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
-                    id: salsa::Id,
+                    id: ::salsa::Id,
                     last_provisional_value: &Self::Output<$db_lt>,
                     value: Self::Output<$db_lt>,
                     iteration_count: u32,
@@ -317,7 +317,7 @@ macro_rules! setup_tracked_fn {
                     $($cycle_recovery_fn)*(db, id, last_provisional_value, value, iteration_count, $($input_id),*)
                 }
 
-                fn id_to_input<$db_lt>(zalsa: &$db_lt $zalsa::Zalsa, key: salsa::Id) -> Self::Input<$db_lt> {
+                fn id_to_input<$db_lt>(zalsa: &$db_lt $zalsa::Zalsa, key: ::salsa::Id) -> Self::Input<$db_lt> {
                     $zalsa::macro_if! {
                         if $needs_interner {
                             $Configuration::intern_ingredient_(zalsa).data(zalsa, key).clone()
@@ -330,7 +330,7 @@ macro_rules! setup_tracked_fn {
                 fn serialize<S: $zalsa::serde::Serializer>(
                     value: &Self::Output<'_>,
                     serializer: S,
-                ) -> std::result::Result<S::Ok, S::Error> {
+                ) -> ::std::result::Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $zalsa::serde::Serialize::serialize(value, serializer)
@@ -342,7 +342,7 @@ macro_rules! setup_tracked_fn {
 
                 fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
                     deserializer: D,
-                ) -> std::result::Result<Self::Output<'static>, D::Error> {
+                ) -> ::std::result::Result<Self::Output<'static>, D::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $zalsa::serde::Deserialize::deserialize(deserializer)
@@ -420,11 +420,11 @@ macro_rules! setup_tracked_fn {
             #[allow(non_local_definitions)]
             impl $fn_name {
                 $zalsa::gate_accumulated! {
-                    pub fn accumulated<$db_lt, A: salsa::Accumulator>(
+                    pub fn accumulated<$db_lt, A: ::salsa::Accumulator>(
                         $db: &$db_lt dyn $Db,
                         $($input_id: $interned_input_ty,)*
                     ) -> Vec<&$db_lt A> {
-                        use salsa::plumbing as $zalsa;
+                        use ::salsa::plumbing as $zalsa;
                         let key = $zalsa::macro_if! {
                             if $needs_interner {{
                                 let (zalsa, zalsa_local) = $db.zalsas();
@@ -492,7 +492,7 @@ macro_rules! setup_tracked_fn {
         #[doc(hidden)]
         #[allow(non_camel_case_types)]
         $vis struct $fn_name {
-            _priv: std::convert::Infallible,
+            _priv: ::std::convert::Infallible,
         }
     };
 }

@@ -81,7 +81,7 @@ macro_rules! setup_input_struct {
         #[allow(clippy::all)]
         #[allow(dead_code)]
         const _: () = {
-            use salsa::plumbing as $zalsa;
+            use ::salsa::plumbing as $zalsa;
             use $zalsa::input as $zalsa_struct;
 
             type $Configuration = $Struct;
@@ -123,7 +123,7 @@ macro_rules! setup_input_struct {
                 fn serialize<S: $zalsa::serde::Serializer>(
                     fields: &Self::Fields,
                     serializer: S,
-                ) -> std::result::Result<S::Ok, S::Error> {
+                ) -> ::std::result::Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $($serialize_fn(fields, serializer))?
@@ -135,7 +135,7 @@ macro_rules! setup_input_struct {
 
                 fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
                     deserializer: D,
-                ) -> std::result::Result<Self::Fields, D::Error> {
+                ) -> ::std::result::Result<Self::Fields, D::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $($deserialize_fn(deserializer))?
@@ -198,8 +198,8 @@ macro_rules! setup_input_struct {
             }
 
             $zalsa::macro_if! { $generate_debug_impl =>
-                impl std::fmt::Debug for $Struct {
-                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                impl ::std::fmt::Debug for $Struct {
+                    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                         Self::default_debug_fmt(*self, f)
                     }
                 }
@@ -241,7 +241,7 @@ macro_rules! setup_input_struct {
 
             $zalsa::macro_if! { $persist =>
                 impl $zalsa::serde::Serialize for $Struct {
-                    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+                    fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
                     where
                         S: $zalsa::serde::Serializer,
                     {
@@ -250,7 +250,7 @@ macro_rules! setup_input_struct {
                 }
 
                 impl<'de> $zalsa::serde::Deserialize<'de> for $Struct {
-                    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+                    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
                     where
                         D: $zalsa::serde::Deserializer<'de>,
                     {
@@ -310,7 +310,7 @@ macro_rules! setup_input_struct {
                             self,
                             $field_index,
                             ingredient,
-                            |fields, f| std::mem::replace(&mut fields.$field_index, f),
+                            |fields, f| ::std::mem::replace(&mut fields.$field_index, f),
                         )
                     }
                 )*
@@ -336,11 +336,11 @@ macro_rules! setup_input_struct {
                 }
 
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
-                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+                pub fn default_debug_fmt(this: Self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result
                 where
                     // rustc rejects trivial bounds, but it cannot see through higher-ranked bounds
                     // with its check :^)
-                    $(for<'__trivial_bounds> $field_ty: std::fmt::Debug),*
+                    $(for<'__trivial_bounds> $field_ty: ::std::fmt::Debug),*
                 {
                     $zalsa::with_attached_database(|db| {
                         let zalsa = db.zalsa();
@@ -371,7 +371,7 @@ macro_rules! setup_input_struct {
                 pub fn new<$Db>(self, db: &$Db) -> $Struct
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + salsa::Database
+                    $Db: ?Sized + ::salsa::Database
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
                     let current_revision = zalsa.current_revision();
@@ -384,7 +384,7 @@ macro_rules! setup_input_struct {
             mod builder {
                 use super::*;
 
-                use salsa::plumbing as $zalsa;
+                use ::salsa::plumbing as $zalsa;
                 use $zalsa::input as $zalsa_struct;
 
                 // These are standalone functions instead of methods on `Builder` to prevent
@@ -392,7 +392,7 @@ macro_rules! setup_input_struct {
                 pub(super) fn new_builder($($field_id: $field_ty),*) -> $Builder {
                     $Builder {
                         fields: ($($field_id,)*),
-                        durabilities: [salsa::Durability::default(); $N],
+                        durabilities: [::salsa::Durability::default(); $N],
                     }
                 }
 
@@ -406,14 +406,14 @@ macro_rules! setup_input_struct {
                     fields: ($($field_ty,)*),
 
                     /// The durabilities per field.
-                    durabilities: [salsa::Durability; $N],
+                    durabilities: [::salsa::Durability; $N],
                 }
 
                 impl $Builder {
                     /// Sets the durability of all fields.
                     ///
                     /// Overrides any previously set durabilities.
-                    pub fn durability(mut self, durability: salsa::Durability) -> Self {
+                    pub fn durability(mut self, durability: ::salsa::Durability) -> Self {
                         self.durabilities = [durability; $N];
                         self
                     }
@@ -431,7 +431,7 @@ macro_rules! setup_input_struct {
                     $(
                         /// Sets the durability for the field `$field_id`.
                         #[must_use]
-                        pub fn $field_durability_id(mut self, durability: salsa::Durability) -> Self
+                        pub fn $field_durability_id(mut self, durability: ::salsa::Durability) -> Self
                         {
                             self.durabilities[$field_index] = durability;
                             self

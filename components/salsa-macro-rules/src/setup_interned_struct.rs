@@ -99,7 +99,7 @@ macro_rules! setup_interned_struct {
         #[allow(clippy::all)]
         #[allow(dead_code)]
         const _: () = {
-            use salsa::plumbing as $zalsa;
+            use ::salsa::plumbing as $zalsa;
             use $zalsa::interned as $zalsa_struct;
 
             type $Configuration = $StructWithStatic;
@@ -120,7 +120,7 @@ macro_rules! setup_interned_struct {
             #[derive(Hash)]
             struct StructKey<$db_lt, $($indexed_ty),*>(
                 $($indexed_ty,)*
-                std::marker::PhantomData<&$db_lt ()>,
+                ::std::marker::PhantomData<&$db_lt ()>,
             );
 
             impl<$db_lt, $($indexed_ty,)*> $zalsa::interned::HashEqLike<StructKey<$db_lt, $($indexed_ty),*>>
@@ -129,7 +129,7 @@ macro_rules! setup_interned_struct {
                 $($field_ty: $zalsa::interned::HashEqLike<$indexed_ty>),*
                 {
 
-                fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+                fn hash<H: ::std::hash::Hasher>(&self, h: &mut H) {
                     $($zalsa::interned::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
                 }
 
@@ -147,7 +147,7 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl salsa::plumbing::interned::Configuration for $StructWithStatic {
+            impl $zalsa::interned::Configuration for $StructWithStatic {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
@@ -171,7 +171,7 @@ macro_rules! setup_interned_struct {
                 fn serialize<S: $zalsa::serde::Serializer>(
                     fields: &Self::Fields<'_>,
                     serializer: S,
-                ) -> std::result::Result<S::Ok, S::Error> {
+                ) -> ::std::result::Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $($serialize_fn(fields, serializer))?
@@ -183,7 +183,7 @@ macro_rules! setup_interned_struct {
 
                 fn deserialize<'de, D: $zalsa::serde::Deserializer<'de>>(
                     deserializer: D,
-                ) -> std::result::Result<Self::Fields<'static>, D::Error> {
+                ) -> ::std::result::Result<Self::Fields<'static>, D::Error> {
                     $zalsa::macro_if! {
                         if $persist {
                             $($deserialize_fn(deserializer))?
@@ -210,14 +210,14 @@ macro_rules! setup_interned_struct {
             }
 
             impl< $($db_lt_arg)? > $zalsa::AsId for $Struct< $($db_lt_arg)? > {
-                fn as_id(&self) -> salsa::Id {
+                fn as_id(&self) -> ::salsa::Id {
                     self.0.as_id()
                 }
             }
 
             impl< $($db_lt_arg)? > $zalsa::FromId for $Struct< $($db_lt_arg)? > {
-                fn from_id(id: salsa::Id) -> Self {
-                    Self(<$Id>::from_id(id), std::marker::PhantomData)
+                fn from_id(id: ::salsa::Id) -> Self {
+                    Self(<$Id>::from_id(id), ::std::marker::PhantomData)
                 }
             }
 
@@ -226,8 +226,8 @@ macro_rules! setup_interned_struct {
             unsafe impl< $($db_lt_arg)? > Sync for $Struct< $($db_lt_arg)? > {}
 
             $zalsa::macro_if! { $generate_debug_impl =>
-                impl< $($db_lt_arg)? > std::fmt::Debug for $Struct< $($db_lt_arg)? > {
-                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                impl< $($db_lt_arg)? > ::std::fmt::Debug for $Struct< $($db_lt_arg)? > {
+                    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                         Self::default_debug_fmt(*self, f)
                     }
                 }
@@ -269,7 +269,7 @@ macro_rules! setup_interned_struct {
 
             $zalsa::macro_if! { $persist =>
                 impl<$($db_lt_arg)?> $zalsa::serde::Serialize for $Struct<$($db_lt_arg)?> {
-                    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+                    fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
                     where
                         S: $zalsa::serde::Serializer,
                     {
@@ -278,7 +278,7 @@ macro_rules! setup_interned_struct {
                 }
 
                 impl<'de, $($db_lt_arg)?> $zalsa::serde::Deserialize<'de> for $Struct<$($db_lt_arg)?> {
-                    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+                    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
                     where
                         D: $zalsa::serde::Deserializer<'de>,
                     {
@@ -301,17 +301,17 @@ macro_rules! setup_interned_struct {
             }
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
-                pub fn $new_fn<$Db, $($indexed_ty: $zalsa::interned::Lookup<$field_ty> + std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
+                pub fn $new_fn<$Db, $($indexed_ty: $zalsa::interned::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + salsa::Database,
+                    $Db: ?Sized + ::salsa::Database,
                     $(
                         $field_ty: $zalsa::interned::HashEqLike<$indexed_ty>,
                     )*
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
                     $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
-                        StructKey::<$db_lt>($($field_id,)* std::marker::PhantomData::default()), |_, data| ($($zalsa::interned::Lookup::into_owned(data.$field_index),)*))
+                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| ($($zalsa::interned::Lookup::into_owned(data.$field_index),)*))
                 }
 
                 $(
@@ -337,11 +337,11 @@ macro_rules! setup_interned_struct {
                 iftt ($($db_lt_arg)?) {
                     impl $Struct<'_> {
                         /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
-                        pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+                        pub fn default_debug_fmt(this: Self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result
                         where
                             // rustc rejects trivial bounds, but it cannot see through higher-ranked bounds
                             // with its check :^)
-                            $(for<$db_lt> $field_ty: std::fmt::Debug),*
+                            $(for<$db_lt> $field_ty: ::std::fmt::Debug),*
                         {
                             $zalsa::with_attached_database(|db| {
                                 let zalsa = db.zalsa();
@@ -361,11 +361,11 @@ macro_rules! setup_interned_struct {
                 } else {
                     impl $Struct {
                         /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
-                        pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+                        pub fn default_debug_fmt(this: Self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result
                         where
                             // rustc rejects trivial bounds, but it cannot see through higher-ranked bounds
                             // with its check :^)
-                            $(for<$db_lt> $field_ty: std::fmt::Debug),*
+                            $(for<$db_lt> $field_ty: ::std::fmt::Debug),*
                         {
                             $zalsa::with_attached_database(|db| {
                                 let zalsa = db.zalsa();
