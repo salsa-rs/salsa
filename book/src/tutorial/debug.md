@@ -17,14 +17,17 @@ the salsa database:
 {{#include ../../../examples/calc/ir.rs:program}}
 ```
 
-Specifying the `debug` option creates a `Debug` implementation so we can use our
-types in formatted strings, but it's not enough to get the full value. Simply
-writing this code:
+Specifying the `debug` option allows us to use our types in formatted strings,
+but it's not enough to get the full value. Simply writing this code:
 
 ```rust
+use db::CalcDatabaseImpl;
+use ir::SourceProgram;
+use parser::parse_statements;
+
 let db: CalcDatabaseImpl = Default::default();
 
-let surce_text = "print 1 + 2".
+let surce_text = "print 1 + 2";
 let source_program = SourceProgram::new(db, source_text.to_string());
 
 let statements = parse_statements(db, source_program);
@@ -50,10 +53,14 @@ function passed to `Database::attach` which sets a thread-local variable to the
 and inspect values:
 
 ```rust
+use db::CalcDatabaseImpl;
+use ir::SourceProgram;
+use parser::parse_statements;
+
 let db: CalcDatabaseImpl = Default::default();
 
 db.attach(|db| {
-    let surce_text = "print 1 + 2".
+    let surce_text = "print 1 + 2";
     let source_program = SourceProgram::new(db, source_text.to_string());
 
     let statements = parse_statements(db, source_program);
@@ -115,7 +122,7 @@ Program {
 
 Now that we know how to inspect all the values of Salsa structs, we can write a simple unit test harness.
 The `parse_string` function below creates a database, sets the source text, and then invokes the parser
-to get the statements and creates a formatted strings with all the values:
+to get the statements and creates a formatted string with all the values:
 
 ```rust
 {{#include ../../../examples/calc/parser.rs:parse_string}}
