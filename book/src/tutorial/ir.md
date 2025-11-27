@@ -101,7 +101,7 @@ in other words, you cannot change the values of a `salsa::Input`.
 
 The `'db` lifetime also allows tracked structs to be implemented
 using a pointer (versus the numeric id found in `salsa::input` structs).
-This doesn't really effect you as a user except that it allows accessing fields from tracked structs—
+This doesn't really affect you as a user except that it allows accessing fields from tracked structs—
 a very common operation—to be optimized.
 
 ## Representing functions
@@ -113,7 +113,7 @@ The `Function` struct is going to be created by the parser to represent each of 
 {{#include ../../../examples/calc/ir.rs:functions}}
 ```
 
-If we had created some `Function` instance `f`, for example, we might find that `the f.body` field changes
+If we had created some `Function` instance `f`, for example, we might find that the `f.body` field changes
 because the user changed the definition of `f`.
 This would mean that we have to re-execute those parts of the code that depended on `f.body`
 (but not those parts of the code that depended on the body of _other_ functions).

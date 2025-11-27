@@ -7,7 +7,7 @@ If we did so, the error would only be reported the first time the function was c
 on subsequent calls in the situation where the simply returns its memoized value.
 
 Salsa defines a mechanism for managing this called an **accumulator**.
-In our case, we define an accumulator struct called `Diagnostics` in the `ir` module:
+In our case, we define an accumulator struct called `Diagnostic` in the `ir` module:
 
 ```rust
 {{#include ../../../examples/calc/ir.rs:diagnostic}}
@@ -30,7 +30,7 @@ we invoke the associated `accumulated` function:
 
 ```rust
 let accumulated: Vec<Diagnostic> =
-    parse_statements::accumulated::<Diagnostics>(db);
+    parse_statements::accumulated::<Diagnostic>(db);
                       //            -----------
                       //     Use turbofish to specify
                       //     the diagnostics type.
