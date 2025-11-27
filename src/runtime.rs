@@ -2,9 +2,11 @@ use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
 use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
+use crate::plumbing::Ingredient;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
 use crate::sync::Mutex;
+use crate::table::memo::DeletedEntries;
 use crate::table::Table;
 use crate::zalsa::Zalsa;
 use crate::{Cancelled, Event, EventKind, Revision};
@@ -245,6 +247,7 @@ impl Runtime {
         &self.table
     }
 
+    #[inline]
     pub(crate) fn table_mut(&mut self) -> &mut Table {
         &mut self.table
     }
@@ -400,5 +403,13 @@ impl Runtime {
     pub(crate) fn deserialize_from(&mut self, other: &mut Runtime) {
         // The only field that is serialized is `revisions`.
         self.revisions = other.revisions;
+    }
+
+    pub(crate) fn reset_ingredient_for_new_revision(
+        &mut self,
+        ingredient: &mut (dyn Ingredient + 'static),
+        new_buffer: DeletedEntries,
+    ) -> DeletedEntries {
+        ingredient.reset_for_new_revision(&mut self.table, new_buffer)
     }
 }
