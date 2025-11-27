@@ -21,10 +21,6 @@ Specifying the `debug` option allows us to use our types in formatted strings,
 but it's not enough to get the full value. Simply writing this code:
 
 ```rust
-use db::CalcDatabaseImpl;
-use ir::SourceProgram;
-use parser::parse_statements;
-
 let db: CalcDatabaseImpl = Default::default();
 
 let surce_text = "print 1 + 2";
@@ -53,10 +49,6 @@ function passed to `Database::attach` which sets a thread-local variable to the
 and inspect values:
 
 ```rust
-use db::CalcDatabaseImpl;
-use ir::SourceProgram;
-use parser::parse_statements;
-
 let db: CalcDatabaseImpl = Default::default();
 
 db.attach(|db| {
