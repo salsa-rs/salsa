@@ -177,3 +177,190 @@ whenever anything in a function body changes, we consider the entire function bo
 It usually makes sense to draw some kind of "reasonably coarse" boundary like this.
 
 One downside of the way we have set things up: we inlined the position into each of the structs.
+
+## The `returns` attribute for struct fields
+
+You may have noticed that some fields of salsa structs are annotated with
+`returns(ref)`. There are 4 possible return annotations for struct fields:
+
+- `returns(clone)` (**the default**): Invokes `Clone::clone` on the field type.
+- `returns(ref)`: Returns a `&Type` reference to the field type.
+- `returns(deref)`: Invokes `Deref::deref` on the field type.
+- `returns(copy)`: Returns an owned copy of the field value.
+
+In order to better illustrate the workings of each `returns` annotation, we will
+use this simple struct example:
+
+```rust
+/// Number wraps an i32 and is Copy.
+#[derive(PartialEq, Eq, Copy, Debug)]
+struct Number(i32);
+
+// Dummy clone implementation that logs the Clone::clone call.
+impl Clone for Number {
+    fn clone(&self) -> Self {
+        println!("Cloning {self:?}...");
+        Number(self.0)
+    }
+}
+
+// Deref into the wrapped i32 and log the call.
+impl std::ops::Deref for Number {
+    type Target = i32;
+
+    fn deref(&self) -> &Self::Target {
+        println!("Dereferencing {self:?}...");
+        &self.0
+    }
+}
+```
+
+The `Number` struct can be copied, cloned or derefed. Now let's define a salsa
+struct with a `Number` field so we can explain the different `returns`
+annotations:
+
+```rust
+#[salsa::input]
+struct Input {
+    number: Number,
+}
+```
+
+We will also need a salsa db for this example:
+
+```rust
+/// Salsa database to use in our example.
+#[salsa::db]
+#[derive(Clone, Default)]
+struct NumDb {
+    storage: salsa::Storage<Self>,
+}
+
+#[salsa::db]
+impl salsa::Database for NumDb {}
+```
+
+And finally a little program to test each annotation:
+
+```rust
+let db: NumDb = Default::default();
+let input = Input::new(&db, Number(42));
+
+// Access the number field.
+let number = input.number(&db);
+eprintln!("number: {number:?}");
+```
+
+### `returns(clone)` (default behavior)
+
+If our field contains no `returns` attribute at all or contains the
+`returns(clone)` then accessing the field returns a clone.
+
+Implicit clone:
+
+```rust
+#[salsa::input]
+struct Input {
+    number: Number,
+}
+```
+
+Explicit clone:
+
+
+```rust
+#[salsa::input]
+struct Input {
+    #[returns(clone)]
+    number: Number,
+}
+```
+
+Output of the program in both cases is:
+
+```
+Cloning Number(42)...
+number: Number(42)
+```
+
+Type of the `number` variable is:
+
+```rust
+let number: Number = input.number(&db);
+```
+
+### `returns(ref)`
+
+This attribute simply returns a reference instead of calling `Clone::clone`:
+
+
+```rust
+#[salsa::input]
+struct Input {
+    #[returns(ref)]
+    number: Number,
+}
+```
+
+Output:
+
+```
+number: Number(42)
+```
+
+Type of `number`:
+
+```rust
+let number: &Number = input.number(&db);
+```
+
+### `returns(deref)`
+
+Using this annotation invokes our implementation of `std::ops::Deref`, therefore
+also changing the returned type in this example to `&i32` which is our `&Deref::Target`.
+
+```rust
+#[salsa::input]
+struct Input {
+    #[returns(deref)]
+    number: Number,
+}
+```
+
+Output:
+
+```
+Dereferencing Number(42)...
+number: 42
+```
+
+Type of `number`:
+
+```rust
+let number: &i32 = input.number(&db);
+```
+
+### `returns(copy)`
+
+If the field type is `Copy`, then `returns(copy)` can returned an owned copy of
+the value without calling `Clone::clone`.
+
+```rust
+#[salsa::input]
+struct Input {
+    #[returns(copy)]
+    number: Number,
+}
+```
+
+Output:
+
+```
+number: Number(42)
+```
+
+Type of `number`:
+
+```rust
+let number: Number = input.number(&db);
+```

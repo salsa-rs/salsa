@@ -58,11 +58,11 @@ Functions that take additional arguments are less efficient and flexible.
 It's generally better to structure tracked functions as functions of a single Salsa struct if possible.
 
 
-## The `returns` attribute
+## The `returns` attribute for functions
 
 You may have noticed that `parse_statements` is tagged with `#[salsa::tracked]`.
 Ordinarily, when you call a tracked function, the result you get back
-**is cloned** out of the database.
+**is cloned** out of the database. You may recall the `returns(ref)` annotation from the [ir](./ir.md#the-returns-attribute-for-struct-fields)
 
 ### `returns(ref)`
 
@@ -77,7 +77,7 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_
 The `returns(ref)` attribute means that a reference into the database is returned
 instead of a clone. So, when called, `parse_statements` would return a
 `&Vec<Statement>` rather than cloning the `Vec`. This is useful as a performance
-optimization. (You may recall the `returns(ref)` annotation from the [ir](./ir.md)
+optimization. (
 section of the tutorial, where it was placed on struct fields, with roughly the
 same meaning.)
 
