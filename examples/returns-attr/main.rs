@@ -1,5 +1,5 @@
 //! This examples shows how the `returns` attribute works for functions and structs.
-//! 
+//!
 //! You can play with different `return` annotations to see how they change the
 //! types and the clone/deref function calls..
 
