@@ -1022,6 +1022,14 @@ where
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
+
+    fn memo_counts(&self, zalsa: &Zalsa) -> Vec<(IngredientIndex, u32)> {
+        zalsa.memo_counts(
+            self.ingredient_index,
+            self.entries(zalsa)
+                .map(|entry| unsafe { &*entry.value.memos.get() }),
+        )
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>

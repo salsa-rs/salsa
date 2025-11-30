@@ -389,6 +389,14 @@ macro_rules! setup_tracked_fn {
                             first_index,
                             $zalsa::function::MemoEntryType::of::<$zalsa::function::Memo<$Configuration>>(),
                             intern_ingredient_memo_types,
+                            $zalsa::macro_if! {
+                                if $needs_interner {
+                                    Some(<$Configuration as $zalsa::interned::Configuration>::DEBUG_NAME)
+                                } else {
+                                    None
+                                }
+                            },
+                            <$Configuration as $zalsa::function::Configuration>::DEBUG_NAME,
                         )
                     };
 

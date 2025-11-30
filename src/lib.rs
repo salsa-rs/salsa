@@ -37,6 +37,10 @@ mod zalsa_local;
 #[cfg(not(feature = "inventory"))]
 mod nonce;
 
+use std::borrow::Borrow;
+use std::sync::Arc;
+
+use rustc_hash::{FxBuildHasher, FxHashMap};
 #[cfg(feature = "macros")]
 pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 
@@ -64,11 +68,143 @@ pub use self::storage::{Storage, StorageHandle};
 pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
 pub use crate::attach::{attach, attach_allow_change, with_attached_database};
+use crate::plumbing::Ingredient;
+use crate::zalsa::{MemoIngredientIndex, Zalsa};
 
 pub mod prelude {
     #[cfg(feature = "accumulator")]
     pub use crate::accumulator::Accumulator;
     pub use crate::{Database, Setter};
+}
+
+fn read_u64(bytes: &mut &[u8]) -> u64 {
+    let result = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+    *bytes = &bytes[8..];
+    result
+}
+fn read_u32(bytes: &mut &[u8]) -> u32 {
+    let result = u32::from_le_bytes(bytes[..4].try_into().unwrap());
+    *bytes = &bytes[4..];
+    result
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct StableIngredientName(Vec<u8>);
+
+impl StableIngredientName {
+    fn serialize(&self, output: &mut Vec<u8>) {
+        output.extend((self.0.len() as u64).to_le_bytes());
+        output.extend_from_slice(&self.0);
+    }
+
+    fn deserialize(bytes: &mut &[u8]) -> Self {
+        let len = read_u64(bytes) as usize;
+        let result = bytes[..len].to_vec();
+        *bytes = &bytes[len..];
+        Self(result)
+    }
+
+    fn from_ingredient(ingredient: &(impl Ingredient + ?Sized)) -> Self {
+        Self(ingredient.debug_name().as_bytes().to_vec())
+    }
+}
+
+impl std::fmt::Debug for StableIngredientName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::str::from_utf8(&self.0).unwrap().fmt(f)
+    }
+}
+
+impl Borrow<[u8]> for StableIngredientName {
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MemoFrequencyStats {
+    best_order: Arc<
+        FxHashMap<
+            StableIngredientName,
+            (
+                MemoIngredientIndex,
+                FxHashMap<StableIngredientName, MemoIngredientIndex>,
+            ),
+        >,
+    >,
+}
+
+impl MemoFrequencyStats {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut output = Vec::new();
+        output.extend((self.best_order.len() as u64).to_le_bytes());
+        for (ingredient, (max_memo_index, memo_indices)) in &*self.best_order {
+            ingredient.serialize(&mut output);
+            output.extend((max_memo_index.as_usize() as u32).to_le_bytes());
+            output.extend((memo_indices.len() as u64).to_le_bytes());
+            for (memo_ingredient, &memo_index) in memo_indices {
+                memo_ingredient.serialize(&mut output);
+                output.extend((memo_index.as_usize() as u32).to_le_bytes());
+            }
+        }
+        output
+    }
+
+    pub fn deserialize(mut bytes: &[u8]) -> Self {
+        let best_order_len = read_u64(&mut bytes) as usize;
+        let mut best_order = FxHashMap::with_capacity_and_hasher(best_order_len, FxBuildHasher);
+        for _ in 0..best_order_len {
+            let ingredient = StableIngredientName::deserialize(&mut bytes);
+            let max_memo_index = MemoIngredientIndex::from_usize(read_u32(&mut bytes) as usize);
+            let memo_indices_len = read_u64(&mut bytes) as usize;
+            let mut memo_indices =
+                FxHashMap::with_capacity_and_hasher(memo_indices_len, FxBuildHasher);
+            for _ in 0..memo_indices_len {
+                let memo_ingredient = StableIngredientName::deserialize(&mut bytes);
+                let memo_index = MemoIngredientIndex::from_usize(read_u32(&mut bytes) as usize);
+                memo_indices.insert(memo_ingredient, memo_index);
+            }
+            best_order.insert(ingredient, (max_memo_index, memo_indices));
+        }
+        return Self {
+            best_order: Arc::new(best_order),
+        };
+    }
+
+    pub fn determine_from_db(db: &(impl Database + ?Sized)) -> Self {
+        Self::determine_from_zalsa(db.zalsa())
+    }
+
+    fn determine_from_zalsa(zalsa: &Zalsa) -> Self {
+        let mut memo_counts = FxHashMap::default();
+        for ingredient in zalsa.ingredients() {
+            let counts = ingredient.memo_counts(zalsa);
+            if !counts.is_empty() {
+                memo_counts.insert(StableIngredientName::from_ingredient(ingredient), counts);
+            }
+        }
+        let best_order = memo_counts
+            .into_iter()
+            .map(|(ingredient, mut counts)| {
+                counts.sort_unstable_by_key(|&(_, count)| std::cmp::Reverse(count));
+                let max_memo_index = MemoIngredientIndex::from_usize(counts.len());
+                let best_order = counts
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, (memo, _))| {
+                        (
+                            StableIngredientName::from_ingredient(zalsa.lookup_ingredient(memo)),
+                            MemoIngredientIndex::from_usize(idx),
+                        )
+                    })
+                    .collect();
+                (ingredient, (max_memo_index, best_order))
+            })
+            .collect();
+        Self {
+            best_order: Arc::new(best_order),
+        }
+    }
 }
 
 /// Internal names used by salsa macros.
@@ -161,6 +297,7 @@ pub mod plumbing {
         pub use crate::function::IngredientImpl;
         pub use crate::function::Memo;
         pub use crate::table::memo::MemoEntryType;
+        pub use crate::MemoFrequencyStats;
     }
 
     pub mod tracked_struct {

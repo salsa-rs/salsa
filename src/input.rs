@@ -380,6 +380,13 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
+
+    fn memo_counts(&self, zalsa: &Zalsa) -> Vec<(IngredientIndex, u32)> {
+        zalsa.memo_counts(
+            self.ingredient_index,
+            self.entries(zalsa).map(|entry| &entry.value.memos),
+        )
+    }
 }
 
 impl<C: Configuration> std::fmt::Debug for IngredientImpl<C> {

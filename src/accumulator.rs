@@ -137,6 +137,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("accumulator does not allocate pages")
     }
+
+    fn memo_counts(&self, _zalsa: &Zalsa) -> Vec<(IngredientIndex, u32)> {
+        Vec::new()
+    }
 }
 
 impl<A> std::fmt::Debug for IngredientImpl<A>

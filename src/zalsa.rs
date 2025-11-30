@@ -10,11 +10,11 @@ use crate::hash::TypeIdHasher;
 use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::SalsaStructInDb;
 use crate::runtime::Runtime;
-use crate::table::memo::MemoTableWithTypes;
+use crate::table::memo::{MemoTable, MemoTableWithTypes};
 use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
-use crate::{Database, Durability, Id, Revision};
+use crate::{Database, Durability, Id, MemoFrequencyStats, Revision};
 
 /// Internal plumbing trait.
 ///
@@ -171,6 +171,10 @@ pub struct Zalsa {
     runtime: Runtime,
 
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
+
+    frequency_stats: MemoFrequencyStats,
+
+    deleted_memo_tables: boxcar::Vec<MemoTable>,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
@@ -184,6 +188,7 @@ impl Zalsa {
     pub(crate) fn new<Db: Database>(
         event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
         jars: Vec<ErasedJar>,
+        frequency_stats: MemoFrequencyStats,
     ) -> Self {
         let mut zalsa = Self {
             views_of: Views::new::<Db>(),
@@ -196,6 +201,8 @@ impl Zalsa {
             event_callback,
             #[cfg(not(feature = "inventory"))]
             nonce: NONCE.nonce(),
+            frequency_stats,
+            deleted_memo_tables: Default::default(),
         };
 
         // Collect and initialize all registered ingredients.
@@ -310,7 +317,11 @@ impl Zalsa {
         &mut self,
         struct_ingredient_index: IngredientIndex,
         ingredient_index: IngredientIndex,
+        struct_ingredient_debug_name: Option<&str>,
+        ingredient_debug_name: &str,
     ) -> MemoIngredientIndex {
+        let struct_ingredient_debug_name = struct_ingredient_debug_name
+            .unwrap_or_else(|| self.lookup_ingredient(struct_ingredient_index).debug_name());
         let memo_ingredients = &mut self.memo_ingredient_indices;
         let idx = struct_ingredient_index.as_u32() as usize;
         let memo_ingredients = if let Some(memo_ingredients) = memo_ingredients.get_mut(idx) {
@@ -319,6 +330,29 @@ impl Zalsa {
             memo_ingredients.resize_with(idx + 1, Vec::new);
             memo_ingredients.get_mut(idx).unwrap()
         };
+        if let Some((max_memo_index, ingredient_frequency)) = self
+            .frequency_stats
+            .best_order
+            .get(struct_ingredient_debug_name.as_bytes())
+        {
+            if let Some(&mi) = ingredient_frequency.get(ingredient_debug_name.as_bytes()) {
+                memo_ingredients.resize(
+                    mi.as_usize() + 1,
+                    IngredientIndex::new(IngredientIndex::MAX_INDEX),
+                );
+                memo_ingredients[mi.as_usize()] = ingredient_index;
+                return mi;
+            } else {
+                if memo_ingredients.len() < max_memo_index.as_usize() {
+                    // We need to not override memos that have frequency.
+                    memo_ingredients.resize(
+                        max_memo_index.as_usize(),
+                        IngredientIndex::new(IngredientIndex::MAX_INDEX),
+                    );
+                }
+            }
+        }
+
         let mi = MemoIngredientIndex::from_usize(memo_ingredients.len());
         memo_ingredients.push(ingredient_index);
 
@@ -450,6 +484,8 @@ impl Zalsa {
             ingredient.reset_for_new_revision(self.runtime.table_mut());
         }
 
+        self.deleted_memo_tables.clear();
+
         new_revision
     }
 
@@ -484,6 +520,23 @@ impl Zalsa {
     pub fn event_cold(&self, event: &dyn Fn() -> crate::Event) {
         let event_callback = self.event_callback.as_ref().unwrap();
         event_callback(event());
+    }
+
+    pub(crate) fn memo_counts<'a>(
+        &self,
+        ingredient: IngredientIndex,
+        memos: impl Iterator<Item = &'a MemoTable>,
+    ) -> Vec<(IngredientIndex, u32)> {
+        let mut map = FxHashMap::default();
+        let memo_ingredient_indices = &self.memo_ingredient_indices[ingredient.as_u32() as usize];
+        for memo in memos {
+            memo.update_frequency_stats(memo_ingredient_indices, &mut map);
+        }
+        map.into_iter().collect()
+    }
+
+    pub(crate) fn push_deleted_memo_table(&self, memo_table: MemoTable) {
+        self.deleted_memo_tables.push(memo_table);
     }
 }
 

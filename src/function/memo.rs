@@ -30,9 +30,11 @@ impl<C: Configuration> IngredientImpl<C> {
         // for `'db` though as we delay their dropping to the end of a revision.
         let static_memo =
             unsafe { transmute::<NonNull<Memo<'db, C>>, NonNull<Memo<'static, C>>>(memo) };
-        let old_static_memo = zalsa
-            .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .insert(memo_ingredient_index, static_memo)?;
+        let old_static_memo = zalsa.memo_table_for::<C::SalsaStruct<'_>>(id).insert(
+            memo_ingredient_index,
+            static_memo,
+            zalsa,
+        )?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe {

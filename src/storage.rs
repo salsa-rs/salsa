@@ -6,7 +6,7 @@ use crate::database::RawDatabase;
 use crate::sync::{Arc, Condvar, Mutex};
 use crate::zalsa::{ErasedJar, HasJar, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{self, ZalsaLocal};
-use crate::{Database, Event, EventKind};
+use crate::{Database, Event, EventKind, MemoFrequencyStats};
 
 /// A handle to non-local database state.
 pub struct StorageHandle<Db> {
@@ -41,15 +41,16 @@ impl<Db: Database> Default for StorageHandle<Db> {
 
 impl<Db: Database> StorageHandle<Db> {
     pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
-        Self::with_jars(event_callback, Vec::new())
+        Self::with_jars(event_callback, Vec::new(), MemoFrequencyStats::default())
     }
 
     fn with_jars(
         event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
         jars: Vec<ErasedJar>,
+        frequency_stats: MemoFrequencyStats,
     ) -> Self {
         Self {
-            zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback, jars)),
+            zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback, jars, frequency_stats)),
             coordinate: CoordinateDrop(Arc::new(Coordinate {
                 coordinate_lock: Mutex::default(),
                 cvar: Default::default(),
@@ -177,6 +178,7 @@ impl<Db: Database> Storage<Db> {
 pub struct StorageBuilder<Db> {
     jars: Vec<ErasedJar>,
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+    frequency_stats: Option<MemoFrequencyStats>,
     _db: PhantomData<Db>,
 }
 
@@ -185,6 +187,7 @@ impl<Db> Default for StorageBuilder<Db> {
         Self {
             jars: Vec::new(),
             event_callback: None,
+            frequency_stats: None,
             _db: PhantomData,
         }
     }
@@ -202,6 +205,13 @@ impl<Db: Database> StorageBuilder<Db> {
         self
     }
 
+    /// Sets frequency statistics for the memos. This is obtained via previous run with [`MemoFrequencyStats::serialize()`]
+    /// and [`MemoFrequencyStats::deserialize()`], and used to optimize memory usage.
+    pub fn frequency_stats(mut self, frequency_stats: MemoFrequencyStats) -> Self {
+        self.frequency_stats = Some(frequency_stats);
+        self
+    }
+
     /// Manually register an ingredient.
     ///
     /// Manual ingredient registration is necessary when the `inventory` feature is disabled.
@@ -213,7 +223,11 @@ impl<Db: Database> StorageBuilder<Db> {
     /// Construct the [`Storage`] using the provided builder options.
     pub fn build(self) -> Storage<Db> {
         Storage {
-            handle: StorageHandle::with_jars(self.event_callback, self.jars),
+            handle: StorageHandle::with_jars(
+                self.event_callback,
+                self.jars,
+                self.frequency_stats.unwrap_or_default(),
+            ),
             zalsa_local: ZalsaLocal::new(),
         }
     }

@@ -266,6 +266,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
             "called `deserialize` on ingredient where `should_serialize` returns `false`"
         )
     }
+
+    fn memo_counts(&self, zalsa: &Zalsa) -> Vec<(IngredientIndex, u32)>;
 }
 
 impl dyn Ingredient {
