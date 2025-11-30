@@ -9,6 +9,7 @@ struct Number(i32);
 
 // Dummy clone implementation that logs the Clone::clone call.
 impl Clone for Number {
+    #[allow(clippy::non_canonical_clone_impl)]
     fn clone(&self) -> Self {
         println!("Cloning {self:?}...");
         Number(self.0)
