@@ -62,115 +62,159 @@ It's generally better to structure tracked functions as functions of a single Sa
 
 You may have noticed that `parse_statements` is tagged with `#[salsa::tracked]`.
 Ordinarily, when you call a tracked function, the result you get back
-**is cloned** out of the database. You may recall the `returns(ref)` annotation from the [ir](./ir.md#the-returns-attribute-for-struct-fields)
+**is cloned** out of the database.
 
-### `returns(ref)`
+You may recall the various `returns` annotations for struct fields from the
+[IR](./ir.md#the-returns-attribute-for-struct-fields) chapter. Those same
+annotations can be used for salsa functions with roughly the same meaning as in
+struct fields.
 
-If we wanted to avoid cloning the result, then we could use the `returns(ref)`
-attribute like this:
+- `salsa::tracked(returns(clone))` (**the default**): Invokes `Clone::clone` on function's return type.
+- `salsa::tracked(returns(ref))`: Returns a reference to the functions return type: `&Type` .
+- `salsa::tracked(returns(deref))`: Invokes `Deref::deref` on the return type.
+- `salsa::tracked(returns(copy))`: Returns an owned copy of the value.
 
-```rust
-#[salsa::tracked(returns(ref))]
-pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_>
-```
-
-The `returns(ref)` attribute means that a reference into the database is returned
-instead of a clone. So, when called, `parse_statements` would return a
-`&Vec<Statement>` rather than cloning the `Vec`. This is useful as a performance
-optimization. (
-section of the tutorial, where it was placed on struct fields, with roughly the
-same meaning.)
-
-### `returns(copy)`
-
-To illustrate how `returns(copy)` works, we'll use this simple example:
+We will use a modified version of the example from the [IR](./ir.md#the-returns-attribute-for-struct-fields)
+chapter to explain how the `returns` annotation works for function return types
+instead of struct fields.
 
 ```rust
-// Note that Number is Copy.
-#[derive(PartialEq, Eq, Copy)]
+/// Number wraps an i32 and is Copy.
+#[derive(PartialEq, Eq, Copy, Debug)]
 struct Number(i32);
 
-// Dummy clone that simulates expensive memory operations.
+// Dummy clone implementation that logs the Clone::clone call.
 impl Clone for Number {
-    fn clone(&self) -> Number {
-        println!("Very expensive clone here...");
+    fn clone(&self) -> Self {
+        println!("Cloning {self:?}...");
         Number(self.0)
     }
 }
 
-// Salsa input wraps the Number struct above.
+// Deref into the wrapped i32 and log the call.
+impl std::ops::Deref for Number {
+    type Target = i32;
+
+    fn deref(&self) -> &Self::Target {
+        println!("Dereferencing {self:?}...");
+        &self.0
+    }
+}
+
+// Salsa struct.
 #[salsa::input]
 struct Input {
     number: Number,
 }
 
-// The number function "unwraps" the Number from the salsa input.
+/// Salsa database to use in our example.
+#[salsa::db]
+#[derive(Clone, Default)]
+struct NumDb {
+    storage: salsa::Storage<Self>,
+}
+
+#[salsa::db]
+impl salsa::Database for NumDb {}
+```
+
+Now we'll add a simple salsa tracked function:
+
+```rust
 #[salsa::tracked]
 fn number(db: &dyn salsa::Database, input: Input) -> Number {
     input.number(db)
 }
 ```
 
-Now let's define the Salsa database:
+And a simple program that makes use of the `number` function:
 
 ```rust
-#[salsa::db]
-#[derive(Clone, Default)]
-struct Db {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Db {}
-```
-
-Note that we did not use the `returns` attribute anywhere. So if we run this code:
-
-```rust
-let db: Db = Default::default();
+let db: NumDb = Default::default();
 let input = Input::new(&db, Number(42));
 
+// Call the salsa::tracked number function.
 let n = number(&db, input);
-println!("number: {:?}", n.0);
+eprintln!("n: {n:?}");
 ```
 
-we get this output:
+### `#[salsa::tracked(returns(clone))]` (default)
 
-```
-Very expensive clone here...
-Very expensive clone here...
-number: 42
-```
-
-That's because the default behavior is cloning as we mentioned before. If we
-make a little change and annotate the `number` function with `returns(copy)`:
+By default, if we only add `salsa::tracked` to our function it will clone the
+value before returning it. So, with this function signature and salsa struct:
 
 ```rust
-#[salsa::tracked(returns(copy))]
-fn number(db: &dyn salsa::Database, input: Input) -> Number
-```
+#[salsa::input]
+struct Input {
+    number: Number,
+}
 
-then we get this output:
-
-```
-Very expensive clone here...
-number: 42
-```
-
-One of the clones is gone, the `number` function is no longer invoking `Clone::clone` before returning the result. But where is the other clone
-coming from?
-
-It's coming from the `Input::number` accessor, this line also clones:
-
-```rust
-#[salsa::tracked(returns(copy))]
+#[salsa::tracked]
 fn number(db: &dyn salsa::Database, input: Input) -> Number {
-    input.number(db) // This function also calls Clone::clone
+    input.number(db)
 }
 ```
 
-To get rid of that clone as well we need to also annotate the `number` field as
-`returns(copy)`:
+The output of our program is:
+
+```
+Cloning Number(42)...
+Cloning Number(42)...
+n: Number(42)
+```
+
+And the `type` of the `n` variable is:
+
+```rust
+let n: Number = number(&db, input);
+```
+
+Note that the value is cloned twice. One of the comes from accessing the field
+inside the salsa function (`input.number(&db)`) and the other one comes from
+calling the salsa function itself (`let n = number(&db)`).
+
+Explicit annotation looks like this:
+
+```rust
+#[salsa::tracked(returns(clone))]
+fn number(db: &dyn salsa::Database, input: Input) -> Number {
+    input.number(db)
+}
+```
+
+### `#[salsa::tracked(returns(ref))]`
+
+The `returns(ref)` annotation, just like with struct fields, will not call
+`Clone::clone` and return a ref instead. Given this salsa struct and function:
+
+```rust
+#[salsa::input]
+struct Input {
+    number: Number,
+}
+
+#[salsa::tracked(returns(ref))]
+fn number(db: &dyn salsa::Database, input: Input) -> Number {
+    input.number(db)
+}
+```
+
+The output of our program is:
+
+```
+Cloning Number(42)...
+n: Number(42)
+```
+
+And the `type` of the `n` variable is:
+
+```rust
+let n: &Number = number(&db, input);
+```
+
+Accessing the field (`input.number(&db)`) makes a clone and then the `number`
+function returns a reference to that clone. To completely avoid clones, we can
+mark the struct field as `returns(copy)`:
 
 ```rust
 #[salsa::input]
@@ -178,63 +222,92 @@ struct Input {
     #[returns(copy)]
     number: Number,
 }
+
+#[salsa::tracked(returns(ref))]
+fn number(db: &dyn salsa::Database, input: Input) -> Number {
+    input.number(db)
+}
 ```
 
-And now `Clone::clone` is no longer called anywhere. This is the output:
+Output:
 
 ```
-number: 42
+n: Number(42)
 ```
 
-### `returns(deref)`
+We chose `returns(copy)` over `returns(ref)` for the field because having `ref` on
+both the field and the function return type would not work. The call to
+`input.number(&db)` would return a `&Number` and we can't return references from
+salsa functions ourselves because the lifetimes are managed by the salsa macro
+generated code to make sure they are valid across database revisions.
 
-The `returns(deref)` attribute simply calls `Deref::deref` on the result and
-returns that instead. Let's make some changes to the `Number` example above to
-see how it works:
+The general use case for `tracked` functions isn't to track "references" but
+*to transform* data, for example transforming an AST structure into an IR
+structure. So usually you will not be accessing references just to return the
+same references in tracked functions.
+
+### `#[salsa::tracked(returns(deref))]`
+
+This annotation simply calls `Deref::deref` on the returned type. Given these
+salsa items:
 
 ```rust
-#[derive(PartialEq, Eq)]
-struct Number(i32);
-
-// Number now implements deref and targets the underlying i32 type.
-impl std::ops::Deref for Number {
-    type Target = i32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 #[salsa::input]
 struct Input {
     number: Number,
 }
 
-// Annotate with deref return.
 #[salsa::tracked(returns(deref))]
 fn number(db: &dyn salsa::Database, input: Input) -> Number {
     input.number(db)
 }
 ```
 
-Now, when calling `number`, even though the the signature is `fn -> Number` we
-will get an `&i32` type instead (the deref `&Target`). So our code needs to
-change to use the new type:
+Our program prints:
 
-```rust
-let db: Db = Default::default();
-let input = Input::new(&db, Number(42));
-
-let n = number(&db, input);
-eprintln!("number: {:?}", n); // Note that n.0 no longer works, n is &i32
+```
+Cloning Number(42)...
+Dereferencing Number(42)...
+n: 42
 ```
 
-Similarly, we can annotate the field of the salsa stuct as `returns(deref)`, in which case we could change the signature of our `number` function to this:
+And the type of `n` is:
 
 ```rust
-#[salsa::tracked]
-fn number(db: &dyn salsa::Database, input: Input) -> i32 {
-    // This getter now returns &i32, we can deref it ourselves.
-    *input.number(db)
+let n: &i32 = number(&db, input);
+```
+
+The clone can be removed again by marking the number field as `returns(copy)`.
+
+### `#[salsa::tracked(returns(copy))]`
+
+If the return type is `Copy` then we can mark the function with `returns(copy)`.
+Given this case:
+
+```rust
+#[salsa::input]
+struct Input {
+    number: Number,
+}
+
+#[salsa::tracked(returns(copy))]
+fn number(db: &dyn salsa::Database, input: Input) -> Number {
+    input.number(db)
 }
 ```
+
+The output of our program is:
+
+```
+Cloning Number(42)...
+n: Number(42)
+```
+
+And the type of `n` is:
+
+```rust
+let n: Number = number(&db, input);
+```
+
+The clone can be removed by marking the `number` as `returns(copy)` as well.
+
