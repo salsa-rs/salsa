@@ -340,6 +340,27 @@ where
     }
 }
 
+unsafe impl<K, V, S> Update for ordermap::OrderMap<K, V, S>
+where
+    K: Update + Eq + Hash,
+    V: Update,
+    S: BuildHasher,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_map: Self) -> bool {
+        maybe_update_map!(old_pointer, new_map)
+    }
+}
+
+unsafe impl<K, S> Update for ordermap::OrderSet<K, S>
+where
+    K: Update + Eq + Hash,
+    S: BuildHasher,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_set: Self) -> bool {
+        maybe_update_set!(old_pointer, new_set)
+    }
+}
+
 unsafe impl<K, V> Update for BTreeMap<K, V>
 where
     K: Update + Eq + Ord,
