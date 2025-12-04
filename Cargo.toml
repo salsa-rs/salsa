@@ -19,7 +19,6 @@ hashbrown = "0.15"
 hashlink = "0.10"
 indexmap = "2"
 intrusive-collections = "0.9.7"
-ordermap = "1"
 parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
@@ -41,6 +40,8 @@ shuttle = { version = "0.8.1", optional = true }
 # Persistent caching
 erased-serde = { version = "0.4.6", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
+
+ordermap = { version = "1.0.0", optional = true }
 
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]

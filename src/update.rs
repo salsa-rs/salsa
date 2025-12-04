@@ -340,6 +340,7 @@ where
     }
 }
 
+#[cfg(feature = "ordermap")]
 unsafe impl<K, V, S> Update for ordermap::OrderMap<K, V, S>
 where
     K: Update + Eq + Hash,
@@ -351,6 +352,7 @@ where
     }
 }
 
+#[cfg(feature = "ordermap")]
 unsafe impl<K, S> Update for ordermap::OrderSet<K, S>
 where
     K: Update + Eq + Hash,
