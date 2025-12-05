@@ -309,13 +309,15 @@ impl ZalsaLocal {
             changed_at
         );
 
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.add_read_simple(input, durability, changed_at);
-                }
-            })
+        if durability < Durability::NEVER_CHANGE {
+            // SAFETY: We do not access the query stack reentrantly.
+            unsafe {
+                self.with_query_stack_unchecked_mut(|stack| {
+                    if let Some(top_query) = stack.last_mut() {
+                        top_query.add_read_simple(input, durability, changed_at);
+                    }
+                })
+            }
         }
     }
 
@@ -1249,8 +1251,12 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self) -> CompletedQuery {
-        self.complete()
+    pub(crate) fn pop(self, force_durability: Option<Durability>) -> CompletedQuery {
+        let mut result = self.complete();
+        if let Some(durability) = force_durability {
+            result.revisions.durability = durability;
+        }
+        result
     }
 }
 

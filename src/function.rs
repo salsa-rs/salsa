@@ -16,12 +16,14 @@ use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
-use crate::table::memo::MemoTableTypes;
+use crate::table::memo::{Either, MemoTableTypes};
 use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryEdge, QueryOriginRef};
-use crate::{Cycle, Id, Revision};
+use crate::{Cycle, Durability, Id, Revision};
+
+pub use crate::function::memo::AmbiguousMemo;
 
 #[cfg(feature = "accumulator")]
 mod accumulated;
@@ -37,7 +39,9 @@ mod memo;
 mod specify;
 mod sync;
 
-pub type Memo<C> = memo::Memo<'static, C>;
+type EitherMemoNonNull<'db, C> =
+    Either<NonNull<memo::Memo<'db, C>>, NonNull<memo::NeverChangeMemo<'db, C>>>;
+type EitherMemoRef<'a, 'db, C> = Either<&'a memo::Memo<'db, C>, &'a memo::NeverChangeMemo<'db, C>>;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -61,6 +65,8 @@ pub trait Configuration: Any {
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
+
+    const FORCE_DURABILITY: Option<Durability>;
 
     /// Invokes after a new result `new_value` has been computed for which an older memoized value
     /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
@@ -244,10 +250,20 @@ where
     /// when this function is called and (b) ensuring that any entries
     /// removed from the memo-map are added to `deleted_entries`, which is
     /// only cleared with `&mut self`.
+    #[inline]
     unsafe fn extend_memo_lifetime<'this>(
         &'this self,
         memo: &memo::Memo<'this, C>,
     ) -> &'this memo::Memo<'this, C> {
+        // SAFETY: the caller must guarantee that the memo will not be released before `&self`
+        unsafe { std::mem::transmute(memo) }
+    }
+
+    #[inline]
+    unsafe fn extend_either_memo_lifetime<'this>(
+        &'this self,
+        memo: EitherMemoRef<'_, 'this, C>,
+    ) -> EitherMemoRef<'this, 'this, C> {
         // SAFETY: the caller must guarantee that the memo will not be released before `&self`
         unsafe { std::mem::transmute(memo) }
     }
@@ -280,6 +296,39 @@ where
         }
         // SAFETY: memo has been inserted into the table
         unsafe { self.extend_memo_lifetime(memo.as_ref()) }
+    }
+
+    fn insert_never_change_memo<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        id: Id,
+        memo: memo::NeverChangeMemo<'db, C>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> EitherMemoRef<'db, 'db, C> {
+        // We convert to a `NonNull` here as soon as possible because we are going to alias
+        // into the `Box`, which is a `noalias` type.
+        // SAFETY: memo is not null
+        let memo = unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memo))) };
+
+        // SAFETY: memo must be in the map (it's not yet, but it will be by the time this
+        // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
+        let db_memo = unsafe { self.extend_either_memo_lifetime(Either::Right(memo.as_ref())) };
+
+        if let Some(old_value) =
+            // SAFETY: We delay the drop of `old_value` until a new revision starts which ensures no
+            // references will exist for the memo contents.
+            unsafe {
+                self.insert_never_change_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
+            }
+        {
+            // In case there is a reference to the old memo out there, we have to store it
+            // in the deleted entries. This will get cleared when a new revision starts.
+            //
+            // SAFETY: Once the revision starts, there will be no outstanding borrows to the
+            // memo contents, and so it will be safe to free.
+            unsafe { self.deleted_entries.push(old_value) };
+        }
+        db_memo
     }
 
     #[inline]
@@ -333,6 +382,7 @@ where
         else {
             return;
         };
+        let Either::Left(memo) = memo else { todo!() };
 
         let origin = memo.revisions.origin.as_ref();
 
@@ -369,8 +419,11 @@ where
         zalsa: &'db Zalsa,
         input: Id,
     ) -> Option<ProvisionalStatus<'db>> {
-        let memo =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
+        let Either::Left(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?
+        else {
+            return Some(ProvisionalStatus::FinalNeverChange);
+        };
 
         let iteration = memo.revisions.iteration();
         let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
@@ -394,7 +447,7 @@ where
     }
 
     fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
-        let Some(memo) =
+        let Some(Either::Left(memo)) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
             return;
@@ -405,7 +458,7 @@ where
     }
 
     fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
-        let Some(memo) =
+        let Some(Either::Left(memo)) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
             return;
@@ -415,7 +468,7 @@ where
     }
 
     fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
-        let Some(memo) =
+        let Some(Either::Left(memo)) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
             return true;
@@ -532,7 +585,12 @@ where
             let memo =
                 self.get_memo_from_table_for(zalsa, entry.key_index(), memo_ingredient_index);
 
-            if memo.is_some_and(|memo| memo.should_serialize()) {
+            let should_serialize = match memo {
+                Some(Either::Left(memo)) => memo.should_serialize(),
+                Some(Either::Right(memo)) => memo.should_serialize(),
+                None => false,
+            };
+            if should_serialize {
                 return true;
             }
         }

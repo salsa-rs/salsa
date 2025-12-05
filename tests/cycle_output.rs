@@ -14,6 +14,7 @@ struct Output<'db> {
 #[salsa::input]
 struct InputValue {
     value: u32,
+    dummy: (),
 }
 
 #[salsa::tracked]
@@ -23,6 +24,8 @@ fn read_value<'db>(db: &'db dyn Db, output: Output<'db>) -> u32 {
 
 #[salsa::tracked]
 fn query_a(db: &dyn Db, input: InputValue) -> u32 {
+    // Dummy read so that the durability is not `NEVER_CHANGE`.
+    _ = input.dummy(db);
     let val = query_b(db, input);
     let output = Output::new(db, val);
     let read = read_value(db, output);
@@ -37,6 +40,8 @@ fn query_a(db: &dyn Db, input: InputValue) -> u32 {
 
 #[salsa::tracked(cycle_initial=cycle_initial)]
 fn query_b(db: &dyn Db, input: InputValue) -> u32 {
+    // Dummy read so that the durability is not `NEVER_CHANGE`.
+    _ = input.dummy(db);
     query_a(db, input)
 }
 
@@ -118,7 +123,7 @@ impl Db for Database {}
 #[test_log::test]
 fn single_revision() {
     let db = Database::default();
-    let input = InputValue::new(&db, 1);
+    let input = InputValue::new(&db, 1, ());
 
     assert_eq!(query_b(&db, input), 3);
 }
@@ -127,8 +132,8 @@ fn single_revision() {
 fn revalidate_no_changes() {
     let mut db = Database::default();
 
-    let ab_input = InputValue::new(&db, 1);
-    let c_input = InputValue::new(&db, 10);
+    let ab_input = InputValue::new(&db, 1, ());
+    let c_input = InputValue::new(&db, 10, ());
     assert_eq!(query_c(&db, c_input), 10);
     assert_eq!(query_b(&db, ab_input), 3);
 
@@ -156,8 +161,8 @@ fn revalidate_no_changes() {
 fn revalidate_with_change_after_output_read() {
     let mut db = Database::default();
 
-    let ab_input = InputValue::new(&db, 1);
-    let d_input = InputValue::new(&db, 10);
+    let ab_input = InputValue::new(&db, 1, ());
+    let d_input = InputValue::new(&db, 10, ());
     db.set_input(d_input);
 
     assert_eq!(query_b(&db, ab_input), 3);

@@ -2,6 +2,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::accumulator::{self};
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
+use crate::table::memo::Either;
 use crate::zalsa::ZalsaDatabase;
 use crate::zalsa_local::QueryOriginRef;
 use crate::{DatabaseKeyIndex, Id};
@@ -100,9 +101,15 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
-        (
-            memo.revisions.accumulated(),
-            memo.revisions.accumulated_inputs.load(),
-        )
+        match memo {
+            Either::Left(memo) => (
+                memo.revisions.accumulated(),
+                memo.revisions.accumulated_inputs.load(),
+            ),
+            Either::Right(_) => (
+                Some(const { &AccumulatedMap::EMPTY }),
+                InputAccumulatedValues::Empty,
+            ),
+        }
     }
 }

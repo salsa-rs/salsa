@@ -217,6 +217,7 @@ impl<'de> serde::Deserialize<'de> for AtomicIterationCount {
 pub struct CycleHeads(ThinVec<CycleHead>);
 
 impl CycleHeads {
+    #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -505,6 +506,7 @@ pub enum ProvisionalStatus<'db> {
         iteration: IterationCount,
         verified_at: Revision,
     },
+    FinalNeverChange,
     FallbackImmediate,
 }
 

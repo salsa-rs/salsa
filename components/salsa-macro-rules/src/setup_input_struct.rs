@@ -392,7 +392,7 @@ macro_rules! setup_input_struct {
                 pub(super) fn new_builder($($field_id: $field_ty),*) -> $Builder {
                     $Builder {
                         fields: ($($field_id,)*),
-                        durabilities: [::salsa::Durability::default(); $N],
+                        durabilities: [::salsa::Durability::MIN; $N],
                     }
                 }
 

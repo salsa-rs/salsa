@@ -49,6 +49,7 @@ impl AllowedOptions for Accumulator {
     const SELF_TY: bool = false;
     // TODO: Support serializing accumulators.
     const PERSIST: AllowedPersistOptions = AllowedPersistOptions::Invalid;
+    const FORCE_DURABILITY: bool = false;
 }
 
 struct StructMacro {

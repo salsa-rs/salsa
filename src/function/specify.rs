@@ -5,6 +5,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
+use crate::table::memo::Either;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryOrigin, QueryOriginRef, QueryRevisions, QueryRevisionsExtra};
@@ -79,6 +80,9 @@ where
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
+            let Either::Left(old_memo) = old_memo else {
+                panic!("`NEVER_CHANGE` queries cannot be specified")
+            };
             self.backdate_if_appropriate(
                 old_memo,
                 database_key_index,
@@ -119,7 +123,8 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
         let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
-            Some(m) => m,
+            Some(Either::Left(m)) => m,
+            Some(Either::Right(_)) => unreachable!("`NEVER_CHANGE` queries cannot be specified"),
             None => return,
         };
 

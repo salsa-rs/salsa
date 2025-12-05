@@ -67,6 +67,8 @@ macro_rules! setup_tracked_fn {
         // If true, the input and output values implement `serde::{Serialize, Deserialize}`.
         persist: $persist:tt,
 
+        force_durability: $force_durability:expr,
+
         assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
 
         $(self_ty: $self_ty:ty,)?
@@ -286,6 +288,8 @@ macro_rules! setup_tracked_fn {
 
                 const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
 
+                const FORCE_DURABILITY: Option<$zalsa::Durability> = $force_durability;
+
                 $($values_equal)+
 
                 $(
@@ -387,7 +391,7 @@ macro_rules! setup_tracked_fn {
                             zalsa,
                             struct_index,
                             first_index,
-                            $zalsa::function::MemoEntryType::of::<$zalsa::function::Memo<$Configuration>>(),
+                            $zalsa::function::MemoEntryType::of::<$zalsa::function::AmbiguousMemo<$Configuration>>(),
                             intern_ingredient_memo_types,
                         )
                     };

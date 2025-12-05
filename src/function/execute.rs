@@ -2,17 +2,18 @@ use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
-use crate::function::memo::Memo;
+use crate::function::memo::{Memo, NeverChangeMemo};
 use crate::function::sync::ReleaseMode;
-use crate::function::{ClaimGuard, Configuration, IngredientImpl};
+use crate::function::{ClaimGuard, Configuration, EitherMemoRef, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread;
+use crate::table::memo::Either;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
-use crate::{tracing, Cancelled, Cycle};
+use crate::{tracing, Cancelled, Cycle, Durability};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -39,12 +40,13 @@ where
         db: &'db C::DbView,
         mut claim_guard: ClaimGuard<'db>,
         zalsa_local: &'db ZalsaLocal,
-        opt_old_memo: Option<&Memo<'db, C>>,
-    ) -> Option<&'db Memo<'db, C>> {
+        opt_old_memo: Option<&'db Memo<'db, C>>,
+    ) -> Option<EitherMemoRef<'db, 'db, C>> {
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
 
         let id = database_key_index.key_index();
+
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         crate::tracing::info!("{:?}: executing query", database_key_index);
@@ -63,7 +65,7 @@ where
                     zalsa_local.push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
                 );
-                (new_value, active_query.pop())
+                (new_value, active_query.pop(C::FORCE_DURABILITY))
             }
             CycleRecoveryStrategy::FallbackImmediate => {
                 let (mut new_value, active_query) = Self::execute_query(
@@ -73,24 +75,27 @@ where
                     opt_old_memo,
                 );
 
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
 
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
                     if cycle_heads.contains(&database_key_index) {
                         // Ignore the computed value, leave the fallback value there.
-                        let memo = self
+                        let Either::Left(memo) = self
                             .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
                             .unwrap_or_else(|| {
                                 unreachable!(
                                     "{database_key_index:#?} is a `FallbackImmediate` cycle head, \
                                         but no memo found"
                                 )
-                            });
+                            })
+                        else {
+                            unreachable!("cycle participants cannot be `NeverChangeMemo`s")
+                        };
                         // We need to mark the memo as finalized so other cycle participants that have fallbacks
                         // will be verified (participants that don't have fallbacks will not be verified).
                         memo.revisions.verified_final.store(true, Ordering::Release);
-                        return Some(memo);
+                        return Some(Either::Left(memo));
                     }
 
                     // If we're in the middle of a cycle and we have a fallback, use it instead.
@@ -100,7 +105,7 @@ where
                     let active_query =
                         zalsa_local.push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                    completed_query = active_query.pop();
+                    completed_query = active_query.pop(C::FORCE_DURABILITY);
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
                     // When verifying this, we will see we have fallback and mark ourselves verified.
                     completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -135,16 +140,31 @@ where
             self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
 
-        let memo = self.insert_memo(
-            zalsa,
-            id,
-            Memo::new(
-                Some(new_value),
-                zalsa.current_revision(),
-                completed_query.revisions,
-            ),
-            memo_ingredient_index,
-        );
+        let memo = if completed_query.revisions.durability == Durability::NEVER_CHANGE
+            && completed_query.revisions.cycle_heads().is_empty()
+        {
+            // Only insert a `NeverChangeMemo` if we are not inside a cycle, or the cycle completed successfully.
+            // Cycles need dependency tracking.
+            self.insert_never_change_memo(
+                zalsa,
+                id,
+                NeverChangeMemo {
+                    value: Some(new_value),
+                },
+                memo_ingredient_index,
+            )
+        } else {
+            Either::Left(self.insert_memo(
+                zalsa,
+                id,
+                Memo::new(
+                    Some(new_value),
+                    zalsa.current_revision(),
+                    completed_query.revisions,
+                ),
+                memo_ingredient_index,
+            ))
+        };
 
         if claim_guard.drop() {
             None
@@ -232,7 +252,7 @@ where
                     panic!("{database_key_index:?}: execute: too many cycle iterations")
                 });
 
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
                 completed_query
                     .revisions
                     .update_iteration_count_mut(database_key_index, iteration_count);
@@ -312,7 +332,7 @@ where
                     claim_guard.set_release_mode(ReleaseMode::SelfOnly);
                 }
 
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
                 *completed_query.revisions.verified_final.get_mut() = false;
                 completed_query.revisions.set_cycle_heads(cycle_heads);
 
@@ -341,6 +361,12 @@ where
                                         but no provisional memo found"
                         )
                     });
+                let Either::Left(memo) = memo else {
+                    panic!(
+                        "during a cycle, no `NeverChangeMemo` is \
+                            inserted as fallback"
+                    );
+                };
 
                 debug_assert!(memo.may_be_provisional());
                 memo
@@ -392,7 +418,7 @@ where
                 }
             }
 
-            let mut completed_query = active_query.pop();
+            let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
 
             let value_converged = C::values_equal(&new_value, last_provisional_value);
 

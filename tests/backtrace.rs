@@ -81,13 +81,13 @@ fn backtrace_works() {
         query stacktrace:
            0: query_e(Id(1)) -> (R1, Durability::LOW)
                      at tests/backtrace.rs:32
-           1: query_d(Id(1)) -> (R1, Durability::HIGH)
+           1: query_d(Id(1)) -> (R1, Durability::NEVER_CHANGE)
                      at tests/backtrace.rs:27
-           2: query_c(Id(1)) -> (R1, Durability::HIGH)
+           2: query_c(Id(1)) -> (R1, Durability::NEVER_CHANGE)
                      at tests/backtrace.rs:22
-           3: query_b(Id(1)) -> (R1, Durability::HIGH)
+           3: query_b(Id(1)) -> (R1, Durability::NEVER_CHANGE)
                      at tests/backtrace.rs:17
-           4: query_a(Id(1)) -> (R1, Durability::HIGH)
+           4: query_a(Id(1)) -> (R1, Durability::NEVER_CHANGE)
                      at tests/backtrace.rs:12
     "#]]
     .assert_eq(&backtrace);
@@ -110,10 +110,10 @@ fn backtrace_works() {
         query stacktrace:
            0: query_e(Id(3)) -> (R1, Durability::LOW)
                      at tests/backtrace.rs:32
-           1: query_cycle(Id(3)) -> (R1, Durability::HIGH, iteration = 0)
+           1: query_cycle(Id(3)) -> (R1, Durability::NEVER_CHANGE, iteration = 0)
                      at tests/backtrace.rs:45
                      cycle heads: query_cycle(Id(3)) -> iteration = 0
-           2: query_f(Id(3)) -> (R1, Durability::HIGH)
+           2: query_f(Id(3)) -> (R1, Durability::NEVER_CHANGE)
                      at tests/backtrace.rs:40
     "#]]
     .assert_eq(&backtrace);
