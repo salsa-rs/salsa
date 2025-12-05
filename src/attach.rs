@@ -70,7 +70,10 @@ impl Attached {
             fn drop(&mut self) {
                 // Reset database to null if we did anything in `DbGuard::new`.
                 if let Some(attached) = self.state {
-                    attached.database.set(None);
+                    if let Some(prev) = attached.database.replace(None) {
+                        // SAFETY: `prev` is a valid pointer to a database.
+                        unsafe { prev.as_ref().zalsa_local().uncancel() };
+                    }
                 }
             }
         }
@@ -85,17 +88,36 @@ impl Attached {
         Db: ?Sized + Database,
     {
         struct DbGuard<'s> {
-            state: &'s Attached,
+            state: Option<&'s Attached>,
             prev: Option<NonNull<dyn Database>>,
         }
 
         impl<'s> DbGuard<'s> {
             #[inline]
             fn new(attached: &'s Attached, db: &dyn Database) -> Self {
-                let prev = attached.database.replace(Some(NonNull::from(db)));
-                Self {
-                    state: attached,
-                    prev,
+                let db = NonNull::from(db);
+                match attached.database.replace(Some(db)) {
+                    Some(prev) => {
+                        if std::ptr::eq(db.as_ptr(), prev.as_ptr()) {
+                            Self {
+                                state: None,
+                                prev: None,
+                            }
+                        } else {
+                            Self {
+                                state: Some(attached),
+                                prev: Some(prev),
+                            }
+                        }
+                    }
+                    None => {
+                        // Otherwise, set the database.
+                        attached.database.set(Some(db));
+                        Self {
+                            state: Some(attached),
+                            prev: None,
+                        }
+                    }
                 }
             }
         }
@@ -103,7 +125,13 @@ impl Attached {
         impl Drop for DbGuard<'_> {
             #[inline]
             fn drop(&mut self) {
-                self.state.database.set(self.prev);
+                // Reset database to null if we did anything in `DbGuard::new`.
+                if let Some(attached) = self.state {
+                    if let Some(prev) = attached.database.replace(self.prev) {
+                        // SAFETY: `prev` is a valid pointer to a database.
+                        unsafe { prev.as_ref().zalsa_local().uncancel() };
+                    }
+                }
             }
         }
 
