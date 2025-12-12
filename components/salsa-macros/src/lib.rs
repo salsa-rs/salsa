@@ -57,12 +57,12 @@ pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Implements a custom database trait.
 ///
-/// Apply this on a custom database trait's definition and the `struct` and `impl` items of
+/// Apply this on a custom database trait's definition and the [`struct`] and [`impl`] items of
 /// implementors.
 ///
-/// When applied to `struct` items, this macro implements the necessary supertraits required for `salsa::Database`.
+/// When applied to [`struct`] items, this macro implements the necessary supertraits required for `salsa::Database`.
 ///
-/// When applied to `trait` and `impl` items, this macro adds some hidden trait methods required for [`#[tracked]`](fn@tracked) functions.
+/// When applied to [`trait`] and [`impl`] items, this macro adds some hidden trait methods required for [`#[tracked]`](fn@tracked) functions.
 ///
 /// # Example
 ///
@@ -98,6 +98,10 @@ pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
 ///     }
 /// }
 /// ```
+///
+/// [`struct`]: https://doc.rust-lang.org/std/keyword.struct.html
+/// [`impl`]: https://doc.rust-lang.org/std/keyword.impl.html
+/// [`trait`]: https://doc.rust-lang.org/std/keyword.trait.html
 #[proc_macro_attribute]
 pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
     db::db(args, input)
@@ -105,13 +109,13 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Creates interned structs.
 ///
-/// **Container options:**
+/// **Container attributes:**
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 /// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
 /// - TODO
 ///
-/// **Field options:**
+/// **Field attributes:**
 ///
 /// - TODO
 ///
@@ -135,13 +139,13 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 
 /// Creates input structs.
 ///
-/// **Container options:**
+/// **Container attributes:**
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 /// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
 /// - TODO
 ///
-/// **Field options:**
+/// **Field attributes:**
 ///
 /// - `default`: Marks the field as tracked.
 /// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
@@ -167,11 +171,13 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
     input::input(args, input)
 }
 
-/// Creates tracked structs, functions and `impl`s.
+/// Creates tracked structs, functions and [`impl`]s.
 ///
 /// # Tracked structs
 ///
-/// **Container options:**
+/// **Tracked structs** are usually used as parameters to tracked functions. They can only be created inside tracked functions.
+///
+/// **Container attributes:**
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 /// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
@@ -182,9 +188,9 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   * Type of `serialize`: `fn(&Fields<'_>, S) -> Result<S::Ok, S::Error> where S: serde::Serializer`
 ///   * Type of `deserialize`: `fn(D) -> Result<Fields<'static>, D::Error> where D: serde::Deserializer<'de>`
 ///
-/// **Field options:**
+/// **Field attributes:**
 ///
-/// - `tracked`: Marks the field as tracked.
+/// - `tracked`: Marks the field as tracked. TODO: what does this actually mean? Fields without this attribute must implement [`Hash`](std::hash::Hash).
 /// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
 /// - `no_eq`: Signal that the output type does not implement the `Eq` trait (incompatible with `cycle_fn`)
 /// - `get`: Name of the getter function (default: field name)
@@ -192,12 +198,11 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// # Tracked functions
 ///
-/// When you call a tracked function, Salsa will track which inputs it accesses and memoize the return value based on it. This data is saved in the database. When it's called again, the inputs are compared. If they're identical, the first.
+/// When you call a **tracked function**, Salsa will track which inputs it accesses and memoize the return value based on it. This data is saved in the database. When it's called again, the inputs are compared. If they're identical, the first call's return value is returned.
 ///
-/// Tracked functions always take the database as the first argument and can take [`#[input]`](fn@input), [`#[tracked]`](fn@tracked), [`#[interned]`](fn@interned) and [`#[accumulator]`](fn@accumulator) structs for the rest.
-/// arguments.
+/// Tracked functions always take the database as the first argument and can take [`#[input]`](fn@input), [`#[tracked]`](fn@tracked), [`#[interned]`](fn@interned) and [`#[accumulator]`](fn@accumulator) structs for the rest of the arguments.
 ///
-/// **Options:**
+/// **Attributes:**
 ///
 /// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
 /// - `specify`: Signal that the value can be externally specified (only works with a single Salsa struct as the input. incompatible with `lru`)
@@ -211,7 +216,7 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `self_ty = <Ty>`: Set the self type of the tracked impl, merely to refine the query name
 /// - `persist` (Only with <span class="stab portability"><code>persistence</code></span> feature)
 ///
-/// # Tracked `impl`s
+/// # Tracked [`impl`]s
 ///
 /// TODO
 ///
@@ -236,6 +241,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// }
 ///
 /// ```
+///
+/// [`impl`]: https://doc.rust-lang.org/std/keyword.impl.html
 #[proc_macro_attribute]
 pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
     tracked::tracked(args, input)
