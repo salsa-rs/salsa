@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.24.0...salsa-v0.25.0) - 2025-12-16
+
+### Other
+
+- Require interned structs' fields to be `Update` ([#1036](https://github.com/salsa-rs/salsa/pull/1036))
+- Make `ordermap` an optional feature ([#1034](https://github.com/salsa-rs/salsa/pull/1034))
+- implement `Update` for `OrderMap` and `OrderSet` ([#1033](https://github.com/salsa-rs/salsa/pull/1033))
+- Fully qualify std Result type ([#1025](https://github.com/salsa-rs/salsa/pull/1025))
+- pass `Cycle` to the cycle recovery function ([#1028](https://github.com/salsa-rs/salsa/pull/1028))
+- Fix cycle head durability ([#1024](https://github.com/salsa-rs/salsa/pull/1024))
+- Call `cycle_fn` for every iteration ([#1021](https://github.com/salsa-rs/salsa/pull/1021))
+- Track cycle function dependencies as part of the cyclic query ([#1018](https://github.com/salsa-rs/salsa/pull/1018))
+- Always increment iteration count ([#1017](https://github.com/salsa-rs/salsa/pull/1017))
+- Update compile fail snapshots to match new rust stable output ([#1020](https://github.com/salsa-rs/salsa/pull/1020))
+- Only use provisional values from the same revision ([#1019](https://github.com/salsa-rs/salsa/pull/1019))
+- Explain the motivation for breaking API changes made in #1012 and #1015 ([#1016](https://github.com/salsa-rs/salsa/pull/1016))
+- Expose the Input query Id with  cycle_initial ([#1015](https://github.com/salsa-rs/salsa/pull/1015))
+- Add `SyncTable::peek_claim` fast path for `function::Ingredient::wait_for` ([#1011](https://github.com/salsa-rs/salsa/pull/1011))
+- Fix cache invalidation when cycle head becomes non-head ([#1014](https://github.com/salsa-rs/salsa/pull/1014))
+- Expose the query ID and the last provisional value to the cycle recovery function ([#1012](https://github.com/salsa-rs/salsa/pull/1012))
+- Fix hangs in multithreaded fixpoint iteration ([#1010](https://github.com/salsa-rs/salsa/pull/1010))
+- Remove experimental parallel feature ([#1013](https://github.com/salsa-rs/salsa/pull/1013))
+- Simplify `WaitGroup` implementation  ([#958](https://github.com/salsa-rs/salsa/pull/958))
+- Fix missing license files in published macros/macro-rules crates ([#1009](https://github.com/salsa-rs/salsa/pull/1009))
+- Run fixpoint per strongly connected component ([#999](https://github.com/salsa-rs/salsa/pull/999))
+- Add benchmark for a fixpoint iteration with nested cycles ([#1001](https://github.com/salsa-rs/salsa/pull/1001))
+
 ## [0.24.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.23.0...salsa-v0.24.0) - 2025-09-30
 
 ### Fixed

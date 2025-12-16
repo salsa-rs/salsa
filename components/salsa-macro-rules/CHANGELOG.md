@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.24.0...salsa-macro-rules-v0.25.0) - 2025-12-16
+
+### Other
+
+- Require interned structs' fields to be `Update` ([#1036](https://github.com/salsa-rs/salsa/pull/1036))
+- Fully qualify std Result type ([#1025](https://github.com/salsa-rs/salsa/pull/1025))
+- pass `Cycle` to the cycle recovery function ([#1028](https://github.com/salsa-rs/salsa/pull/1028))
+- Call `cycle_fn` for every iteration ([#1021](https://github.com/salsa-rs/salsa/pull/1021))
+- Expose the Input query Id with  cycle_initial ([#1015](https://github.com/salsa-rs/salsa/pull/1015))
+- Expose the query ID and the last provisional value to the cycle recovery function ([#1012](https://github.com/salsa-rs/salsa/pull/1012))
+- Fix missing license files in published macros/macro-rules crates ([#1009](https://github.com/salsa-rs/salsa/pull/1009))
+- Add benchmark for a fixpoint iteration with nested cycles ([#1001](https://github.com/salsa-rs/salsa/pull/1001))
+
 ## [0.24.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.23.0...salsa-macro-rules-v0.24.0) - 2025-09-30
 
 ### Fixed
