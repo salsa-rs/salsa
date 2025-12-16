@@ -36,7 +36,7 @@ impl AllowedOptions for TrackedFn {
 
     const NO_LIFETIME: bool = false;
 
-    const NON_UPDATE_RETURN_TYPE: bool = true;
+    const NON_UPDATE_TYPES: bool = true;
 
     const SINGLETON: bool = false;
 
@@ -102,7 +102,7 @@ impl Macro {
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
-        let requires_update = self.args.non_update_return_type.is_none();
+        let requires_update = self.args.non_update_types.is_none();
         let heap_size_fn = self.args.heap_size_fn.iter();
         let eq = if let Some(token) = &self.args.no_eq {
             if self.args.cycle_fn.is_some() {
@@ -187,21 +187,12 @@ impl Macro {
 
         let persist = self.args.persist();
 
-        // The path expression is responsible for emitting the primary span in the diagnostic we
-        // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted
-        // at the return type in the original input.
-        // See the tests/compile-fail/tracked_fn_return_ref.rs test
-        let maybe_update_path = quote_spanned! {output_ty.span() =>
-            UpdateDispatch::<#output_ty>::maybe_update
-        };
-        let assert_return_type_is_update = if requires_update {
-            quote! {
-                #[allow(clippy::all, warnings)]
-                fn _assert_return_type_is_update<#db_lt>()  {
-                    use #zalsa::{UpdateFallback, UpdateDispatch};
-                    #maybe_update_path;
-                }
+        let assert_types_are_update = if requires_update {
+            let mut assert_update = vec![output_ty.clone()];
+            if needs_interner {
+                assert_update.extend(interned_input_tys.clone());
             }
+            crate::update::assert_update(&db_lt, &zalsa, assert_update)
         } else {
             quote! {}
         };
@@ -234,7 +225,7 @@ impl Macro {
                 lru: #lru,
                 return_mode: #return_mode,
                 persist: #persist,
-                assert_return_type_is_update: { #assert_return_type_is_update },
+                assert_types_are_update: { #assert_types_are_update },
                 #self_ty
                 unused_names: [
                     #zalsa,

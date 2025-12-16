@@ -67,7 +67,7 @@ macro_rules! setup_tracked_fn {
         // If true, the input and output values implement `serde::{Serialize, Deserialize}`.
         persist: $persist:tt,
 
-        assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
+        assert_types_are_update: {$($assert_types_are_update:tt)*},
 
         $(self_ty: $self_ty:ty,)?
 
@@ -295,7 +295,7 @@ macro_rules! setup_tracked_fn {
                 )?
 
                 fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
-                    $($assert_return_type_is_update)*
+                    $($assert_types_are_update)*
 
                     $($inner_fn)*
 

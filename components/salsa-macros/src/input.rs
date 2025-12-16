@@ -43,7 +43,7 @@ impl AllowedOptions for InputStruct {
 
     const NO_LIFETIME: bool = false;
 
-    const NON_UPDATE_RETURN_TYPE: bool = false;
+    const NON_UPDATE_TYPES: bool = false;
 
     const SINGLETON: bool = true;
 

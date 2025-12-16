@@ -147,3 +147,26 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
 
     Ok(crate::debug::dump_tokens(&input.ident, tokens))
 }
+
+pub(crate) fn assert_update(
+    db_lt: &syn::Lifetime,
+    zalsa: &syn::Ident,
+    types: impl IntoIterator<Item = syn::Type>,
+) -> TokenStream {
+    // The path expression is responsible for emitting the primary span in the diagnostic we
+    // want, so by uniformly using `ty.span()` we ensure that the diagnostic is emitted
+    // at the type in the original input.
+    // See the tests/compile-fail/tracked_fn_return_ref.rs test
+    let maybe_update_paths = types.into_iter().map(|ty| {
+        quote_spanned! {ty.span() =>
+            UpdateDispatch::<#ty>::maybe_update
+        }
+    });
+    quote! {
+        #[allow(clippy::all, warnings)]
+        fn _assert_return_type_is_update<#db_lt>()  {
+            use #zalsa::{UpdateFallback, UpdateDispatch};
+            #( #maybe_update_paths; )*
+        }
+    }
+}

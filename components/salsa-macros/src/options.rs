@@ -43,12 +43,13 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `specify` identifier.
     pub specify: Option<syn::Ident>,
 
-    /// The `non_update_return_type` option is used to signal that a tracked function's
-    /// return type does not require `Update` to be implemented. This is unsafe and
-    /// generally discouraged as it allows for dangling references.
+    /// The `non_update_types` option is used to signal that a tracked function's
+    /// return type or interned parameter, or an interned struct's fields does not
+    /// require `Update` to be implemented. This is unsafe and generally discouraged
+    /// as it allows for dangling references.
     ///
-    /// If this is `Some`, the value is the `non_update_return_type` identifier.
-    pub non_update_return_type: Option<syn::Ident>,
+    /// If this is `Some`, the value is the `non_update_types` identifier.
+    pub non_update_types: Option<syn::Ident>,
 
     /// The `persist` options indicates that the ingredient should be persisted with the database.
     ///
@@ -139,7 +140,7 @@ impl<A: AllowedOptions> Default for Options<A> {
         Self {
             returns: Default::default(),
             specify: Default::default(),
-            non_update_return_type: Default::default(),
+            non_update_types: Default::default(),
             no_eq: Default::default(),
             debug: Default::default(),
             no_lifetime: Default::default(),
@@ -168,7 +169,7 @@ pub(crate) trait AllowedOptions {
     const NO_EQ: bool;
     const DEBUG: bool;
     const NO_LIFETIME: bool;
-    const NON_UPDATE_RETURN_TYPE: bool;
+    const NON_UPDATE_TYPES: bool;
     const SINGLETON: bool;
     const DATA: bool;
     const DB: bool;
@@ -263,12 +264,12 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     ));
                 }
             } else if ident == "unsafe" {
-                if A::NON_UPDATE_RETURN_TYPE {
+                if A::NON_UPDATE_TYPES {
                     let content;
                     parenthesized!(content in input);
                     let ident = syn::Ident::parse_any(&content)?;
                     if ident == "non_update_return_type" {
-                        if let Some(old) = options.non_update_return_type.replace(ident) {
+                        if let Some(old) = options.non_update_types.replace(ident) {
                             return Err(syn::Error::new(
                                 old.span(),
                                 "option `non_update_return_type` provided twice",
@@ -562,7 +563,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             no_lifetime,
             singleton,
             specify,
-            non_update_return_type,
+            non_update_types,
             db_path,
             cycle_fn,
             cycle_initial,
@@ -595,8 +596,8 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         if specify.is_some() {
             tokens.extend(quote::quote! { specify, });
         }
-        if non_update_return_type.is_some() {
-            tokens.extend(quote::quote! { unsafe(non_update_return_type), });
+        if non_update_types.is_some() {
+            tokens.extend(quote::quote! { unsafe(non_update_types), });
         }
         if let Some(db_path) = db_path {
             tokens.extend(quote::quote! { db = #db_path, });
