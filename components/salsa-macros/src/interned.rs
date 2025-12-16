@@ -43,7 +43,7 @@ impl AllowedOptions for InternedStruct {
 
     const NO_LIFETIME: bool = true;
 
-    const NON_UPDATE_TYPES: bool = false;
+    const NON_UPDATE_TYPES: bool = true;
 
     const SINGLETON: bool = true;
 
