@@ -268,18 +268,15 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     let content;
                     parenthesized!(content in input);
                     let ident = syn::Ident::parse_any(&content)?;
-                    if ident == "non_update_return_type" {
+                    if ident == "non_update_types" {
                         if let Some(old) = options.non_update_types.replace(ident) {
                             return Err(syn::Error::new(
                                 old.span(),
-                                "option `non_update_return_type` provided twice",
+                                "option `non_update_types` provided twice",
                             ));
                         }
                     } else {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            "expected `non_update_return_type`",
-                        ));
+                        return Err(syn::Error::new(ident.span(), "expected `non_update_types`"));
                     }
                 } else {
                     return Err(syn::Error::new(

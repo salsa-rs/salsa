@@ -14,7 +14,7 @@ struct MyInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NotUpdate<'a>(PhantomData<fn() -> &'a ()>);
 
-#[salsa::tracked(unsafe(non_update_return_type))]
+#[salsa::tracked(unsafe(non_update_types))]
 fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> NotUpdate<'_> {
     NotUpdate(PhantomData)
 }
