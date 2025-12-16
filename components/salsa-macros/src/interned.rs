@@ -43,7 +43,7 @@ impl AllowedOptions for InternedStruct {
 
     const NO_LIFETIME: bool = true;
 
-    const NON_UPDATE_RETURN_TYPE: bool = false;
+    const NON_UPDATE_TYPES: bool = false;
 
     const SINGLETON: bool = true;
 
@@ -145,6 +145,12 @@ impl Macro {
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
 
+        let assert_types_are_update = if self.args.non_update_types.is_none() {
+            crate::update::assert_update(&db_lt, &zalsa, field_tys.iter().map(|ty| (**ty).clone()))
+        } else {
+            quote! {}
+        };
+
         Ok(crate::debug::dump_tokens(
             struct_ident,
             quote! {
@@ -173,6 +179,7 @@ impl Macro {
                     persist: #persist,
                     serialize_fn: #(#serialize_fn)*,
                     deserialize_fn: #(#deserialize_fn)*,
+                    assert_types_are_update: { #assert_types_are_update },
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

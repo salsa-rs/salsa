@@ -78,6 +78,8 @@ macro_rules! setup_interned_struct {
         // The path to the `serialize` function for the value's fields.
         deserialize_fn: $($deserialize_fn:path)?,
 
+        assert_types_are_update: {$($assert_types_are_update:tt)*},
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -291,6 +293,8 @@ macro_rules! setup_interned_struct {
 
             unsafe impl< $($db_lt_arg)? > $zalsa::Update for $Struct< $($db_lt_arg)? > {
                 unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    $($assert_types_are_update)*
+
                     if unsafe { *old_pointer } != new_value {
                         unsafe { *old_pointer = new_value };
                         true
