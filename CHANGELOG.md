@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.25.1...salsa-v0.25.2) - 2025-12-17
+
+### Other
+
+- Revert #958 ([#1039](https://github.com/salsa-rs/salsa/pull/1039))
+
 ## [0.25.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.25.0...salsa-v0.25.1) - 2025-12-16
 
 ### Other
