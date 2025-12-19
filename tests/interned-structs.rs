@@ -78,6 +78,14 @@ struct InternedStringWithCustomIdAndNoLifetime<'db> {
     data: String,
 }
 
+#[derive(salsa::Update, Clone, Eq, PartialEq, Hash, Debug)]
+struct Generic<T>(T);
+
+#[salsa::interned(debug)]
+struct InternedOverGeneric {
+    value: Generic<String>,
+}
+
 #[salsa::tracked]
 fn intern_stuff(db: &dyn salsa::Database) -> String {
     let s1 = InternedString::new(db, "Hello, ".to_string());
@@ -215,5 +223,14 @@ fn interning_reference() {
 
     let s1 = InternedFoo::new(&db, Foo);
     let s2 = InternedFoo::new(&db, &Foo);
+    assert_eq!(s1, s2);
+}
+
+#[test]
+fn interned_generic() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedOverGeneric::new(&db, Generic("test".to_string()));
+    let s2 = InternedOverGeneric::new(&db, Generic("test".to_string()));
     assert_eq!(s1, s2);
 }

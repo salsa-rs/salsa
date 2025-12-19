@@ -130,7 +130,10 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
         .collect::<syn::Result<_>>()?;
 
     let ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics = input.generics;
+    let generics = add_trait_bounds(generics);
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let tokens = quote! {
         #[allow(clippy::all)]
         #[automatically_derived]
@@ -146,6 +149,16 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     };
 
     Ok(crate::debug::dump_tokens(&input.ident, tokens))
+}
+
+// Add a bound `T: salsa::Update` to every type parameter T
+fn add_trait_bounds(mut generics: syn::Generics) -> syn::Generics {
+    for param in &mut generics.params {
+        if let syn::GenericParam::Type(type_param) = param {
+            type_param.bounds.push(syn::parse_quote!(::salsa::Update));
+        }
+    }
+    generics
 }
 
 pub(crate) fn assert_update(
