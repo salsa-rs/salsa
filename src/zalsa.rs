@@ -74,9 +74,7 @@ pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
     /// The maximum supported ingredient index.
-    ///
-    /// This reserves one bit for an optional tag.
-    const MAX_INDEX: u32 = 0x7FFF_FFFF;
+    const MAX_INDEX: u32 = 0x3FFF_FFFF;
 
     /// Create an ingredient index from a `u32`.
     pub(crate) fn new(v: u32) -> Self {
@@ -95,24 +93,12 @@ impl IngredientIndex {
     }
 
     /// Convert the ingredient index back into a `u32`.
-    pub(crate) fn as_u32(self) -> u32 {
+    pub(crate) const fn as_u32(self) -> u32 {
         self.0
     }
 
     pub fn successor(self, index: usize) -> Self {
         IngredientIndex(self.0 + 1 + index as u32)
-    }
-
-    /// Returns a new `IngredientIndex` with the tag bit set to the provided value.
-    pub(crate) fn with_tag(mut self, tag: bool) -> IngredientIndex {
-        self.0 &= Self::MAX_INDEX;
-        self.0 |= (tag as u32) << 31;
-        self
-    }
-
-    /// Returns the value of the tag bit.
-    pub(crate) fn tag(self) -> bool {
-        self.0 & !Self::MAX_INDEX != 0
     }
 }
 

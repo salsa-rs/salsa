@@ -39,10 +39,11 @@ where
         // * Q4 invokes Q2 and then Q1
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
-        let database_key_index = <C::Input<'db>>::database_key_index(zalsa, key);
-        if !zalsa_local.is_tracked_struct_of_active_query(database_key_index) {
+        let ingredient_index = <C::Input<'db>>::ingredient_index(zalsa, key);
+        if !zalsa_local.is_tracked_struct_of_active_query(key, ingredient_index) {
             panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
+        let database_key_index = DatabaseKeyIndex::new_non_interned(ingredient_index, key);
 
         // Subtle: we treat the "input" to a set query as if it were
         // volatile.
@@ -68,7 +69,10 @@ where
             revisions: QueryRevisions {
                 changed_at: current_deps.changed_at,
                 durability: current_deps.durability,
-                origin: QueryOrigin::assigned(active_query_key),
+                origin: QueryOrigin::assigned(
+                    active_query_key.key_index(),
+                    active_query_key.ingredient_index_with_zalsa(zalsa),
+                ),
                 #[cfg(feature = "accumulator")]
                 accumulated_inputs: Default::default(),
                 verified_final: AtomicBool::new(true),
@@ -102,8 +106,7 @@ where
         self.insert_memo(zalsa, key, memo, memo_ingredient_index);
 
         // Record that the current query *specified* a value for this cell.
-        let database_key_index = self.database_key_index(key);
-        zalsa_local.add_output(database_key_index);
+        zalsa_local.add_output(key, self.index);
     }
 
     /// Invoked when the query `executor` has been validated as having green inputs

@@ -260,7 +260,7 @@ where
         }
 
         for (identity, id) in self.revisions.tracked_struct_ids() {
-            let key = DatabaseKeyIndex::new(identity.ingredient_index(), *id);
+            let key = DatabaseKeyIndex::new_non_interned(identity.ingredient_index(), *id);
             key.remove_stale_output(zalsa, executor);
         }
     }
@@ -447,7 +447,7 @@ impl<'me> Iterator for TryClaimCycleHeadsIter<'me> {
         let head_key_index = head_database_key.key_index();
         let ingredient = self
             .zalsa
-            .lookup_ingredient(head_database_key.ingredient_index());
+            .lookup_ingredient(head_database_key.ingredient_index_with_zalsa(self.zalsa));
 
         match ingredient.wait_for(self.zalsa, head_key_index) {
             WaitForResult::Cycle { .. } => {
