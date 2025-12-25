@@ -234,25 +234,29 @@ impl ZalsaLocal {
     }
 
     /// Add an output to the current query's list of dependencies
-    pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) {
+    pub(crate) fn add_output(&self, key: Id, ingredient_index: IngredientIndex) {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
                 if let Some(top_query) = stack.last_mut() {
-                    top_query.add_output(entity)
+                    top_query.add_output(key, ingredient_index)
                 }
             })
         }
     }
 
     /// Check whether `entity` is a tracked struct that was created by the currently active query (if any)
-    pub(crate) fn is_tracked_struct_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
+    pub(crate) fn is_tracked_struct_of_active_query(
+        &self,
+        id: Id,
+        ingredient: IngredientIndex,
+    ) -> bool {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
-                stack
-                    .last_mut()
-                    .is_some_and(|top_query| top_query.tracked_struct_ids().is_active(entity))
+                stack.last_mut().is_some_and(|top_query| {
+                    top_query.tracked_struct_ids().is_active(id, ingredient)
+                })
             })
         }
     }
@@ -963,13 +967,11 @@ impl QueryOrigin {
     }
 
     /// Create a query origin of type `QueryOriginKind::Assigned`, with the given key.
-    pub fn assigned(key: DatabaseKeyIndex) -> QueryOrigin {
+    pub fn assigned(key: Id, ingredient_index: IngredientIndex) -> QueryOrigin {
         QueryOrigin {
             kind: QueryOriginKind::Assigned,
-            metadata: key.ingredient_index().as_u32(),
-            data: QueryOriginData {
-                index: key.key_index(),
-            },
+            metadata: ingredient_index.as_u32(),
+            data: QueryOriginData { index: key },
         }
     }
 
@@ -984,7 +986,10 @@ impl QueryOrigin {
                 // is `QueryOriginKind::Assigned`.
                 let ingredient_index = unsafe { IngredientIndex::new_unchecked(self.metadata) };
 
-                QueryOriginRef::Assigned(DatabaseKeyIndex::new(ingredient_index, index))
+                QueryOriginRef::Assigned(DatabaseKeyIndex::new_non_interned(
+                    ingredient_index,
+                    index,
+                ))
             }
 
             QueryOriginKind::Derived => {
@@ -1046,7 +1051,10 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
         }
 
         Ok(match QueryOriginOwned::deserialize(deserializer)? {
-            QueryOriginOwned::Assigned(key) => QueryOrigin::assigned(key),
+            QueryOriginOwned::Assigned(key) => {
+                // It's safe to assert_non_interned since only specify can produce `Assigned`, and it will not contain an interned.
+                QueryOrigin::assigned(key.key_index(), key.ingredient_index_assert_non_interned())
+            }
             QueryOriginOwned::Derived(edges) => QueryOrigin::derived(edges),
             QueryOriginOwned::DerivedUntracked(edges) => QueryOrigin::derived_untracked(edges),
             QueryOriginOwned::FixpointInitial => QueryOrigin::fixpoint_initial(),
@@ -1106,26 +1114,20 @@ impl QueryEdge {
     }
 
     /// Create an output query edge with the given index.
-    pub fn output(key: DatabaseKeyIndex) -> QueryEdge {
-        let ingredient_index = key.ingredient_index().with_tag(true);
-
+    pub fn output(key: Id, ingredient_index: IngredientIndex) -> QueryEdge {
         Self {
-            key: DatabaseKeyIndex::new(ingredient_index, key.key_index()),
+            key: DatabaseKeyIndex::new_non_interned_with_tag(ingredient_index, key),
         }
     }
 
     /// Return the key of this query edge.
     pub fn key(self) -> DatabaseKeyIndex {
-        // Clear the tag to restore the original index.
-        DatabaseKeyIndex::new(
-            self.key.ingredient_index().with_tag(false),
-            self.key.key_index(),
-        )
+        self.key
     }
 
     /// Returns the kind of this query edge.
     pub fn kind(self) -> QueryEdgeKind {
-        if self.key.ingredient_index().tag() {
+        if self.key.has_tag() {
             QueryEdgeKind::Output(self.key())
         } else {
             QueryEdgeKind::Input(self.key())

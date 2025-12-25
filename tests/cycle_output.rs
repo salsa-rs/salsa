@@ -188,12 +188,12 @@ fn revalidate_with_change_after_output_read() {
             "salsa_event(DidDiscard { key: read_value(Id(403)) })",
             "salsa_event(WillIterateCycle { database_key: query_b(Id(0)), iteration_count: IterationCount(1) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_value(Id(401g1)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(401)) })",
             "salsa_event(WillIterateCycle { database_key: query_b(Id(0)), iteration_count: IterationCount(2) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_value(Id(402g1)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(402)) })",
             "salsa_event(WillIterateCycle { database_key: query_b(Id(0)), iteration_count: IterationCount(3) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_value(Id(403g1)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(403)) })",
         ]"#]]);
 }

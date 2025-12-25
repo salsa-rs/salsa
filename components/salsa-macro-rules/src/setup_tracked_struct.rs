@@ -300,8 +300,8 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $zalsa::TrackedStructInDb for $Struct<'_> {
-                fn database_key_index(zalsa: &$zalsa::Zalsa, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
-                    $Configuration::ingredient_(zalsa).database_key_index(id)
+                fn ingredient_index(zalsa: &$zalsa::Zalsa, id: $zalsa::Id) -> $zalsa::IngredientIndex {
+                    $Configuration::ingredient_(zalsa).ingredient_index()
                 }
             }
 

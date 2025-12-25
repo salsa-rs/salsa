@@ -51,7 +51,7 @@ where
                 continue;
             }
 
-            let ingredient = zalsa.lookup_ingredient(k.ingredient_index());
+            let ingredient = zalsa.lookup_ingredient(k.ingredient_index_with_zalsa(zalsa));
             // Extend `output` with any values accumulated by `k`.
             // SAFETY: `db` owns the `ingredient`
             let (accumulated_map, input) =

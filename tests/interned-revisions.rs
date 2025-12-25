@@ -160,7 +160,7 @@ fn test_immortal() {
         input.set_field1(&mut db).to(i);
         let result = function(&db, input);
         assert_eq!(result.field1(&db).0, i);
-        assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);
+        assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 1);
     }
 }
 

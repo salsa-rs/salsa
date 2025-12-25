@@ -712,7 +712,7 @@ where
                 let ingredient_index =
                     zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 
-                let executor = DatabaseKeyIndex::new(ingredient_index, id);
+                let executor = DatabaseKeyIndex::new_non_interned(ingredient_index, id);
 
                 zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
@@ -766,7 +766,7 @@ where
     /// Returns the database key index for an interned value with the given id.
     #[inline]
     pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.ingredient_index, id)
+        DatabaseKeyIndex::new_interned(self.ingredient_index, id)
     }
 
     /// Lookup the data for an interned value based on its ID.
