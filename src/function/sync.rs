@@ -97,7 +97,7 @@ impl SyncTable {
                 // not to gate future atomic reads.
                 *anyone_waiting = true;
                 match zalsa.runtime().block(
-                    DatabaseKeyIndex::new(self.ingredient, key_index),
+                    DatabaseKeyIndex::new_non_interned(self.ingredient, key_index),
                     id,
                     write,
                 ) {
@@ -155,7 +155,7 @@ impl SyncTable {
                 // not to gate future atomic reads.
                 *anyone_waiting = true;
                 match zalsa.runtime().block(
-                    DatabaseKeyIndex::new(self.ingredient, key_index),
+                    DatabaseKeyIndex::new_non_interned(self.ingredient, key_index),
                     id,
                     write,
                 ) {
@@ -176,7 +176,7 @@ impl SyncTable {
         reentrant: Reentrancy,
     ) -> Result<ClaimResult<'me>, Box<BlockOnTransferredOwner<'me>>> {
         let key_index = *entry.key();
-        let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
+        let database_key_index = DatabaseKeyIndex::new_non_interned(self.ingredient, key_index);
         let thread_id = thread::current().id();
 
         match zalsa
@@ -230,7 +230,7 @@ impl SyncTable {
         reentrant: Reentrancy,
     ) -> Result<ClaimResult<'me, ()>, Box<BlockOnTransferredOwner<'me>>> {
         let key_index = *entry.key();
-        let database_key_index = DatabaseKeyIndex::new(self.ingredient, key_index);
+        let database_key_index = DatabaseKeyIndex::new_non_interned(self.ingredient, key_index);
         let thread_id = thread::current().id();
 
         match zalsa
@@ -303,7 +303,11 @@ impl<'me> ClaimGuard<'me> {
     }
 
     pub(crate) const fn database_key_index(&self) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index)
+        DatabaseKeyIndex::new_non_interned(self.sync_table.ingredient, self.key_index)
+    }
+
+    pub(crate) fn key_index(&self) -> Id {
+        self.key_index
     }
 
     pub(crate) fn set_release_mode(&mut self, mode: ReleaseMode) {
@@ -370,7 +374,9 @@ impl<'me> ClaimGuard<'me> {
     #[cold]
     #[inline(never)]
     pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) -> bool {
-        let owner_ingredient = self.zalsa.lookup_ingredient(new_owner.ingredient_index());
+        let owner_ingredient = self
+            .zalsa
+            .lookup_ingredient(new_owner.ingredient_index_with_zalsa(self.zalsa));
 
         // Get the owning thread of `new_owner`.
         // The thread id is guaranteed to not be stale because `new_owner` must be blocked on `self_key`

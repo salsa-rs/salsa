@@ -169,8 +169,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
 }
 
 pub trait TrackedStructInDb: SalsaStructInDb {
-    /// Converts the identifier for this tracked struct into a `DatabaseKeyIndex`.
-    fn database_key_index(zalsa: &Zalsa, id: Id) -> DatabaseKeyIndex;
+    fn ingredient_index(zalsa: &Zalsa, id: Id) -> IngredientIndex;
 }
 
 /// Created for each tracked struct.
@@ -311,13 +310,10 @@ impl IdentityMap {
     }
 
     /// Returns `true` if the given tracked struct key was created in the current query execution.
-    pub(crate) fn is_active(&self, key: DatabaseKeyIndex) -> bool {
+    pub(crate) fn is_active(&self, id: Id, ingredient: IngredientIndex) -> bool {
         self.table
             .iter()
-            .find(|entry| {
-                entry.id == key.key_index()
-                    && entry.identity.ingredient_index() == key.ingredient_index()
-            })
+            .find(|entry| entry.id == id && entry.identity.ingredient_index() == ingredient)
             .is_some_and(|entry| entry.active)
     }
 
@@ -480,9 +476,14 @@ where
         }
     }
 
+    #[inline]
+    pub fn ingredient_index(&self) -> IngredientIndex {
+        self.ingredient_index
+    }
+
     /// Returns the database key index for a tracked struct with the given id.
     pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.ingredient_index, id)
+        DatabaseKeyIndex::new_non_interned(self.ingredient_index, id)
     }
 
     pub fn new_struct<'db>(
@@ -825,7 +826,7 @@ where
                 let ingredient_index =
                     zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 
-                let executor = DatabaseKeyIndex::new(ingredient_index, id);
+                let executor = DatabaseKeyIndex::new_non_interned(ingredient_index, id);
 
                 zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
@@ -871,7 +872,7 @@ where
         let field_changed_at = data.revisions[relative_tracked_index];
 
         zalsa_local.report_tracked_read_simple(
-            DatabaseKeyIndex::new(field_ingredient_index, id),
+            DatabaseKeyIndex::new_non_interned(field_ingredient_index, id),
             data.durability,
             field_changed_at,
         );

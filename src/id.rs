@@ -20,6 +20,11 @@ use crate::zalsa::Zalsa;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id {
     index: NonZeroU32,
+    /// `generation` is shifted by one bit, to allow bit tagging for `DatabaseKeyIndex`.
+    /// The LSB is always 1.
+    ///
+    /// We chose to tag the LSB and not the MSB because then the generation can be treated
+    /// as a continuous integer, without special treatment.
     generation: u32,
 }
 
@@ -46,7 +51,7 @@ impl Id {
         Id {
             // SAFETY: Caller obligation.
             index: unsafe { NonZeroU32::new_unchecked(index + 1) },
-            generation: 0,
+            generation: 0b1,
         }
     }
 
@@ -65,6 +70,7 @@ impl Id {
         // SAFETY: Caller obligation.
         let index = unsafe { NonZeroU32::new_unchecked(bits as u32) };
         let generation = (bits >> 32) as u32;
+        debug_assert!((generation & 0b1) == 0b1);
 
         Id { index, generation }
     }
@@ -78,6 +84,7 @@ impl Id {
     pub const fn from_bits(bits: u64) -> Self {
         let index = NonZeroU32::new(bits as u32).expect("attempted to create invalid `Id`");
         let generation = (bits >> 32) as u32;
+        debug_assert!((generation & 0b1) == 0b1);
 
         Id { index, generation }
     }
@@ -94,9 +101,10 @@ impl Id {
     /// is `u32::MAX`.
     #[inline]
     pub fn next_generation(self) -> Option<Id> {
-        self.generation()
-            .checked_add(1)
-            .map(|generation| self.with_generation(generation))
+        self.generation.checked_add(1).map(|generation| Id {
+            index: self.index,
+            generation: generation | 0b1,
+        })
     }
 
     /// Mark the `Id` with a generation.
@@ -108,8 +116,20 @@ impl Id {
     pub const fn with_generation(self, generation: u32) -> Id {
         Id {
             index: self.index,
-            generation,
+            generation: (generation << 1) | 0b1,
         }
+    }
+
+    #[inline]
+    pub(crate) const fn index_nonzero(self) -> NonZeroU32 {
+        self.index
+    }
+
+    #[inline]
+    pub(crate) fn from_raw_parts(index: NonZeroU32, generation: u32) -> Self {
+        debug_assert!(index.get() <= Self::MAX_U32);
+        debug_assert!((generation & 0b1) == 0b1);
+        Self { index, generation }
     }
 
     /// Return the index portion of this `Id`.
@@ -154,10 +174,11 @@ impl<'de> serde::Deserialize<'de> for Id {
 
 impl Debug for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.generation() == 0 {
+        let generation = self.generation() >> 1;
+        if generation == 0 {
             write!(f, "Id({:x})", self.index())
         } else {
-            write!(f, "Id({:x}g{:x})", self.index(), self.generation())
+            write!(f, "Id({:x}g{:x})", self.index(), generation)
         }
     }
 }

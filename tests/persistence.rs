@@ -63,7 +63,7 @@ fn everything() {
           },
           "ingredients": {
             "0": {
-              "1": {
+              "4294967297": {
                 "durabilities": [
                   0
                 ],
@@ -74,7 +74,7 @@ fn everything() {
                   1
                 ]
               },
-              "2": {
+              "4294967298": {
                 "durabilities": [
                   0
                 ],
@@ -113,7 +113,7 @@ fn everything() {
           },
           "ingredients": {
             "0": {
-              "1": {
+              "4294967297": {
                 "durabilities": [
                   0
                 ],
@@ -124,7 +124,7 @@ fn everything() {
                   1
                 ]
               },
-              "2": {
+              "4294967298": {
                 "durabilities": [
                   0
                 ],
@@ -135,7 +135,7 @@ fn everything() {
                   2
                 ]
               },
-              "3": {
+              "4294967299": {
                 "durabilities": [
                   0
                 ],
@@ -146,7 +146,7 @@ fn everything() {
                   1
                 ]
               },
-              "4": {
+              "4294967300": {
                 "durabilities": [
                   0
                 ],
@@ -159,7 +159,7 @@ fn everything() {
               }
             },
             "2": {
-              "1025": {
+              "4294968321": {
                 "durabilities": [
                   0
                 ],
@@ -172,7 +172,7 @@ fn everything() {
               }
             },
             "4": {
-              "3073": {
+              "4294970369": {
                 "durability": 2,
                 "last_interned_at": 1,
                 "fields": [
@@ -181,7 +181,7 @@ fn everything() {
               }
             },
             "5": {
-              "4097": {
+              "4294971393": {
                 "durability": 0,
                 "updated_at": 1,
                 "revisions": [],
@@ -191,24 +191,24 @@ fn everything() {
               }
             },
             "7": {
-              "5121": {
+              "4294972417": {
                 "durability": 2,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
-                  3,
-                  4
+                  4294967299,
+                  4294967300
                 ]
               }
             },
             "19": {
-              "2049": {
+              "4294969345": {
                 "durability": 2,
                 "last_interned_at": 18446744073709551615,
                 "fields": null
               }
             },
             "6": {
-              "7:5121": {
+              "7:4294972417": {
                 "value": "aaa",
                 "verified_at": 1,
                 "revisions": {
@@ -218,11 +218,11 @@ fn everything() {
                     "Derived": [
                       [
                         3,
-                        1
+                        4
                       ],
                       [
                         4,
-                        1
+                        4
                       ]
                     ]
                   },
@@ -232,8 +232,8 @@ fn everything() {
               }
             },
             "8": {
-              "0:3": {
-                "value": 4097,
+              "0:4294967299": {
+                "value": 4294971393,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -242,7 +242,7 @@ fn everything() {
                     "Derived": [
                       [
                         3,
-                        1
+                        4
                       ]
                     ]
                   },
@@ -255,7 +255,7 @@ fn everything() {
                           "hash": 6073466998405137972,
                           "disambiguator": 0
                         },
-                        4097
+                        4294971393
                       ]
                     ],
                     "cycle_heads": [],
@@ -265,8 +265,8 @@ fn everything() {
               }
             },
             "18": {
-              "19:2049": {
-                "value": 3073,
+              "19:4294969345": {
+                "value": 4294970369,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -275,7 +275,7 @@ fn everything() {
                     "Derived": [
                       [
                         3073,
-                        4
+                        1
                       ]
                     ]
                   },
@@ -347,7 +347,7 @@ fn partial_query() {
           },
           "ingredients": {
             "0": {
-              "1": {
+              "4294967297": {
                 "durabilities": [
                   0
                 ],
@@ -360,7 +360,7 @@ fn partial_query() {
               }
             },
             "13": {
-              "0:1": {
+              "0:4294967297": {
                 "value": 1,
                 "verified_at": 1,
                 "revisions": {
@@ -370,7 +370,7 @@ fn partial_query() {
                     "Derived": [
                       [
                         1,
-                        1
+                        4
                       ]
                     ]
                   },
@@ -462,7 +462,7 @@ fn partial_query_interned() {
           },
           "ingredients": {
             "0": {
-              "1": {
+              "4294967297": {
                 "durabilities": [
                   0
                 ],
@@ -475,7 +475,7 @@ fn partial_query_interned() {
               }
             },
             "4": {
-              "3073": {
+              "4294970369": {
                 "durability": 0,
                 "last_interned_at": 1,
                 "fields": [
@@ -484,18 +484,18 @@ fn partial_query_interned() {
               }
             },
             "17": {
-              "1025": {
+              "4294968321": {
                 "durability": 2,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
-                  1,
+                  4294967297,
                   0
                 ]
               }
             },
             "16": {
-              "17:1025": {
-                "value": 3073,
+              "17:4294968321": {
+                "value": 4294970369,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -504,11 +504,11 @@ fn partial_query_interned() {
                     "Derived": [
                       [
                         1,
-                        1
+                        4
                       ],
                       [
                         3073,
-                        4
+                        1
                       ]
                     ]
                   },
