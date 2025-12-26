@@ -7,7 +7,7 @@ fn fallback_value(_db: &dyn salsa::Database) -> u32 {
     10
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_fn = |db, _, _, _| fallback_value(db), cycle_initial = |_, _| 0)]
 fn query(db: &dyn salsa::Database) -> u32 {
     let val = query(db);
     if val < 5 {
@@ -15,19 +15,6 @@ fn query(db: &dyn salsa::Database) -> u32 {
     } else {
         val
     }
-}
-
-fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id) -> u32 {
-    0
-}
-
-fn cycle_fn(
-    db: &dyn salsa::Database,
-    _cycle: &salsa::Cycle,
-    _last_provisional_value: &u32,
-    _value: u32,
-) -> u32 {
-    fallback_value(db)
 }
 
 #[test_log::test]
