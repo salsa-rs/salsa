@@ -3,7 +3,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
-use crate::zalsa_local::{output_edges, QueryOriginRef};
+use crate::zalsa_local::{output_edges, QueryOriginRef, QueryRevisions};
 use crate::{DatabaseKeyIndex, Event, EventKind};
 
 impl<C> IngredientImpl<C>
@@ -19,44 +19,53 @@ where
         old_memo: &Memo<'_, C>,
         completed_query: &CompletedQuery,
     ) {
-        let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
-            old_memo.revisions.origin.as_ref()
-        else {
-            return;
-        };
+        diff_outputs_on_revision(zalsa, key, &old_memo.revisions, completed_query);
+    }
+}
 
-        // Note that tracked structs are not stored as direct query outputs, but they are still outputs
-        // that need to be reported as stale.
-        for (identity, id) in &completed_query.stale_tracked_structs {
-            let output = DatabaseKeyIndex::new(identity.ingredient_index(), *id);
-            Self::report_stale_output(zalsa, key, output);
-        }
+fn diff_outputs_on_revision(
+    zalsa: &Zalsa,
+    key: DatabaseKeyIndex,
+    old_revisions: &QueryRevisions,
+    completed_query: &CompletedQuery,
+) {
+    let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
+        old_revisions.origin.as_ref()
+    else {
+        return;
+    };
 
-        let mut stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
-
-        if stale_outputs.is_empty() {
-            return;
-        }
-
-        // Preserve any outputs that were recreated in the current revision.
-        for new_output in completed_query.revisions.origin.as_ref().outputs() {
-            stale_outputs.swap_remove(&new_output);
-        }
-
-        // Any outputs that were created in a previous revision but not the current one are stale.
-        for output in stale_outputs {
-            Self::report_stale_output(zalsa, key, output);
-        }
+    // Note that tracked structs are not stored as direct query outputs, but they are still outputs
+    // that need to be reported as stale.
+    for (identity, id) in &completed_query.stale_tracked_structs {
+        let output = DatabaseKeyIndex::new(identity.ingredient_index(), *id);
+        report_stale_output(zalsa, key, output);
     }
 
-    fn report_stale_output(zalsa: &Zalsa, key: DatabaseKeyIndex, output: DatabaseKeyIndex) {
-        zalsa.event(&|| {
-            Event::new(EventKind::WillDiscardStaleOutput {
-                execute_key: key,
-                output_key: output,
-            })
-        });
+    let mut stale_outputs = output_edges(edges).collect::<FxIndexSet<_>>();
 
-        output.remove_stale_output(zalsa, key);
+    if stale_outputs.is_empty() {
+        return;
     }
+
+    // Preserve any outputs that were recreated in the current revision.
+    for new_output in completed_query.revisions.origin.as_ref().outputs() {
+        stale_outputs.swap_remove(&new_output);
+    }
+
+    // Any outputs that were created in a previous revision but not the current one are stale.
+    for output in stale_outputs {
+        report_stale_output(zalsa, key, output);
+    }
+}
+
+fn report_stale_output(zalsa: &Zalsa, key: DatabaseKeyIndex, output: DatabaseKeyIndex) {
+    zalsa.event(&|| {
+        Event::new(EventKind::WillDiscardStaleOutput {
+            execute_key: key,
+            output_key: output,
+        })
+    });
+
+    output.remove_stale_output(zalsa, key);
 }
