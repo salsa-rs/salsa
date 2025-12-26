@@ -156,7 +156,7 @@ macro_rules! setup_tracked_struct {
 
                 type Fields<$db_lt> = ($($field_ty,)*);
 
-                type Revisions = [$Revision; $N];
+                type Revisions = [$zalsa::AtomicRevision; $N];
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
@@ -165,12 +165,12 @@ macro_rules! setup_tracked_struct {
                 }
 
                 fn new_revisions(current_revision: $Revision) -> Self::Revisions {
-                    [current_revision; $N]
+                    std::array::from_fn(|_| $zalsa::AtomicRevision::new(current_revision))
                 }
 
                 unsafe fn update_fields<$db_lt>(
                     current_revision: $Revision,
-                    revisions: &mut Self::Revisions,
+                    revisions: &Self::Revisions,
                     old_fields: *mut Self::Fields<$db_lt>,
                     new_fields: Self::Fields<$db_lt>,
                 ) -> bool {

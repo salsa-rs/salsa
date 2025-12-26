@@ -4,7 +4,7 @@ use std::any::TypeId;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::Index;
-use std::{fmt, mem};
+use std::{fmt, iter, mem};
 
 use crossbeam_queue::SegQueue;
 use hashbrown::hash_table::Entry;
@@ -17,7 +17,7 @@ use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, ZalsaLocal};
-use crate::revision::OptionalAtomicRevision;
+use crate::revision::{AtomicRevision, OptionalAtomicRevision};
 use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
@@ -52,19 +52,19 @@ pub trait Configuration: Sized + 'static {
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>: Send + Sync;
 
-    /// A array of [`Revision`][] values, one per each of the tracked value fields.
+    /// A array of [`AtomicRevision`][] values, one per each of the tracked value fields.
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
     #[cfg(feature = "persistence")]
     type Revisions: Send
         + Sync
-        + Index<usize, Output = Revision>
+        + Index<usize, Output = AtomicRevision>
         + plumbing::serde::Serialize
         + for<'de> plumbing::serde::Deserialize<'de>;
 
     #[cfg(not(feature = "persistence"))]
-    type Revisions: Send + Sync + Index<usize, Output = Revision>;
+    type Revisions: Send + Sync + Index<usize, Output = AtomicRevision>;
 
     type Struct<'db>: Copy + FromId + AsId;
 
@@ -99,7 +99,7 @@ pub trait Configuration: Sized + 'static {
     /// for any field that changed.
     unsafe fn update_fields<'db>(
         current_revision: Revision,
-        revisions: &mut Self::Revisions,
+        revisions: &Self::Revisions,
         old_fields: *mut Self::Fields<'db>,
         new_fields: Self::Fields<'db>,
     ) -> bool;
@@ -158,7 +158,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
                     )) as _
                 });
 
-        std::iter::once(Box::new(struct_ingredient) as _)
+        iter::once(Box::new(struct_ingredient) as _)
             .chain(tracked_field_ingredients)
             .collect()
     }
@@ -693,8 +693,9 @@ where
         // any attempt to read concurrently will panic so it is safe to take exclusive references.
         let old_fields = unsafe { &raw mut (*data_raw).value.fields }.cast::<C::Fields<'_>>();
 
-        // SAFETY: FIXME: why can this not alias with tracked_field::maybe_changed_after?
-        let revisions = unsafe { &mut (*data_raw).revisions };
+        // SAFETY: `revisions` contains `AtomicRevision` values which can be safely accessed
+        // concurrently with `tracked_field::maybe_changed_after`.
+        let revisions = unsafe { &(*data_raw).revisions };
 
         // SAFETY: We assert that the pointer to `data.revisions`
         // is a pointer into the database referencing a value
@@ -725,7 +726,10 @@ where
 
         let durability = unsafe { &mut (*data_raw).durability };
         if current_deps.durability < *durability {
-            *revisions = C::new_revisions(current_deps.changed_at);
+            let new_revisions = C::new_revisions(current_deps.changed_at);
+            for i in 0..C::TRACKED_FIELD_INDICES.len() {
+                revisions[i].store(new_revisions[i].load());
+            }
         }
         *durability = current_deps.durability;
         // SAFETY: `updated_at` is never exclusively borrowed, so borrowing it is sound
@@ -748,7 +752,7 @@ where
     /// # Safety
     ///
     /// `data` must be a valid pointer to a `ValueWithMetadata<C>`
-    unsafe fn fields(
+    unsafe fn lock_fields(
         &self,
         data: *const ValueWithMetadata<C>,
         current_revision: Revision,
@@ -854,7 +858,7 @@ where
         let id = AsId::as_id(&s);
         let data = Self::data_raw(zalsa.table(), id);
         // SAFETY: `data` is a valid pointer acquired from the table.
-        unsafe { self.fields(data, zalsa.current_revision()) }
+        unsafe { self.lock_fields(data, zalsa.current_revision()) }
     }
 
     /// Access to this tracked field.
@@ -872,16 +876,20 @@ where
         let field_ingredient_index = self.ingredient_index.successor(relative_tracked_index);
         let data = Self::data_raw(zalsa.table(), id);
 
-        let field_changed_at = unsafe { (&(*data).revisions)[relative_tracked_index] };
+        // SAFETY: `data` is a valid pointer acquired from the table.
+        let fields = unsafe { self.lock_fields(data, zalsa.current_revision()) };
 
+        // SAFETY: We just acquired the read lock (in `Self::fields`), so accessing `revisions` will not be able to alias
+        let field_changed_at = unsafe { (&(*data).revisions)[relative_tracked_index].load() };
+
+        // SAFETY: We just acquired the read lock (in `Self::fields`), so accessing `durability` will not be able to alias
         zalsa_local.report_tracked_read_simple(
             DatabaseKeyIndex::new(field_ingredient_index, id),
             unsafe { (*data).durability },
             field_changed_at,
         );
 
-        // SAFETY: `data` is a valid pointer acquired from the table.
-        unsafe { self.fields(data, zalsa.current_revision()) }
+        fields
     }
 
     /// Access to this untracked field.
@@ -900,7 +908,7 @@ where
         // as IDs that are reused increment their generation, invalidating any
         // dependent queries directly.
         // SAFETY: `data` is a valid pointer acquired from the table.
-        unsafe { self.fields(data, zalsa.current_revision()) }
+        unsafe { self.lock_fields(data, zalsa.current_revision()) }
     }
 
     /// Returns all data corresponding to the tracked struct.

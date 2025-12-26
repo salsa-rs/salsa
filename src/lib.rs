@@ -104,7 +104,7 @@ pub mod plumbing {
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,
         NewMemoIngredientIndices,
     };
-    pub use crate::revision::Revision;
+    pub use crate::revision::{AtomicRevision, Revision};
     pub use crate::runtime::{stamp, Runtime, Stamp};
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::{HasStorage, Storage};
