@@ -1041,14 +1041,18 @@ where
     C: Configuration,
 {
     #[inline(always)]
-    unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
-        // SAFETY: The fact that we have a reference to the `Value` means it must
+    unsafe fn memos(
+        this: *const Self,
+        _current_revision: Revision,
+    ) -> *const crate::table::memo::MemoTable {
+        // SAFETY: The fact that we have a pointer to the `Value` means it must
         // have been interned, and thus validated, in the current revision.
-        unsafe { &*self.memos.get() }
+        // Caller obligation demands this pointer to be valid.
+        unsafe { (*this).memos.get() }
     }
 
     #[inline(always)]
-    fn memos_mut(&mut self) -> &mut MemoTable {
+    fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         self.memos.get_mut()
     }
 }

@@ -134,12 +134,6 @@ impl ActiveQuery {
         self.changed_at = changed_at;
     }
 
-    pub(super) fn add_synthetic_read(&mut self, durability: Durability, revision: Revision) {
-        self.untracked_read = true;
-        self.durability = self.durability.min(durability);
-        self.changed_at = self.changed_at.max(revision);
-    }
-
     #[cfg(feature = "accumulator")]
     pub(super) fn accumulate(&mut self, index: crate::IngredientIndex, value: impl Accumulator) {
         self.accumulated.accumulate(index, value);

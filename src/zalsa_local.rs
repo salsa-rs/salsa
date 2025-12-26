@@ -336,21 +336,6 @@ impl ZalsaLocal {
         }
     }
 
-    /// Update the top query on the stack to act as though it read a value
-    /// of durability `durability` which changed in `revision`.
-    // FIXME: Use or remove this.
-    #[allow(dead_code)]
-    pub(crate) fn report_synthetic_read(&self, durability: Durability, revision: Revision) {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.add_synthetic_read(durability, revision);
-                }
-            })
-        }
-    }
-
     /// Called when the active queries creates an index from the
     /// entity table with the index `entity_index`. Has the following effects:
     ///

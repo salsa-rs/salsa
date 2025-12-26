@@ -104,7 +104,7 @@ pub mod plumbing {
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,
         NewMemoIngredientIndices,
     };
-    pub use crate::revision::Revision;
+    pub use crate::revision::{AtomicRevision, Revision};
     pub use crate::runtime::{stamp, Runtime, Stamp};
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::{HasStorage, Storage};
@@ -165,6 +165,8 @@ pub mod plumbing {
 
     pub mod tracked_struct {
         pub use crate::tracked_struct::tracked_field::FieldIngredientImpl;
-        pub use crate::tracked_struct::{Configuration, IngredientImpl, JarImpl, Value};
+        pub use crate::tracked_struct::{
+            Configuration, IngredientImpl, JarImpl, Value, ValueWithMetadata,
+        };
     }
 }

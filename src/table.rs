@@ -40,26 +40,26 @@ pub unsafe trait Slot: Any + Send + Sync {
     /// # Safety condition
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
-    unsafe fn memos(&self, current_revision: Revision) -> &MemoTable;
+    unsafe fn memos(slot: *const Self, current_revision: Revision) -> *const MemoTable;
 
     /// Mutably access the [`MemoTable`] for this slot.
     fn memos_mut(&mut self) -> &mut MemoTable;
 }
 
 /// [Slot::memos]
-type SlotMemosFnRaw = unsafe fn(*const (), current_revision: Revision) -> *const MemoTable;
+type SlotMemosFnErased = unsafe fn(*const (), current_revision: Revision) -> *const MemoTable;
 /// [Slot::memos]
-type SlotMemosFn<T> = unsafe fn(&T, current_revision: Revision) -> &MemoTable;
+type SlotMemosFn<T> = unsafe fn(*const T, current_revision: Revision) -> *const MemoTable;
 /// [Slot::memos_mut]
-type SlotMemosMutFnRaw = unsafe fn(*mut ()) -> *mut MemoTable;
+type SlotMemosMutFnErased = unsafe fn(*mut ()) -> *mut MemoTable;
 /// [Slot::memos_mut]
 type SlotMemosMutFn<T> = fn(&mut T) -> &mut MemoTable;
 
 struct SlotVTable {
     layout: Layout,
     /// [`Slot`] methods
-    memos: SlotMemosFnRaw,
-    memos_mut: SlotMemosMutFnRaw,
+    memos: SlotMemosFnErased,
+    memos_mut: SlotMemosMutFnErased,
     /// The type name of what is stored as entries in data.
     type_name: fn() -> &'static str,
     /// A drop impl to call when the own page drops
@@ -87,10 +87,10 @@ impl SlotVTable {
                 layout: Layout::new::<T>(),
                 type_name: std::any::type_name::<T>,
                 // SAFETY: The signatures are ABI-compatible.
-                memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnRaw>(T::memos) },
+                memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnErased>(T::memos) },
                 // SAFETY: The signatures are ABI-compatible.
                 memos_mut: unsafe {
-                    mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnRaw>(T::memos_mut)
+                    mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnErased>(T::memos_mut)
                 },
             }
         }
@@ -302,7 +302,7 @@ impl Table {
         let slot = &page.data()[slot.0];
 
         // SAFETY: The caller is required to pass the `current_revision`.
-        let memos = unsafe { slot.memos(current_revision) };
+        let memos = unsafe { &*T::memos(slot, current_revision) };
 
         // SAFETY: The `Page` keeps the correct memo types.
         unsafe { page.0.memo_types.attach_memos(memos) }
@@ -526,7 +526,7 @@ struct DummySlot;
 
 // SAFETY: The `DummySlot type is private.
 unsafe impl Slot for DummySlot {
-    unsafe fn memos(&self, _: Revision) -> &MemoTable {
+    unsafe fn memos(_: *const Self, _: Revision) -> *const MemoTable {
         unreachable!()
     }
 
