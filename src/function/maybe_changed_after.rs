@@ -10,7 +10,7 @@ use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdgeKind, QueryOriginRef, ZalsaLocal};
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Id, Revision};
 
 /// Result of memo validation.
@@ -260,41 +260,12 @@ where
         database_key_index: DatabaseKeyIndex,
         cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
-        match C::CYCLE_STRATEGY {
-            // SAFETY: We do not access the query stack reentrantly.
-            CycleRecoveryStrategy::Panic => unsafe {
-                zalsa_local.with_query_stack_unchecked(|stack| {
-                    panic!(
-                        "dependency graph cycle when validating {database_key_index:#?}, \
-                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                    Query stack:\n{stack:#?}",
-                    );
-                })
-            },
-            CycleRecoveryStrategy::FallbackImmediate => VerifyResult::unchanged(),
-            CycleRecoveryStrategy::Fixpoint => {
-                crate::tracing::debug!(
-                    "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
-                );
-                cycle_heads.insert_head(database_key_index);
-
-                // SAFETY: We don't access the query stack reentrantly.
-                let running = unsafe {
-                    zalsa_local.with_query_stack_unchecked(|stack| {
-                        stack
-                            .iter()
-                            .any(|query| query.database_key_index == database_key_index)
-                    })
-                };
-
-                // If the cycle head is being executed, consider this query as changed.
-                if running {
-                    VerifyResult::changed()
-                } else {
-                    VerifyResult::unchanged()
-                }
-            }
-        }
+        maybe_changed_after_cold_cycle(
+            zalsa_local,
+            database_key_index,
+            cycle_heads,
+            C::CYCLE_STRATEGY,
+        )
     }
 
     /// `Some` if the memo's value and `changed_at` time is still valid in this revision.
@@ -382,149 +353,20 @@ where
 
         let verified_at = memo.verified_at.load();
 
-        self.validate_provisional(zalsa, database_key_index, memo, verified_at, cycle_heads)
-            || self.validate_same_iteration(
-                zalsa,
-                zalsa_local,
-                database_key_index,
-                verified_at,
-                cycle_heads,
-            )
-    }
-
-    /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
-    /// return true, if not return false.
-    fn validate_provisional(
-        &self,
-        zalsa: &Zalsa,
-        database_key_index: DatabaseKeyIndex,
-        memo: &Memo<'_, C>,
-        memo_verified_at: Revision,
-        cycle_heads: &CycleHeads,
-    ) -> bool {
-        crate::tracing::trace!(
-            "{database_key_index:?}: validate_provisional({database_key_index:?})",
-        );
-
-        for cycle_head in cycle_heads {
-            // Test if our cycle heads (with the same revision) are now finalized.
-            let Some(kind) = zalsa
-                .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-                .provisional_status(zalsa, cycle_head.database_key_index.key_index())
-            else {
-                return false;
-            };
-
-            match kind {
-                ProvisionalStatus::Provisional { .. } => return false,
-                ProvisionalStatus::Final {
-                    iteration,
-                    verified_at,
-                } => {
-                    // Only consider the cycle head if it is from the same revision as the memo
-                    if verified_at != memo_verified_at {
-                        return false;
-                    }
-
-                    // It's important to also account for the iteration for the case where:
-                    // thread 1: `b` -> `a` (but only in the first iteration)
-                    //               -> `c` -> `b`
-                    // thread 2: `a` -> `b`
-                    //
-                    // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
-                    // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
-                    if iteration != cycle_head.iteration_count.load() {
-                        return false;
-                    }
-
-                    // FIXME: We can ignore this, I just don't have a use-case for this.
-                    if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-                        panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
-                    }
-                }
-                ProvisionalStatus::FallbackImmediate => match C::CYCLE_STRATEGY {
-                    CycleRecoveryStrategy::Panic => {
-                        // Queries without fallback are not considered when inside a cycle.
-                        return false;
-                    }
-                    // FIXME: We can do the same as with `CycleRecoveryStrategy::Panic` here, I just don't have
-                    // a use-case for this.
-                    CycleRecoveryStrategy::Fixpoint => {
-                        panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
-                    }
-                    CycleRecoveryStrategy::FallbackImmediate => {}
-                },
-            }
-        }
-        // Relaxed is sufficient here because there are no other writes we need to ensure have
-        // happened before marking this memo as verified-final.
-        memo.revisions.verified_final.store(true, Ordering::Relaxed);
-        true
-    }
-
-    /// If this is a provisional memo, validate that it was cached in the same iteration of the
-    /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
-    /// runaway re-execution of the same queries within a fixpoint iteration.
-    fn validate_same_iteration(
-        &self,
-        zalsa: &Zalsa,
-        zalsa_local: &ZalsaLocal,
-        memo_database_key_index: DatabaseKeyIndex,
-        memo_verified_at: Revision,
-        cycle_heads: &CycleHeads,
-    ) -> bool {
-        crate::tracing::trace!("validate_same_iteration({memo_database_key_index:?})",);
-
-        // This is an optimization to avoid unnecessary re-execution within the same revision.
-        // Don't apply it when verifying memos from past revisions. We want them to re-execute
-        // to verify their cycle heads and all participating queries.
-        if memo_verified_at != zalsa.current_revision() {
-            return false;
-        }
-
-        // Always return `false` for cycle initial values "unless" they are running in the same thread.
-        if cycle_heads
-            .iter_not_eq(memo_database_key_index)
-            .next()
-            .is_none()
-        {
-            // SAFETY: We do not access the query stack reentrantly.
-            let on_stack = unsafe {
-                zalsa_local.with_query_stack_unchecked(|stack| {
-                    stack
-                        .iter()
-                        .rev()
-                        .any(|query| query.database_key_index == memo_database_key_index)
-                })
-            };
-
-            return on_stack;
-        }
-
-        let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, cycle_heads);
-
-        for cycle_head in cycle_heads_iter {
-            match cycle_head {
-                TryClaimHeadsResult::Cycle {
-                    head_iteration_count,
-                    memo_iteration_count: current_iteration_count,
-                    verified_at: head_verified_at,
-                } => {
-                    if head_verified_at != memo_verified_at {
-                        return false;
-                    }
-
-                    if head_iteration_count != current_iteration_count {
-                        return false;
-                    }
-                }
-                _ => {
-                    return false;
-                }
-            }
-        }
-
-        true
+        validate_provisional(
+            zalsa,
+            database_key_index,
+            &memo.revisions,
+            verified_at,
+            cycle_heads,
+            C::CYCLE_STRATEGY,
+        ) || validate_same_iteration(
+            zalsa,
+            zalsa_local,
+            database_key_index,
+            verified_at,
+            cycle_heads,
+        )
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
@@ -558,120 +400,27 @@ where
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
-                #[cfg(feature = "accumulator")]
-                let mut inputs = InputAccumulatedValues::Empty;
-                let mut child_cycle_heads = Vec::new();
-
-                // Fully tracked inputs? Iterate over the inputs and check them, one by one.
-                //
-                // NB: It's important here that we are iterating the inputs in the order that
-                // they executed. It's possible that if the value of some input I0 is no longer
-                // valid, then some later input I1 might never have executed at all, so verifying
-                // it is still up to date is meaningless.
-                for &edge in edges {
-                    match edge.kind() {
-                        QueryEdgeKind::Input(dependency_index) => {
-                            debug_assert!(child_cycle_heads.is_empty());
-
-                            // The `MaybeChangeAfterCycleHeads` is used as an out parameter and it's
-                            // the caller's responsibility to pass an empty `heads`, which is what we do here.
-                            let mut inner_cycle_heads = VerifyCycleHeads {
-                                has_outer_cycles: cycle_heads.has_any(),
-                                heads: &mut child_cycle_heads,
-                                participating_queries: cycle_heads.participating_queries,
-                            };
-
-                            let input_result = dependency_index.maybe_changed_after(
-                                db.into(),
-                                zalsa,
-                                old_memo.verified_at.load(),
-                                &mut inner_cycle_heads,
-                            );
-
-                            // Aggregate the cycle heads into the parent cycle heads
-                            cycle_heads.append_heads(&mut child_cycle_heads);
-
-                            match input_result {
-                                VerifyResult::Changed => {
-                                    cycle_heads.remove_head(database_key_index);
-                                    return VerifyResult::changed();
-                                }
-                                #[cfg(feature = "accumulator")]
-                                VerifyResult::Unchanged { accumulated } => {
-                                    inputs |= accumulated;
-                                }
-                                #[cfg(not(feature = "accumulator"))]
-                                VerifyResult::Unchanged { .. } => {}
-                            }
-                        }
-                        QueryEdgeKind::Output(dependency_index) => {
-                            // Subtle: Mark outputs as validated now, even though we may
-                            // later find an input that requires us to re-execute the function.
-                            // Even if it re-execute, the function will wind up writing the same value,
-                            // since all prior inputs were green. It's important to do this during
-                            // this loop, because it's possible that one of our input queries will
-                            // re-execute and may read one of our earlier outputs
-                            // (e.g., in a scenario where we do something like
-                            // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
-                            //
-                            // NB. Accumulators are also outputs, but the above logic doesn't
-                            // quite apply to them. Since multiple values are pushed, the first value
-                            // may be unchanged, but later values could be different.
-                            // In that case, however, the data accumulated
-                            // by this function cannot be read until this function is marked green,
-                            // so even if we mark them as valid here, the function will re-execute
-                            // and overwrite the contents.
-                            dependency_index.mark_validated_output(zalsa, database_key_index);
-                        }
-                    }
-                }
-
-                // Possible scenarios here:
-                //
-                // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
-                //    cycles, nor found any changed dependencies. We can mark our memo verified and
-                //    return Unchanged with empty cycle heads.
-                //
-                // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
-                //    a cycle, and since we don't know if some other cycle participant that hasn't been
-                //    traversed yet (that is, some other dependency of the cycle head, which is only a
-                //    dependency of ours via the cycle) might still have changed, we can't yet mark our
-                //    memo verified. We can return a provisional Unchanged, with cycle heads.
-                //
-                // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
-                //    a cycle, and we've now traversed the entire cycle and found no changes, but no
-                //    other cycle participants were verified (they would have all hit case 2 above).
-                //    Similar to `execute`, return unchanged and lazily verify the other cycle-participants
-                //    when they're used next.
-                //
-                // 4. Cycle heads is non-empty, and contains our own key index as well as other key
-                //    indices. We are the head of a cycle nested within another cycle. We can't mark
-                //    our own memo verified (for the same reason as in case 2: the full outer cycle
-                //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
-                //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
-                //    future iteration; first the outer cycle head needs to verify itself.
-
-                cycle_heads.remove_head(database_key_index);
-
-                let result = VerifyResult::unchanged_with_accumulated(
-                    #[cfg(feature = "accumulator")]
-                    inputs,
+                let result = deep_verify_edges(
+                    db.into(),
+                    zalsa,
+                    &old_memo.revisions,
+                    old_memo.verified_at.load(),
+                    edges,
+                    database_key_index,
+                    cycle_heads,
                 );
 
-                // This value is only read once the memo is verified. It's therefore safe
-                // to write a non-final value here.
-                #[cfg(feature = "accumulator")]
-                old_memo.revisions.accumulated_inputs.store(inputs);
-
-                // 1 and 3
-                if !cycle_heads.has_own() {
-                    old_memo.mark_as_verified(zalsa, database_key_index);
-                    old_memo
-                        .revisions
-                        .verified_final
-                        .store(true, Ordering::Relaxed);
-                } else {
-                    cycle_heads.insert_participating_query(database_key_index, result);
+                if result.is_unchanged() {
+                    // 1 and 3 (see cycle head comment in `deep_verify_edges`)
+                    if !cycle_heads.has_own() {
+                        old_memo.mark_as_verified(zalsa, database_key_index);
+                        old_memo
+                            .revisions
+                            .verified_final
+                            .store(true, Ordering::Relaxed);
+                    } else {
+                        cycle_heads.insert_participating_query(database_key_index, result);
+                    }
                 }
 
                 result
@@ -705,6 +454,298 @@ where
             }
         }
     }
+}
+
+fn maybe_changed_after_cold_cycle(
+    zalsa_local: &ZalsaLocal,
+    database_key_index: DatabaseKeyIndex,
+    cycle_heads: &mut VerifyCycleHeads,
+    cycle_recovery_strategy: CycleRecoveryStrategy,
+) -> VerifyResult {
+    match cycle_recovery_strategy {
+        // SAFETY: We do not access the query stack reentrantly.
+        CycleRecoveryStrategy::Panic => unsafe {
+            zalsa_local.with_query_stack_unchecked(|stack| {
+                panic!(
+                    "dependency graph cycle when validating {database_key_index:#?}, \
+                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                    Query stack:\n{stack:#?}",
+                );
+            })
+        },
+        CycleRecoveryStrategy::FallbackImmediate => VerifyResult::unchanged(),
+        CycleRecoveryStrategy::Fixpoint => {
+            crate::tracing::debug!(
+                    "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
+                );
+            cycle_heads.insert_head(database_key_index);
+
+            // SAFETY: We don't access the query stack reentrantly.
+            let running = unsafe {
+                zalsa_local.with_query_stack_unchecked(|stack| {
+                    stack
+                        .iter()
+                        .any(|query| query.database_key_index == database_key_index)
+                })
+            };
+
+            // If the cycle head is being executed, consider this query as changed.
+            if running {
+                VerifyResult::changed()
+            } else {
+                VerifyResult::unchanged()
+            }
+        }
+    }
+}
+
+pub(super) fn deep_verify_edges(
+    db: crate::database::RawDatabase,
+    zalsa: &Zalsa,
+    #[allow(unused)] old_revisions: &QueryRevisions,
+    old_verified_at: Revision,
+    edges: &[QueryEdge],
+    database_key_index: DatabaseKeyIndex,
+    cycle_heads: &mut VerifyCycleHeads,
+) -> VerifyResult {
+    #[cfg(feature = "accumulator")]
+    let mut inputs = InputAccumulatedValues::Empty;
+    let mut child_cycle_heads = Vec::new();
+
+    // Fully tracked inputs? Iterate over the inputs and check them, one by one.
+    //
+    // NB: It's important here that we are iterating the inputs in the order that
+    // they executed. It's possible that if the value of some input I0 is no longer
+    // valid, then some later input I1 might never have executed at all, so verifying
+    // it is still up to date is meaningless.
+    for &edge in edges {
+        match edge.kind() {
+            QueryEdgeKind::Input(dependency_index) => {
+                debug_assert!(child_cycle_heads.is_empty());
+
+                // The `MaybeChangeAfterCycleHeads` is used as an out parameter and it's
+                // the caller's responsibility to pass an empty `heads`, which is what we do here.
+                let mut inner_cycle_heads = VerifyCycleHeads {
+                    has_outer_cycles: cycle_heads.has_any(),
+                    heads: &mut child_cycle_heads,
+                    participating_queries: cycle_heads.participating_queries,
+                };
+
+                let input_result = dependency_index.maybe_changed_after(
+                    db,
+                    zalsa,
+                    old_verified_at,
+                    &mut inner_cycle_heads,
+                );
+
+                // Aggregate the cycle heads into the parent cycle heads
+                cycle_heads.append_heads(&mut child_cycle_heads);
+
+                match input_result {
+                    VerifyResult::Changed => {
+                        cycle_heads.remove_head(database_key_index);
+                        return VerifyResult::changed();
+                    }
+                    #[cfg(feature = "accumulator")]
+                    VerifyResult::Unchanged { accumulated } => {
+                        inputs |= accumulated;
+                    }
+                    #[cfg(not(feature = "accumulator"))]
+                    VerifyResult::Unchanged { .. } => {}
+                }
+            }
+            QueryEdgeKind::Output(dependency_index) => {
+                // Subtle: Mark outputs as validated now, even though we may
+                // later find an input that requires us to re-execute the function.
+                // Even if it re-execute, the function will wind up writing the same value,
+                // since all prior inputs were green. It's important to do this during
+                // this loop, because it's possible that one of our input queries will
+                // re-execute and may read one of our earlier outputs
+                // (e.g., in a scenario where we do something like
+                // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
+                //
+                // NB. Accumulators are also outputs, but the above logic doesn't
+                // quite apply to them. Since multiple values are pushed, the first value
+                // may be unchanged, but later values could be different.
+                // In that case, however, the data accumulated
+                // by this function cannot be read until this function is marked green,
+                // so even if we mark them as valid here, the function will re-execute
+                // and overwrite the contents.
+                dependency_index.mark_validated_output(zalsa, database_key_index);
+            }
+        }
+    }
+
+    // Possible scenarios here:
+    //
+    // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
+    //    cycles, nor found any changed dependencies. We can mark our memo verified and
+    //    return Unchanged with empty cycle heads.
+    //
+    // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
+    //    a cycle, and since we don't know if some other cycle participant that hasn't been
+    //    traversed yet (that is, some other dependency of the cycle head, which is only a
+    //    dependency of ours via the cycle) might still have changed, we can't yet mark our
+    //    memo verified. We can return a provisional Unchanged, with cycle heads.
+    //
+    // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
+    //    a cycle, and we've now traversed the entire cycle and found no changes, but no
+    //    other cycle participants were verified (they would have all hit case 2 above).
+    //    Similar to `execute`, return unchanged and lazily verify the other cycle-participants
+    //    when they're used next.
+    //
+    // 4. Cycle heads is non-empty, and contains our own key index as well as other key
+    //    indices. We are the head of a cycle nested within another cycle. We can't mark
+    //    our own memo verified (for the same reason as in case 2: the full outer cycle
+    //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
+    //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
+    //    future iteration; first the outer cycle head needs to verify itself.
+
+    cycle_heads.remove_head(database_key_index);
+
+    let result = VerifyResult::unchanged_with_accumulated(
+        #[cfg(feature = "accumulator")]
+        inputs,
+    );
+
+    // This value is only read once the memo is verified. It's therefore safe
+    // to write a non-final value here.
+    #[cfg(feature = "accumulator")]
+    old_revisions.accumulated_inputs.store(inputs);
+
+    result
+}
+
+/// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
+/// return true, if not return false.
+fn validate_provisional(
+    zalsa: &Zalsa,
+    database_key_index: DatabaseKeyIndex,
+    memo_revisions: &QueryRevisions,
+    memo_verified_at: Revision,
+    cycle_heads: &CycleHeads,
+    cycle_recovery_strategy: CycleRecoveryStrategy,
+) -> bool {
+    crate::tracing::trace!("{database_key_index:?}: validate_provisional({database_key_index:?})",);
+
+    for cycle_head in cycle_heads {
+        // Test if our cycle heads (with the same revision) are now finalized.
+        let Some(kind) = zalsa
+            .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
+            .provisional_status(zalsa, cycle_head.database_key_index.key_index())
+        else {
+            return false;
+        };
+
+        match kind {
+            ProvisionalStatus::Provisional { .. } => return false,
+            ProvisionalStatus::Final {
+                iteration,
+                verified_at,
+            } => {
+                // Only consider the cycle head if it is from the same revision as the memo
+                if verified_at != memo_verified_at {
+                    return false;
+                }
+
+                // It's important to also account for the iteration for the case where:
+                // thread 1: `b` -> `a` (but only in the first iteration)
+                //               -> `c` -> `b`
+                // thread 2: `a` -> `b`
+                //
+                // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
+                // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
+                if iteration != cycle_head.iteration_count.load() {
+                    return false;
+                }
+
+                // FIXME: We can ignore this, I just don't have a use-case for this.
+                if cycle_recovery_strategy == CycleRecoveryStrategy::FallbackImmediate {
+                    panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
+                }
+            }
+            ProvisionalStatus::FallbackImmediate => match cycle_recovery_strategy {
+                CycleRecoveryStrategy::Panic => {
+                    // Queries without fallback are not considered when inside a cycle.
+                    return false;
+                }
+                // FIXME: We can do the same as with `CycleRecoveryStrategy::Panic` here, I just don't have
+                // a use-case for this.
+                CycleRecoveryStrategy::Fixpoint => {
+                    panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
+                }
+                CycleRecoveryStrategy::FallbackImmediate => {}
+            },
+        }
+    }
+    // Relaxed is sufficient here because there are no other writes we need to ensure have
+    // happened before marking this memo as verified-final.
+    memo_revisions.verified_final.store(true, Ordering::Relaxed);
+    true
+}
+
+/// If this is a provisional memo, validate that it was cached in the same iteration of the
+/// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
+/// runaway re-execution of the same queries within a fixpoint iteration.
+fn validate_same_iteration(
+    zalsa: &Zalsa,
+    zalsa_local: &ZalsaLocal,
+    memo_database_key_index: DatabaseKeyIndex,
+    memo_verified_at: Revision,
+    cycle_heads: &CycleHeads,
+) -> bool {
+    crate::tracing::trace!("validate_same_iteration({memo_database_key_index:?})",);
+
+    // This is an optimization to avoid unnecessary re-execution within the same revision.
+    // Don't apply it when verifying memos from past revisions. We want them to re-execute
+    // to verify their cycle heads and all participating queries.
+    if memo_verified_at != zalsa.current_revision() {
+        return false;
+    }
+
+    // Always return `false` for cycle initial values "unless" they are running in the same thread.
+    if cycle_heads
+        .iter_not_eq(memo_database_key_index)
+        .next()
+        .is_none()
+    {
+        // SAFETY: We do not access the query stack reentrantly.
+        let on_stack = unsafe {
+            zalsa_local.with_query_stack_unchecked(|stack| {
+                stack
+                    .iter()
+                    .rev()
+                    .any(|query| query.database_key_index == memo_database_key_index)
+            })
+        };
+
+        return on_stack;
+    }
+
+    let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, cycle_heads);
+
+    for cycle_head in cycle_heads_iter {
+        match cycle_head {
+            TryClaimHeadsResult::Cycle {
+                head_iteration_count,
+                memo_iteration_count: current_iteration_count,
+                verified_at: head_verified_at,
+            } => {
+                if head_verified_at != memo_verified_at {
+                    return false;
+                }
+
+                if head_iteration_count != current_iteration_count {
+                    return false;
+                }
+            }
+            _ => {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
