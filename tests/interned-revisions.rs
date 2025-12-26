@@ -155,7 +155,7 @@ fn test_immortal() {
 
     // Modify the input to bump the revision and intern a new value.
     //
-    // No values should ever be reused with `durability = usize::MAX`.
+    // No values should ever be reused with `revisions = usize::MAX`.
     for i in 1..if cfg!(miri) { 50 } else { 1000 } {
         input.set_field1(&mut db).to(i);
         let result = function(&db, input);

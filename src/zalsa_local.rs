@@ -63,8 +63,14 @@ impl CancellationToken {
         self.0.load(Ordering::Relaxed) & Self::CANCELLED_MASK != 0
     }
 
+    #[inline]
     fn set_cancellation_disabled(&self, disabled: bool) -> bool {
-        self.0.fetch_or((disabled as u8) << 1, Ordering::Relaxed) & Self::DISABLED_MASK != 0
+        let previous_disabled_bit = if disabled {
+            self.0.fetch_or(Self::DISABLED_MASK, Ordering::Relaxed)
+        } else {
+            self.0.fetch_and(!Self::DISABLED_MASK, Ordering::Relaxed)
+        };
+        previous_disabled_bit & Self::DISABLED_MASK != 0
     }
 
     fn should_trigger_local_cancellation(&self) -> bool {
@@ -462,6 +468,7 @@ impl ZalsaLocal {
         Cancelled::Local.throw();
     }
 
+    #[inline]
     pub(crate) fn set_cancellation_disabled(&self, was_disabled: bool) -> bool {
         self.cancelled.set_cancellation_disabled(was_disabled)
     }

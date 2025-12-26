@@ -107,7 +107,7 @@ fn multi_threaded_cycle_completes_despite_cancellation() {
     let t4 = thread::spawn(move || query_e(&db_t4));
     db_signaler.wait_for(4);
 
-    // Spawn t4 - doesn't get cancelled
+    // Spawn t5 - doesn't get cancelled
     db_signaler.signal_on_will_block(5);
     let t5 = thread::spawn(move || query_f(&db_t5));
     db_signaler.wait_for(5);
