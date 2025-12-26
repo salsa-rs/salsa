@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.3](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.25.2...salsa-macros-v0.25.3) - 2025-12-26
+
+### Other
+
+- Add `salsa::Update` trait bounds to generics when deriving `salsa::Update` ([#1041](https://github.com/salsa-rs/salsa/pull/1041))
+
 ## [0.25.1](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.25.0...salsa-macros-v0.25.1) - 2025-12-16
 
 ### Other
