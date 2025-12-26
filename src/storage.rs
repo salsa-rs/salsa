@@ -2,7 +2,6 @@
 use std::marker::PhantomData;
 use std::panic::RefUnwindSafe;
 
-use crate::database::RawDatabase;
 use crate::sync::{Arc, Condvar, Mutex};
 use crate::zalsa::{ErasedJar, HasJar, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{self, ZalsaLocal};
@@ -75,7 +74,7 @@ impl<Db: Database> StorageHandle<Db> {
 ///
 /// The `storage` and `storage_mut` fields must both return a reference to the same
 /// storage field which must be owned by `self`.
-pub unsafe trait HasStorage: Database + Clone + Sized {
+pub unsafe trait HasStorage: Database + Sized {
     fn storage(&self) -> &Storage<Self>;
     fn storage_mut(&mut self) -> &mut Storage<Self>;
 }
@@ -243,11 +242,6 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
     #[inline(always)]
     fn zalsa_local(&self) -> &ZalsaLocal {
         &self.storage().zalsa_local
-    }
-
-    #[inline(always)]
-    fn fork_db(&self) -> RawDatabase<'static> {
-        Box::leak(Box::new(self.clone())).into()
     }
 }
 
