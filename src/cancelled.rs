@@ -46,7 +46,7 @@ impl Cancelled {
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let why = match self {
-            Cancelled::Local => "local canellation request",
+            Cancelled::Local => "local cancellation request",
             Cancelled::PendingWrite => "pending write",
             Cancelled::PropagatedPanic => "propagated panic",
         };
