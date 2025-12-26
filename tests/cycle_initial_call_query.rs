@@ -7,7 +7,7 @@ fn initial_value(_db: &dyn salsa::Database) -> u32 {
     0
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_initial= |db, _| initial_value(db))]
 fn query(db: &dyn salsa::Database) -> u32 {
     let val = query(db);
     if val < 5 {
@@ -15,10 +15,6 @@ fn query(db: &dyn salsa::Database) -> u32 {
     } else {
         val
     }
-}
-
-fn cycle_initial(db: &dyn salsa::Database, _id: salsa::Id) -> u32 {
-    initial_value(db)
 }
 
 #[test_log::test]

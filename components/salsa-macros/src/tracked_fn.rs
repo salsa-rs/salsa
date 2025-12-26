@@ -264,8 +264,8 @@ impl Macro {
             &self.args.cycle_result,
         ) {
             (Some(cycle_fn), Some(cycle_initial), None) => Ok((
-                quote!((#cycle_fn)),
-                quote!((#cycle_initial)),
+                quote!(((#cycle_fn))),
+                quote!(((#cycle_initial))),
                 quote!(Fixpoint),
             )),
             (None, None, None) => Ok((
@@ -279,12 +279,12 @@ impl Macro {
             )),
             (None, Some(cycle_initial), None) => Ok((
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
-                quote!((#cycle_initial)),
+                quote!(((#cycle_initial))),
                 quote!(Fixpoint),
             )),
             (None, None, Some(cycle_result)) => Ok((
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
-                quote!((#cycle_result)),
+                quote!(((#cycle_result))),
                 quote!(FallbackImmediate),
             )),
             (_, _, Some(_)) => Err(syn::Error::new_spanned(

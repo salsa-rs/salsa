@@ -62,15 +62,15 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<path>`.
     pub db_path: Option<syn::Path>,
 
-    /// The `cycle_fn = <path>` option is used to indicate the cycle recovery function.
+    /// The `cycle_fn = <expr>` option is used to indicate the cycle recovery function.
     ///
-    /// If this is `Some`, the value is the `<path>`.
-    pub cycle_fn: Option<syn::Path>,
+    /// If this is `Some`, the value is the `<expr>`.
+    pub cycle_fn: Option<syn::Expr>,
 
-    /// The `cycle_initial = <path>` option is the initial value for cycle iteration.
+    /// The `cycle_initial = <expr>` option is the initial value for cycle iteration.
     ///
-    /// If this is `Some`, the value is the `<path>`.
-    pub cycle_initial: Option<syn::Path>,
+    /// If this is `Some`, the value is the `<expr>`.
+    pub cycle_initial: Option<syn::Expr>,
 
     /// The `cycle_result = <path>` option is the result for non-fixpoint cycle.
     ///
@@ -387,8 +387,8 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             } else if ident == "cycle_fn" {
                 if A::CYCLE_FN {
                     let _eq = Equals::parse(input)?;
-                    let path = syn::Path::parse(input)?;
-                    if let Some(old) = options.cycle_fn.replace(path) {
+                    let expr = syn::Expr::parse(input)?;
+                    if let Some(old) = options.cycle_fn.replace(expr) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `cycle_fn` provided twice",
@@ -403,8 +403,8 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             } else if ident == "cycle_initial" {
                 if A::CYCLE_INITIAL {
                     let _eq = Equals::parse(input)?;
-                    let path = syn::Path::parse(input)?;
-                    if let Some(old) = options.cycle_initial.replace(path) {
+                    let expr = syn::Expr::parse(input)?;
+                    if let Some(old) = options.cycle_initial.replace(expr) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `cycle_initial` provided twice",
