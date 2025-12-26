@@ -109,13 +109,18 @@ where
 
                 (new_value, completed_query)
             }
-            CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
-                db,
-                opt_old_memo,
-                &mut claim_guard,
-                zalsa_local,
-                memo_ingredient_index,
-            ),
+            CycleRecoveryStrategy::Fixpoint => {
+                let was_disabled = zalsa_local.set_cancellation_disabled(true);
+                let res = self.execute_maybe_iterate(
+                    db,
+                    opt_old_memo,
+                    &mut claim_guard,
+                    zalsa_local,
+                    memo_ingredient_index,
+                );
+                zalsa_local.set_cancellation_disabled(was_disabled);
+                res
+            }
         };
 
         if let Some(old_memo) = opt_old_memo {

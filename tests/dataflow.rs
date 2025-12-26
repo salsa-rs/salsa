@@ -25,7 +25,7 @@ struct Definition {
 #[derive(Eq, PartialEq, Clone, Debug, salsa::Update)]
 enum Type {
     Bottom,
-    Values(Box<[usize]>),
+    Values(BTreeSet<usize>),
     Top,
 }
 
@@ -42,7 +42,7 @@ impl Type {
                     let mut set = BTreeSet::new();
                     set.extend(a_ints);
                     set.extend(b_ints);
-                    Type::Values(set.into_iter().collect())
+                    Type::Values(set)
                 }
             }
         }
@@ -62,7 +62,7 @@ fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
 
 #[salsa::tracked(cycle_fn=def_cycle_recover, cycle_initial=def_cycle_initial)]
 fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
-    let increment_ty = Type::Values(Box::from([def.increment(db)]));
+    let increment_ty = Type::Values(BTreeSet::from_iter([def.increment(db)]));
     if let Some(base) = def.base(db) {
         let base_ty = infer_use(db, base);
         add(&base_ty, &increment_ty)
@@ -125,15 +125,12 @@ fn add(a: &Type, b: &Type) -> Type {
     match (a, b) {
         (Type::Bottom, _) | (_, Type::Bottom) => Type::Bottom,
         (Type::Top, _) | (_, Type::Top) => Type::Top,
-        (Type::Values(a_ints), Type::Values(b_ints)) => {
-            let mut set = BTreeSet::new();
-            set.extend(
-                a_ints
-                    .into_iter()
-                    .flat_map(|a| b_ints.into_iter().map(move |b| a + b)),
-            );
-            Type::Values(set.into_iter().collect())
-        }
+        (Type::Values(a_ints), Type::Values(b_ints)) => Type::Values(
+            a_ints
+                .iter()
+                .flat_map(|a| b_ints.iter().map(move |b| a + b))
+                .collect(),
+        ),
     }
 }
 
@@ -147,7 +144,7 @@ fn simple() {
 
     let ty = infer_use(&db, u);
 
-    assert_eq!(ty, Type::Values(Box::from([1])));
+    assert_eq!(ty, Type::Values(BTreeSet::from_iter([1])));
 }
 
 /// x = 1 if flag else 2
@@ -161,7 +158,7 @@ fn union() {
 
     let ty = infer_use(&db, u);
 
-    assert_eq!(ty, Type::Values(Box::from([1, 2])));
+    assert_eq!(ty, Type::Values(BTreeSet::from_iter([1, 2])));
 }
 
 /// x = 1 if flag else 2; y = x + 1
@@ -177,7 +174,7 @@ fn union_add() {
 
     let ty = infer_use(&db, y_use);
 
-    assert_eq!(ty, Type::Values(Box::from([2, 3])));
+    assert_eq!(ty, Type::Values(BTreeSet::from_iter([2, 3])));
 }
 
 /// x = 1; loop { x = x + 0 }
@@ -193,7 +190,7 @@ fn cycle_converges_then_diverges() {
     let ty = infer_use(&db, u);
 
     // Loop converges on 1
-    assert_eq!(ty, Type::Values(Box::from([1])));
+    assert_eq!(ty, Type::Values(BTreeSet::from_iter([1])));
 
     // Set the increment on x from 0 to 1
     let new_increment = 1;
@@ -222,7 +219,7 @@ fn cycle_diverges_then_converges() {
     def2.set_increment(&mut db).to(0);
 
     // Now the loop converges on 1.
-    assert_eq!(infer_use(&db, u), Type::Values(Box::from([1])));
+    assert_eq!(infer_use(&db, u), Type::Values(BTreeSet::from_iter([1])));
 }
 
 /// x = 0; y = 0; loop { x = y + 0; y = x + 0 }
@@ -240,15 +237,27 @@ fn multi_symbol_cycle_converges_then_diverges() {
     defy1.set_base(&mut db).to(Some(use_x));
 
     // Both symbols converge on 0
-    assert_eq!(infer_use(&db, use_x), Type::Values(Box::from([0])));
-    assert_eq!(infer_use(&db, use_y), Type::Values(Box::from([0])));
+    assert_eq!(
+        infer_use(&db, use_x),
+        Type::Values(BTreeSet::from_iter([0]))
+    );
+    assert_eq!(
+        infer_use(&db, use_y),
+        Type::Values(BTreeSet::from_iter([0]))
+    );
 
     // Set the increment on x to 0.
     defx1.set_increment(&mut db).to(0);
 
     // Both symbols still converge on 0.
-    assert_eq!(infer_use(&db, use_x), Type::Values(Box::from([0])));
-    assert_eq!(infer_use(&db, use_y), Type::Values(Box::from([0])));
+    assert_eq!(
+        infer_use(&db, use_x),
+        Type::Values(BTreeSet::from_iter([0]))
+    );
+    assert_eq!(
+        infer_use(&db, use_y),
+        Type::Values(BTreeSet::from_iter([0]))
+    );
 
     // Set the increment on x from 0 to 1.
     defx1.set_increment(&mut db).to(1);
