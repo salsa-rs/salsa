@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.3](https://github.com/salsa-rs/salsa/compare/salsa-v0.25.2...salsa-v0.25.3) - 2025-12-26
+
+### Other
+
+- Remove unused database forking ([#1049](https://github.com/salsa-rs/salsa/pull/1049))
+- Reduce monomorphized code in maybe_changed_after ([#1047](https://github.com/salsa-rs/salsa/pull/1047))
+- Reduce monomorphized code in `execute_maybe_iterate` ([#1046](https://github.com/salsa-rs/salsa/pull/1046))
+- Add `salsa::Update` trait bounds to generics when deriving `salsa::Update` ([#1041](https://github.com/salsa-rs/salsa/pull/1041))
+
 ## [0.25.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.25.1...salsa-v0.25.2) - 2025-12-17
 
 ### Other
