@@ -4,6 +4,51 @@ use std::num::NonZeroU32;
 
 use crate::zalsa::Zalsa;
 
+/// An [`Id`] without a generation (for interned structs).
+///
+/// You need to be very careful with this, and we deliberately do not expose it outside Salsa:
+/// it is required in some places because of the packing shenanigans we do for `DatabaseKeyIndex`,
+/// but using it in an incorrect place can mean you'll get the wrong value back.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct GenerationlessId {
+    index: NonZeroU32,
+}
+
+impl GenerationlessId {
+    /// Create a `salsa::Id` from a u32 value, without a generation. This
+    /// value should be less than [`Self::MAX_U32`].
+    ///
+    /// In general, you should not need to create salsa ids yourself,
+    /// but it can be useful if you are using the type as a general
+    /// purpose "identifier" internally.
+    ///
+    /// # Safety
+    ///
+    /// The supplied value must be less than [`Self::MAX_U32`].
+    #[doc(hidden)]
+    #[track_caller]
+    #[inline]
+    pub const unsafe fn from_index(index: u32) -> Self {
+        debug_assert!(index < Id::MAX_U32);
+
+        GenerationlessId {
+            // SAFETY: Caller obligation.
+            index: unsafe { NonZeroU32::new_unchecked(index + 1) },
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn index_nonzero(self) -> NonZeroU32 {
+        self.index
+    }
+
+    /// Return the index portion of this `Id`.
+    #[inline]
+    pub const fn index(self) -> u32 {
+        self.index.get() - 1
+    }
+}
+
 /// The `Id` of a salsa struct in the database [`Table`](`crate::table::Table`).
 ///
 /// The high-order bits of an `Id` store a 32-bit generation counter, while
@@ -19,7 +64,7 @@ use crate::zalsa::Zalsa;
 /// it is wrapped in new types.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id {
-    index: NonZeroU32,
+    generationless: GenerationlessId,
     /// `generation` is shifted by one bit, to allow bit tagging for `DatabaseKeyIndex`.
     /// The LSB is always 1.
     ///
@@ -46,11 +91,9 @@ impl Id {
     #[track_caller]
     #[inline]
     pub const unsafe fn from_index(index: u32) -> Self {
-        debug_assert!(index < Self::MAX_U32);
-
         Id {
             // SAFETY: Caller obligation.
-            index: unsafe { NonZeroU32::new_unchecked(index + 1) },
+            generationless: unsafe { GenerationlessId::from_index(index) },
             generation: 0b1,
         }
     }
@@ -72,7 +115,10 @@ impl Id {
         let generation = (bits >> 32) as u32;
         debug_assert!((generation & 0b1) == 0b1);
 
-        Id { index, generation }
+        Id {
+            generationless: GenerationlessId { index },
+            generation,
+        }
     }
 
     /// Create a `salsa::Id` from a `u64` value.
@@ -86,13 +132,16 @@ impl Id {
         let generation = (bits >> 32) as u32;
         debug_assert!((generation & 0b1) == 0b1);
 
-        Id { index, generation }
+        Id {
+            generationless: GenerationlessId { index },
+            generation,
+        }
     }
 
     /// Return a `u64` representation of this `Id`.
     #[inline]
     pub fn as_bits(self) -> u64 {
-        u64::from(self.index.get()) | (u64::from(self.generation) << 32)
+        u64::from(self.generationless.index.get()) | (u64::from(self.generation) << 32)
     }
 
     /// Returns a new `Id` with same index, but the generation incremented by one.
@@ -102,7 +151,7 @@ impl Id {
     #[inline]
     pub fn next_generation(self) -> Option<Id> {
         self.generation.checked_add(1).map(|generation| Id {
-            index: self.index,
+            generationless: self.generationless,
             generation: generation | 0b1,
         })
     }
@@ -115,33 +164,41 @@ impl Id {
     #[inline]
     pub const fn with_generation(self, generation: u32) -> Id {
         Id {
-            index: self.index,
+            generationless: self.generationless,
             generation: (generation << 1) | 0b1,
         }
     }
 
     #[inline]
     pub(crate) const fn index_nonzero(self) -> NonZeroU32 {
-        self.index
+        self.generationless.index_nonzero()
     }
 
     #[inline]
     pub(crate) fn from_raw_parts(index: NonZeroU32, generation: u32) -> Self {
         debug_assert!(index.get() <= Self::MAX_U32);
         debug_assert!((generation & 0b1) == 0b1);
-        Self { index, generation }
+        Self {
+            generationless: GenerationlessId { index },
+            generation,
+        }
     }
 
     /// Return the index portion of this `Id`.
     #[inline]
     pub const fn index(self) -> u32 {
-        self.index.get() - 1
+        self.generationless.index()
     }
 
     /// Return the generation of this `Id`.
     #[inline]
     pub const fn generation(self) -> u32 {
         self.generation
+    }
+
+    #[inline]
+    pub(crate) fn generationless(self) -> GenerationlessId {
+        self.generationless
     }
 }
 

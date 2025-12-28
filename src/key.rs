@@ -2,6 +2,7 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::id::GenerationlessId;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, Id};
 
@@ -40,6 +41,18 @@ impl DatabaseKeyIndex {
 
     #[inline]
     pub(crate) const fn new_non_interned(ingredient_index: IngredientIndex, key_index: Id) -> Self {
+        Self {
+            index: key_index.index_nonzero(),
+            generation_or_ingredient_index: ingredient_index.as_u32()
+                << Self::INGREDIENT_INDEX_SHIFT,
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn new_non_interned_generationless(
+        ingredient_index: IngredientIndex,
+        key_index: GenerationlessId,
+    ) -> Self {
         Self {
             index: key_index.index_nonzero(),
             generation_or_ingredient_index: ingredient_index.as_u32()

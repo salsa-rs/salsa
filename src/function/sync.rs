@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::OccupiedEntry;
 
+use crate::id::GenerationlessId;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::{
     BlockOnTransferredOwner, BlockResult, BlockTransferredResult, Running, WaitResult,
@@ -11,12 +12,15 @@ use crate::tracing;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
 
-pub(crate) type SyncGuard<'me> = crate::sync::MutexGuard<'me, FxHashMap<Id, SyncState>>;
+pub(crate) type SyncGuard<'me> =
+    crate::sync::MutexGuard<'me, FxHashMap<GenerationlessId, SyncState>>;
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
 pub(crate) struct SyncTable {
-    syncs: Mutex<FxHashMap<Id, SyncState>>,
+    // It's okay to use `GenerationlessId` here as `SyncTable` only holds queries while they're executing, and
+    // therefore if pointing to an interned struct it must be alive, therefore we don't need the generation.
+    syncs: Mutex<FxHashMap<GenerationlessId, SyncState>>,
     ingredient: IngredientIndex,
 }
 
@@ -72,12 +76,17 @@ impl SyncTable {
         reentrant: Reentrancy,
     ) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
-        match write.entry(key_index) {
+        match write.entry(key_index.generationless()) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
                 let id = match occupied_entry.get().id {
                     SyncOwner::Thread(id) => id,
                     SyncOwner::Transferred => {
-                        return match self.try_claim_transferred(zalsa, occupied_entry, reentrant) {
+                        return match self.try_claim_transferred(
+                            zalsa,
+                            occupied_entry,
+                            reentrant,
+                            key_index,
+                        ) {
                             Ok(claimed) => claimed,
                             Err(other_thread) => match other_thread.block(write) {
                                 BlockResult::Cycle => ClaimResult::Cycle { inner: false },
@@ -130,7 +139,7 @@ impl SyncTable {
         reentrant: Reentrancy,
     ) -> ClaimResult<'me, ()> {
         let mut write = self.syncs.lock();
-        match write.entry(key_index) {
+        match write.entry(key_index.generationless()) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
                 let id = match occupied_entry.get().id {
                     SyncOwner::Thread(id) => id,
@@ -172,10 +181,10 @@ impl SyncTable {
     fn try_claim_transferred<'me>(
         &'me self,
         zalsa: &'me Zalsa,
-        mut entry: OccupiedEntry<Id, SyncState>,
+        mut entry: OccupiedEntry<GenerationlessId, SyncState>,
         reentrant: Reentrancy,
+        key_index: Id,
     ) -> Result<ClaimResult<'me>, Box<BlockOnTransferredOwner<'me>>> {
-        let key_index = *entry.key();
         let database_key_index = DatabaseKeyIndex::new_non_interned(self.ingredient, key_index);
         let thread_id = thread::current().id();
 
@@ -226,11 +235,12 @@ impl SyncTable {
     fn peek_claim_transferred<'me>(
         &'me self,
         zalsa: &'me Zalsa,
-        mut entry: OccupiedEntry<Id, SyncState>,
+        mut entry: OccupiedEntry<GenerationlessId, SyncState>,
         reentrant: Reentrancy,
     ) -> Result<ClaimResult<'me, ()>, Box<BlockOnTransferredOwner<'me>>> {
         let key_index = *entry.key();
-        let database_key_index = DatabaseKeyIndex::new_non_interned(self.ingredient, key_index);
+        let database_key_index =
+            DatabaseKeyIndex::new_non_interned_generationless(self.ingredient, key_index);
         let thread_id = thread::current().id();
 
         match zalsa
@@ -257,7 +267,7 @@ impl SyncTable {
     /// is currently blocked on this thread (claiming `key_index` from this thread results in a cycle).
     pub(super) fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
         let mut syncs = self.syncs.lock();
-        syncs.get_mut(&key_index).map(|state| {
+        syncs.get_mut(&key_index.generationless()).map(|state| {
             // We set `anyone_waiting` to true because it is used in `ClaimGuard::release`
             // to exit early if the query doesn't need to release any locks.
             // However, there are now dependent queries that need to be released, that's why we set `anyone_waiting` to true,
@@ -318,7 +328,9 @@ impl<'me> ClaimGuard<'me> {
     #[inline(never)]
     fn release_panicking(&self) {
         let mut syncs = self.sync_table.syncs.lock();
-        let state = syncs.remove(&self.key_index).expect("key claimed twice?");
+        let state = syncs
+            .remove(&self.key_index.generationless())
+            .expect("key claimed twice?");
         tracing::debug!(
             "Release claim on {:?} due to panic",
             self.database_key_index()
@@ -358,7 +370,8 @@ impl<'me> ClaimGuard<'me> {
     #[inline(never)]
     fn release_self(&self) {
         let mut syncs = self.sync_table.syncs.lock();
-        let std::collections::hash_map::Entry::Occupied(mut state) = syncs.entry(self.key_index)
+        let std::collections::hash_map::Entry::Occupied(mut state) =
+            syncs.entry(self.key_index.generationless())
         else {
             panic!("key should only be claimed/released once");
         };
@@ -388,7 +401,7 @@ impl<'me> ClaimGuard<'me> {
                 self.sync_table
                     .syncs
                     .lock()
-                    .remove(&self.key_index)
+                    .remove(&self.key_index.generationless())
                     .expect("key should only be claimed/released once"),
                 WaitResult::Panicked,
             );
@@ -406,7 +419,7 @@ impl<'me> ClaimGuard<'me> {
         let SyncState {
             id, claimed_twice, ..
         } = syncs
-            .get_mut(&self.key_index)
+            .get_mut(&self.key_index.generationless())
             .expect("key should only be claimed/released once");
 
         *id = SyncOwner::Transferred;
@@ -434,7 +447,7 @@ impl<'me> ClaimGuard<'me> {
             ReleaseMode::Default => {
                 let mut syncs = self.sync_table.syncs.lock();
                 let state = syncs
-                    .remove(&self.key_index)
+                    .remove(&self.key_index.generationless())
                     .expect("key should only be claimed/released once");
 
                 self.release(state, WaitResult::Completed);
