@@ -230,7 +230,7 @@ where
 
     #[inline]
     pub fn database_key_index(&self, key: Id) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.index, key)
+        DatabaseKeyIndex::new_non_interned(self.index, key)
     }
 
     pub fn set_capacity(&mut self, capacity: usize) {
@@ -350,7 +350,7 @@ where
                 continue;
             }
 
-            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index_with_zalsa(zalsa));
             dependency.collect_minimum_serialized_edges(
                 zalsa,
                 *edge,
@@ -527,7 +527,9 @@ where
 
         // We only serialize the query if there are any memos associated with it.
         for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
-            let memo_ingredient_index = self.memo_ingredient_indices.get(entry.ingredient_index());
+            let memo_ingredient_index = self
+                .memo_ingredient_indices
+                .get(entry.ingredient_index_with_zalsa(zalsa));
 
             let memo =
                 self.get_memo_from_table_for(zalsa, entry.key_index(), memo_ingredient_index);
@@ -614,7 +616,7 @@ mod persistence {
                 .filter(|entry| {
                     let memo_ingredient_index = ingredient
                         .memo_ingredient_indices
-                        .get(entry.ingredient_index());
+                        .get(entry.ingredient_index_with_zalsa(zalsa));
 
                     let memo = ingredient.get_memo_from_table_for(
                         zalsa,
@@ -634,7 +636,7 @@ mod persistence {
             for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
                 let memo_ingredient_index = ingredient
                     .memo_ingredient_indices
-                    .get(entry.ingredient_index());
+                    .get(entry.ingredient_index_with_zalsa(zalsa));
 
                 let memo = ingredient.get_memo_from_table_for(
                     zalsa,
@@ -666,14 +668,18 @@ mod persistence {
                             QueryOrigin::derived_untracked(flattened_edges.drain(..).collect())
                         }
                         QueryOriginRef::Assigned(key) => {
-                            let dependency = zalsa.lookup_ingredient(key.ingredient_index());
+                            let dependency =
+                                zalsa.lookup_ingredient(key.ingredient_index_with_zalsa(zalsa));
                             assert!(
                                 dependency.is_persistable(),
                                 "specified query `{}` must be persistable",
                                 dependency.debug_name()
                             );
 
-                            QueryOrigin::assigned(key)
+                            QueryOrigin::assigned(
+                                key.key_index(),
+                                key.ingredient_index_with_zalsa(zalsa),
+                            )
                         }
                         QueryOriginRef::FixpointInitial => unreachable!(
                             "`should_serialize` returns `false` for provisional queries"
@@ -685,7 +691,7 @@ mod persistence {
                     // TODO: Group structs by ingredient index into a nested map.
                     let key = format!(
                         "{}:{}",
-                        entry.ingredient_index().as_u32(),
+                        entry.ingredient_index_with_zalsa(self.zalsa).as_u32(),
                         entry.key_index().as_bits()
                     );
 
@@ -707,7 +713,7 @@ mod persistence {
         flattened_edges: &mut FxIndexSet<QueryEdge>,
     ) {
         for &edge in edges {
-            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index_with_zalsa(zalsa));
 
             if dependency.is_persistable() {
                 // If the dependency will be serialized, we can serialize the edge directly.

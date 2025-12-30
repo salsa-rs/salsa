@@ -140,7 +140,7 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.ingredient_index, id)
+        DatabaseKeyIndex::new_non_interned(self.ingredient_index, id)
     }
 
     pub fn new_input(
@@ -230,7 +230,7 @@ impl<C: Configuration> IngredientImpl<C> {
         let durability = value.durabilities[field_index];
         let revision = value.revisions[field_index];
         zalsa_local.report_tracked_read_simple(
-            DatabaseKeyIndex::new(field_ingredient_index, id),
+            DatabaseKeyIndex::new_non_interned(field_ingredient_index, id),
             durability,
             revision,
         );

@@ -38,7 +38,7 @@ fn diff_outputs_on_revision(
     // Note that tracked structs are not stored as direct query outputs, but they are still outputs
     // that need to be reported as stale.
     for (identity, id) in &completed_query.stale_tracked_structs {
-        let output = DatabaseKeyIndex::new(identity.ingredient_index(), *id);
+        let output = DatabaseKeyIndex::new_non_interned(identity.ingredient_index(), *id);
         report_stale_output(zalsa, key, output);
     }
 

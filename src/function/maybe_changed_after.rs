@@ -631,7 +631,11 @@ fn validate_provisional(
     for cycle_head in cycle_heads {
         // Test if our cycle heads (with the same revision) are now finalized.
         let Some(kind) = zalsa
-            .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
+            .lookup_ingredient(
+                cycle_head
+                    .database_key_index
+                    .ingredient_index_with_zalsa(zalsa),
+            )
             .provisional_status(zalsa, cycle_head.database_key_index.key_index())
         else {
             return false;

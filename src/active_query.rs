@@ -5,7 +5,6 @@ use crate::accumulator::{
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
     Accumulator,
 };
-use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
@@ -17,6 +16,7 @@ use crate::{
     Id,
 };
 use crate::{durability::Durability, tracked_struct::Identity};
+use crate::{hash::FxIndexSet, IngredientIndex};
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {
@@ -146,8 +146,9 @@ impl ActiveQuery {
     }
 
     /// Adds a key to our list of outputs.
-    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
-        self.input_outputs.insert(QueryEdge::output(key));
+    pub(super) fn add_output(&mut self, key: Id, ingredient_index: IngredientIndex) {
+        self.input_outputs
+            .insert(QueryEdge::output(key, ingredient_index));
     }
 
     /// True if the given key was output by this query.
@@ -417,7 +418,8 @@ pub(crate) struct CompletedQuery {
 }
 
 struct CapturedQuery {
-    database_key_index: DatabaseKeyIndex,
+    id: Id,
+    ingredient_index: IngredientIndex,
     durability: Durability,
     changed_at: Revision,
     cycle_heads: CycleHeads,
@@ -428,7 +430,8 @@ impl fmt::Debug for CapturedQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug_struct = f.debug_struct("CapturedQuery");
         debug_struct
-            .field("database_key_index", &self.database_key_index)
+            .field("id", &self.id)
+            .field("ingredient_index", &self.ingredient_index)
             .field("durability", &self.durability)
             .field("changed_at", &self.changed_at);
         if !self.cycle_heads.is_empty() {
@@ -445,13 +448,17 @@ pub struct Backtrace(Box<[CapturedQuery]>);
 impl Backtrace {
     pub fn capture() -> Option<Self> {
         crate::with_attached_database(|db| {
-            db.zalsa_local().try_with_query_stack(|stack| {
+            let (zalsa, zalsa_local) = db.zalsas();
+            zalsa_local.try_with_query_stack(|stack| {
                 Backtrace(
                     stack
                         .iter()
                         .rev()
                         .map(|query| CapturedQuery {
-                            database_key_index: query.database_key_index,
+                            id: query.database_key_index.key_index(),
+                            ingredient_index: query
+                                .database_key_index
+                                .ingredient_index_with_zalsa(zalsa),
                             durability: query.durability,
                             changed_at: query.changed_at,
                             cycle_heads: query.cycle_heads.clone(),
@@ -486,7 +493,8 @@ impl fmt::Display for Backtrace {
         for (
             idx,
             &CapturedQuery {
-                database_key_index,
+                id,
+                ingredient_index,
                 durability,
                 changed_at,
                 ref cycle_heads,
@@ -494,6 +502,7 @@ impl fmt::Display for Backtrace {
             },
         ) in self.0.iter().enumerate()
         {
+            let database_key_index = DatabaseKeyIndex::new_non_interned(ingredient_index, id);
             write!(fmt, "{idx:>4}: {database_key_index:?}")?;
             if full {
                 write!(fmt, " -> ({changed_at:?}, {durability:#?}")?;
@@ -504,9 +513,7 @@ impl fmt::Display for Backtrace {
             }
             writeln!(fmt)?;
             crate::attach::with_attached_database(|db| {
-                let ingredient = db
-                    .zalsa()
-                    .lookup_ingredient(database_key_index.ingredient_index());
+                let ingredient = db.zalsa().lookup_ingredient(ingredient_index);
                 let loc = ingredient.location();
                 writeln!(fmt, "{indent}at {}:{}", loc.file, loc.line)?;
                 if !cycle_heads.is_empty() {

@@ -44,7 +44,7 @@ where
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
 
-        let id = database_key_index.key_index();
+        let id = claim_guard.key_index();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         crate::tracing::info!("{:?}: executing query", database_key_index);
@@ -61,6 +61,7 @@ where
                     db,
                     zalsa,
                     zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                    id,
                     opt_old_memo,
                 );
                 (new_value, active_query.pop())
@@ -70,6 +71,7 @@ where
                     db,
                     zalsa,
                     zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                    id,
                     opt_old_memo,
                 );
 
@@ -166,7 +168,7 @@ where
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
 
-        let id = database_key_index.key_index();
+        let id = claim_guard.key_index();
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // This is different from `opt_old_memo` which might be from a different revision.
@@ -219,6 +221,7 @@ where
                 db,
                 zalsa,
                 active_query,
+                id,
                 last_provisional_memo_opt.or(opt_old_memo),
             );
 
@@ -377,6 +380,7 @@ where
         db: &'db C::DbView,
         zalsa: &'db Zalsa,
         active_query: ActiveQueryGuard<'db>,
+        key_index: Id,
         opt_old_memo: Option<&Memo<'db, C>>,
     ) -> (C::Output<'db>, ActiveQueryGuard<'db>) {
         if let Some(old_memo) = opt_old_memo {
@@ -398,10 +402,7 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let new_value = C::execute(
-            db,
-            C::id_to_input(zalsa, active_query.database_key_index.key_index()),
-        );
+        let new_value = C::execute(db, C::id_to_input(zalsa, key_index));
 
         (new_value, active_query)
     }
@@ -492,7 +493,8 @@ fn outer_cycle(
     cycle_heads
         .iter_not_eq(current_key)
         .rfind(|head| {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+            let ingredient =
+                zalsa.lookup_ingredient(head.database_key_index.ingredient_index_with_zalsa(zalsa));
 
             matches!(
                 ingredient.wait_for(zalsa, head.database_key_index.key_index()),
@@ -531,7 +533,8 @@ fn collect_all_cycle_heads(
         max_iteration_count = max_iteration_count.max(head.iteration_count.load());
         depends_on_self |= head.database_key_index == database_key_index;
 
-        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+        let ingredient =
+            zalsa.lookup_ingredient(head.database_key_index.ingredient_index_with_zalsa(zalsa));
 
         let provisional_status = ingredient
             .provisional_status(zalsa, head.database_key_index.key_index())
@@ -654,7 +657,8 @@ fn try_complete_cycle_head(
     let converged = this_converged
         && cycle_heads.iter_not_eq(me).all(|head| {
             let database_key_index = head.database_key_index;
-            let ingredient = zalsa.lookup_ingredient(database_key_index.ingredient_index());
+            let ingredient =
+                zalsa.lookup_ingredient(database_key_index.ingredient_index_with_zalsa(zalsa));
 
             let converged = ingredient.cycle_converged(zalsa, database_key_index.key_index());
 
@@ -673,7 +677,8 @@ fn try_complete_cycle_head(
         // Set the nested cycles as verified. This is necessary because
         // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
         for head in cycle_heads.iter_not_eq(me) {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+            let ingredient =
+                zalsa.lookup_ingredient(head.database_key_index.ingredient_index_with_zalsa(zalsa));
             ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
         }
 
@@ -700,7 +705,8 @@ fn try_complete_cycle_head(
 
     // Update the iteration count of nested cycles.
     for head in cycle_heads.iter_not_eq(me) {
-        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+        let ingredient =
+            zalsa.lookup_ingredient(head.database_key_index.ingredient_index_with_zalsa(zalsa));
 
         ingredient.set_cycle_iteration_count(
             zalsa,

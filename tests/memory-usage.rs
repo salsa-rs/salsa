@@ -136,7 +136,7 @@ fn test() {
                 IngredientInfo {
                     debug_name: "memory_usage::MyInterned<'_>",
                     count: 3,
-                    size_of_metadata: 192,
+                    size_of_metadata: 168,
                     size_of_fields: 24,
                     heap_size_of_fields: None,
                 },
@@ -168,7 +168,7 @@ fn test() {
                 IngredientInfo {
                     debug_name: "memory_usage::MyTracked<'_>",
                     count: 2,
-                    size_of_metadata: 168,
+                    size_of_metadata: 160,
                     size_of_fields: 16,
                     heap_size_of_fields: None,
                 },
@@ -178,7 +178,7 @@ fn test() {
                 IngredientInfo {
                     debug_name: "(memory_usage::MyTracked<'_>, memory_usage::MyTracked<'_>)",
                     count: 1,
-                    size_of_metadata: 108,
+                    size_of_metadata: 104,
                     size_of_fields: 16,
                     heap_size_of_fields: None,
                 },
