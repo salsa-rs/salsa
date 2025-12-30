@@ -577,11 +577,15 @@ fn complete_cycle_participant(
     // transfer it to the outermost cycle head (if any). This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
-    if let Some(outer_cycle) = outer_cycle {
-        claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
-    } else {
-        claim_guard.set_release_mode(ReleaseMode::SelfOnly);
-    }
+    let outer_cycle = outer_cycle.unwrap_or_else(|| {
+        cycle_heads
+            .iter()
+            .next()
+            .expect("cycle heads should not be empty")
+            .database_key_index
+    });
+
+    claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
 
     let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
