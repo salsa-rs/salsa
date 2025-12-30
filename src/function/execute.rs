@@ -577,13 +577,8 @@ fn complete_cycle_participant(
     // transfer it to the outermost cycle head (if any). This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
-    let outer_cycle = outer_cycle.unwrap_or_else(|| {
-        cycle_heads
-            .iter()
-            .next()
-            .expect("cycle heads should not be empty")
-            .database_key_index
-    });
+    let outer_cycle = outer_cycle
+        .expect("query with cycles that doesn't depend on itself should have an outer cycle");
 
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
 
