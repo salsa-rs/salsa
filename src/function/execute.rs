@@ -134,7 +134,7 @@ where
             // outputs and update the tracked struct IDs for seeding the next revision.
             self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
-
+        let immutable = completed_query.revisions.origin.is_immutable();
         let memo = self.insert_memo(
             zalsa,
             id,
@@ -149,6 +149,9 @@ where
         if claim_guard.drop() {
             None
         } else {
+            if immutable {
+                self.immutable_memos.push(id);
+            }
             Some(memo)
         }
     }
@@ -346,6 +349,7 @@ where
                 }
             };
 
+            let immutable = completed_query.revisions.origin.is_immutable();
             let new_memo = self.insert_memo(
                 zalsa,
                 id,
@@ -356,6 +360,9 @@ where
                 ),
                 memo_ingredient_index,
             );
+            if immutable {
+                self.immutable_memos.push(id);
+            }
 
             last_provisional_memo_opt = Some(new_memo);
 

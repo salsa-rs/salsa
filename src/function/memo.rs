@@ -68,7 +68,8 @@ impl<C: Configuration> IngredientImpl<C> {
             match memo.revisions.origin.as_ref() {
                 QueryOriginRef::Assigned(_)
                 | QueryOriginRef::DerivedUntracked(_)
-                | QueryOriginRef::FixpointInitial => {
+                | QueryOriginRef::FixpointInitial
+                | QueryOriginRef::DerivedImmutable => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs

@@ -6,7 +6,13 @@ use crate::{Durability, Runtime};
 /// Setter for a field of an input.
 pub trait Setter: Sized {
     type FieldTy;
+    /// Sets a new durability for the field.
     fn with_durability(self, durability: Durability) -> Self;
+    /// Sets the value of the field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `with_durability` was called with [`Durability::IMMUTABLE`].
     fn to(self, value: Self::FieldTy) -> Self::FieldTy;
 }
 

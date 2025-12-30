@@ -194,6 +194,7 @@ pub struct IngredientImpl<C: Configuration> {
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
     deleted_entries: DeletedEntries<C>,
+    immutable_memos: crossbeam_queue::SegQueue<Id>,
 }
 
 impl<C> IngredientImpl<C>
@@ -212,6 +213,7 @@ where
             deleted_entries: Default::default(),
             view_caster: OnceLock::new(),
             sync_table: SyncTable::new(index),
+            immutable_memos: crossbeam_queue::SegQueue::new(),
         }
     }
 
@@ -665,6 +667,7 @@ mod persistence {
 
                             QueryOrigin::derived_untracked(flattened_edges.drain(..).collect())
                         }
+                        QueryOriginRef::DerivedImmutable => QueryOrigin::derived_immutable(),
                         QueryOriginRef::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
                             assert!(

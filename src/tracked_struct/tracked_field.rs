@@ -66,7 +66,7 @@ where
     ) -> VerifyResult {
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
         let field_changed_at = data.revisions[self.field_index];
-        VerifyResult::changed_if(field_changed_at > revision)
+        VerifyResult::changed_after(field_changed_at, revision)
     }
 
     fn collect_minimum_serialized_edges(

@@ -522,6 +522,10 @@ impl QueryRevisionsExtra {
 
         Self(inner)
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
 }
 
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
@@ -805,6 +809,10 @@ pub enum QueryOriginRef<'a> {
     /// (but we know there were more).
     DerivedUntracked(&'a [QueryEdge]) = QueryOriginKind::DerivedUntracked as u8,
 
+    /// The value was derived by executing a function
+    /// but that function only read from immutable inputs.
+    DerivedImmutable,
+
     /// The value is an initial provisional value for a query that supports fixpoint iteration.
     FixpointInitial = QueryOriginKind::FixpointInitial as u8,
 }
@@ -816,7 +824,9 @@ impl<'a> QueryOriginRef<'a> {
     pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
+            QueryOriginRef::Assigned(_)
+            | QueryOriginRef::FixpointInitial
+            | QueryOriginRef::DerivedImmutable => None,
         };
         opt_edges.into_iter().flat_map(input_edges)
     }
@@ -825,7 +835,9 @@ impl<'a> QueryOriginRef<'a> {
     pub(crate) fn outputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
+            QueryOriginRef::Assigned(_)
+            | QueryOriginRef::FixpointInitial
+            | QueryOriginRef::DerivedImmutable => None,
         };
         opt_edges.into_iter().flat_map(output_edges)
     }
@@ -834,7 +846,9 @@ impl<'a> QueryOriginRef<'a> {
     pub(crate) fn edges(self) -> &'a [QueryEdge] {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
+            QueryOriginRef::Assigned(_)
+            | QueryOriginRef::FixpointInitial
+            | QueryOriginRef::DerivedImmutable => None,
         };
 
         opt_edges.unwrap_or_default()
@@ -859,11 +873,15 @@ enum QueryOriginKind {
 
     /// The value was derived by executing a function
     /// _and_ Salsa was able to track all of said function's inputs.
-    Derived = 0b11,
+    Derived = 0b10,
 
     /// The value was derived by executing a function
     /// but that function also reported that it read untracked inputs.
-    DerivedUntracked = 0b10,
+    DerivedImmutable = 0b11,
+
+    /// The value was derived by executing a function
+    /// but that function also reported that it read untracked inputs.
+    DerivedUntracked = 0b100,
 }
 
 /// Tracks how a memoized value for a given query was created.
@@ -962,6 +980,14 @@ impl QueryOrigin {
         origin
     }
 
+    pub(crate) fn derived_immutable() -> QueryOrigin {
+        QueryOrigin {
+            kind: QueryOriginKind::DerivedImmutable,
+            metadata: 0,
+            data: QueryOriginData { empty: () },
+        }
+    }
+
     /// Create a query origin of type `QueryOriginKind::Assigned`, with the given key.
     pub fn assigned(key: DatabaseKeyIndex) -> QueryOrigin {
         QueryOrigin {
@@ -971,6 +997,10 @@ impl QueryOrigin {
                 index: key.key_index(),
             },
         }
+    }
+
+    pub fn is_immutable(&self) -> bool {
+        matches!(self.kind, QueryOriginKind::DerivedImmutable)
     }
 
     /// Return a read-only reference to this query origin.
@@ -1014,6 +1044,7 @@ impl QueryOrigin {
             }
 
             QueryOriginKind::FixpointInitial => QueryOriginRef::FixpointInitial,
+            QueryOriginKind::DerivedImmutable => QueryOriginRef::DerivedImmutable,
         }
     }
 }
@@ -1043,6 +1074,7 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
             Derived(Box<[QueryEdge]>) = QueryOriginKind::Derived as u8,
             DerivedUntracked(Box<[QueryEdge]>) = QueryOriginKind::DerivedUntracked as u8,
             FixpointInitial = QueryOriginKind::FixpointInitial as u8,
+            DerivedImmutable = QueryOriginKind::DerivedImmutable as u8,
         }
 
         Ok(match QueryOriginOwned::deserialize(deserializer)? {
@@ -1050,6 +1082,7 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
             QueryOriginOwned::Derived(edges) => QueryOrigin::derived(edges),
             QueryOriginOwned::DerivedUntracked(edges) => QueryOrigin::derived_untracked(edges),
             QueryOriginOwned::FixpointInitial => QueryOrigin::fixpoint_initial(),
+            QueryOriginOwned::DerivedImmutable => QueryOrigin::derived_immutable(),
         })
     }
 }
@@ -1075,7 +1108,9 @@ impl Drop for QueryOrigin {
             }
 
             // The data stored for this variants is `Copy`.
-            QueryOriginKind::FixpointInitial | QueryOriginKind::Assigned => {}
+            QueryOriginKind::FixpointInitial
+            | QueryOriginKind::Assigned
+            | QueryOriginKind::DerivedImmutable => {}
         }
     }
 }
