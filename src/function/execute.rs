@@ -253,13 +253,8 @@ where
             // Did the new result we got depend on our own provisional value, in a cycle?
             // If not, return because this query is not a cycle head.
             if !depends_on_self {
-                let completed_query = complete_cycle_participant(
-                    active_query,
-                    claim_guard,
-                    cycle_heads,
-                    outer_cycle,
-                    iteration_count,
-                );
+                let completed_query =
+                    complete_cycle_participant(active_query, claim_guard, cycle_heads, outer_cycle);
 
                 break (new_value, completed_query);
             }
@@ -613,21 +608,16 @@ fn complete_cycle_participant(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
-    outer_cycle: Option<DatabaseKeyIndex>,
+    outer_cycle: DatabaseKeyIndex,
     iteration_count: IterationCount,
 ) -> CompletedQuery {
-    let database_key_index = active_query.database_key_index;
-
-    let Some(outer_cycle) = outer_cycle else {
-        panic!("cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?}).");
-    };
-
     // For as long as this query participates in any cycle, don't release its lock, instead
     // transfer it to the outermost cycle head (if any). This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
 
+    let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -637,6 +627,10 @@ fn complete_cycle_participant(
         panic!("{database_key_index:?}: execute: too many cycle iterations")
     });
 
+    // The outer-most query only bumps the iteration count of cycle heads. It doesn't
+    // increment the iteration count for cycle participants. It's important that we bump the
+    // iteration count here or the head will re-use the same iteration count in the next
+    // iteration (which can break cache invalidation).
     completed_query
         .revisions
         .update_iteration_count_mut(database_key_index, iteration_count);
