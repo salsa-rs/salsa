@@ -12,7 +12,7 @@ macro_rules! maybe_backdate {
 
     ) => {
         $zalsa::always_update(
-            &mut $revision_place,
+            &$revision_place,
             $current_revision,
             &mut $old_field_place,
             $new_field_place,
@@ -29,7 +29,7 @@ macro_rules! maybe_backdate {
         $zalsa:ident,
      ) => {
         if $maybe_update(std::ptr::addr_of_mut!($old_field_place), $new_field_place) {
-            $revision_place = $current_revision;
+            $revision_place.store($current_revision);
         }
     };
 }

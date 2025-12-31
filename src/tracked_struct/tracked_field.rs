@@ -64,8 +64,8 @@ where
         revision: crate::Revision,
         _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
-        let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
-        let field_changed_at = data.revisions[self.field_index];
+        let data = <super::IngredientImpl<C>>::data_raw(zalsa.table(), input);
+        let field_changed_at = unsafe { (&(*data).revisions)[self.field_index].load() };
         VerifyResult::changed_if(field_changed_at > revision)
     }
 

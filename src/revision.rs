@@ -13,6 +13,7 @@ const START: usize = 1;
 /// recomputed, but is not something you should have to interact with
 /// directly as a user of salsa.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct Revision {
     generation: NonZeroUsize,
 }
@@ -49,7 +50,7 @@ impl Revision {
     }
 
     #[inline]
-    pub(crate) fn as_usize(self) -> usize {
+    pub(crate) const fn as_usize(self) -> usize {
         self.generation.get()
     }
 }
@@ -81,7 +82,7 @@ impl std::fmt::Debug for Revision {
 }
 
 #[derive(Debug)]
-pub(crate) struct AtomicRevision {
+pub struct AtomicRevision {
     data: AtomicUsize,
 }
 
@@ -116,13 +117,19 @@ impl From<Revision> for AtomicRevision {
 }
 
 impl AtomicRevision {
-    pub(crate) const fn start() -> Self {
+    pub const fn start() -> Self {
         Self {
             data: AtomicUsize::new(START),
         }
     }
 
-    pub(crate) fn load(&self) -> Revision {
+    pub const fn new(revision: Revision) -> Self {
+        Self {
+            data: AtomicUsize::new(revision.as_usize()),
+        }
+    }
+
+    pub fn load(&self) -> Revision {
         Revision {
             // SAFETY: We know that the value is non-zero because we only ever store `START` which 1, or a
             // Revision which is guaranteed to be non-zero.
@@ -130,8 +137,21 @@ impl AtomicRevision {
         }
     }
 
-    pub(crate) fn store(&self, r: Revision) {
+    pub fn store(&self, r: Revision) {
         self.data.store(r.as_usize(), Ordering::Release);
+    }
+
+    pub fn get_mut(&mut self) -> &mut Revision {
+        // SAFETY: `Revision` is repr(transparent) over `NonZeroUsize`, we only ever store `NonZeroUsize` values, thus making this cast valid.
+        unsafe { &mut *(self.data.get_mut() as *mut usize).cast::<Revision>() }
+    }
+}
+
+impl Clone for AtomicRevision {
+    fn clone(&self) -> Self {
+        Self {
+            data: AtomicUsize::new(self.load().as_usize()),
+        }
     }
 }
 
