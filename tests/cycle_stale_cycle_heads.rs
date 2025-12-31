@@ -1,3 +1,5 @@
+#![cfg(feature = "inventory")]
+
 //! Test for stale cycle heads when nested cycles are discovered incrementally.
 //!
 //! Scenario from ty:
