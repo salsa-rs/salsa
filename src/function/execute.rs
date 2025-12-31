@@ -235,7 +235,7 @@ where
                 let mut completed_query = active_query.pop();
                 completed_query
                     .revisions
-                    .update_iteration_count_mut(database_key_index, iteration_count);
+                    .update_cycle_participant_iteration_count(iteration_count);
 
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
                 break (new_value, completed_query);
@@ -253,8 +253,17 @@ where
             // Did the new result we got depend on our own provisional value, in a cycle?
             // If not, return because this query is not a cycle head.
             if !depends_on_self {
-                let completed_query =
-                    complete_cycle_participant(active_query, claim_guard, cycle_heads, outer_cycle);
+                let Some(outer_cycle) = outer_cycle else {
+                    panic!("cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?}).");
+                };
+
+                let completed_query = complete_cycle_participant(
+                    active_query,
+                    claim_guard,
+                    cycle_heads,
+                    outer_cycle,
+                    iteration_count,
+                );
 
                 break (new_value, completed_query);
             }
@@ -627,13 +636,13 @@ fn complete_cycle_participant(
         panic!("{database_key_index:?}: execute: too many cycle iterations")
     });
 
-    // The outer-most query only bumps the iteration count of cycle heads. It doesn't
+    // The outermost query only bumps the iteration count of cycle heads. It doesn't
     // increment the iteration count for cycle participants. It's important that we bump the
     // iteration count here or the head will re-use the same iteration count in the next
     // iteration (which can break cache invalidation).
     completed_query
         .revisions
-        .update_iteration_count_mut(database_key_index, iteration_count);
+        .update_cycle_participant_iteration_count(iteration_count);
 
     completed_query
 }
