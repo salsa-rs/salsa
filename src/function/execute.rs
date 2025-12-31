@@ -332,7 +332,6 @@ where
             let value_converged = C::values_equal(&new_value, last_provisional_value);
 
             let completed_query = match try_complete_cycle_head(
-                zalsa,
                 active_query,
                 claim_guard,
                 cycle_heads,
@@ -651,9 +650,7 @@ fn complete_cycle_participant(
 ///
 /// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
 /// Returns `Err` if the cycle head needs to keep iterating.
-#[expect(clippy::too_many_arguments)]
 fn try_complete_cycle_head(
-    zalsa: &Zalsa,
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
@@ -696,6 +693,8 @@ fn try_complete_cycle_head(
 
         return Ok(completed_query);
     }
+
+    let zalsa = claim_guard.zalsa();
 
     // If this is the outermost cycle, test if all inner cycles have converged as well.
     let converged = this_converged
