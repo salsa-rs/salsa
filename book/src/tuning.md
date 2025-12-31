@@ -1,20 +1,50 @@
 # Tuning Salsa
 
-## LRU Cache
+## Cache Eviction (LRU)
 
-You can specify an LRU cache size for any non-input query:
+Salsa supports Least Recently Used (LRU) cache eviction for tracked functions.
+By default, memoized values are never evicted (unbounded cache). You can enable
+LRU eviction by specifying a capacity at compile time:
 
-```rs
-let lru_capacity: usize = 128;
-base_db::ParseQuery.in_db_mut(self).set_lru_capacity(lru_capacity);
+```rust
+#[salsa::tracked(lru = 128)]
+fn parse(db: &dyn Db, input: SourceFile) -> Ast {
+    // ...
+}
 ```
 
-The default is `0`, which disables LRU-caching entirely.
+With `lru = 128`, Salsa will keep at most 128 memoized values for this function.
+When the cache exceeds this capacity, the least recently used values are evicted
+at the start of each new revision.
 
-Note that there is no garbage collection for keys and
-results of old queries, so LRU caches are currently the
-only knob available for avoiding unbounded memory usage
-for long-running apps built on Salsa.
+### Zero-Cost When Disabled
+
+When no `lru` capacity is specified (the default), Salsa uses a no-op eviction
+policy that is completely optimized away by the compiler. This means there is
+zero runtime overhead for functions that don't need cache eviction.
+
+### Runtime Capacity Adjustment
+
+For functions with LRU enabled, you can adjust the capacity at runtime:
+
+```rust
+#[salsa::tracked(lru = 128)]
+fn my_query(db: &dyn Db, input: MyInput) -> Output {
+    // ...
+}
+
+// Later, adjust the capacity:
+my_query::set_lru_capacity(db, 256);
+```
+
+**Note:** The `set_lru_capacity` method is only generated for functions that have
+an `lru` attribute. Functions without LRU enabled do not have this method.
+
+### Memory Management
+
+There is no garbage collection for keys and results of old queries, so LRU caches
+are currently the primary mechanism for avoiding unbounded memory usage in
+long-running applications built on Salsa.
 
 ## Intern Queries
 

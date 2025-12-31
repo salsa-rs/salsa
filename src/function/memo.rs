@@ -539,6 +539,7 @@ mod _memory_usage {
         type SalsaStruct<'db> = DummyStruct;
         type Input<'db> = ();
         type Output<'db> = NonZeroUsize;
+        type Eviction = crate::function::eviction::NoopEviction;
 
         fn values_equal<'db>(_: &Self::Output<'db>, _: &Self::Output<'db>) -> bool {
             unimplemented!()
