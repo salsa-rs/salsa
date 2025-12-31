@@ -504,7 +504,7 @@ fn outer_cycle(
 
 /// Ensure that we resolve the latest cycle heads from any provisional value this query depended on during execution.
 ///
-/// ```
+/// ```txt
 /// E -> C -> D -> B -> A -> B (cycle)
 ///                     -- A completes, heads = [B]
 /// E -> C -> D -> B -> C (cycle)
