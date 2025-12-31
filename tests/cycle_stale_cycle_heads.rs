@@ -59,8 +59,8 @@ fn query_b(db: &dyn salsa::Database, input: Input) -> u32 {
     // First call A - this will detect A<->B cycle and A will complete
     let a_val = query_a(db, input);
 
+    let c_val = query_c(db, input);
     let d_val = query_d(db, input);
-    let c_val = query_d(db, input);
 
     // Then read C - this reveals B is part of C's cycle
     (a_val + d_val + c_val).min(50)

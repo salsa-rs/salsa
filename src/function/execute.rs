@@ -579,7 +579,7 @@ fn collect_all_cycle_heads(
             );
 
             max_iteration_count = max_iteration_count.max(nested_max_iteration_count);
-            depends_on_self = nested_depends_on_self;
+            depends_on_self |= nested_depends_on_self;
         }
 
         (max_iteration_count, depends_on_self)
