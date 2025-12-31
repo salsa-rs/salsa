@@ -314,6 +314,10 @@ impl<'me> ClaimGuard<'me> {
         self.zalsa
     }
 
+    pub(crate) fn zalsa_local(&self) -> &'me ZalsaLocal {
+        self.zalsa_local
+    }
+
     pub(crate) const fn database_key_index(&self) -> DatabaseKeyIndex {
         DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index)
     }
@@ -327,23 +331,17 @@ impl<'me> ClaimGuard<'me> {
     fn release_panicking(&self) {
         let mut syncs = self.sync_table.syncs.lock();
         let state = syncs.remove(&self.key_index).expect("key claimed twice?");
+        let result = if self.zalsa_local.should_trigger_local_cancellation() {
+            WaitResult::Cancelled
+        } else {
+            WaitResult::Panicked
+        };
         tracing::debug!(
-            "Release claim on {:?} due to panic",
-            self.database_key_index()
+            "Release claim on {:?} due to {:?}",
+            self.database_key_index(),
+            result
         );
-        self.release(state, WaitResult::Panicked);
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn release_cancelled(&self) {
-        let mut syncs = self.sync_table.syncs.lock();
-        let state = syncs.remove(&self.key_index).expect("key claimed twice?");
-        tracing::debug!(
-            "Release claim on {:?} due to cancellation",
-            self.database_key_index()
-        );
-        self.release(state, WaitResult::Cancelled);
+        self.release(state, result);
     }
 
     #[inline(always)]
@@ -469,11 +467,7 @@ impl<'me> ClaimGuard<'me> {
 impl Drop for ClaimGuard<'_> {
     fn drop(&mut self) {
         if thread::panicking() {
-            if self.zalsa_local.should_trigger_local_cancellation() {
-                self.release_cancelled();
-            } else {
-                self.release_panicking();
-            }
+            self.release_panicking();
             return;
         }
 

@@ -181,7 +181,7 @@ where
             }
         }
 
-        self.execute(db, claim_guard, zalsa_local, opt_old_memo)
+        self.execute(db, claim_guard, opt_old_memo)
     }
 
     #[cold]

@@ -38,7 +38,6 @@ where
         &'db self,
         db: &'db C::DbView,
         mut claim_guard: ClaimGuard<'db>,
-        zalsa_local: &'db ZalsaLocal,
         opt_old_memo: Option<&Memo<'db, C>>,
     ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = claim_guard.database_key_index();
@@ -60,7 +59,9 @@ where
                 let (new_value, active_query) = Self::execute_query(
                     db,
                     zalsa,
-                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                    claim_guard
+                        .zalsa_local()
+                        .push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
                 );
                 (new_value, active_query.pop())
@@ -69,7 +70,9 @@ where
                 let (mut new_value, active_query) = Self::execute_query(
                     db,
                     zalsa,
-                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
+                    claim_guard
+                        .zalsa_local()
+                        .push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
                 );
 
@@ -97,8 +100,9 @@ where
                     // Cycle participants that don't have a fallback will be discarded in
                     // `validate_provisional()`.
                     let cycle_heads = std::mem::take(cycle_heads);
-                    let active_query =
-                        zalsa_local.push_query(database_key_index, IterationCount::initial());
+                    let active_query = claim_guard
+                        .zalsa_local()
+                        .push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                     completed_query = active_query.pop();
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
@@ -110,12 +114,12 @@ where
                 (new_value, completed_query)
             }
             CycleRecoveryStrategy::Fixpoint => {
+                let zalsa_local = claim_guard.zalsa_local();
                 let was_disabled = zalsa_local.set_cancellation_disabled(true);
                 let res = self.execute_maybe_iterate(
                     db,
                     opt_old_memo,
                     &mut claim_guard,
-                    zalsa_local,
                     memo_ingredient_index,
                 );
                 zalsa_local.set_cancellation_disabled(was_disabled);
@@ -163,7 +167,6 @@ where
         db: &'db C::DbView,
         opt_old_memo: Option<&Memo<'db, C>>,
         claim_guard: &mut ClaimGuard<'db>,
-        zalsa_local: &'db ZalsaLocal,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> (C::Output<'db>, CompletedQuery) {
         claim_guard.set_release_mode(ReleaseMode::Default);
@@ -210,7 +213,9 @@ where
             PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
 
         let (new_value, completed_query) = loop {
-            let active_query = zalsa_local.push_query(database_key_index, iteration_count);
+            let active_query = claim_guard
+                .zalsa_local()
+                .push_query(database_key_index, iteration_count);
 
             // Tracked struct ids that existed in the previous revision
             // but weren't recreated in the last iteration. It's important that we seed the next
@@ -253,7 +258,12 @@ where
                 iteration_count,
             );
 
-            let outer_cycle = outer_cycle(zalsa, zalsa_local, &cycle_heads, database_key_index);
+            let outer_cycle = outer_cycle(
+                zalsa,
+                claim_guard.zalsa_local(),
+                &cycle_heads,
+                database_key_index,
+            );
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             // If not, return because this query is not a cycle head.

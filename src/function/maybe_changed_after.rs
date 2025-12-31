@@ -229,7 +229,7 @@ where
         // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
         // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
         if old_memo.value.is_some() && !cycle_heads.has_any() {
-            let memo = self.execute(db, claim_guard, zalsa_local, Some(old_memo))?;
+            let memo = self.execute(db, claim_guard, Some(old_memo))?;
             let changed_at = memo.revisions.changed_at;
 
             // Always assume that a provisional value has changed.
