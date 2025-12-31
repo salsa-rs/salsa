@@ -479,8 +479,8 @@ fn outer_cycle(
             stack
                 .iter()
                 .find(|active_query| {
-                    cycle_heads.contains(&active_query.database_key_index)
-                        && active_query.database_key_index != current_key
+                    active_query.database_key_index != current_key
+                        && cycle_heads.contains(&active_query.database_key_index)
                 })
                 .map(|active_query| active_query.database_key_index)
         })
@@ -503,38 +503,50 @@ fn outer_cycle(
 }
 
 /// Ensure that we resolve the latest cycle heads from any provisional value this query depended on during execution.
-/// This isn't required in a single-threaded execution, but it's not guaranteed that `cycle_heads` contains all cycles
-/// in a multi-threaded execution:
 ///
-/// t1: a -> b
-/// t2: c -> b (blocks on t1)
-/// t1: a -> b -> c (cycle, returns fixpoint initial with c(0) in heads)
-/// t1: a -> b (completes b, b has c(0) in its cycle heads, releases `b`, which resumes `t2`, and `retry_provisional` blocks on `c` (t2))
-/// t2: c -> a (cycle, returns fixpoint initial for a with a(0) in heads)
-/// t2: completes c, `provisional_retry` blocks on `a` (t2)
-/// t1: a (completes `b` with `c` in heads)
+/// ```
+/// E -> C -> D -> B -> A -> B (cycle)
+///                     -- A completes, heads = [B]
+/// E -> C -> D -> B -> C (cycle)
+///                  -> D (cycle)
+///                -- B completes, heads = [B, C, D]
+/// E -> C -> D -> E (cycle)
+///           -- D completes, heads = [E, B, C, D]
+/// E -> C
+///      -- C completes, heads = [E, B, C, D]
+/// E -> X -> A
+///      -- X completes, heads = [B]
+/// ```
 ///
-/// Note how `a` only depends on `c` but not `a`. This is because `a` only saw the initial value of `c` and wasn't updated when `c` completed.
-/// That's why we need to resolve the cycle heads recursively so `cycle_heads` contains all cycle heads at the moment this query completed.
+/// Note how `X` only depends on `A`. It doesn't know that it's part of the outer cycle `X`.
+/// An old implementation resolved the cycle heads 1-level deep but that's not enough, because
+/// `X` then completes with `[B, C, D]` as it's heads. But `B`, `C`, and `D` are no longer on the stack
+/// when `X` completes (which is the real outermost cycle). That's why we need to resolve all cycle heads
+/// recursively, so that `X` completes with `[B, C, D, E]
 fn collect_all_cycle_heads(
     zalsa: &Zalsa,
     cycle_heads: &mut CycleHeads,
     database_key_index: DatabaseKeyIndex,
     iteration_count: IterationCount,
 ) -> (IterationCount, bool) {
-    let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationCount); 1]> =
-        SmallVec::new_const();
-    let mut max_iteration_count = iteration_count;
-    let mut depends_on_self = false;
+    fn collect_recursive(
+        zalsa: &Zalsa,
+        current_head: DatabaseKeyIndex,
+        me: DatabaseKeyIndex,
+        query_heads: &CycleHeads,
+        missing_heads: &mut SmallVec<[(DatabaseKeyIndex, IterationCount); 4]>,
+    ) -> (IterationCount, bool) {
+        if current_head == me {
+            return (IterationCount::initial(), true);
+        }
 
-    for head in cycle_heads.iter() {
-        max_iteration_count = max_iteration_count.max(head.iteration_count.load());
-        depends_on_self |= head.database_key_index == database_key_index;
+        let mut max_iteration_count = IterationCount::initial();
+        let mut depends_on_self = false;
 
-        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+        let ingredient = zalsa.lookup_ingredient(current_head.ingredient_index());
 
         let provisional_status = ingredient
-            .provisional_status(zalsa, head.database_key_index.key_index())
+            .provisional_status(zalsa, current_head.key_index())
             .expect("cycle head memo must have been created during the execution");
 
         // A query should only ever depend on other heads that are provisional.
@@ -542,25 +554,56 @@ fn collect_all_cycle_heads(
         // but it wasn't executed in the last iteration of said cycle.
         assert!(provisional_status.is_provisional());
 
-        for nested_head in provisional_status.cycle_heads() {
-            let nested_as_tuple = (
-                nested_head.database_key_index,
-                nested_head.iteration_count.load(),
+        for head in provisional_status.cycle_heads() {
+            let iteration_count = head.iteration_count.load();
+            max_iteration_count = max_iteration_count.max(iteration_count);
+
+            if query_heads.contains(&head.database_key_index) {
+                continue;
+            }
+
+            let head_as_tuple = (head.database_key_index, iteration_count);
+
+            if missing_heads.contains(&head_as_tuple) {
+                continue;
+            }
+
+            missing_heads.push((head.database_key_index, iteration_count));
+
+            let (nested_max_iteration_count, nested_depends_on_self) = collect_recursive(
+                zalsa,
+                head.database_key_index,
+                me,
+                query_heads,
+                missing_heads,
             );
 
-            if !cycle_heads.contains(&nested_head.database_key_index)
-                && !missing_heads.contains(&nested_as_tuple)
-            {
-                missing_heads.push(nested_as_tuple);
-            }
+            max_iteration_count = max_iteration_count.max(nested_max_iteration_count);
+            depends_on_self = nested_depends_on_self;
         }
+
+        (max_iteration_count, depends_on_self)
     }
 
-    for (head_key, iteration_count) in missing_heads {
-        max_iteration_count = max_iteration_count.max(iteration_count);
-        depends_on_self |= head_key == database_key_index;
+    let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationCount); 4]> = SmallVec::new();
+    let mut max_iteration_count = iteration_count;
+    let mut depends_on_self = false;
 
-        cycle_heads.insert(head_key, iteration_count);
+    for head in &*cycle_heads {
+        let (recursive_max_iteration, recursive_depends_on_self) = collect_recursive(
+            zalsa,
+            head.database_key_index,
+            database_key_index,
+            cycle_heads,
+            &mut missing_heads,
+        );
+
+        max_iteration_count = max_iteration_count.max(recursive_max_iteration);
+        depends_on_self |= recursive_depends_on_self;
+    }
+
+    for (head, iteration) in missing_heads {
+        cycle_heads.insert(head, iteration);
     }
 
     (max_iteration_count, depends_on_self)
@@ -573,16 +616,18 @@ fn complete_cycle_participant(
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
 ) -> CompletedQuery {
+    let database_key_index = active_query.database_key_index;
+
+    let Some(outer_cycle) = outer_cycle else {
+        panic!("cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?}).");
+    };
+
     // For as long as this query participates in any cycle, don't release its lock, instead
     // transfer it to the outermost cycle head (if any). This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
-    let outer_cycle = outer_cycle
-        .expect("query with cycles that doesn't depend on itself should have an outer cycle");
-
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
 
-    let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
