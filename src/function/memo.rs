@@ -181,7 +181,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
                     TryClaimHeadsResult::Running(running) => {
                         all_cycles = false;
                         if !running.block_on(zalsa) {
-                            // We cannot handle local cancellations in fixpoints
+                            // We cannot really handle local cancellations reliably here
                             // so we treat it as a general cancellation / panic.
                             //
                             // We shouldn't hit this though as we disable local cancellation
