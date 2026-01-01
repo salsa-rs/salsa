@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::function::eviction::EvictionPolicy;
 use crate::function::maybe_changed_after::VerifyCycleHeads;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
@@ -33,7 +34,7 @@ where
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
 
-        self.lru.record_use(id);
+        self.eviction.record_use(id);
 
         zalsa_local.report_tracked_read(
             database_key_index,

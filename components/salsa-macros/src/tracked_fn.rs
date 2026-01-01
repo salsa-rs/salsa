@@ -168,6 +168,13 @@ impl Macro {
 
         let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
 
+        // Determine the eviction policy type based on whether LRU capacity is specified
+        let eviction_type = if self.args.lru.is_some() {
+            quote!(::salsa::plumbing::function::Lru)
+        } else {
+            quote!(::salsa::plumbing::function::NoopEviction)
+        };
+
         let return_mode = self
             .args
             .returns
@@ -222,6 +229,7 @@ impl Macro {
                 values_equal: {#eq},
                 needs_interner: #needs_interner,
                 heap_size_fn: #(#heap_size_fn)*,
+                eviction: #eviction_type,
                 lru: #lru,
                 return_mode: #return_mode,
                 persist: #persist,

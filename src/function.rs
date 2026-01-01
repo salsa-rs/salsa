@@ -28,14 +28,16 @@ mod accumulated;
 mod backdate;
 mod delete;
 mod diff_outputs;
+mod eviction;
 mod execute;
 mod fetch;
 mod inputs;
-mod lru;
 mod maybe_changed_after;
 mod memo;
 mod specify;
 mod sync;
+
+pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
 
 pub type Memo<C> = memo::Memo<'static, C>;
 
@@ -57,6 +59,9 @@ pub trait Configuration: Any {
 
     /// The value computed by the function.
     type Output<'db>: Send + Sync;
+
+    /// The eviction policy for this function's memoized values.
+    type Eviction: EvictionPolicy;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -168,8 +173,9 @@ pub struct IngredientImpl<C: Configuration> {
     /// tracked function's struct is a plain salsa struct or an enum `#[derive(Supertype)]`.
     memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
 
+    /// Eviction policy - type determined by Configuration.
     /// Used to find memos to throw out when we have too many memoized values.
-    lru: lru::Lru,
+    eviction: C::Eviction,
 
     /// An downcaster to `C::DbView`.
     ///
@@ -203,12 +209,12 @@ where
     pub fn new(
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
-        lru: usize,
+        eviction_capacity: usize,
     ) -> Self {
         Self {
             index,
             memo_ingredient_indices,
-            lru: lru::Lru::new(lru),
+            eviction: C::Eviction::new(eviction_capacity),
             deleted_entries: Default::default(),
             view_caster: OnceLock::new(),
             sync_table: SyncTable::new(index),
@@ -233,8 +239,12 @@ where
         DatabaseKeyIndex::new(self.index, key)
     }
 
-    pub fn set_capacity(&mut self, capacity: usize) {
-        self.lru.set_capacity(capacity);
+    /// Set eviction capacity. Only available when eviction policy supports it.
+    pub fn set_capacity(&mut self, capacity: usize)
+    where
+        C::Eviction: HasCapacity,
+    {
+        self.eviction.set_capacity(capacity);
     }
 
     /// Returns a reference to the memo value that lives as long as self.
@@ -475,7 +485,7 @@ where
     }
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
-        self.lru.for_each_evicted(|evict| {
+        self.eviction.for_each_evicted(|evict| {
             let ingredient_index = table.ingredient_index(evict);
             Self::evict_value_from_memo_for(
                 table.memos_mut(evict),

@@ -58,6 +58,9 @@ macro_rules! setup_tracked_fn {
         // The function used to implement `C::heap_size`.
         heap_size_fn: $($heap_size_fn:path)?,
 
+        // The eviction policy type for this function
+        eviction: $Eviction:ty,
+
         // LRU capacity (a literal, maybe 0)
         lru: $lru:tt,
 
@@ -284,6 +287,8 @@ macro_rules! setup_tracked_fn {
 
                 type Output<$db_lt> = $output_ty;
 
+                type Eviction = $Eviction;
+
                 const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
 
                 $($values_equal)+
@@ -452,18 +457,15 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
-                $zalsa::macro_if! { if0 $lru { } else {
-                    /// Sets the lru capacity
-                    ///
-                    /// **WARNING:** Just like an ordinary write, this method triggers
-                    /// cancellation. If you invoke it while a snapshot exists, it
-                    /// will block until that snapshot is dropped -- if that snapshot
-                    /// is owned by the current thread, this could trigger deadlock.
-                    #[allow(dead_code)]
-                    fn set_lru_capacity(db: &mut dyn $Db, value: usize) {
-                        $Configuration::fn_ingredient_mut(db).set_capacity(value);
-                    }
-                } }
+                /// Sets the lru capacity
+                ///
+                /// **WARNING:** Just like an ordinary write, this method triggers
+                /// cancellation. If you invoke it while a snapshot exists, it
+                /// will block until that snapshot is dropped -- if that snapshot
+                /// is owned by the current thread, this could trigger deadlock.
+                fn set_lru_capacity(db: &mut dyn $Db, value: usize) where for<'trivial_bounds> $Eviction: $zalsa::function::HasCapacity {
+                    $Configuration::fn_ingredient_mut(db).set_capacity(value);
+                }
             }
 
             $zalsa::attach($db, || {

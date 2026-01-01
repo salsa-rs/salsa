@@ -160,6 +160,7 @@ pub mod plumbing {
         pub use crate::function::Configuration;
         pub use crate::function::IngredientImpl;
         pub use crate::function::Memo;
+        pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
         pub use crate::table::memo::MemoEntryType;
     }
 
