@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.3](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.25.2...salsa-macro-rules-v0.25.3) - 2026-01-01
+
+### Added
+
+- Allow opt-ing out of LRU at compile time ([#1051](https://github.com/salsa-rs/salsa/pull/1051))
+
+### Fixed
+
+- Do not alias fields of `tracked_struct` `Value`s when updating ([#741](https://github.com/salsa-rs/salsa/pull/741))
+
 ## [0.25.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.24.0...salsa-macro-rules-v0.25.0) - 2025-12-16
 
 ### Other
