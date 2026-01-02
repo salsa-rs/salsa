@@ -722,6 +722,30 @@ impl QueryRevisions {
             .update_iteration_count(database_key_index, iteration_count);
     }
 
+    /// Updates the iteration count of the memo without updating the iteration in `cycle_heads`.
+    ///
+    /// Don't call this method on a cycle head, as it results in diverging iteration counts
+    /// between what's in cycle heads and stored on the memo.
+    pub(crate) fn update_cycle_participant_iteration_count(
+        &mut self,
+        iteration_count: IterationCount,
+    ) {
+        match &mut self.extra.0 {
+            None => {
+                self.extra = QueryRevisionsExtra::new(
+                    #[cfg(feature = "accumulator")]
+                    AccumulatedMap::default(),
+                    ThinVec::default(),
+                    empty_cycle_heads().clone(),
+                    iteration_count,
+                );
+            }
+            Some(extra) => {
+                extra.iteration.store_mut(iteration_count);
+            }
+        }
+    }
+
     /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
     pub(crate) fn update_iteration_count_mut(
         &mut self,

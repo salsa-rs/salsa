@@ -75,17 +75,17 @@ fn the_test() {
             result
         });
         let t2 = thread::spawn(move || {
-            let _span = tracing::debug_span!("t4", thread_id = ?thread::current().id()).entered();
+            let _span = tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
             db_t4.wait_for(1);
             query_b(&db_t4)
         });
         let t3 = thread::spawn(move || {
-            let _span = tracing::debug_span!("t2", thread_id = ?thread::current().id()).entered();
+            let _span = tracing::debug_span!("t3", thread_id = ?thread::current().id()).entered();
             db_t2.wait_for(1);
             query_d(&db_t2)
         });
         let t4 = thread::spawn(move || {
-            let _span = tracing::debug_span!("t3", thread_id = ?thread::current().id()).entered();
+            let _span = tracing::debug_span!("t4", thread_id = ?thread::current().id()).entered();
             db_t3.wait_for(1);
             query_e(&db_t3)
         });
