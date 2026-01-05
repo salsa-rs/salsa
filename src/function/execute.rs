@@ -620,7 +620,7 @@ fn complete_cycle_participant(
     iteration_count: IterationCount,
 ) -> CompletedQuery {
     // For as long as this query participates in any cycle, don't release its lock, instead
-    // transfer it to the outermost cycle head (if any). This prevents any other thread
+    // transfer it to the outermost cycle head. This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
