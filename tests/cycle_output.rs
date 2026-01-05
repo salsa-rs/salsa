@@ -132,7 +132,7 @@ fn revalidate_no_changes() {
     assert_eq!(query_c(&db, c_input), 10);
     assert_eq!(query_b(&db, ab_input), 3);
 
-    db.assert_logs_len(15);
+    db.assert_logs_len(16);
 
     // trigger a new revision, but one that doesn't touch the query_a/query_b cycle
     c_input.set_value(&mut db).to(20);
@@ -162,7 +162,7 @@ fn revalidate_with_change_after_output_read() {
 
     assert_eq!(query_b(&db, ab_input), 3);
 
-    db.assert_logs_len(14);
+    db.assert_logs_len(15);
 
     // trigger a new revision that changes the output of query_d
     d_input.set_value(&mut db).to(20);
@@ -195,5 +195,6 @@ fn revalidate_with_change_after_output_read() {
             "salsa_event(WillIterateCycle { database_key: query_b(Id(0)), iteration_count: IterationCount(3) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: read_value(Id(403g1)) })",
+            "salsa_event(DidFinalizeCycle { database_key: query_b(Id(0)), iteration_count: IterationCount(3) })",
         ]"#]]);
 }
