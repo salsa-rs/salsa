@@ -64,6 +64,7 @@ pub use self::storage::{Storage, StorageHandle};
 pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
 pub use crate::attach::{attach, attach_allow_change, with_attached_database};
+pub use crate::interned::{HashEqLike, Lookup};
 
 pub mod prelude {
     #[cfg(feature = "accumulator")]
@@ -99,6 +100,7 @@ pub mod plumbing {
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
     pub use crate::ingredient::{Ingredient, Jar, Location};
     pub use crate::ingredient_cache::IngredientCache;
+    pub use crate::interned::{HashEqLike, Lookup};
     pub use crate::key::DatabaseKeyIndex;
     pub use crate::memo_ingredient_indices::{
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,
@@ -151,9 +153,7 @@ pub mod plumbing {
     }
 
     pub mod interned {
-        pub use crate::interned::{
-            Configuration, HashEqLike, IngredientImpl, JarImpl, Lookup, Value,
-        };
+        pub use crate::interned::{Configuration, IngredientImpl, JarImpl, Value};
     }
 
     pub mod function {

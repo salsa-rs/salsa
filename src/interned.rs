@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::cell::{Cell, UnsafeCell};
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
@@ -1357,6 +1358,86 @@ impl HashEqLike<&Path> for PathBuf {
 impl Lookup<PathBuf> for &Path {
     fn into_owned(self) -> PathBuf {
         self.to_owned()
+    }
+}
+
+impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, T>> for T {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, h);
+    }
+
+    fn eq(&self, data: &Cow<'_, T>) -> bool {
+        self == data.as_ref()
+    }
+}
+
+impl<T: Clone> Lookup<T> for Cow<'_, T> {
+    fn into_owned(self) -> T {
+        Cow::into_owned(self)
+    }
+}
+
+impl HashEqLike<Cow<'_, str>> for String {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        self.as_str().hash(h);
+    }
+
+    fn eq(&self, data: &Cow<'_, str>) -> bool {
+        self.as_str() == data.as_ref()
+    }
+}
+
+impl Lookup<String> for Cow<'_, str> {
+    fn into_owned(self) -> String {
+        Cow::into_owned(self)
+    }
+}
+
+impl HashEqLike<Cow<'_, Path>> for PathBuf {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        self.as_path().hash(h);
+    }
+
+    fn eq(&self, data: &Cow<'_, Path>) -> bool {
+        self.as_path() == data.as_ref()
+    }
+}
+
+impl Lookup<PathBuf> for Cow<'_, Path> {
+    fn into_owned(self) -> PathBuf {
+        Cow::into_owned(self)
+    }
+}
+
+impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Box<[T]> {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        self.as_ref().hash(h);
+    }
+
+    fn eq(&self, data: &Cow<'_, [T]>) -> bool {
+        self.as_ref() == data.as_ref()
+    }
+}
+
+impl<T: Clone> Lookup<Box<[T]>> for Cow<'_, [T]> {
+    fn into_owned(self) -> Box<[T]> {
+        Cow::into_owned(self).into_boxed_slice()
+    }
+}
+
+impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Vec<T> {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        self.as_slice().hash(h);
+    }
+
+    fn eq(&self, data: &Cow<'_, [T]>) -> bool {
+        self.as_slice() == data.as_ref()
+    }
+}
+
+impl<T: Clone> Lookup<Vec<T>> for Cow<'_, [T]> {
+    fn into_owned(self) -> Vec<T> {
+        Cow::into_owned(self)
     }
 }
 

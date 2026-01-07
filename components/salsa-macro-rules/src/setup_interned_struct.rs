@@ -125,27 +125,27 @@ macro_rules! setup_interned_struct {
                 ::std::marker::PhantomData<&$db_lt ()>,
             );
 
-            impl<$db_lt, $($indexed_ty,)*> $zalsa::interned::HashEqLike<StructKey<$db_lt, $($indexed_ty),*>>
+            impl<$db_lt, $($indexed_ty,)*> $zalsa::HashEqLike<StructKey<$db_lt, $($indexed_ty),*>>
                 for $StructDataIdent<$db_lt>
                 where
-                $($field_ty: $zalsa::interned::HashEqLike<$indexed_ty>),*
+                $($field_ty: $zalsa::HashEqLike<$indexed_ty>),*
                 {
 
                 fn hash<H: ::std::hash::Hasher>(&self, h: &mut H) {
-                    $($zalsa::interned::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
+                    $($zalsa::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
                 }
 
                 fn eq(&self, data: &StructKey<$db_lt, $($indexed_ty),*>) -> bool {
-                    ($($zalsa::interned::HashEqLike::<$indexed_ty>::eq(&self.$field_index, &data.$field_index) && )* true)
+                    ($($zalsa::HashEqLike::<$indexed_ty>::eq(&self.$field_index, &data.$field_index) && )* true)
                 }
             }
 
-            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<$StructDataIdent<$db_lt>>
+            impl<$db_lt, $($indexed_ty: $zalsa::Lookup<$field_ty>),*> $zalsa::Lookup<$StructDataIdent<$db_lt>>
                 for StructKey<$db_lt, $($indexed_ty),*> {
 
                 #[allow(unused_unit)]
                 fn into_owned(self) -> $StructDataIdent<$db_lt> {
-                    ($($zalsa::interned::Lookup::into_owned(self.$field_index),)*)
+                    ($($zalsa::Lookup::into_owned(self.$field_index),)*)
                 }
             }
 
@@ -305,17 +305,17 @@ macro_rules! setup_interned_struct {
             }
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
-                pub fn $new_fn<$Db, $($indexed_ty: $zalsa::interned::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
+                pub fn $new_fn<$Db, $($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + ::salsa::Database,
                     $(
-                        $field_ty: $zalsa::interned::HashEqLike<$indexed_ty>,
+                        $field_ty: $zalsa::HashEqLike<$indexed_ty>,
                     )*
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
                     $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
-                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| ($($zalsa::interned::Lookup::into_owned(data.$field_index),)*))
+                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| ($($zalsa::Lookup::into_owned(data.$field_index),)*))
                 }
 
                 $(
