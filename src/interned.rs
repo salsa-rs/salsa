@@ -1290,7 +1290,8 @@ impl Lookup<compact_str::CompactString> for &str {
     }
 }
 
-impl HashEqLike<&str> for String {
+#[cfg(feature = "compact_str")]
+impl HashEqLike<&str> for compact_str::CompactString {
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, &mut *h)
     }
@@ -1301,7 +1302,24 @@ impl HashEqLike<&str> for String {
 }
 
 #[cfg(feature = "compact_str")]
-impl HashEqLike<&str> for compact_str::CompactString {
+impl HashEqLike<Cow<'_, str>> for compact_str::CompactString {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        self.as_str().hash(h);
+    }
+
+    fn eq(&self, data: &Cow<'_, str>) -> bool {
+        self.as_str() == data.as_ref()
+    }
+}
+
+#[cfg(feature = "compact_str")]
+impl Lookup<compact_str::CompactString> for Cow<'_, str> {
+    fn into_owned(self) -> compact_str::CompactString {
+        compact_str::CompactString::new(Cow::into_owned(self))
+    }
+}
+
+impl HashEqLike<&str> for String {
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, &mut *h)
     }
