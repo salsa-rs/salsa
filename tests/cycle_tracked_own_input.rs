@@ -112,6 +112,7 @@ fn main() {
             "WillCheckCancellation",
             "WillExecute { database_key: infer_type_param(Id(400)) }",
             "WillCheckCancellation",
+            "DidFinalizeCycle { database_key: infer_class(Id(0)), iteration_count: IterationCount(1) }",
         ]"#]]);
 
     let class = ty.class().unwrap();

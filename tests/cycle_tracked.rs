@@ -163,6 +163,7 @@ fn main() {
             "WillExecute { database_key: cost_to_start(Id(401)) }",
             "WillCheckCancellation",
             "WillCheckCancellation",
+            "DidFinalizeCycle { database_key: cost_to_start(Id(403)), iteration_count: IterationCount(1) }",
             "DidSetCancellationFlag",
             "WillCheckCancellation",
             "WillExecute { database_key: create_graph(Id(0)) }",
@@ -296,6 +297,7 @@ fn test_cycle_with_fixpoint_structs() {
             "WillCheckCancellation",
             "WillIterateCycle { database_key: create_tracked_in_cycle(Id(0)), iteration_count: IterationCount(2) }",
             "WillCheckCancellation",
+            "DidFinalizeCycle { database_key: create_tracked_in_cycle(Id(0)), iteration_count: IterationCount(2) }",
             "WillDiscardStaleOutput { execute_key: create_tracked_in_cycle(Id(0)), output_key: IterationNode(Id(402)) }",
             "DidDiscard { key: IterationNode(Id(402)) }",
         ]"#]]);

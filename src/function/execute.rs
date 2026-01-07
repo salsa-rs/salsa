@@ -724,6 +724,14 @@ fn try_complete_cycle_head(
         }
 
         *completed_query.revisions.verified_final.get_mut() = true;
+
+        zalsa.event(&|| {
+            Event::new(EventKind::DidFinalizeCycle {
+                database_key: me,
+                iteration_count,
+            })
+        });
+
         return Ok(completed_query);
     }
 
