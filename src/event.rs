@@ -59,7 +59,7 @@ pub enum EventKind {
         database_key: DatabaseKeyIndex,
     },
 
-    /// Salsa starts a new fixpoint iteration for the cycle with `database_key` as it's
+    /// Salsa starts a new fixpoint iteration for the cycle with `database_key` as its
     /// outermost cycle.
     WillIterateCycle {
         /// The database-key for the cycle head. Implements `Debug`.
@@ -67,7 +67,7 @@ pub enum EventKind {
         iteration_count: IterationCount,
     },
 
-    /// Salsa completed a fixpoint iteration for the cycle with `database_key` as it's
+    /// Salsa completed a fixpoint iteration for the cycle with `database_key` as its
     /// outermost cycle.
     DidFinalizeCycle {
         database_key: DatabaseKeyIndex,
