@@ -15,7 +15,7 @@ use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
-use crate::{Database, Id, Revision};
+use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 mod accumulated;
 pub(crate) mod accumulated_map;
@@ -136,6 +136,16 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("accumulator does not allocate pages")
+    }
+
+    fn collect_flattened_cycle_inputs(
+        &self,
+        _zalsa: &Zalsa,
+        _id: Id,
+        _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        panic!("nothing should ever depend on an accumulator directly")
     }
 }
 

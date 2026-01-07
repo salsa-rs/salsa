@@ -140,6 +140,11 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
+    #[inline(always)]
+    pub(super) fn all_cycle_heads(&self) -> &CycleHeads {
+        self.revisions.cycle_heads()
+    }
+
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
     /// The caller is responsible to update the memo's `accumulated` state if their accumulated
@@ -408,6 +413,7 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                     ProvisionalStatus::Final {
                         iteration,
                         verified_at,
+                        cycle_heads: _,
                     } => (iteration, verified_at),
                 };
 

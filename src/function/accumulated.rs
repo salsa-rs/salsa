@@ -79,12 +79,7 @@ where
                 stack.reserve(edges.len());
             }
 
-            stack.extend(
-                origin
-                    .inputs()
-                    .filter_map(|input| TryInto::<DatabaseKeyIndex>::try_into(input).ok())
-                    .rev(),
-            );
+            stack.extend(origin.inputs().rev());
 
             visited.reserve(stack.len());
         }

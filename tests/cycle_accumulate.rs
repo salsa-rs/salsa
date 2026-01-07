@@ -132,12 +132,6 @@ fn accumulate_with_cycle() {
             Diagnostic(
                 "file file_b: issue 2",
             ),
-            Diagnostic(
-                "file file_a: issue 1",
-            ),
-            Diagnostic(
-                "file file_a: issue 2",
-            ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
 }
@@ -167,12 +161,6 @@ fn accumulate_with_cycle_second_revision() {
             Diagnostic(
                 "file file_b: issue 2",
             ),
-            Diagnostic(
-                "file file_a: issue 1",
-            ),
-            Diagnostic(
-                "file file_a: issue 2",
-            ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
 
@@ -197,15 +185,6 @@ fn accumulate_with_cycle_second_revision() {
             ),
             Diagnostic(
                 "file file_a: issue 3",
-            ),
-            Diagnostic(
-                "file file_b: issue 1",
-            ),
-            Diagnostic(
-                "file file_b: issue 2",
-            ),
-            Diagnostic(
-                "file file_b: issue 3",
             ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
@@ -258,12 +237,6 @@ fn accumulate_add_cycle() {
             Diagnostic(
                 "file file_a: issue 2",
             ),
-            Diagnostic(
-                "file file_b: issue 1",
-            ),
-            Diagnostic(
-                "file file_b: issue 2",
-            ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
 }
@@ -293,12 +266,6 @@ fn accumulate_remove_cycle() {
             Diagnostic(
                 "file file_b: issue 2",
             ),
-            Diagnostic(
-                "file file_a: issue 1",
-            ),
-            Diagnostic(
-                "file file_a: issue 2",
-            ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
 
@@ -307,8 +274,8 @@ fn accumulate_remove_cycle() {
     let diagnostics = check_file::accumulated::<Diagnostic>(&db, file_b);
     db.assert_logs(expect![[r#"
         [
-            "check_file(name = file_a, issues = [1])",
             "check_file(name = file_b, issues = [2])",
+            "check_file(name = file_a, issues = [1])",
         ]"#]]);
 
     expect![[r#"
