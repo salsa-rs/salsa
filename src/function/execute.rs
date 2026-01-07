@@ -5,12 +5,13 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryOrigin, QueryRevisions};
 use crate::{tracing, Cancelled, Cycle};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -137,6 +138,7 @@ where
 
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let mut iteration_count = IterationCount::initial();
+        let mut flattened_input_outputs: FxIndexSet<QueryEdge> = FxIndexSet::default();
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
@@ -235,6 +237,7 @@ where
                     new_value
                 };
 
+                // TODO, merge with flattened input_outputs if any
                 let completed_query = complete_cycle_participant(
                     active_query,
                     claim_guard,
@@ -326,6 +329,7 @@ where
                 outer_cycle,
                 iteration_count,
                 value_converged,
+                &mut flattened_input_outputs,
             ) {
                 Ok(completed_query) => {
                     break (new_value, completed_query);
@@ -645,10 +649,19 @@ fn try_complete_cycle_head(
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
     value_converged: bool,
+    flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
 ) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
     let me = active_query.database_key_index;
+    let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop();
+
+    collect_flattened_input_outputs(
+        zalsa,
+        me,
+        &completed_query.revisions,
+        flattened_input_outputs,
+    );
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -661,11 +674,11 @@ fn try_complete_cycle_head(
     let this_converged = value_converged && metadata_converged;
 
     if let Some(outer_cycle) = outer_cycle {
-        let me = claim_guard.database_key_index();
-
         tracing::info!(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
+
+        // FIXME: merge with flattened input_outputs if any
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
         // Store whether this cycle has converged, so that the outer cycle can check it.
@@ -681,9 +694,8 @@ fn try_complete_cycle_head(
         return Ok(completed_query);
     }
 
-    let zalsa = claim_guard.zalsa();
-
-    // If this is the outermost cycle, test if all inner cycles have converged as well.
+    // This is the outermost cycle, drive the cycle forward:
+    // ..test if all inner cycles have converged as well.
     let converged = this_converged
         && cycle_heads.iter_not_eq(me).all(|head| {
             let database_key_index = head.database_key_index;
@@ -708,6 +720,26 @@ fn try_complete_cycle_head(
         for head in cycle_heads.iter_not_eq(me) {
             let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
             ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
+        }
+
+        tracing::info!(
+            "original origin: {:?}, flattened input outputs: {:?}",
+            &completed_query.revisions.origin,
+            flattened_input_outputs
+        );
+
+        if completed_query.revisions.origin.is_derived_untracked() {
+            completed_query.revisions.origin = QueryOrigin::derived_untracked(
+                std::mem::take(flattened_input_outputs)
+                    .into_iter()
+                    .collect(),
+            );
+        } else {
+            completed_query.revisions.origin = QueryOrigin::derived(
+                std::mem::take(flattened_input_outputs)
+                    .into_iter()
+                    .collect(),
+            );
         }
 
         *completed_query.revisions.verified_final.get_mut() = true;
@@ -770,6 +802,38 @@ fn assert_no_new_cycle_heads(
     for head in new_cycle_heads {
         if !cycle_heads.contains(&head.database_key_index) {
             panic!("Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.", head.database_key_index);
+        }
+    }
+}
+
+fn collect_flattened_input_outputs(
+    zalsa: &Zalsa,
+    me: DatabaseKeyIndex,
+    head: &QueryRevisions,
+    flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+) {
+    let mut seen = FxHashSet::default();
+    seen.insert(me);
+
+    for edge in head.origin.as_ref().edges() {
+        match edge.kind() {
+            QueryEdgeKind::Input(input) => {
+                if seen.insert(input) {
+                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                    ingredient.collect_flattened_cycle_inputs(
+                        zalsa,
+                        input.key_index(),
+                        flattened_input_outputs,
+                        &mut seen,
+                    );
+                }
+            }
+
+            QueryEdgeKind::Output(_) => {
+                // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
+                // created by the query head because those are owned by this query.
+                flattened_input_outputs.insert(*edge);
+            }
         }
     }
 }

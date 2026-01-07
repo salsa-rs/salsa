@@ -389,12 +389,13 @@ where
             ProvisionalStatus::Final {
                 iteration,
                 verified_at: memo.verified_at.load(),
+                cycle_heads: memo.all_cycle_heads(),
             }
         } else {
             ProvisionalStatus::Provisional {
                 iteration,
                 verified_at: memo.verified_at.load(),
-                cycle_heads: memo.cycle_heads(),
+                cycle_heads: memo.all_cycle_heads(),
             }
         })
     }
@@ -408,6 +409,36 @@ where
 
         memo.revisions
             .set_iteration_count(Self::database_key_index(self, input), iteration_count);
+    }
+
+    fn collect_flattened_cycle_inputs(
+        &self,
+        zalsa: &Zalsa,
+        id: Id,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        let memo_index = self.memo_ingredient_index(zalsa, id);
+        let Some(memo) = self.get_memo_from_table_for(zalsa, id, memo_index) else {
+            return;
+        };
+
+        if !memo.may_be_provisional() {
+            flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
+            return;
+        }
+
+        for input in memo.revisions.origin.as_ref().inputs() {
+            if seen.insert(input) {
+                let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                ingredient.collect_flattened_cycle_inputs(
+                    zalsa,
+                    input.key_index(),
+                    flattened_input_outputs,
+                    seen,
+                );
+            }
+        }
     }
 
     fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {

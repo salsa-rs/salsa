@@ -1000,6 +1000,16 @@ where
         panic!("nothing should ever depend on a tracked struct directly")
     }
 
+    fn collect_flattened_cycle_inputs(
+        &self,
+        _zalsa: &Zalsa,
+        _id: Id,
+        _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        panic!("nothing should ever depend on a tracked struct directly")
+    }
+
     fn remove_stale_output(
         &self,
         zalsa: &Zalsa,

@@ -1065,9 +1065,9 @@ fn cycle_sibling_interference() {
     db.assert_logs(expect![[r#"
         [
             "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(3)) })",
             "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
             "salsa_event(WillExecute { database_key: min_iterate(Id(1)) })",
-            "salsa_event(WillExecute { database_key: min_panic(Id(3)) })",
             "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration_count: IterationCount(1) })",
             "salsa_event(WillExecute { database_key: min_iterate(Id(1)) })",
             "salsa_event(DidFinalizeCycle { database_key: min_iterate(Id(0)), iteration_count: IterationCount(1) })",
@@ -1129,7 +1129,7 @@ fn repeat_provisional_query_incremental() {
 
     a.assert_value(&db, 59);
 
-    // `min_panic(Id(2)) should only twice:
+    // `min_panic(Id(2)) should only run twice:
     // * Once before iterating
     // * Once as part of iterating
     //
@@ -1137,9 +1137,9 @@ fn repeat_provisional_query_incremental() {
     // `validate_same_iteration` incorrectly returns `false`.
     db.assert_logs(expect![[r#"
         [
+            "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
-            "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
             "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration_count: IterationCount(1) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
