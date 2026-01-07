@@ -395,6 +395,39 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
+        let memo_heads = old_memo.all_cycle_heads();
+        if !memo_heads.is_empty() {
+            // This is a cycle participant, delegate to the outer most cycle's maybe_changed_after.
+            for head in memo_heads {
+                let ingredient =
+                    zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+                let Some(provisional_status) =
+                    ingredient.provisional_status(zalsa, head.database_key_index.key_index())
+                else {
+                    continue;
+                };
+
+                // This is the outer most cycle head
+                if provisional_status.cycle_heads().is_empty() {
+                    return head.database_key_index.maybe_changed_after(
+                        db.into(),
+                        zalsa,
+                        old_memo.verified_at.load(),
+                        cycle_heads,
+                    );
+                }
+            }
+
+            // If we reach this point, than we have a cycle participant but it has never been finalized (all heads are still provisional).
+            // We need to re-execute the cycle to get its final value.
+            assert!(
+                !old_memo.may_be_provisional(),
+                "Finalized query should always have a finalized outer most cycle head"
+            );
+
+            return VerifyResult::Changed;
+        }
+
         debug_assert!(!cycle_heads.contains_head(database_key_index));
 
         match old_memo.revisions.origin.as_ref() {
@@ -632,6 +665,7 @@ fn validate_provisional(
             ProvisionalStatus::Final {
                 iteration,
                 verified_at,
+                cycle_heads: _,
             } => {
                 // Only consider the cycle head if it is from the same revision as the memo
                 if verified_at != memo_verified_at {

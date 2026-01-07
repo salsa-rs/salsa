@@ -188,6 +188,14 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
     }
 
+    fn collect_flattened_cycle_inputs(
+        &self,
+        zalsa: &Zalsa,
+        id: Id,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        seen: &mut FxHashSet<DatabaseKeyIndex>,
+    );
+
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>> {
         let _ = (zalsa, key_index);
