@@ -11,7 +11,7 @@ use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Ingredient, WaitForResult};
+use crate::ingredient::{Ingredient, TrackedFunctionIngredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
@@ -370,36 +370,6 @@ where
         }
     }
 
-    /// Returns `final` if the memo has the `verified_final` flag set.
-    ///
-    /// Otherwise, the value is still provisional. For both final and provisional, it also
-    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
-    fn provisional_status<'db>(
-        &self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        let memo =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
-
-        let iteration = memo.revisions.iteration();
-        let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
-
-        Some(if verified_final {
-            ProvisionalStatus::Final {
-                iteration,
-                verified_at: memo.verified_at.load(),
-                cycle_heads: memo.all_cycle_heads(),
-            }
-        } else {
-            ProvisionalStatus::Provisional {
-                iteration,
-                verified_at: memo.verified_at.load(),
-                cycle_heads: memo.all_cycle_heads(),
-            }
-        })
-    }
-
     fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
@@ -481,10 +451,6 @@ where
             ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
             ClaimResult::Claimed(()) => WaitForResult::Available,
         }
-    }
-
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
-        self.origin(zalsa, key)
     }
 
     fn mark_validated_output(
@@ -602,6 +568,12 @@ where
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
+
+    fn as_tracked_function_ingredient(
+        &self,
+    ) -> Option<&dyn crate::ingredient::TrackedFunctionIngredient> {
+        Some(self)
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -612,6 +584,49 @@ where
         f.debug_struct(std::any::type_name::<Self>())
             .field("index", &self.index)
             .finish()
+    }
+}
+
+impl<C> TrackedFunctionIngredient for IngredientImpl<C>
+where
+    C: Configuration,
+{
+    fn struct_database_key_index(&self, zalsa: &Zalsa, input: Id) -> DatabaseKeyIndex {
+        <C::SalsaStruct<'_> as SalsaStructInDb>::database_key_index(zalsa, input)
+    }
+
+    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
+        self.origin(zalsa, key)
+    }
+
+    /// Returns `final` if the memo has the `verified_final` flag set.
+    ///
+    /// Otherwise, the value is still provisional. For both final and provisional, it also
+    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
+    fn provisional_status<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        input: Id,
+    ) -> Option<ProvisionalStatus<'db>> {
+        let memo =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
+
+        let iteration = memo.revisions.iteration();
+        let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
+
+        Some(if verified_final {
+            ProvisionalStatus::Final {
+                iteration,
+                verified_at: memo.verified_at.load(),
+                cycle_heads: memo.all_cycle_heads(),
+            }
+        } else {
+            ProvisionalStatus::Provisional {
+                iteration,
+                verified_at: memo.verified_at.load(),
+                cycle_heads: memo.all_cycle_heads(),
+            }
+        })
     }
 }
 

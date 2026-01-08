@@ -168,10 +168,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
     }
 }
 
-pub trait TrackedStructInDb: SalsaStructInDb {
-    /// Converts the identifier for this tracked struct into a `DatabaseKeyIndex`.
-    fn database_key_index(zalsa: &Zalsa, id: Id) -> DatabaseKeyIndex;
-}
+pub trait TrackedStructInDb: SalsaStructInDb {}
 
 /// Created for each tracked struct.
 ///
@@ -972,15 +969,29 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        _zalsa: &crate::zalsa::Zalsa,
+        zalsa: &crate::zalsa::Zalsa,
         _db: crate::database::RawDatabase<'_>,
-        _input: Id,
-        _revision: Revision,
+        input: Id,
+        revision: Revision,
         _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Any change to a tracked struct results in a new ID generation, so there
         // are no direct dependencies on the struct, only on its tracked fields.
-        panic!("nothing should ever depend on a tracked struct directly")
+        // However, we need to verify the tracked struct when resolving the cycle head in `deep_verify_memo`.
+        let data_raw = Self::data_raw(zalsa.table(), input);
+
+        let last_updated_at = unsafe { (*data_raw).updated_at.load() };
+
+        if let Some(last_updated_at) = last_updated_at {
+            if last_updated_at > revision {
+                VerifyResult::changed()
+            } else {
+                VerifyResult::unchanged()
+            }
+        } else {
+            // Collected
+            VerifyResult::changed()
+        }
     }
 
     fn collect_minimum_serialized_edges(

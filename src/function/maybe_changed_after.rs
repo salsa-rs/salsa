@@ -64,6 +64,10 @@ impl VerifyResult {
     pub(crate) const fn is_unchanged(&self) -> bool {
         matches!(self, Self::Unchanged { .. })
     }
+
+    pub(crate) const fn is_changed(&self) -> bool {
+        matches!(self, Self::Changed)
+    }
 }
 
 impl<C> IngredientImpl<C>
@@ -398,10 +402,29 @@ where
 
         let memo_heads = old_memo.all_cycle_heads();
         if !memo_heads.is_empty() {
-            // This is a cycle participant, delegate to the outer most cycle's maybe_changed_after.
+            tracing::info!("Memo was part of cycle");
+            let last_verified_at = old_memo.verified_at.load();
+
             for head in memo_heads {
-                let ingredient =
-                    zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+                let ingredient = head.ingredient(zalsa);
+
+                let head_struct = ingredient
+                    .struct_database_key_index(zalsa, head.database_key_index.key_index());
+
+                // THE issue here is that the tracked struct has been removed when we
+                // call `maybe_changed_after` here. But the tracked struct also doesn't implement
+                // `maybe_changed_after`.
+                // TODO: Understand why the tracked struct is removed.
+                // Decide if we need to implement `maybe_changed_after` for tracked structs.
+
+                // Validate the struct on which the cycle head is stored is still around,
+                if head_struct
+                    .maybe_changed_after(db.into(), zalsa, last_verified_at, cycle_heads)
+                    .is_changed()
+                {
+                    return VerifyResult::Changed;
+                }
+
                 let Some(provisional_status) =
                     ingredient.provisional_status(zalsa, head.database_key_index.key_index())
                 else {
@@ -410,7 +433,12 @@ where
 
                 // This is the outer most cycle head
                 if provisional_status.cycle_heads().is_empty() {
-                    return head.database_key_index.maybe_changed_after(
+                    let outer_most = head.database_key_index;
+                    crate::tracing::info!(
+                        "Delegate deep_verify_memo to outer_most cycle head {outer_most:?}",
+                    );
+
+                    return outer_most.maybe_changed_after(
                         db.into(),
                         zalsa,
                         old_memo.verified_at.load(),
@@ -426,10 +454,12 @@ where
                 "Finalized query should always have a finalized outer most cycle head"
             );
 
+            crate::tracing::info!(
+                "Consider memo with cycle heads but no finalized outer most cycle head as changed."
+            );
+
             return VerifyResult::Changed;
         }
-
-        debug_assert!(!cycle_heads.contains_head(database_key_index));
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
@@ -654,8 +684,8 @@ fn validate_provisional(
 
     for cycle_head in cycle_heads {
         // Test if our cycle heads (with the same revision) are now finalized.
-        let Some(kind) = zalsa
-            .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
+        let Some(kind) = cycle_head
+            .ingredient(zalsa)
             .provisional_status(zalsa, cycle_head.database_key_index.key_index())
         else {
             return false;

@@ -116,7 +116,7 @@ fn max_initial(_db: &dyn Database, _id: salsa::Id, _node: Node) -> usize {
 
 /// Tests for cycles where the cycle head is stored on a tracked struct
 /// and that tracked struct is freed in a later revision.
-#[test]
+#[test_log::test]
 fn main() {
     let mut db = EventLoggerDatabase::default();
 

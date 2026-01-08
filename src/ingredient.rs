@@ -69,19 +69,6 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         visited_edges: &mut FxHashSet<QueryEdge>,
     );
 
-    /// Returns information about the current provisional status of `input`.
-    ///
-    /// Is it a provisional value or has it been finalized and in which iteration.
-    ///
-    /// Returns `None` if `input` doesn't exist.
-    fn provisional_status<'db>(
-        &self,
-        _zalsa: &'db Zalsa,
-        _input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        unreachable!("provisional_status should only be called on cycle heads and only functions can be cycle heads");
-    }
-
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
     /// This call doesn't block the current thread. Instead, it's up to the caller to block
     /// in case `key_index` is [running](`WaitForResult::Running`) on another thread.
@@ -196,12 +183,6 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     );
 
-    /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>> {
-        let _ = (zalsa, key_index);
-        unreachable!("only function ingredients have origins")
-    }
-
     /// What values were accumulated during the creation of the value at `key_index`
     /// (if any).
     ///
@@ -274,6 +255,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
             "called `deserialize` on ingredient where `should_serialize` returns `false`"
         )
     }
+
+    fn as_tracked_function_ingredient(&self) -> Option<&dyn TrackedFunctionIngredient> {
+        None
+    }
 }
 
 impl dyn Ingredient {
@@ -327,6 +312,24 @@ impl dyn Ingredient {
         // refers to a value of type T because of the `TypeId` check above.
         unsafe { transmute_data_mut_ptr(self) }
     }
+}
+
+pub trait TrackedFunctionIngredient {
+    fn struct_database_key_index(&self, zalsa: &Zalsa, input: Id) -> DatabaseKeyIndex;
+
+    /// What were the inputs (if any) that were used to create the value at `key_index`.
+    fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>>;
+
+    /// Returns information about the current provisional status of `input`.
+    ///
+    /// Is it a provisional value or has it been finalized and in which iteration.
+    ///
+    /// Returns `None` if `input` doesn't exist.
+    fn provisional_status<'db>(
+        &self,
+        _zalsa: &'db Zalsa,
+        _input: Id,
+    ) -> Option<ProvisionalStatus<'db>>;
 }
 
 /// A helper function to show human readable fmt.

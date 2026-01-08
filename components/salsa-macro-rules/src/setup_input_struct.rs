@@ -237,6 +237,11 @@ macro_rules! setup_input_struct {
                     // SAFETY: Guaranteed by caller.
                     unsafe { zalsa.table().memos::<$zalsa_struct::Value<$Configuration>>(id, current_revision) }
                 }
+
+                #[inline]
+                fn database_key_index(zalsa: &$zalsa::Zalsa, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
+                    <$Configuration>::ingredient_(zalsa).database_key_index(id)
+                }
             }
 
             $zalsa::macro_if! { $persist =>
