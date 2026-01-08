@@ -109,6 +109,17 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
                 // SAFETY: Guaranteed by caller.
                 unsafe { zalsa.table().dyn_memos(id, current_revision) }
             }
+
+            #[inline]
+            fn database_key_index(zalsa: &zalsa::Zalsa, id: zalsa::Id) -> zalsa::DatabaseKeyIndex {
+                let type_id = zalsa.lookup_page_type_id(id);
+                #(
+                    if let Some(result) = <#variant_types as zalsa::SalsaStructInDb>::cast(id, type_id) {
+                        return <#variant_types as zalsa::SalsaStructInDb>::database_key_index(zalsa, id);
+                    }
+                )*
+                panic!("invalid enum variant for id {:?}", id)
+            }
         }
     };
 

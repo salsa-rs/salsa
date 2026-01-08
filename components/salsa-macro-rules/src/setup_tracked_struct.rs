@@ -297,13 +297,13 @@ macro_rules! setup_tracked_struct {
                     // SAFETY: Guaranteed by caller.
                     unsafe { zalsa.table().memos::<$zalsa_struct::ValueWithMetadata<$Configuration>>(id, current_revision) }
                 }
-            }
 
-            impl $zalsa::TrackedStructInDb for $Struct<'_> {
                 fn database_key_index(zalsa: &$zalsa::Zalsa, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
                     $Configuration::ingredient_(zalsa).database_key_index(id)
                 }
             }
+
+            impl $zalsa::TrackedStructInDb for $Struct<'_> {}
 
             $zalsa::macro_if! { $persist =>
                 impl $zalsa::serde::Serialize for $Struct<'_> {
