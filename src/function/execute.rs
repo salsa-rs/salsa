@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHead, CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
@@ -524,7 +524,7 @@ fn collect_all_cycle_heads(
         let mut max_iteration_count = IterationCount::initial();
         let mut depends_on_self = false;
 
-        let ingredient = zalsa.lookup_ingredient(current_head.ingredient_index());
+        let ingredient = CycleHead::lookup_ingredient(zalsa, current_head);
 
         let provisional_status = ingredient
             .provisional_status(zalsa, current_head.key_index())
@@ -807,6 +807,7 @@ fn collect_flattened_input_outputs(
             QueryEdgeKind::Input(input) => {
                 if seen.insert(input) {
                     let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                    // TODO: Use `origin` instead of new method with a `Stack`, similar to what's done in accumulated
                     ingredient.collect_flattened_cycle_inputs(
                         zalsa,
                         input.key_index(),

@@ -401,7 +401,8 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                 // participates in the cycle and some other query is blocked on this thread.
                 crate::tracing::trace!("Waiting for {head_database_key:?} results in a cycle");
 
-                let provisional_status = ingredient
+                let provisional_status = head
+                    .ingredient(self.zalsa)
                     .provisional_status(self.zalsa, head_key_index)
                     .expect("cycle head memo to exist");
                 let (current_iteration_count, verified_at) = match provisional_status {
@@ -468,6 +469,10 @@ mod _memory_usage {
 
         fn entries(_: &Zalsa) -> impl Iterator<Item = crate::DatabaseKeyIndex> + '_ {
             std::iter::empty()
+        }
+
+        fn database_key_index(_: &Zalsa, _: Id) -> crate::DatabaseKeyIndex {
+            unimplemented!()
         }
     }
 

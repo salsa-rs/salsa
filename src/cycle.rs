@@ -47,9 +47,11 @@
 use std::iter::FusedIterator;
 use thin_vec::{thin_vec, ThinVec};
 
+use crate::ingredient::TrackedFunctionIngredient;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::sync::OnceLock;
+use crate::zalsa::Zalsa;
 use crate::{Id, Revision};
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
@@ -110,6 +112,20 @@ impl CycleHead {
             iteration_count: AtomicIterationCount(AtomicU8::new(iteration_count.0)),
             removed: AtomicBool::new(false),
         }
+    }
+
+    pub(crate) fn ingredient<'db>(&self, zalsa: &'db Zalsa) -> &'db dyn TrackedFunctionIngredient {
+        Self::lookup_ingredient(zalsa, self.database_key_index)
+    }
+
+    pub(crate) fn lookup_ingredient<'db>(
+        zalsa: &'db Zalsa,
+        key: DatabaseKeyIndex,
+    ) -> &'db dyn TrackedFunctionIngredient {
+        zalsa
+            .lookup_ingredient(key.ingredient_index())
+            .as_tracked_function_ingredient()
+            .expect("Cycle head to point to tracked function")
     }
 }
 
