@@ -2,7 +2,11 @@
 
 By default, when Salsa detects a cycle in the computation graph, Salsa will panic with a message naming the "cycle head"; this is the query that was called while it was also on the active query stack, creating a cycle.
 
-Salsa also supports recovering from query cycles via fixed-point iteration. Fixed-point iteration is only usable if the queries which may be involved in a cycle are monotone and operate on a value domain which is a partial order with fixed height. Effectively, this means that the queries' output must always be "larger" than its input, and there must be some "maximum" or "top" value. This ensures that fixed-point iteration will converge to a value. (A typical case would be queries operating on types, which form a partial order with a "top" type.)
+Salsa also supports recovering from query cycles via fixed-point iteration, using `cycle_fn` and `cycle_initial` or explicitly defining a fallback value with `cycle_result`.
+
+## Fixed-Point Iteration
+
+Fixed-point iteration is only usable if the queries which may be involved in a cycle are monotone and operate on a value domain which is a partial order with fixed height. Effectively, this means that the queries' output must always be "larger" than its input, and there must be some "maximum" or "top" value. This ensures that fixed-point iteration will converge to a value. (A typical case would be queries operating on types, which form a partial order with a "top" type.)
 
 In order to support fixed-point iteration for a query, provide the `cycle_fn` and `cycle_initial` arguments to `salsa::tracked`:
 
@@ -29,11 +33,11 @@ The cycle will iterate until it converges: that is, until the value returned by 
 
 If a cycle iterates more than 200 times, Salsa will panic rather than iterate forever.
 
-## All potential cycle heads must set `cycle_fn` and `cycle_initial`
+### All potential cycle heads must set `cycle_fn` and `cycle_initial`
 
 Consider a two-query cycle where `query_a` calls `query_b`, and `query_b` calls `query_a`. If `query_a` is called first, then it will become the "cycle head", but if `query_b` is called first, then `query_b` will be the cycle head. In order for a cycle to use fixed-point iteration instead of panicking, the cycle head must set `cycle_fn` and `cycle_initial`. This means that in order to be robust against varying query execution order, both `query_a` and `query_b` must set `cycle_fn` and `cycle_initial`.
 
-## Ensuring convergence
+### Ensuring convergence
 
 Fixed-point iteration is a powerful tool, but is also easy to misuse, potentially resulting in infinite iteration. To avoid this, ensure that all queries participating in fixpoint iteration are deterministic and monotone.
 
@@ -42,6 +46,23 @@ When the `cycle_fn` receives a newly computed value, you can implement a strateg
 
 Also, in fixed-point iteration, it is advantageous to be able to identify which cycle head seeded a value. By embedding a `salsa::Id` (2nd parameter) in the initial value as a "cycle marker", the recovery function can detect self-originated recursion.
 
-## Calling Salsa queries from within `cycle_fn` or `cycle_initial`
+### Calling Salsa queries from within `cycle_fn` or `cycle_initial`
 
 It is permitted to call other Salsa queries from within the `cycle_fn` and `cycle_initial` functions. However, if these functions re-enter the same cycle, this can lead to unpredictable results. Take care which queries are called from within cycle-recovery functions, and avoid triggering further cycles.
+
+## Fallback Values
+
+You can use `cycle_result` to specify a fallback value if Salsa detects a cycle. Queries with `cycle_fallback` always run to completion, but the resulting value will be replaced with the fallback value if a cycle is encountered.
+
+```rust
+#[salsa::tracked(cycle_fallback=cycle_fallback)]
+fn query(db: &dyn salsa::Database) -> u32 {
+    // ...
+}
+
+fn cycle_fallback(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
+    42
+}
+```
+
+Note that `cycle_fallback` can [result in non-determinism](https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285). Prefer using `cycle_fn` with a fixpoint where possible.
