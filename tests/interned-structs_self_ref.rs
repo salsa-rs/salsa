@@ -70,15 +70,15 @@ const _: () = {
     #[derive(Hash)]
     struct StructKey<'db, T0>(T0, std::marker::PhantomData<&'db ()>);
 
-    impl<'db, T0> zalsa_::interned::HashEqLike<StructKey<'db, T0>> for StructData<'db>
+    impl<'db, T0> zalsa_::HashEqLike<StructKey<'db, T0>> for StructData<'db>
     where
-        String: zalsa_::interned::HashEqLike<T0>,
+        String: zalsa_::HashEqLike<T0>,
     {
         fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
-            zalsa_::interned::HashEqLike::<T0>::hash(&self.0, &mut *h);
+            zalsa_::HashEqLike::<T0>::hash(&self.0, &mut *h);
         }
         fn eq(&self, data: &StructKey<'db, T0>) -> bool {
-            (zalsa_::interned::HashEqLike::<T0>::eq(&self.0, &data.0) && true)
+            (zalsa_::HashEqLike::<T0>::eq(&self.0, &data.0) && true)
         }
     }
     impl zalsa_struct_::Configuration for Configuration_ {
@@ -190,14 +190,14 @@ const _: () = {
         }
     }
     impl<'db> InternedString<'db> {
-        pub fn new<Db_, T0: zalsa_::interned::Lookup<String> + std::hash::Hash>(
+        pub fn new<Db_, T0: zalsa_::Lookup<String> + std::hash::Hash>(
             db: &'db Db_,
             data: T0,
             other: impl FnOnce(InternedString<'db>) -> InternedString<'db>,
         ) -> Self
         where
             Db_: ?Sized + salsa::Database,
-            String: zalsa_::interned::HashEqLike<T0>,
+            String: zalsa_::HashEqLike<T0>,
         {
             Configuration_::ingredient(db.zalsa()).intern(
                 db.zalsa(),
@@ -205,7 +205,7 @@ const _: () = {
                 StructKey::<'db>(data, std::marker::PhantomData::default()),
                 |id, data| {
                     StructData(
-                        zalsa_::interned::Lookup::into_owned(data.0),
+                        zalsa_::Lookup::into_owned(data.0),
                         other(zalsa_::FromId::from_id(id)),
                     )
                 },

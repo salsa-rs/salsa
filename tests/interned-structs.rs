@@ -3,6 +3,7 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use expect_test::expect;
@@ -33,6 +34,11 @@ struct InternedTwoFields<'db> {
 #[salsa::interned(debug)]
 struct InternedVec<'db> {
     data1: Vec<String>,
+}
+
+#[salsa::interned(debug)]
+struct InternedBoxedSlice<'db> {
+    data: Box<[String]>,
 }
 
 #[salsa::interned(debug)]
@@ -233,4 +239,130 @@ fn interned_generic() {
     let s1 = InternedOverGeneric::new(&db, Generic("test".to_string()));
     let s2 = InternedOverGeneric::new(&db, Generic("test".to_string()));
     assert_eq!(s1, s2);
+}
+
+#[test]
+fn interning_boxed_slice_with_cow() {
+    let db = salsa::DatabaseImpl::new();
+
+    // Create an interned boxed slice using a boxed slice directly.
+    let boxed: Box<[String]> = vec!["Hello".to_string(), "World".to_string()].into();
+    let s1 = InternedBoxedSlice::new(&db, boxed);
+
+    // Looking up with a Cow::Borrowed should find the same interned value.
+    let slice = ["Hello".to_string(), "World".to_string()];
+    let borrowed: Cow<'_, [String]> = Cow::Borrowed(&slice);
+    let s2 = InternedBoxedSlice::new(&db, borrowed);
+    assert_eq!(s1, s2);
+
+    // Looking up with a Cow::Owned should also work and reuse the owned value.
+    let owned: Cow<'_, [String]> = Cow::Owned(vec!["Hello".to_string(), "World".to_string()]);
+    let s3 = InternedBoxedSlice::new(&db, owned);
+    assert_eq!(s1, s3);
+
+    // Different values should result in different interned structs.
+    let different_slice = ["Different".to_string()];
+    let different: Cow<'_, [String]> = Cow::Borrowed(&different_slice);
+    let s4 = InternedBoxedSlice::new(&db, different);
+    assert_ne!(s1, s4);
+}
+
+#[test]
+fn interning_string_with_cow() {
+    let db = salsa::DatabaseImpl::new();
+
+    // Create an interned string using a String directly.
+    let s1 = InternedString::new(&db, "Hello".to_string());
+
+    // Looking up with a Cow::Borrowed should find the same interned value.
+    let borrowed: Cow<'_, str> = Cow::Borrowed("Hello");
+    let s2 = InternedString::new(&db, borrowed);
+    assert_eq!(s1, s2);
+
+    // Looking up with a Cow::Owned should also work.
+    let owned: Cow<'_, str> = Cow::Owned("Hello".to_string());
+    let s3 = InternedString::new(&db, owned);
+    assert_eq!(s1, s3);
+
+    // Different values should result in different interned structs.
+    let different: Cow<'_, str> = Cow::Borrowed("Different");
+    let s4 = InternedString::new(&db, different);
+    assert_ne!(s1, s4);
+}
+
+#[test]
+fn interning_pathbuf_with_cow() {
+    let db = salsa::DatabaseImpl::new();
+
+    // Create an interned path using a PathBuf directly.
+    let s1 = InternedPathBuf::new(&db, PathBuf::from("test_path"));
+
+    // Looking up with a Cow::Borrowed should find the same interned value.
+    let borrowed: Cow<'_, Path> = Cow::Borrowed(Path::new("test_path"));
+    let s2 = InternedPathBuf::new(&db, borrowed);
+    assert_eq!(s1, s2);
+
+    // Looking up with a Cow::Owned should also work.
+    let owned: Cow<'_, Path> = Cow::Owned(PathBuf::from("test_path"));
+    let s3 = InternedPathBuf::new(&db, owned);
+    assert_eq!(s1, s3);
+
+    // Different values should result in different interned structs.
+    let different: Cow<'_, Path> = Cow::Borrowed(Path::new("different_path"));
+    let s4 = InternedPathBuf::new(&db, different);
+    assert_ne!(s1, s4);
+}
+
+#[test]
+fn interning_vec_with_cow() {
+    let db = salsa::DatabaseImpl::new();
+
+    // Create an interned vec using a Vec directly.
+    let s1 = InternedVec::new(&db, vec!["Hello".to_string(), "World".to_string()]);
+
+    // Looking up with a Cow::Borrowed should find the same interned value.
+    let slice = ["Hello".to_string(), "World".to_string()];
+    let borrowed: Cow<'_, [String]> = Cow::Borrowed(&slice);
+    let s2 = InternedVec::new(&db, borrowed);
+    assert_eq!(s1, s2);
+
+    // Looking up with a Cow::Owned should also work.
+    let owned: Cow<'_, [String]> = Cow::Owned(vec!["Hello".to_string(), "World".to_string()]);
+    let s3 = InternedVec::new(&db, owned);
+    assert_eq!(s1, s3);
+
+    // Different values should result in different interned structs.
+    let different: Cow<'_, [String]> = Cow::Owned(vec!["Different".to_string()]);
+    let s4 = InternedVec::new(&db, different);
+    assert_ne!(s1, s4);
+}
+
+#[cfg(feature = "compact_str")]
+#[salsa::interned(debug)]
+struct InternedCompactString<'db> {
+    data: compact_str::CompactString,
+}
+
+#[cfg(feature = "compact_str")]
+#[test]
+fn interning_compact_string_with_cow() {
+    let db = salsa::DatabaseImpl::new();
+
+    // Create an interned compact string using a CompactString directly.
+    let s1 = InternedCompactString::new(&db, compact_str::CompactString::new("Hello"));
+
+    // Looking up with a Cow::Borrowed should find the same interned value.
+    let borrowed: Cow<'_, str> = Cow::Borrowed("Hello");
+    let s2 = InternedCompactString::new(&db, borrowed);
+    assert_eq!(s1, s2);
+
+    // Looking up with a Cow::Owned should also work.
+    let owned: Cow<'_, str> = Cow::Owned("Hello".to_string());
+    let s3 = InternedCompactString::new(&db, owned);
+    assert_eq!(s1, s3);
+
+    // Different values should result in different interned structs.
+    let different: Cow<'_, str> = Cow::Borrowed("Different");
+    let s4 = InternedCompactString::new(&db, different);
+    assert_ne!(s1, s4);
 }
