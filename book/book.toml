@@ -1,6 +1,5 @@
 [book]
 authors = ["Salsa Contributors"]
-multilingual = false
 src = "src"
 title = "Salsa"
 
