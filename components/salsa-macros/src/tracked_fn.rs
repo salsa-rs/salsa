@@ -7,13 +7,6 @@ use crate::hygiene::Hygiene;
 use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
 use crate::{db_lifetime, fn_util};
 
-// Source:
-//
-// #[salsa::db]
-// pub struct Database {
-//    storage: salsa::Storage<Self>,
-// }
-
 pub(crate) fn tracked_fn(args: proc_macro::TokenStream, item: ItemFn) -> syn::Result<TokenStream> {
     let hygiene = Hygiene::from2(&item);
     let args: FnArgs = syn::parse(args)?;
