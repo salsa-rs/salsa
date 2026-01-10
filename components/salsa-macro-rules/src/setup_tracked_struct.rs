@@ -295,7 +295,7 @@ macro_rules! setup_tracked_struct {
                     current_revision: $zalsa::Revision,
                 ) -> $zalsa::MemoTableWithTypes<'_> {
                     // SAFETY: Guaranteed by caller.
-                    unsafe { zalsa.table().memos::<$zalsa_struct::ValueWithMetadata<$Configuration>>(id, current_revision) }
+                    unsafe { zalsa.table().memos::<$zalsa_struct::Value<$Configuration>>(id, current_revision) }
                 }
             }
 

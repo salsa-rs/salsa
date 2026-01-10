@@ -194,7 +194,7 @@ where
     ingredient_index: IngredientIndex,
 
     /// Phantom data: we fetch `Value<C>` out from `Table`
-    phantom: PhantomData<fn() -> ValueWithMetadata<C>>,
+    phantom: PhantomData<fn() -> Value<C>>,
 
     /// Store freed ids
     free_list: SegQueue<Id>,
@@ -379,7 +379,7 @@ struct TrackedEntry {
 }
 
 // ANCHOR: ValueStruct
-pub struct ValueWithMetadata<C>
+pub struct Value<C>
 where
     C: Configuration,
 {
@@ -414,13 +414,7 @@ where
     /// When tracked structs are re-created, this revision may be updated to the
     /// current revision if the value is different.
     revisions: C::Revisions,
-    value: Value<C>,
-}
 
-pub struct Value<C>
-where
-    C: Configuration,
-{
     /// Fields of this tracked struct. They can change across revisions,
     /// but they do not change within a particular revision.
     fields: C::Fields<'static>,
@@ -429,6 +423,7 @@ where
     /*unsafe */
     memos: MemoTable,
 }
+
 // ANCHOR_END: ValueStruct
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -549,17 +544,16 @@ where
         fields: C::Fields<'db>,
     ) -> Id {
         let current_revision = zalsa.current_revision();
-        let value = |_| ValueWithMetadata {
+        let value = |_| Value {
             updated_at: OptionalAtomicRevision::new(Some(current_revision)),
             durability: current_deps.durability,
             revisions: C::new_revisions(current_deps.changed_at),
-            value: Value {
-                // SAFETY: We just erase the lifetime
-                fields: unsafe { mem::transmute::<C::Fields<'db>, C::Fields<'static>>(fields) },
-                // SAFETY: We only ever access the memos of a value that we allocated through
-                // our `MemoTableTypes`.
-                memos: unsafe { MemoTable::new(self.memo_table_types()) },
-            },
+
+            // SAFETY: We just erase the lifetime
+            fields: unsafe { mem::transmute::<C::Fields<'db>, C::Fields<'static>>(fields) },
+            // SAFETY: We only ever access the memos of a value that we allocated through
+            // our `MemoTableTypes`.
+            memos: unsafe { MemoTable::new(self.memo_table_types()) },
         };
 
         while let Some(id) = self.free_list.pop() {
@@ -590,8 +584,7 @@ where
             return id;
         }
 
-        let (id, _) =
-            zalsa_local.allocate::<ValueWithMetadata<C>>(zalsa, self.ingredient_index, value);
+        let (id, _) = zalsa_local.allocate::<Value<C>>(zalsa, self.ingredient_index, value);
 
         id
     }
@@ -691,7 +684,7 @@ where
 
         // SAFETY: We have now *claimed* mutable access to the `value` field by swapping in `None`,
         // any attempt to read concurrently will panic so it is safe to take exclusive references.
-        let old_fields = unsafe { &raw mut (*data_raw).value.fields }.cast::<C::Fields<'_>>();
+        let old_fields = unsafe { &raw mut (*data_raw).fields }.cast::<C::Fields<'_>>();
 
         // SAFETY: `revisions` contains `AtomicRevision` values which can be safely accessed
         // concurrently with `tracked_field::maybe_changed_after`.
@@ -713,7 +706,7 @@ where
             // so there should be no live instances of IDs from the previous generation. We clear
             // the memos and return a new ID here as if we have allocated a new slot.
             // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
-            let memo_table = unsafe { &mut (*data_raw).value.memos };
+            let memo_table = unsafe { &mut (*data_raw).memos };
 
             // SAFETY: The memo table belongs to a value that we allocated, so it has the
             // correct type.
@@ -745,22 +738,22 @@ where
 
     /// Fetch the data for a given id created by this ingredient from the table,
     /// -giving it the appropriate type.
-    fn data_raw(table: &Table, id: Id) -> *mut ValueWithMetadata<C> {
+    fn data_raw(table: &Table, id: Id) -> *mut Value<C> {
         table.get_raw(id)
     }
 
     /// # Safety
     ///
-    /// `data` must be a valid pointer to a `ValueWithMetadata<C>`
+    /// `data` must be a valid pointer to a `Value<C>`
     unsafe fn lock_fields(
         &self,
-        data: *const ValueWithMetadata<C>,
+        data: *const Value<C>,
         current_revision: Revision,
     ) -> &C::Fields<'_> {
         // SAFETY: `data` is a valid pointer
         acquire_read_lock(unsafe { &(*data).updated_at }, current_revision);
         // SAFETY: We have acquired a read lock, so `values` is not aliased
-        unsafe { mem::transmute::<&C::Fields<'static>, &C::Fields<'_>>(&(*data).value.fields) }
+        unsafe { mem::transmute::<&C::Fields<'static>, &C::Fields<'_>>(&(*data).fields) }
     }
 
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare
@@ -795,7 +788,7 @@ where
         }
 
         // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
-        let memo_table = unsafe { &mut (*data).value.memos };
+        let memo_table = unsafe { &mut (*data).memos };
 
         // SAFETY: The memo table belongs to a value that we allocated, so it
         // has the correct type.
@@ -915,7 +908,7 @@ where
     pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = StructEntry<'db, C>> {
         zalsa
             .table()
-            .slots_of::<ValueWithMetadata<C>>()
+            .slots_of::<Value<C>>()
             .map(|(id, value)| StructEntry {
                 value,
                 key: self.database_key_index(id),
@@ -928,7 +921,7 @@ pub struct StructEntry<'db, C>
 where
     C: Configuration,
 {
-    value: &'db ValueWithMetadata<C>,
+    value: &'db Value<C>,
     key: DatabaseKeyIndex,
 }
 
@@ -947,7 +940,7 @@ where
     }
 
     #[cfg(feature = "salsa_unstable")]
-    pub fn value(&self) -> &'db ValueWithMetadata<C> {
+    pub fn value(&self) -> &'db Value<C> {
         self.value
     }
 }
@@ -1082,7 +1075,7 @@ where
     }
 }
 
-impl<C> ValueWithMetadata<C>
+impl<C> Value<C>
 where
     C: Configuration,
 {
@@ -1092,7 +1085,7 @@ where
     /// a particular revision.
     #[cfg_attr(not(feature = "salsa_unstable"), doc(hidden))]
     pub fn fields(&self) -> &C::Fields<'static> {
-        &self.value.fields
+        &self.fields
     }
 }
 
@@ -1118,7 +1111,7 @@ fn acquire_read_lock(updated_at: &OptionalAtomicRevision, current_revision: Revi
 }
 
 #[cfg(feature = "salsa_unstable")]
-impl<C> ValueWithMetadata<C>
+impl<C> Value<C>
 where
     C: Configuration,
 {
@@ -1130,7 +1123,7 @@ where
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees this is the correct types table.
-        let memos = unsafe { memo_table_types.attach_memos(&self.value.memos) };
+        let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
@@ -1142,8 +1135,8 @@ where
     }
 }
 
-// SAFETY: `ValueWithMetadata<C>` is our private type branded over the unique configuration `C`.
-unsafe impl<C> Slot for ValueWithMetadata<C>
+// SAFETY: `Value<C>` is our private type branded over the unique configuration `C`.
+unsafe impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
@@ -1158,12 +1151,12 @@ where
         unsafe { acquire_read_lock(&(*this).updated_at, current_revision) };
         // SAFETY: `this` is a valid pointer given the caller obligation and we have acquired a read
         // lock, so `values` is not aliased
-        unsafe { &raw const (*this).value.memos }
+        unsafe { &raw const (*this).memos }
     }
 
     #[inline(always)]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
-        &mut self.value.memos
+        &mut self.memos
     }
 }
 
@@ -1275,7 +1268,7 @@ mod persistence {
     use serde::ser::{SerializeMap, SerializeStruct};
     use serde::{de, Deserialize};
 
-    use super::{Configuration, IngredientImpl, Value, ValueWithMetadata};
+    use super::{Configuration, IngredientImpl, Value};
     use crate::plumbing::Ingredient;
     use crate::revision::OptionalAtomicRevision;
     use crate::table::memo::MemoTable;
@@ -1300,10 +1293,10 @@ mod persistence {
         {
             let Self { zalsa, .. } = self;
 
-            let count = zalsa.table().slots_of::<ValueWithMetadata<C>>().count();
+            let count = zalsa.table().slots_of::<Value<C>>().count();
             let mut map = serializer.serialize_map(Some(count))?;
 
-            for (id, value) in zalsa.table().slots_of::<ValueWithMetadata<C>>() {
+            for (id, value) in zalsa.table().slots_of::<Value<C>>() {
                 map.serialize_entry(&id.as_bits(), value)?;
             }
 
@@ -1311,7 +1304,7 @@ mod persistence {
         }
     }
 
-    impl<C> serde::Serialize for ValueWithMetadata<C>
+    impl<C> serde::Serialize for Value<C>
     where
         C: Configuration,
     {
@@ -1321,11 +1314,12 @@ mod persistence {
         {
             let mut value = serializer.serialize_struct("Value", 4)?;
 
-            let ValueWithMetadata {
+            let Value {
                 durability,
                 updated_at,
                 revisions,
-                value: Value { fields, memos: _ },
+                fields,
+                memos: _,
             } = self;
 
             value.serialize_field("durability", &durability)?;
@@ -1393,20 +1387,18 @@ mod persistence {
                 let id = Id::from_bits(id);
                 let (page_idx, _) = crate::table::split_id(id);
 
-                let value = ValueWithMetadata::<C> {
+                let value = Value::<C> {
                     updated_at: value.updated_at,
                     durability: value.durability,
                     revisions: value.revisions,
-                    value: Value {
-                        fields: value.fields.0,
-                        // SAFETY: We only ever access the memos of a value that we allocated through
-                        // our `MemoTableTypes`.
-                        memos: unsafe { MemoTable::new(ingredient.memo_table_types()) },
-                    },
+                    fields: value.fields.0,
+                    // SAFETY: We only ever access the memos of a value that we allocated through
+                    // our `MemoTableTypes`.
+                    memos: unsafe { MemoTable::new(ingredient.memo_table_types()) },
                 };
 
                 // Force initialize the relevant page.
-                zalsa.table_mut().force_page::<ValueWithMetadata<C>>(
+                zalsa.table_mut().force_page::<Value<C>>(
                     page_idx,
                     ingredient.ingredient_index(),
                     ingredient.memo_table_types(),
@@ -1418,7 +1410,7 @@ mod persistence {
                 let (allocated_id, _) = unsafe {
                     zalsa
                         .table()
-                        .page::<ValueWithMetadata<C>>(page_idx)
+                        .page::<Value<C>>(page_idx)
                         .allocate(page_idx, |_| value)
                         .unwrap_or_else(|_| panic!("serialized an invalid `Id`: {id:?}"))
                 };
