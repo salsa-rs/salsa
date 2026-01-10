@@ -8,7 +8,7 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
@@ -301,11 +301,13 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        panic!("nothing should ever depend on an input struct directly")
+        // However, `deep_verify_memo` calls `maybe_changed_after` for queries participating
+        // in a cycle and the first step is to check if the memo on which the cycle head is stored
+        // is unchanged. We never collect inputs, so we can always assume that the memo is unchanged (but its fields might not).
+        VerifyResult::unchanged()
     }
 
     fn collect_minimum_serialized_edges(

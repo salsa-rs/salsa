@@ -1,4 +1,4 @@
-pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
+pub(crate) use maybe_changed_after::VerifyResult;
 pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrancy, SyncGuard, SyncOwner, SyncTable};
 
 use std::any::Any;
@@ -322,11 +322,10 @@ where
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision, cycle_heads)
+        self.maybe_changed_after(db, input, revision)
     }
 
     fn collect_minimum_serialized_edges(

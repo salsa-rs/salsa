@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::cycle::{IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::runtime::Running;
 use crate::sync::Arc;
@@ -35,7 +35,7 @@ pub struct Location {
     pub line: u32,
 }
 
-pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
+pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     fn debug_name(&self) -> &'static str;
     fn location(&self) -> &'static Location;
     fn jar_kind(&self) -> JarKind;
@@ -47,11 +47,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// The passed in database needs to be the same one that the ingredient was created with.
     unsafe fn maybe_changed_after(
         &self,
-        zalsa: &crate::zalsa::Zalsa,
+        zalsa: &Zalsa,
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult;
 
     /// Collects the minimum edges necessary to serialize a given dependency edge on this ingredient,
@@ -96,12 +95,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
     /// in the current revision.
-    fn mark_validated_output(
-        &self,
-        zalsa: &Zalsa,
-        executor: DatabaseKeyIndex,
-        output_key: crate::Id,
-    ) {
+    fn mark_validated_output(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex, output_key: Id) {
         let _ = (zalsa, executor, output_key);
         unreachable!("only tracked struct and function ingredients can have validatable outputs")
     }
@@ -147,7 +141,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes>;
 
-    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name(), index, fmt)
     }
     // Function ingredient methods

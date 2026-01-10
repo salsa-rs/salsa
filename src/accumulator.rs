@@ -7,7 +7,7 @@ use std::panic::UnwindSafe;
 
 use accumulated::{Accumulated, AnyAccumulated};
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::ZalsaLocal;
@@ -107,7 +107,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
     }
