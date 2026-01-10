@@ -809,7 +809,6 @@ pub enum QueryOriginRef<'a> {
 impl<'a> QueryOriginRef<'a> {
     /// Indices for queries *read* by this query
     #[inline]
-    #[cfg(feature = "accumulator")]
     pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
@@ -1122,7 +1121,6 @@ pub enum QueryEdgeKind {
 /// Returns the (tracked) inputs that were executed in computing this memoized value.
 ///
 /// These will always be in execution order.
-#[cfg(feature = "accumulator")]
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {

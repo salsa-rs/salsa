@@ -128,7 +128,6 @@ where
     }
 
     #[inline(never)]
-    #[expect(clippy::too_many_arguments)]
     fn maybe_changed_after_cold<'db>(
         &'db self,
         zalsa: &Zalsa,

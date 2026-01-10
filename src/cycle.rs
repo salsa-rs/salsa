@@ -118,10 +118,10 @@ impl CycleHead {
         Self::lookup_ingredient(zalsa, self.database_key_index)
     }
 
-    pub(crate) fn lookup_ingredient<'db>(
-        zalsa: &'db Zalsa,
+    pub(crate) fn lookup_ingredient(
+        zalsa: &Zalsa,
         key: DatabaseKeyIndex,
-    ) -> &'db dyn TrackedFunctionIngredient {
+    ) -> &dyn TrackedFunctionIngredient {
         zalsa
             .lookup_ingredient(key.ingredient_index())
             .as_tracked_function_ingredient()
@@ -529,7 +529,6 @@ impl<'db> ProvisionalStatus<'db> {
         match self {
             ProvisionalStatus::Provisional { cycle_heads, .. } => cycle_heads,
             ProvisionalStatus::Final { cycle_heads, .. } => cycle_heads,
-            _ => empty_cycle_heads(),
         }
     }
 
