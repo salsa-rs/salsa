@@ -1347,9 +1347,7 @@ fn repeat_query_participating_in_cycle2() {
         [
             "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: head(Id(0)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
