@@ -369,7 +369,7 @@ impl<'me> ClaimGuard<'me> {
 
     #[cold]
     #[inline(never)]
-    pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) -> bool {
+    fn transfer(&self, new_owner: DatabaseKeyIndex) -> bool {
         let owner_ingredient = self.zalsa.lookup_ingredient(new_owner.ingredient_index());
 
         // Get the owning thread of `new_owner`.

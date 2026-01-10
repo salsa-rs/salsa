@@ -66,6 +66,8 @@ where
                 (new_value, active_query.pop())
             }
             CycleRecoveryStrategy::FallbackImmediate => {
+                claim_guard.set_release_mode(ReleaseMode::Default);
+
                 let (mut new_value, active_query) = Self::execute_query(
                     db,
                     zalsa,
@@ -76,8 +78,20 @@ where
                 let mut completed_query = active_query.pop();
 
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
+                    let mut cycle_heads = std::mem::take(cycle_heads);
+                    collect_all_cycle_heads(
+                        zalsa,
+                        &mut cycle_heads,
+                        database_key_index,
+                        IterationCount::initial(),
+                    );
+
+                    let depends_on_self = cycle_heads.contains(&database_key_index);
+                    let outer_cycle =
+                        outer_cycle(zalsa, zalsa_local, &cycle_heads, database_key_index);
+
                     // Did the new result we got depend on our own provisional value, in a cycle?
-                    if cycle_heads.contains(&database_key_index) {
+                    if depends_on_self {
                         // Ignore the computed value, leave the fallback value there.
                         let memo = self
                             .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
@@ -90,13 +104,23 @@ where
                         // We need to mark the memo as finalized so other cycle participants that have fallbacks
                         // will be verified (participants that don't have fallbacks will not be verified).
                         memo.revisions.verified_final.store(true, Ordering::Release);
+
+                        if let Some(outer_cycle) = outer_cycle {
+                            claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
+                        }
+
                         return Some(memo);
                     }
+
+                    let Some(outer_cycle) = outer_cycle else {
+                        panic!("cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?}).");
+                    };
+
+                    claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
 
                     // If we're in the middle of a cycle and we have a fallback, use it instead.
                     // Cycle participants that don't have a fallback will be discarded in
                     // `validate_provisional()`.
-                    let cycle_heads = std::mem::take(cycle_heads);
                     let active_query =
                         zalsa_local.push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));

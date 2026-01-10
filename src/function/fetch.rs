@@ -110,17 +110,6 @@ where
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
-
-                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-                    let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-
-                    if let Some(memo) = memo {
-                        if memo.value.is_some() {
-                            memo.block_on_heads(zalsa);
-                        }
-                    }
-                }
-
                 return None;
             }
             ClaimResult::Cycle { .. } => {
