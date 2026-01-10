@@ -11,7 +11,7 @@ use hashbrown::hash_table::Entry;
 use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
@@ -967,7 +967,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Any change to a tracked struct results in a new ID generation, so there
         // are no direct dependencies on the struct, only on its tracked fields.

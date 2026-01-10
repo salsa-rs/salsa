@@ -847,7 +847,7 @@ enum QueryOriginKind {
     /// The value was assigned as the output of another query.
     ///
     /// This can, for example, can occur when `specify` is used.
-    Assigned = 0b01,
+    Assigned = 0b00,
 
     /// The value was derived by executing a function
     /// _and_ Salsa was able to track all of said function's inputs.
