@@ -8,6 +8,7 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
+use crate::cycle::{CycleHeads, IterationCount};
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId, FromIdWithDb};
@@ -320,10 +321,14 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("nothing should ever depend on an input struct directly")
     }
 
-    fn collect_flattened_cycle_inputs(
+    fn complete_cycle_iteration(
         &self,
         _zalsa: &Zalsa,
         _id: Id,
+        _outermost_head: DatabaseKeyIndex,
+        _iteration: IterationCount,
+        _cycle_heads: &CycleHeads,
+        _cycle_converged: bool,
         _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {

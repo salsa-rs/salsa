@@ -801,6 +801,7 @@ fn nested_double_multiple_revisions() {
 
     a.assert_count(&db);
 
+    tracing::info!("New revision, expect max value");
     // next revision, we hit max value instead
     c_in.set_inputs(&mut db).to(vec![
         value(243),
@@ -811,11 +812,13 @@ fn nested_double_multiple_revisions() {
     a.assert_bounds(&db);
 
     // and next revision, we converge
+    tracing::info!("New revision, expect converge");
     c_in.set_inputs(&mut db)
         .to(vec![value(240), a.clone(), b.clone()]);
 
     a.assert_value(&db, 240);
 
+    tracing::info!("New revision, expect converge again");
     // one more revision, without relevant changes
     a_in.set_inputs(&mut db).to(vec![b]);
 

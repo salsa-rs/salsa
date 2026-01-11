@@ -7,6 +7,7 @@ use std::panic::UnwindSafe;
 
 use accumulated::{Accumulated, AnyAccumulated};
 
+use crate::cycle::{CycleHeads, IterationCount};
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, Jar};
@@ -137,10 +138,14 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         unreachable!("accumulator does not allocate pages")
     }
 
-    fn collect_flattened_cycle_inputs(
+    fn complete_cycle_iteration(
         &self,
         _zalsa: &Zalsa,
         _id: Id,
+        _outermost_head: DatabaseKeyIndex,
+        _iteration: IterationCount,
+        _cycle_heads: &CycleHeads,
+        _cycle_converged: bool,
         _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {

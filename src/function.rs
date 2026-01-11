@@ -7,7 +7,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
-use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -369,21 +369,14 @@ where
         }
     }
 
-    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return;
-        };
-
-        memo.revisions
-            .set_iteration_count(Self::database_key_index(self, input), iteration_count);
-    }
-
-    fn collect_flattened_cycle_inputs(
+    fn complete_cycle_iteration(
         &self,
         zalsa: &Zalsa,
         id: Id,
+        outermost_head: DatabaseKeyIndex,
+        iteration: IterationCount,
+        cycle_heads: &CycleHeads,
+        cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {
@@ -392,32 +385,36 @@ where
             return;
         };
 
+        let database_key_index = self.database_key_index(id);
+
         if !memo.may_be_provisional() {
-            flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
+            flattened_input_outputs.insert(QueryEdge::input(database_key_index));
             return;
         }
 
         for input in memo.revisions.origin.as_ref().inputs() {
             if seen.insert(input) {
                 let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                ingredient.collect_flattened_cycle_inputs(
+                ingredient.complete_cycle_iteration(
                     zalsa,
                     input.key_index(),
+                    outermost_head,
+                    iteration,
+                    cycle_heads,
+                    cycle_converged,
                     flattened_input_outputs,
                     seen,
                 );
             }
         }
-    }
 
-    fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return;
-        };
-
-        memo.revisions.verified_final.store(true, Ordering::Release);
+        if cycle_converged {
+            tracing::info!("Marking {database_key_index:?} as finalized");
+            memo.revisions.verified_final.store(true, Ordering::Release);
+        } else {
+            memo.revisions
+                .set_iteration_count(database_key_index, iteration);
+        }
     }
 
     fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {

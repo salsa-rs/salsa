@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleHeads, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -153,26 +153,14 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         unreachable!("cycle_converged should only be called on cycle heads and only functions can be cycle heads");
     }
 
-    /// Updates the iteration count for the (nested) cycle head `_input` to `iteration_count`.
-    ///
-    /// This is a no-op if the memo doesn't exist or if called on a Memo without cycle heads.
-    fn set_cycle_iteration_count(
-        &self,
-        _zalsa: &Zalsa,
-        _input: Id,
-        _iteration_count: IterationCount,
-    ) {
-        unreachable!("increment_iteration_count should only be called on cycle heads and only functions can be cycle heads");
-    }
-
-    fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
-        unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
-    }
-
-    fn collect_flattened_cycle_inputs(
+    fn complete_cycle_iteration(
         &self,
         zalsa: &Zalsa,
         id: Id,
+        outermost_head: DatabaseKeyIndex,
+        iteration: IterationCount,
+        cycle_heads: &CycleHeads,
+        cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     );

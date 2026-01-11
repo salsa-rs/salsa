@@ -629,7 +629,7 @@ fn complete_cycle_participant(
 /// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
 /// Returns `Err` if the cycle head needs to keep iterating.
 fn try_complete_cycle_head(
-    active_query: ActiveQueryGuard,
+    mut active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
     last_provisional_revisions: &QueryRevisions,
@@ -659,6 +659,22 @@ fn try_complete_cycle_head(
         );
 
         // FIXME: merge with flattened input_outputs if any
+        // if !flattened_input_outputs.is_empty() {
+        //     flattened_input_outputs.extend(
+        //         completed_query
+        //             .revisions
+        //             .origin
+        //             .as_ref()
+        //             .edges()
+        //             .iter()
+        //             .cloned(),
+        //     );
+        //     completed_query.revisions.origin = QueryOrigin::derived(
+        //         std::mem::take(flattened_input_outputs)
+        //             .into_iter()
+        //             .collect::<Box<[_]>>(),
+        //     )
+        // }
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
         // Store whether this cycle has converged, so that the outer cycle can check it.
@@ -690,24 +706,20 @@ fn try_complete_cycle_head(
             converged
         });
 
-    collect_flattened_input_outputs(
-        zalsa,
-        me,
-        &completed_query.revisions,
-        flattened_input_outputs,
-    );
-
     if converged {
         tracing::debug!(
             "{me:?}: execute: fixpoint iteration has a final value after {iteration_count:?} iterations"
         );
 
-        // Set the nested cycles as verified. This is necessary because
-        // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
-        for head in cycle_heads.iter_not_eq(me) {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-            ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
-        }
+        complete_iteration(
+            zalsa,
+            me,
+            &completed_query.revisions,
+            true,
+            &cycle_heads,
+            iteration_count,
+            flattened_input_outputs,
+        );
 
         tracing::info!(
             "original origin: {:?}, flattened input outputs: {:?}",
@@ -741,13 +753,21 @@ fn try_complete_cycle_head(
         return Ok(completed_query);
     }
 
-    *completed_query.revisions.verified_final.get_mut() = false;
-
     // The fixpoint iteration hasn't converged. Iterate again...
     let iteration_count = iteration_count.increment().unwrap_or_else(|| {
         tracing::warn!("{me:?}: execute: too many cycle iterations");
         panic!("{me:?}: execute: too many cycle iterations")
     });
+
+    complete_iteration(
+        zalsa,
+        me,
+        &completed_query.revisions,
+        false,
+        &cycle_heads,
+        iteration_count,
+        flattened_input_outputs,
+    );
 
     zalsa.event(&|| {
         Event::new(EventKind::WillIterateCycle {
@@ -758,21 +778,13 @@ fn try_complete_cycle_head(
 
     tracing::info!("{me:?}: execute: iterate again ({iteration_count:?})...",);
 
-    // Update the iteration count of nested cycles.
-    for head in cycle_heads.iter_not_eq(me) {
-        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-
-        ingredient.set_cycle_iteration_count(
-            zalsa,
-            head.database_key_index.key_index(),
-            iteration_count,
-        );
-    }
+    debug_assert!(completed_query.revisions.cycle_heads().is_empty());
 
     // Update the iteration count of this cycle head, but only after restoring
     // the cycle heads array (or this becomes a no-op).
     // We don't call the same method on `cycle_heads` because that one doens't update
     // the `memo.iteration_count`
+    *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
     completed_query
         .revisions
@@ -793,14 +805,18 @@ fn assert_no_new_cycle_heads(
     }
 }
 
-fn collect_flattened_input_outputs(
+fn complete_iteration(
     zalsa: &Zalsa,
-    me: DatabaseKeyIndex,
+    cycle_head: DatabaseKeyIndex,
     head: &QueryRevisions,
+    cycle_converged: bool,
+    cycle_heads: &CycleHeads,
+    iteration_count: IterationCount,
     flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
 ) {
+    tracing::info!("Completing cycle with head {cycle_head:?}");
     let mut seen = FxHashSet::default();
-    seen.insert(me);
+    seen.insert(cycle_head);
 
     for edge in head.origin.as_ref().edges() {
         match edge.kind() {
@@ -808,9 +824,13 @@ fn collect_flattened_input_outputs(
                 if seen.insert(input) {
                     let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
                     // TODO: Use `origin` instead of new method with a `Stack`, similar to what's done in accumulated
-                    ingredient.collect_flattened_cycle_inputs(
+                    ingredient.complete_cycle_iteration(
                         zalsa,
                         input.key_index(),
+                        cycle_head,
+                        iteration_count,
+                        cycle_heads,
+                        cycle_converged,
                         flattened_input_outputs,
                         &mut seen,
                     );
