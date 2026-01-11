@@ -685,9 +685,6 @@ mod persistence {
 
                             QueryOrigin::assigned(key)
                         }
-                        QueryOriginRef::FixpointInitial => unreachable!(
-                            "`should_serialize` returns `false` for provisional queries"
-                        ),
                     };
 
                     let memo = memo.with_origin(flattened_origin);
