@@ -1,4 +1,4 @@
-pub(crate) use maybe_changed_after::{VerifyCycleHeads, VerifyResult};
+pub(crate) use maybe_changed_after::VerifyResult;
 pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrancy, SyncGuard, SyncOwner, SyncTable};
 
 use std::any::Any;
@@ -7,11 +7,11 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
-use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Ingredient, WaitForResult};
+use crate::ingredient::{Ingredient, TrackedFunctionIngredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
@@ -322,11 +322,10 @@ where
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision, cycle_heads)
+        self.maybe_changed_after(db, input, revision)
     }
 
     fn collect_minimum_serialized_edges(
@@ -370,58 +369,52 @@ where
         }
     }
 
-    /// Returns `final` only if the memo has the `verified_final` flag set and the cycle recovery strategy is not `FallbackImmediate`.
-    ///
-    /// Otherwise, the value is still provisional. For both final and provisional, it also
-    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
-    fn provisional_status<'db>(
+    fn complete_cycle_iteration(
         &self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        let memo =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
+        zalsa: &Zalsa,
+        id: Id,
+        outermost_head: DatabaseKeyIndex,
+        iteration: IterationCount,
+        cycle_heads: &CycleHeads,
+        cycle_converged: bool,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        let memo_index = self.memo_ingredient_index(zalsa, id);
+        let Some(memo) = self.get_memo_from_table_for(zalsa, id, memo_index) else {
+            return;
+        };
 
-        let iteration = memo.revisions.iteration();
-        let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
+        let database_key_index = self.database_key_index(id);
 
-        Some(if verified_final {
-            if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-                ProvisionalStatus::FallbackImmediate
-            } else {
-                ProvisionalStatus::Final {
+        if !memo.may_be_provisional() {
+            flattened_input_outputs.insert(QueryEdge::input(database_key_index));
+            return;
+        }
+
+        for input in memo.revisions.origin.as_ref().inputs() {
+            if seen.insert(input) {
+                let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                ingredient.complete_cycle_iteration(
+                    zalsa,
+                    input.key_index(),
+                    outermost_head,
                     iteration,
-                    verified_at: memo.verified_at.load(),
-                }
+                    cycle_heads,
+                    cycle_converged,
+                    flattened_input_outputs,
+                    seen,
+                );
             }
+        }
+
+        if cycle_converged {
+            tracing::info!("Marking {database_key_index:?} as finalized");
+            memo.revisions.verified_final.store(true, Ordering::Release);
         } else {
-            ProvisionalStatus::Provisional {
-                iteration,
-                verified_at: memo.verified_at.load(),
-                cycle_heads: memo.cycle_heads(),
-            }
-        })
-    }
-
-    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return;
-        };
-
-        memo.revisions
-            .set_iteration_count(Self::database_key_index(self, input), iteration_count);
-    }
-
-    fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return;
-        };
-
-        memo.revisions.verified_final.store(true, Ordering::Release);
+            memo.revisions
+                .set_iteration_count(database_key_index, iteration);
+        }
     }
 
     fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
@@ -454,10 +447,6 @@ where
             ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
             ClaimResult::Claimed(()) => WaitForResult::Available,
         }
-    }
-
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
-        self.origin(zalsa, key)
     }
 
     fn mark_validated_output(
@@ -575,6 +564,12 @@ where
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
+
+    fn as_tracked_function_ingredient(
+        &self,
+    ) -> Option<&dyn crate::ingredient::TrackedFunctionIngredient> {
+        Some(self)
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -585,6 +580,49 @@ where
         f.debug_struct(std::any::type_name::<Self>())
             .field("index", &self.index)
             .finish()
+    }
+}
+
+impl<C> TrackedFunctionIngredient for IngredientImpl<C>
+where
+    C: Configuration,
+{
+    fn struct_database_key_index(&self, zalsa: &Zalsa, input: Id) -> DatabaseKeyIndex {
+        <C::SalsaStruct<'_> as SalsaStructInDb>::database_key_index(zalsa, input)
+    }
+
+    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
+        self.origin(zalsa, key)
+    }
+
+    /// Returns `final` if the memo has the `verified_final` flag set.
+    ///
+    /// Otherwise, the value is still provisional. For both final and provisional, it also
+    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
+    fn provisional_status<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        input: Id,
+    ) -> Option<ProvisionalStatus<'db>> {
+        let memo =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
+
+        let iteration = memo.revisions.iteration();
+        let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
+
+        Some(if verified_final {
+            ProvisionalStatus::Final {
+                iteration,
+                verified_at: memo.verified_at.load(),
+                cycle_heads: memo.all_cycle_heads(),
+            }
+        } else {
+            ProvisionalStatus::Provisional {
+                iteration,
+                verified_at: memo.verified_at.load(),
+                cycle_heads: memo.all_cycle_heads(),
+            }
+        })
     }
 }
 
@@ -685,9 +723,6 @@ mod persistence {
 
                             QueryOrigin::assigned(key)
                         }
-                        QueryOriginRef::FixpointInitial => unreachable!(
-                            "`should_serialize` returns `false` for provisional queries"
-                        ),
                     };
 
                     let memo = memo.with_origin(flattened_origin);

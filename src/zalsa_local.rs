@@ -628,7 +628,7 @@ impl QueryRevisions {
         Self {
             changed_at: Revision::start(),
             durability: Durability::MAX,
-            origin: QueryOrigin::fixpoint_initial(),
+            origin: QueryOrigin::derived(Box::default()),
             #[cfg(feature = "accumulator")]
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
@@ -658,15 +658,6 @@ impl QueryRevisions {
             Some(extra) => &extra.cycle_heads,
             None => empty_cycle_heads(),
         }
-    }
-
-    /// Returns a mutable reference to the `CycleHeads` for this query, or `None` if the list is empty.
-    pub(crate) fn cycle_heads_mut(&mut self) -> Option<&mut CycleHeads> {
-        self.extra
-            .0
-            .as_mut()
-            .map(|extra| &mut extra.cycle_heads)
-            .filter(|cycle_heads| !cycle_heads.is_empty())
     }
 
     /// Sets the `CycleHeads` for this query.
@@ -813,19 +804,15 @@ pub enum QueryOriginRef<'a> {
     /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
     /// (but we know there were more).
     DerivedUntracked(&'a [QueryEdge]) = QueryOriginKind::DerivedUntracked as u8,
-
-    /// The value is an initial provisional value for a query that supports fixpoint iteration.
-    FixpointInitial = QueryOriginKind::FixpointInitial as u8,
 }
 
 impl<'a> QueryOriginRef<'a> {
     /// Indices for queries *read* by this query
     #[inline]
-    #[cfg(feature = "accumulator")]
     pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
+            QueryOriginRef::Assigned(_) => None,
         };
         opt_edges.into_iter().flat_map(input_edges)
     }
@@ -834,7 +821,7 @@ impl<'a> QueryOriginRef<'a> {
     pub(crate) fn outputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
+            QueryOriginRef::Assigned(_) => None,
         };
         opt_edges.into_iter().flat_map(output_edges)
     }
@@ -843,7 +830,7 @@ impl<'a> QueryOriginRef<'a> {
     pub(crate) fn edges(self) -> &'a [QueryEdge] {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) | QueryOriginRef::FixpointInitial => None,
+            QueryOriginRef::Assigned(_) => None,
         };
 
         opt_edges.unwrap_or_default()
@@ -856,15 +843,10 @@ impl<'a> QueryOriginRef<'a> {
 #[derive(Clone, Copy)]
 #[repr(u8)]
 enum QueryOriginKind {
-    /// An initial provisional value.
-    ///
-    /// This will occur occur in queries that support fixpoint iteration.
-    FixpointInitial = 0b00,
-
     /// The value was assigned as the output of another query.
     ///
     /// This can, for example, can occur when `specify` is used.
-    Assigned = 0b01,
+    Assigned = 0b00,
 
     /// The value was derived by executing a function
     /// _and_ Salsa was able to track all of said function's inputs.
@@ -896,8 +878,6 @@ pub struct QueryOrigin {
     ///
     /// For `QueryOriginKind::Assigned`, this is the `IngredientIndex` of assigning query.
     /// Combined with the `Id` data, this forms a complete `DatabaseKeyIndex`.
-    ///
-    /// For `QueryOriginKind::FixpointInitial`, this field is zero.
     metadata: u32,
 }
 
@@ -923,9 +903,6 @@ union QueryOriginData {
 
     /// The identity of the assigning query for `QueryOriginKind::Assigned`.
     index: Id,
-
-    /// `QueryOriginKind::FixpointInitial` holds no data.
-    empty: (),
 }
 
 /// SAFETY: The `input_outputs` pointer is owned and not accessed or shared concurrently.
@@ -934,15 +911,6 @@ unsafe impl Send for QueryOriginData {}
 unsafe impl Sync for QueryOriginData {}
 
 impl QueryOrigin {
-    /// Create a query origin of type `QueryOriginKind::FixpointInitial`.
-    pub fn fixpoint_initial() -> QueryOrigin {
-        QueryOrigin {
-            kind: QueryOriginKind::FixpointInitial,
-            metadata: 0,
-            data: QueryOriginData { empty: () },
-        }
-    }
-
     pub fn is_derived_untracked(&self) -> bool {
         matches!(self.kind, QueryOriginKind::DerivedUntracked)
     }
@@ -1021,8 +989,6 @@ impl QueryOrigin {
 
                 QueryOriginRef::DerivedUntracked(input_outputs)
             }
-
-            QueryOriginKind::FixpointInitial => QueryOriginRef::FixpointInitial,
         }
     }
 }
@@ -1051,14 +1017,12 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
             Assigned(DatabaseKeyIndex) = QueryOriginKind::Assigned as u8,
             Derived(Box<[QueryEdge]>) = QueryOriginKind::Derived as u8,
             DerivedUntracked(Box<[QueryEdge]>) = QueryOriginKind::DerivedUntracked as u8,
-            FixpointInitial = QueryOriginKind::FixpointInitial as u8,
         }
 
         Ok(match QueryOriginOwned::deserialize(deserializer)? {
             QueryOriginOwned::Assigned(key) => QueryOrigin::assigned(key),
             QueryOriginOwned::Derived(edges) => QueryOrigin::derived(edges),
             QueryOriginOwned::DerivedUntracked(edges) => QueryOrigin::derived_untracked(edges),
-            QueryOriginOwned::FixpointInitial => QueryOrigin::fixpoint_initial(),
         })
     }
 }
@@ -1083,8 +1047,8 @@ impl Drop for QueryOrigin {
                 };
             }
 
-            // The data stored for this variants is `Copy`.
-            QueryOriginKind::FixpointInitial | QueryOriginKind::Assigned => {}
+            // The data stored for this variant is `Copy`.
+            QueryOriginKind::Assigned => {}
         }
     }
 }
@@ -1157,7 +1121,6 @@ pub enum QueryEdgeKind {
 /// Returns the (tracked) inputs that were executed in computing this memoized value.
 ///
 /// These will always be in execution order.
-#[cfg(feature = "accumulator")]
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
@@ -1213,6 +1176,8 @@ impl ActiveQueryGuard<'_> {
             previous.origin.as_ref(),
             QueryOriginRef::DerivedUntracked(_)
         );
+
+        // TODO: Only cary over outputs?
         let tracked_ids = previous.tracked_struct_ids();
 
         // SAFETY: We do not access the query stack reentrantly.

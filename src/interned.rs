@@ -11,8 +11,9 @@ use crossbeam_utils::CachePadded;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use rustc_hash::FxBuildHasher;
 
+use crate::cycle::{CycleHeads, IterationCount};
 use crate::durability::Durability;
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
@@ -893,7 +894,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();
@@ -945,6 +945,20 @@ where
         }
 
         // Otherwise, the dependency is covered by the base inputs.
+    }
+
+    fn complete_cycle_iteration(
+        &self,
+        _zalsa: &Zalsa,
+        id: Id,
+        _outermost_head: DatabaseKeyIndex,
+        _iteration: IterationCount,
+        _cycle_heads: &CycleHeads,
+        _cycle_converged: bool,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
     }
 
     fn debug_name(&self) -> &'static str {

@@ -78,4 +78,7 @@ pub trait SalsaStructInDb: Sized {
         id: Id,
         current_revision: Revision,
     ) -> MemoTableWithTypes<'_>;
+
+    /// Returns the `DatabaseKeyIndex` for the struct with the given `id`.
+    fn database_key_index(zalsa: &Zalsa, id: Id) -> DatabaseKeyIndex;
 }
