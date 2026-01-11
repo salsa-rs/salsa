@@ -643,13 +643,6 @@ fn try_complete_cycle_head(
 
     let mut completed_query = active_query.pop();
 
-    collect_flattened_input_outputs(
-        zalsa,
-        me,
-        &completed_query.revisions,
-        flattened_input_outputs,
-    );
-
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
     let metadata_converged = last_provisional_revisions.durability
@@ -696,6 +689,13 @@ fn try_complete_cycle_head(
 
             converged
         });
+
+    collect_flattened_input_outputs(
+        zalsa,
+        me,
+        &completed_query.revisions,
+        flattened_input_outputs,
+    );
 
     if converged {
         tracing::debug!(
