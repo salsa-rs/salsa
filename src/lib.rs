@@ -85,10 +85,11 @@ pub mod plumbing {
     #[cfg(feature = "accumulator")]
     pub use salsa_macro_rules::setup_accumulator_impl;
     pub use salsa_macro_rules::{
-        gate_accumulated, macro_if, maybe_backdate, maybe_default, maybe_default_tt,
-        return_mode_expression, return_mode_ty, setup_input_struct, setup_interned_struct,
-        setup_tracked_assoc_fn_body, setup_tracked_fn, setup_tracked_method_body,
-        setup_tracked_struct, unexpected_cycle_initial, unexpected_cycle_recovery,
+        cycle_recovery_return_previous, gate_accumulated, macro_if, maybe_backdate, maybe_default,
+        maybe_default_tt, return_mode_expression, return_mode_ty, setup_input_struct,
+        setup_interned_struct, setup_tracked_assoc_fn_body, setup_tracked_fn,
+        setup_tracked_method_body, setup_tracked_struct, unexpected_cycle_initial,
+        unexpected_cycle_recovery,
     };
 
     #[cfg(feature = "accumulator")]

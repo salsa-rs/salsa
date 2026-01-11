@@ -68,8 +68,26 @@ fn the_test() {
             query_b(&db_t2)
         });
 
-        let (r_t1, r_t2) = (t1.join(), t2.join());
+        let (r_t1, r_t2) = (t1.join().unwrap(), t2.join().unwrap());
 
-        assert_eq!((r_t1.unwrap(), r_t2.unwrap()), (FALLBACK_A, FALLBACK_B));
+        // With fixpoint iteration, the cycle head uses its fallback value,
+        // while the other query computes its result based on the cycle head's fallback.
+        // Which query becomes the cycle head depends on thread scheduling.
+        //
+        // Case 1: query_b is cycle head
+        //   query_a = query_b() | OFFSET_A = FALLBACK_B | OFFSET_A = 2 | 4 = 6
+        //   query_b = FALLBACK_B = 2
+        //
+        // Case 2: query_a is cycle head
+        //   query_a = FALLBACK_A = 1
+        //   query_b = query_a() | OFFSET_B = FALLBACK_A | OFFSET_B = 1 | 8 = 9
+        let valid_results = [
+            (FALLBACK_B | OFFSET_A, FALLBACK_B), // query_b is cycle head
+            (FALLBACK_A, FALLBACK_A | OFFSET_B), // query_a is cycle head
+        ];
+        assert!(
+            valid_results.contains(&(r_t1, r_t2)),
+            "unexpected results: ({r_t1}, {r_t2})"
+        );
     });
 }

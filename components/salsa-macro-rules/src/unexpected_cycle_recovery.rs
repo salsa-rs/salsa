@@ -18,3 +18,16 @@ macro_rules! unexpected_cycle_initial {
         panic!("no cycle initial value")
     }};
 }
+
+// Macro that generates the body of the cycle recovery function
+// for `cycle_result` where we always return the previous (fallback) value.
+// This makes the cycle converge immediately after one iteration.
+#[macro_export]
+macro_rules! cycle_recovery_return_previous {
+    ($db:ident, $cycle:ident, $last_provisional_value:ident, $new_value:ident, $($other_inputs:ident),*) => {{
+        let (_db, _cycle) = ($db, $cycle);
+        std::mem::drop($new_value);
+        std::mem::drop(($($other_inputs,)*));
+        ::std::clone::Clone::clone($last_provisional_value)
+    }};
+}

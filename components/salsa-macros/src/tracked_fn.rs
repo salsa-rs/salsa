@@ -291,9 +291,11 @@ impl Macro {
                 quote!(Fixpoint),
             )),
             (None, None, Some(cycle_result)) => Ok((
-                quote!((salsa::plumbing::unexpected_cycle_recovery!)),
+                // Recovery function that always returns the previous (fallback) value.
+                // This makes the cycle converge immediately after one iteration.
+                quote!((salsa::plumbing::cycle_recovery_return_previous!)),
                 quote!(((#cycle_result))),
-                quote!(FallbackImmediate),
+                quote!(Fixpoint),
             )),
             (_, _, Some(_)) => Err(syn::Error::new_spanned(
                 self.args.cycle_initial.as_ref().unwrap(),

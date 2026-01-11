@@ -660,15 +660,6 @@ impl QueryRevisions {
         }
     }
 
-    /// Returns a mutable reference to the `CycleHeads` for this query, or `None` if the list is empty.
-    pub(crate) fn cycle_heads_mut(&mut self) -> Option<&mut CycleHeads> {
-        self.extra
-            .0
-            .as_mut()
-            .map(|extra| &mut extra.cycle_heads)
-            .filter(|cycle_heads| !cycle_heads.is_empty())
-    }
-
     /// Sets the `CycleHeads` for this query.
     pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads) {
         match &mut self.extra.0 {

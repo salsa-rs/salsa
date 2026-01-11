@@ -7,7 +7,7 @@ use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
-use crate::sync::atomic::{AtomicBool, Ordering};
+
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -64,50 +64,6 @@ where
                     opt_old_memo,
                 );
                 (new_value, active_query.pop())
-            }
-            CycleRecoveryStrategy::FallbackImmediate => {
-                let (mut new_value, active_query) = Self::execute_query(
-                    db,
-                    zalsa,
-                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
-                    opt_old_memo,
-                );
-
-                let mut completed_query = active_query.pop();
-
-                if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
-                    // Did the new result we got depend on our own provisional value, in a cycle?
-                    if cycle_heads.contains(&database_key_index) {
-                        // Ignore the computed value, leave the fallback value there.
-                        let memo = self
-                            .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                            .unwrap_or_else(|| {
-                                unreachable!(
-                                    "{database_key_index:#?} is a `FallbackImmediate` cycle head, \
-                                        but no memo found"
-                                )
-                            });
-                        // We need to mark the memo as finalized so other cycle participants that have fallbacks
-                        // will be verified (participants that don't have fallbacks will not be verified).
-                        memo.revisions.verified_final.store(true, Ordering::Release);
-                        return Some(memo);
-                    }
-
-                    // If we're in the middle of a cycle and we have a fallback, use it instead.
-                    // Cycle participants that don't have a fallback will be discarded in
-                    // `validate_provisional()`.
-                    let cycle_heads = std::mem::take(cycle_heads);
-                    let active_query =
-                        zalsa_local.push_query(database_key_index, IterationCount::initial());
-                    new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                    completed_query = active_query.pop();
-                    // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
-                    // When verifying this, we will see we have fallback and mark ourselves verified.
-                    completed_query.revisions.set_cycle_heads(cycle_heads);
-                    completed_query.revisions.verified_final = AtomicBool::new(false);
-                }
-
-                (new_value, completed_query)
             }
             CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
                 db,
