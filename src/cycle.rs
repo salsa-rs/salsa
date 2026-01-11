@@ -505,7 +505,6 @@ pub enum ProvisionalStatus<'db> {
         iteration: IterationCount,
         verified_at: Revision,
     },
-    FallbackImmediate,
 }
 
 impl<'db> ProvisionalStatus<'db> {
