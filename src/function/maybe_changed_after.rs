@@ -359,7 +359,6 @@ where
             &memo.revisions,
             verified_at,
             cycle_heads,
-            C::CYCLE_STRATEGY,
         ) || validate_same_iteration(
             zalsa,
             zalsa_local,
@@ -616,7 +615,6 @@ fn validate_provisional(
     memo_revisions: &QueryRevisions,
     memo_verified_at: Revision,
     cycle_heads: &CycleHeads,
-    cycle_recovery_strategy: CycleRecoveryStrategy,
 ) -> bool {
     crate::tracing::trace!("{database_key_index:?}: validate_provisional({database_key_index:?})",);
 
@@ -650,24 +648,7 @@ fn validate_provisional(
                 if iteration != cycle_head.iteration_count.load() {
                     return false;
                 }
-
-                // FIXME: We can ignore this, I just don't have a use-case for this.
-                if cycle_recovery_strategy == CycleRecoveryStrategy::FallbackImmediate {
-                    panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
-                }
             }
-            ProvisionalStatus::FallbackImmediate => match cycle_recovery_strategy {
-                CycleRecoveryStrategy::Panic => {
-                    // Queries without fallback are not considered when inside a cycle.
-                    return false;
-                }
-                // FIXME: We can do the same as with `CycleRecoveryStrategy::Panic` here, I just don't have
-                // a use-case for this.
-                CycleRecoveryStrategy::Fixpoint => {
-                    panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
-                }
-                CycleRecoveryStrategy::FallbackImmediate => {}
-            },
         }
     }
     // Relaxed is sufficient here because there are no other writes we need to ensure have

@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleRecoveryStrategy, IterationCount};
 use crate::function::eviction::EvictionPolicy;
 use crate::function::maybe_changed_after::VerifyCycleHeads;
 use crate::function::memo::Memo;
@@ -110,17 +110,6 @@ where
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
                 blocked_on.block_on(zalsa);
-
-                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-                    let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-
-                    if let Some(memo) = memo {
-                        if memo.value.is_some() {
-                            memo.block_on_heads(zalsa);
-                        }
-                    }
-                }
-
                 return None;
             }
             ClaimResult::Cycle { .. } => {
@@ -191,35 +180,6 @@ where
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db Memo<'db, C> {
-        // check if there's a provisional value for this query
-        // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
-        // existing provisional memo if it exists
-        let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-        if let Some(memo) = memo_guard {
-            // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
-            // but that would require inserting itself as a cycle head, which either requires clone
-            // on the value OR a concurrent `Vec` for cycle heads.
-            if memo.verified_at.load() == zalsa.current_revision()
-                && memo.value.is_some()
-                && memo.revisions.cycle_heads().contains(&database_key_index)
-            {
-                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
-                    memo.revisions
-                        .cycle_heads()
-                        .remove_all_except(database_key_index);
-                }
-
-                crate::tracing::debug!(
-                    "hit cycle at {database_key_index:#?}, \
-                        returning last provisional value: {:#?}",
-                    memo.revisions
-                );
-
-                // SAFETY: memo is present in memo_map.
-                return unsafe { self.extend_memo_lifetime(memo) };
-            }
-        }
-
         // no provisional value; create/insert/return initial provisional value
         match C::CYCLE_STRATEGY {
             // SAFETY: We do not access the query stack reentrantly.
@@ -232,7 +192,34 @@ where
                     );
                 })
             },
-            CycleRecoveryStrategy::Fixpoint => {
+            CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
+                // check if there's a provisional value for this query
+                // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
+                // existing provisional memo if it exists
+                let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+                if let Some(memo) = &memo_guard {
+                    // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
+                    // but that would require inserting itself as a cycle head, which either requires clone
+                    // on the value OR a concurrent `Vec` for cycle heads.
+                    if memo.verified_at.load() == zalsa.current_revision()
+                        && memo.value.is_some()
+                        && memo.revisions.cycle_heads().contains(&database_key_index)
+                    {
+                        memo.revisions
+                            .cycle_heads()
+                            .remove_all_except(database_key_index);
+
+                        crate::tracing::debug!(
+                            "hit cycle at {database_key_index:#?}, \
+                                returning last provisional value: {:#?}",
+                            memo.revisions
+                        );
+
+                        // SAFETY: memo is present in memo_map.
+                        return unsafe { self.extend_memo_lifetime(memo) };
+                    }
+                }
+
                 crate::tracing::debug!(
                     "hit cycle at {database_key_index:#?}, \
                     inserting and returning fixpoint initial value"
@@ -256,33 +243,6 @@ where
                     zalsa,
                     id,
                     Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
-                    memo_ingredient_index,
-                )
-            }
-            CycleRecoveryStrategy::FallbackImmediate => {
-                crate::tracing::debug!(
-                    "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
-                );
-                let active_query =
-                    zalsa_local.push_query(database_key_index, IterationCount::initial());
-                let fallback_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                let mut completed_query = active_query.pop();
-                completed_query
-                    .revisions
-                    .set_cycle_heads(CycleHeads::initial(
-                        database_key_index,
-                        IterationCount::initial(),
-                    ));
-                // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
-                *completed_query.revisions.verified_final.get_mut() = false;
-                self.insert_memo(
-                    zalsa,
-                    id,
-                    Memo::new(
-                        Some(fallback_value),
-                        zalsa.current_revision(),
-                        completed_query.revisions,
-                    ),
                     memo_ingredient_index,
                 )
             }

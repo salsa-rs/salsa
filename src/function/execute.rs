@@ -7,7 +7,6 @@ use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
-use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -65,57 +64,14 @@ where
                 );
                 (new_value, active_query.pop())
             }
-            CycleRecoveryStrategy::FallbackImmediate => {
-                let (mut new_value, active_query) = Self::execute_query(
+            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => self
+                .execute_maybe_iterate(
                     db,
-                    zalsa,
-                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
-                );
-
-                let mut completed_query = active_query.pop();
-
-                if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
-                    // Did the new result we got depend on our own provisional value, in a cycle?
-                    if cycle_heads.contains(&database_key_index) {
-                        // Ignore the computed value, leave the fallback value there.
-                        let memo = self
-                            .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                            .unwrap_or_else(|| {
-                                unreachable!(
-                                    "{database_key_index:#?} is a `FallbackImmediate` cycle head, \
-                                        but no memo found"
-                                )
-                            });
-                        // We need to mark the memo as finalized so other cycle participants that have fallbacks
-                        // will be verified (participants that don't have fallbacks will not be verified).
-                        memo.revisions.verified_final.store(true, Ordering::Release);
-                        return Some(memo);
-                    }
-
-                    // If we're in the middle of a cycle and we have a fallback, use it instead.
-                    // Cycle participants that don't have a fallback will be discarded in
-                    // `validate_provisional()`.
-                    let cycle_heads = std::mem::take(cycle_heads);
-                    let active_query =
-                        zalsa_local.push_query(database_key_index, IterationCount::initial());
-                    new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                    completed_query = active_query.pop();
-                    // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
-                    // When verifying this, we will see we have fallback and mark ourselves verified.
-                    completed_query.revisions.set_cycle_heads(cycle_heads);
-                    completed_query.revisions.verified_final = AtomicBool::new(false);
-                }
-
-                (new_value, completed_query)
-            }
-            CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
-                db,
-                opt_old_memo,
-                &mut claim_guard,
-                zalsa_local,
-                memo_ingredient_index,
-            ),
+                    &mut claim_guard,
+                    zalsa_local,
+                    memo_ingredient_index,
+                ),
         };
 
         if let Some(old_memo) = opt_old_memo {
@@ -257,6 +213,14 @@ where
                     panic!("cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?}).");
                 };
 
+                // For FallbackImmediate, use the fallback value instead of the computed value
+                // for all cycle participants.
+                let new_value = if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                    C::cycle_initial(db, id, C::id_to_input(zalsa, id))
+                } else {
+                    new_value
+                };
+
                 let completed_query = complete_cycle_participant(
                     active_query,
                     claim_guard,
@@ -311,25 +275,34 @@ where
                 iteration_count
             };
 
-            let cycle = Cycle {
-                head_ids: cycle_heads.ids(),
-                id,
-                iteration: iteration_count.as_u32(),
+            // For FallbackImmediate, the value always converges immediately (we use the
+            // fallback directly). We still iterate if metadata hasn't converged.
+            // For Fixpoint, ask the recovery function what value to use and check convergence.
+            let value_converged = if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                // Use the fallback value instead of the computed value.
+                new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+                true
+            } else {
+                let cycle = Cycle {
+                    head_ids: cycle_heads.ids(),
+                    id,
+                    iteration: iteration_count.as_u32(),
+                };
+                // We are in a cycle that hasn't converged; ask the user's
+                // cycle-recovery function what to do (it may return the same value or a different one):
+                new_value = C::recover_from_cycle(
+                    db,
+                    &cycle,
+                    last_provisional_value,
+                    new_value,
+                    C::id_to_input(zalsa, id),
+                );
+
+                C::values_equal(&new_value, last_provisional_value)
             };
-            // We are in a cycle that hasn't converged; ask the user's
-            // cycle-recovery function what to do (it may return the same value or a different one):
-            new_value = C::recover_from_cycle(
-                db,
-                &cycle,
-                last_provisional_value,
-                new_value,
-                C::id_to_input(zalsa, id),
-            );
 
             let new_cycle_heads = active_query.take_cycle_heads();
             assert_no_new_cycle_heads(&cycle_heads, new_cycle_heads, database_key_index);
-
-            let value_converged = C::values_equal(&new_value, last_provisional_value);
 
             let completed_query = match try_complete_cycle_head(
                 active_query,
