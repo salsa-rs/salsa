@@ -370,7 +370,7 @@ where
         }
     }
 
-    /// Returns `final` only if the memo has the `verified_final` flag set and the cycle recovery strategy is not `FallbackImmediate`.
+    /// Returns `final` if the memo has the `verified_final` flag set.
     ///
     /// Otherwise, the value is still provisional. For both final and provisional, it also
     /// returns the iteration in which this memo was created (always 0 except for cycle heads).
@@ -386,13 +386,9 @@ where
         let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
 
         Some(if verified_final {
-            if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-                ProvisionalStatus::FallbackImmediate
-            } else {
-                ProvisionalStatus::Final {
-                    iteration,
-                    verified_at: memo.verified_at.load(),
-                }
+            ProvisionalStatus::Final {
+                iteration,
+                verified_at: memo.verified_at.load(),
             }
         } else {
             ProvisionalStatus::Provisional {
