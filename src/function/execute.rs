@@ -214,7 +214,8 @@ where
                 };
 
                 // For FallbackImmediate, use the fallback value instead of the computed value
-                // for all cycle participants.
+                // for all cycle participants. This ensures that the results don't depend on the query call order, see
+                // https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285.
                 let new_value = if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                     C::cycle_initial(db, id, C::id_to_input(zalsa, id))
                 } else {
