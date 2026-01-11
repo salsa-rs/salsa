@@ -11,6 +11,7 @@ use crossbeam_utils::CachePadded;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use rustc_hash::FxBuildHasher;
 
+use crate::cycle::{CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -947,10 +948,14 @@ where
         // Otherwise, the dependency is covered by the base inputs.
     }
 
-    fn collect_flattened_cycle_inputs(
+    fn complete_cycle_iteration(
         &self,
         _zalsa: &Zalsa,
         id: Id,
+        _outermost_head: DatabaseKeyIndex,
+        _iteration: IterationCount,
+        _cycle_heads: &CycleHeads,
+        _cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {

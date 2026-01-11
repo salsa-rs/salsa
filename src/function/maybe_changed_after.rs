@@ -1,6 +1,6 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
 use crate::function::memo::{Memo, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
@@ -320,13 +320,7 @@ where
 
         let verified_at = memo.verified_at.load();
 
-        validate_provisional(
-            zalsa,
-            database_key_index,
-            &memo.revisions,
-            verified_at,
-            cycle_heads,
-        ) || validate_same_iteration(
+        validate_same_iteration(
             zalsa,
             zalsa_local,
             database_key_index,
@@ -393,12 +387,9 @@ where
                 // We could add some meta information to provisional status
                 // that tells us that the cycle head uses fallback immediate
                 // so that we can exit the loop and use the regular maybe changed after algorithm.
-                let Some(provisional_status) =
-                    ingredient.provisional_status(zalsa, head.database_key_index.key_index())
-                else {
-                    tracing::info!("head has no provisional status");
-                    continue;
-                };
+                let provisional_status = ingredient
+                    .provisional_status(zalsa, head.database_key_index.key_index())
+                    .expect("Memo to still exist");
 
                 // This is the outer most cycle head
                 tracing::info!("head's provisional status: {provisional_status:?}");
@@ -577,57 +568,6 @@ pub(super) fn deep_verify_edges(
     old_revisions.accumulated_inputs.store(inputs);
 
     result
-}
-
-/// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
-/// return true, if not return false.
-fn validate_provisional(
-    zalsa: &Zalsa,
-    database_key_index: DatabaseKeyIndex,
-    memo_revisions: &QueryRevisions,
-    memo_verified_at: Revision,
-    cycle_heads: &CycleHeads,
-) -> bool {
-    crate::tracing::trace!("{database_key_index:?}: validate_provisional({database_key_index:?})",);
-
-    for cycle_head in cycle_heads {
-        // Test if our cycle heads (with the same revision) are now finalized.
-        let Some(kind) = cycle_head
-            .ingredient(zalsa)
-            .provisional_status(zalsa, cycle_head.database_key_index.key_index())
-        else {
-            return false;
-        };
-
-        match kind {
-            ProvisionalStatus::Provisional { .. } => return false,
-            ProvisionalStatus::Final {
-                iteration,
-                verified_at,
-                cycle_heads: _,
-            } => {
-                // Only consider the cycle head if it is from the same revision as the memo
-                if verified_at != memo_verified_at {
-                    return false;
-                }
-
-                // It's important to also account for the iteration for the case where:
-                // thread 1: `b` -> `a` (but only in the first iteration)
-                //               -> `c` -> `b`
-                // thread 2: `a` -> `b`
-                //
-                // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
-                // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
-                if iteration != cycle_head.iteration_count.load() {
-                    return false;
-                }
-            }
-        }
-    }
-    // Relaxed is sufficient here because there are no other writes we need to ensure have
-    // happened before marking this memo as verified-final.
-    memo_revisions.verified_final.store(true, Ordering::Relaxed);
-    true
 }
 
 /// If this is a provisional memo, validate that it was cached in the same iteration of the
