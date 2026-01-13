@@ -1,10 +1,12 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
+use crate::database::RawDatabase;
 use crate::function::memo::{Memo, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
 
+use crate::hash::FxHashSet;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
@@ -183,8 +185,7 @@ where
             });
         }
 
-        let deep_verify =
-            self.deep_verify_memo(db, zalsa, old_memo, database_key_index, can_shallow_update);
+        let deep_verify = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
 
         if deep_verify.is_unchanged() {
             // Check if the inputs are still valid. We can just compare `changed_at`.
@@ -342,112 +343,49 @@ where
         zalsa: &Zalsa,
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
-        can_shallow_update: ShallowUpdate,
     ) -> VerifyResult {
         let is_provisional = old_memo.may_be_provisional();
 
         // If the value is from the same revision but is still provisional, consider it changed
         // because we're now in a new iteration.
-        if can_shallow_update == ShallowUpdate::Verified && is_provisional {
+        if is_provisional {
             return VerifyResult::changed();
-        }
-
-        crate::tracing::debug!(
-            "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
-            old_memo = old_memo.tracing_debug()
-        );
-
-        let memo_heads = old_memo.all_cycle_heads();
-        // THIS DOES NOT WORK WITH FALLBACK_IMMEDIATE, none of it, because it doesn't flatten its dependencies
-        // AND it never clears its cycle heads.
-        if !memo_heads.is_empty() {
-            tracing::info!("Memo {database_key_index:?} was part of cycle");
-            let last_verified_at = old_memo.verified_at.load();
-
-            for head in memo_heads {
-                let ingredient = head.ingredient(zalsa);
-
-                let head_struct = ingredient
-                    .struct_database_key_index(zalsa, head.database_key_index.key_index());
-
-                // THE issue here is that the tracked struct has been removed when we
-                // call `maybe_changed_after` here. But the tracked struct also doesn't implement
-                // `maybe_changed_after`.
-                // TODO: Understand why the tracked struct is removed.
-                // Decide if we need to implement `maybe_changed_after` for tracked structs.
-
-                // Validate the struct on which the cycle head is stored is still around,
-                if head_struct
-                    .maybe_changed_after(db.into(), zalsa, last_verified_at)
-                    .is_changed()
-                {
-                    return VerifyResult::Changed;
-                }
-
-                // We could add some meta information to provisional status
-                // that tells us that the cycle head uses fallback immediate
-                // so that we can exit the loop and use the regular maybe changed after algorithm.
-                let provisional_status = ingredient
-                    .provisional_status(zalsa, head.database_key_index.key_index())
-                    .expect("Memo to still exist");
-
-                // This is the outer most cycle head
-                tracing::info!("head's provisional status: {provisional_status:?}");
-                if provisional_status.cycle_heads().is_empty() {
-                    let outer_most = head.database_key_index;
-                    crate::tracing::info!(
-                        "Delegate deep_verify_memo to outer_most cycle head {outer_most:?}",
-                    );
-
-                    let result = outer_most.maybe_changed_after(
-                        db.into(),
-                        zalsa,
-                        old_memo.verified_at.load(),
-                    );
-
-                    if result.is_unchanged() {
-                        old_memo.mark_as_verified(zalsa, database_key_index);
-                    }
-
-                    return result;
-                }
-            }
-
-            // Should we return early if `is_provisional` is true?
-            // Because we need to re-execute anyway, even if not a single
-            // input has changed, because the query's value isn't final
-            // so that it can't be fetched.
-            // If we reach this point, than we have a cycle participant but it has never been finalized (all heads are still provisional).
-            // We need to re-execute the cycle to get its final value.
-            assert!(
-                is_provisional,
-                "Finalized query should always have a finalized outer most cycle head"
-            );
-
-            crate::tracing::info!(
-                "Consider memo with cycle heads but no finalized outer most cycle head as changed."
-            );
-
-            return VerifyResult::Changed;
         }
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
+                crate::tracing::debug!(
+                    "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
+                    old_memo = old_memo.tracing_debug()
+                );
+
+                let memo_heads = old_memo.all_cycle_heads();
+                let verified_at = old_memo.verified_at.load();
+                match outer_most_cycle(db.into(), zalsa, memo_heads, verified_at) {
+                    Ok(Some(outer_most)) => {
+                        let result = outer_most.maybe_changed_after(db.into(), zalsa, verified_at);
+
+                        if result.is_unchanged() {
+                            old_memo.mark_as_verified(zalsa, database_key_index);
+                        }
+
+                        return result;
+                    }
+                    Ok(None) => {}
+                    Err(()) => return VerifyResult::changed(),
+                }
+
                 let result = deep_verify_edges(
                     db.into(),
                     zalsa,
                     &old_memo.revisions,
-                    old_memo.verified_at.load(),
+                    verified_at,
                     edges,
                     database_key_index,
                 );
 
                 if result.is_unchanged() {
                     old_memo.mark_as_verified(zalsa, database_key_index);
-                    old_memo
-                        .revisions
-                        .verified_final
-                        .store(true, Ordering::Relaxed);
                 }
 
                 result
@@ -502,7 +440,58 @@ fn maybe_changed_after_cold_cycle(
     }
 }
 
-pub(super) fn deep_verify_edges(
+/// Returns the key of the outer most cycle in the dependency graph or `Err` if
+/// any of the cycle heads have changed.
+fn outer_most_cycle(
+    db: RawDatabase,
+    zalsa: &Zalsa,
+    heads: &CycleHeads,
+    last_verified_at: Revision,
+) -> Result<Option<DatabaseKeyIndex>, ()> {
+    // The query is the cycle head.
+    if heads.is_empty() {
+        return Ok(None);
+    }
+
+    let mut seen: FxHashSet<_> = heads.iter().map(|head| head.database_key_index).collect();
+
+    let mut queue = Vec::new();
+
+    let mut direct_heads = heads.iter();
+
+    while let Some(next) = direct_heads.next().or_else(|| queue.pop()) {
+        if next
+            .database_key_index
+            .maybe_changed_after(db, zalsa, last_verified_at)
+            .is_changed()
+        {
+            return Err(());
+        }
+
+        let ingredient = next.ingredient(zalsa);
+
+        let status = ingredient
+            .provisional_status(zalsa, next.database_key_index.key_index())
+            .expect(
+                "cycle head memo to be available because `maybe_changed_after` returned unchanged",
+            );
+
+        if status.cycle_heads().is_empty() {
+            return Ok(Some(next.database_key_index));
+        }
+
+        queue.extend(
+            status
+                .cycle_heads()
+                .iter()
+                .filter(|head| seen.insert(head.database_key_index)),
+        );
+    }
+
+    panic!("Finalized query should always have a finalized outer most cycle head");
+}
+
+fn deep_verify_edges(
     db: crate::database::RawDatabase,
     zalsa: &Zalsa,
     #[allow(unused)] old_revisions: &QueryRevisions,

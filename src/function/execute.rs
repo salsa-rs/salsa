@@ -642,7 +642,7 @@ fn complete_cycle_participant(
 /// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
 /// Returns `Err` if the cycle head needs to keep iterating.
 fn try_complete_cycle_head(
-    mut active_query: ActiveQueryGuard,
+    active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
     last_provisional_revisions: &QueryRevisions,

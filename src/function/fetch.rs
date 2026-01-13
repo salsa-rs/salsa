@@ -146,13 +146,7 @@ where
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
 
-                let verify_result = self.deep_verify_memo(
-                    db,
-                    zalsa,
-                    old_memo,
-                    database_key_index,
-                    can_shallow_update,
-                );
+                let verify_result = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
 
                 if verify_result.is_unchanged() {
                     // SAFETY: memo is present in memo_map and we have verified that it is
