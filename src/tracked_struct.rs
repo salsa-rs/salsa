@@ -459,11 +459,38 @@ impl DisambiguatorMap {
         result
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn seed<'a>(&mut self, identities: impl Iterator<Item = &'a Identity>) {
+        use hashbrown::hash_map::RawEntryMut;
+
+        for identity in identities {
+            let identity_hash = IdentityHash {
+                ingredient_index: identity.ingredient_index,
+                hash: identity.hash,
+            };
+            let entry = self
+                .map
+                .raw_entry_mut()
+                .from_hash(identity_hash.hash, |k| *k == identity_hash);
+
+            match entry {
+                RawEntryMut::Occupied(_) => panic!("Entries must be unique"),
+                RawEntryMut::Vacant(entry) => {
+                    entry.insert_with_hasher(
+                        identity_hash.hash,
+                        identity_hash,
+                        identity.disambiguator,
+                        |k| k.hash,
+                    );
+                }
+            }
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
         self.map.clear()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 }

@@ -939,6 +939,29 @@ impl QueryOrigin {
         origin
     }
 
+    /// Sets the `input_outputs` of this query orivin if it's derived or derived untracked.
+    /// Returns `Err` if the query origin isn't derived.
+    pub fn set_edges(&mut self, input_outputs: Box<[QueryEdge]>) -> Result<(), Box<[QueryEdge]>> {
+        match self.kind {
+            QueryOriginKind::Assigned => Err(input_outputs),
+            QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
+                // Exceeding `u32::MAX` query edges should never happen in real-world usage.
+                let length = u32::try_from(input_outputs.len())
+                    .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
+
+                // SAFETY: `Box::into_raw` returns a non-null pointer.
+                let input_outputs = unsafe {
+                    NonNull::new_unchecked(Box::into_raw(input_outputs).cast::<QueryEdge>())
+                };
+
+                self.data = QueryOriginData { input_outputs };
+                self.metadata = length;
+
+                Ok(())
+            }
+        }
+    }
+
     /// Create a query origin of type `QueryOriginKind::Assigned`, with the given key.
     pub fn assigned(key: DatabaseKeyIndex) -> QueryOrigin {
         QueryOrigin {

@@ -8,7 +8,6 @@ use crate::function::{Configuration, IngredientImpl, Reentrancy};
 
 use crate::hash::FxHashSet;
 use crate::key::DatabaseKeyIndex;
-use crate::sync::atomic::Ordering;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Id, Revision};
@@ -343,14 +342,6 @@ where
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
     ) -> VerifyResult {
-        let is_provisional = old_memo.may_be_provisional();
-
-        // If the value is from the same revision but is still provisional, consider it changed
-        // because we're now in a new iteration.
-        if is_provisional {
-            return VerifyResult::changed();
-        }
-
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
                 crate::tracing::debug!(
@@ -358,30 +349,32 @@ where
                     old_memo = old_memo.tracing_debug()
                 );
 
-                let memo_heads = old_memo.all_cycle_heads();
-                let verified_at = old_memo.verified_at.load();
-                match outer_most_cycle(db.into(), zalsa, memo_heads, verified_at) {
-                    Ok(Some(outer_most)) => {
-                        let result = outer_most.maybe_changed_after(db.into(), zalsa, verified_at);
+                let is_provisional = old_memo.may_be_provisional();
 
-                        if result.is_unchanged() {
-                            old_memo.mark_as_verified(zalsa, database_key_index);
-                        }
-
-                        return result;
-                    }
-                    Ok(None) => {}
-                    Err(()) => return VerifyResult::changed(),
+                // If the value is from the same revision but is still provisional, consider it changed
+                // because we're now in a new iteration.
+                if is_provisional {
+                    return VerifyResult::changed();
                 }
 
-                let result = deep_verify_edges(
-                    db.into(),
-                    zalsa,
-                    &old_memo.revisions,
-                    verified_at,
-                    edges,
-                    database_key_index,
-                );
+                let memo_heads = old_memo.all_cycle_heads();
+                let verified_at = old_memo.verified_at.load();
+                let db: RawDatabase = db.into();
+
+                let result = if let Some(result) =
+                    verify_outer_most_cycle(db, zalsa, database_key_index, memo_heads, verified_at)
+                {
+                    result
+                } else {
+                    deep_verify_edges(
+                        db,
+                        zalsa,
+                        &old_memo.revisions,
+                        verified_at,
+                        edges,
+                        database_key_index,
+                    )
+                };
 
                 if result.is_unchanged() {
                     old_memo.mark_as_verified(zalsa, database_key_index);
@@ -441,33 +434,39 @@ fn maybe_changed_after_cold_cycle(
 
 /// Returns the key of the outer most cycle in the dependency graph or `Err` if
 /// any of the cycle heads have changed.
-fn outer_most_cycle(
+fn verify_outer_most_cycle(
     db: RawDatabase,
     zalsa: &Zalsa,
+    me: DatabaseKeyIndex,
     heads: &CycleHeads,
     last_verified_at: Revision,
-) -> Result<Option<DatabaseKeyIndex>, ()> {
+) -> Option<VerifyResult> {
     // The query is the cycle head.
     if heads.is_empty() {
-        return Ok(None);
+        return None;
     }
 
-    let mut seen: FxHashSet<_> = heads.iter().map(|head| head.database_key_index).collect();
-
+    let mut seen: FxHashSet<_> = heads
+        .iter()
+        .map(|head| head.database_key_index)
+        .chain(std::iter::once(me))
+        .collect();
     let mut queue = Vec::new();
 
     let mut direct_heads = heads.iter();
 
     while let Some(next) = direct_heads.next().or_else(|| queue.pop()) {
-        if next
-            .database_key_index
+        let ingredient = next.ingredient(zalsa);
+        let struct_key =
+            ingredient.struct_database_key_index(zalsa, next.database_key_index.key_index());
+
+        // Has the struct changed on which the cycle head is stored?
+        if struct_key
             .maybe_changed_after(db, zalsa, last_verified_at)
             .is_changed()
         {
-            return Err(());
+            return Some(VerifyResult::changed());
         }
-
-        let ingredient = next.ingredient(zalsa);
 
         let status = ingredient
             .provisional_status(zalsa, next.database_key_index.key_index())
@@ -476,7 +475,11 @@ fn outer_most_cycle(
             );
 
         if status.cycle_heads().is_empty() {
-            return Ok(Some(next.database_key_index));
+            // If this is the outer most cycle head, delegate to its maybe changed after
+            return Some(
+                next.database_key_index
+                    .maybe_changed_after(db, zalsa, last_verified_at),
+            );
         }
 
         queue.extend(

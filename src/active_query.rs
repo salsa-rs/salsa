@@ -94,6 +94,8 @@ impl ActiveQuery {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;
+        self.disambiguator_map
+            .seed(active_tracked_ids.iter().map(|(id, _)| id));
 
         // Mark all tracked structs from the previous iteration as active.
         self.tracked_struct_ids
