@@ -65,4 +65,5 @@ fn cycle_fallback(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
 }
 ```
 
-Note that `cycle_fallback` can [result in non-determinism](https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285). Prefer using `cycle_fn` with a fixpoint where possible.
+Unlike fixpoint iteration, queries attributed with `cycle_fallback` also use their fallback value if 
+they participate in a cycle. This is to ensure the query result doesn't depend on the query execution order ([details](https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285)).
