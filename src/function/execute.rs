@@ -11,7 +11,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryOrigin, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
 use crate::{tracing, Cancelled, Cycle};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -138,7 +138,6 @@ where
 
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let mut iteration_count = IterationCount::initial();
-        let mut flattened_input_outputs: FxIndexSet<QueryEdge> = FxIndexSet::default();
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
@@ -167,6 +166,7 @@ where
 
         let _poison_guard =
             PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
+        let mut flattened_input_outputs: FxIndexSet<QueryEdge> = FxIndexSet::default();
 
         let (new_value, completed_query) = loop {
             let active_query = claim_guard
@@ -204,6 +204,23 @@ where
                     .update_cycle_participant_iteration_count(iteration_count);
 
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
+
+                complete_iteration(
+                    zalsa,
+                    database_key_index,
+                    &completed_query.revisions,
+                    true,
+                    &cycle_heads,
+                    iteration_count,
+                    &mut flattened_input_outputs,
+                );
+
+                completed_query
+                    .revisions
+                    .origin
+                    .set_edges(flattened_input_outputs.into_iter().collect())
+                    .expect("executing query to always have derived or derived untracked origin");
+
                 break (new_value, completed_query);
             }
 
@@ -244,6 +261,7 @@ where
                     cycle_heads,
                     outer_cycle,
                     iteration_count,
+                    flattened_input_outputs,
                 );
 
                 break (new_value, completed_query);
@@ -609,6 +627,7 @@ fn complete_cycle_participant(
     cycle_heads: CycleHeads,
     outer_cycle: DatabaseKeyIndex,
     iteration_count: IterationCount,
+    mut flattened_input_outputs: FxIndexSet<QueryEdge>,
 ) -> CompletedQuery {
     // For as long as this query participates in any cycle, don't release its lock, instead
     // transfer it to the outermost cycle head. This prevents any other thread
@@ -620,6 +639,23 @@ fn complete_cycle_participant(
     let mut completed_query = active_query.pop();
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
+
+    if !flattened_input_outputs.is_empty() {
+        flattened_input_outputs.extend(
+            completed_query
+                .revisions
+                .origin
+                .as_ref()
+                .edges()
+                .iter()
+                .cloned(),
+        );
+        completed_query
+            .revisions
+            .origin
+            .set_edges(flattened_input_outputs.into_iter().collect())
+            .expect("Executing query to have derived or derived untracked origin.");
+    }
 
     let iteration_count = iteration_count.increment().unwrap_or_else(|| {
         tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
@@ -671,23 +707,26 @@ fn try_complete_cycle_head(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
 
-        // FIXME: merge with flattened input_outputs if any
-        // if !flattened_input_outputs.is_empty() {
-        //     flattened_input_outputs.extend(
-        //         completed_query
-        //             .revisions
-        //             .origin
-        //             .as_ref()
-        //             .edges()
-        //             .iter()
-        //             .cloned(),
-        //     );
-        //     completed_query.revisions.origin = QueryOrigin::derived(
-        //         std::mem::take(flattened_input_outputs)
-        //             .into_iter()
-        //             .collect::<Box<[_]>>(),
-        //     )
-        // }
+        if !flattened_input_outputs.is_empty() {
+            flattened_input_outputs.extend(
+                completed_query
+                    .revisions
+                    .origin
+                    .as_ref()
+                    .edges()
+                    .iter()
+                    .cloned(),
+            );
+            completed_query
+                .revisions
+                .origin
+                .set_edges(
+                    std::mem::take(flattened_input_outputs)
+                        .into_iter()
+                        .collect(),
+                )
+                .expect("Executing query to always have a derived or derived untracked origin.");
+        }
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
         // Store whether this cycle has converged, so that the outer cycle can check it.
@@ -740,19 +779,15 @@ fn try_complete_cycle_head(
             flattened_input_outputs
         );
 
-        if completed_query.revisions.origin.is_derived_untracked() {
-            completed_query.revisions.origin = QueryOrigin::derived_untracked(
+        completed_query
+            .revisions
+            .origin
+            .set_edges(
                 std::mem::take(flattened_input_outputs)
                     .into_iter()
                     .collect(),
-            );
-        } else {
-            completed_query.revisions.origin = QueryOrigin::derived(
-                std::mem::take(flattened_input_outputs)
-                    .into_iter()
-                    .collect(),
-            );
-        }
+            )
+            .expect("An executing query to have a derived or derived untracked origin");
 
         *completed_query.revisions.verified_final.get_mut() = true;
 
@@ -836,7 +871,6 @@ fn complete_iteration(
             QueryEdgeKind::Input(input) => {
                 if seen.insert(input) {
                     let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                    // TODO: Use `origin` instead of new method with a `Stack`, similar to what's done in accumulated
                     ingredient.complete_cycle_iteration(
                         zalsa,
                         input.key_index(),
