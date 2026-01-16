@@ -851,6 +851,7 @@ pub struct StructEntry<'db, C>
 where
     C: Configuration,
 {
+    #[allow(dead_code)]
     value: &'db Value<C>,
     key: DatabaseKeyIndex,
 }

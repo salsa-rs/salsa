@@ -136,12 +136,15 @@ impl<Db: Database> Storage<Db> {
             .record_unfilled_pages(self.handle.zalsa_impl.table());
         let Self {
             handle,
-            zalsa_local: _,
-        } = &self;
+            zalsa_local,
+        } = &mut self;
         // Avoid rust's annoying destructure prevention rules for `Drop` types
         // SAFETY: We forget `Self` afterwards to discard the original copy, and the destructure
         // above makes sure we won't forget to take into account newly added fields.
         let handle = unsafe { std::ptr::read(handle) };
+        // SAFETY: We forget `Self` afterwards to discard the original copy, and the destructure
+        // above makes sure we won't forget to take into account newly added fields.
+        unsafe { std::ptr::drop_in_place(zalsa_local) };
         std::mem::forget::<Self>(self);
         handle
     }
