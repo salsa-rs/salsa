@@ -440,14 +440,6 @@ where
                 // in rev 1 but not in rev 2.
                 VerifyResult::changed()
             }
-            // Return `Unchanged` similar to the initial value that we insert
-            // when we hit the cycle. Any dependencies accessed when creating the fixpoint initial
-            // are tracked by the outer query. Nothing should have changed assuming that the
-            // fixpoint initial function is deterministic.
-            QueryOriginRef::FixpointInitial => {
-                cycle_heads.insert_head(database_key_index);
-                VerifyResult::unchanged()
-            }
             QueryOriginRef::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
                 VerifyResult::changed()
