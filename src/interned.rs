@@ -785,7 +785,8 @@ where
                 let last_changed_revision = zalsa.last_changed_revision(value_shared.durability);
                 ({ value_shared.last_interned_at }) >= last_changed_revision
             },
-            "Data was not interned in the latest revision for its durability."
+            "Data for `{database_key:?}` was not interned in the latest revision for its durability.",
+            database_key = self.database_key_index(id),
         );
 
         // SAFETY: Interned values are only exposed if they have been validated in the
