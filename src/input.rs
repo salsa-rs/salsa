@@ -8,7 +8,8 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::cycle::{CycleHeads, IterationCount};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
@@ -301,11 +302,13 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        panic!("nothing should ever depend on an input struct directly")
+        // However, `deep_verify_memo` calls `maybe_changed_after` for queries participating
+        // in a cycle and the first step is to check if the memo on which the cycle head is stored
+        // is unchanged. We never collect inputs, so we can always assume that the memo is unchanged (but its fields might not).
+        VerifyResult::unchanged()
     }
 
     fn collect_minimum_serialized_edges(
@@ -314,6 +317,20 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
+    ) {
+        panic!("nothing should ever depend on an input struct directly")
+    }
+
+    fn complete_cycle_iteration(
+        &self,
+        _zalsa: &Zalsa,
+        _id: Id,
+        _outermost_head: DatabaseKeyIndex,
+        _iteration: IterationCount,
+        _cycle_heads: &CycleHeads,
+        _cycle_converged: bool,
+        _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {
         panic!("nothing should ever depend on an input struct directly")
     }

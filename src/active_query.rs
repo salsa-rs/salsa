@@ -10,7 +10,9 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{
+    QueryEdge, QueryEdgeKind, QueryOrigin, QueryRevisions, QueryRevisionsExtra,
+};
 use crate::Revision;
 use crate::{
     cycle::{CycleHeads, IterationCount},
@@ -81,7 +83,14 @@ impl ActiveQuery {
     ) {
         assert!(self.input_outputs.is_empty());
 
-        self.input_outputs.extend(edges.iter().cloned());
+        // Copy over outputs for `diff_outputs`, don't copy inputs because they're
+        // flattened
+        self.input_outputs.extend(
+            edges
+                .iter()
+                .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)))
+                .cloned(),
+        );
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;

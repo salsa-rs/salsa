@@ -3,6 +3,7 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::active_query::CompletedQuery;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
+use crate::plumbing::SalsaStructInDb;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
@@ -18,7 +19,7 @@ where
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
     pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Output<'db>)
     where
-        C::Input<'db>: TrackedStructInDb,
+        C::Input<'db>: SalsaStructInDb + TrackedStructInDb,
     {
         let (zalsa, zalsa_local) = db.zalsas();
 

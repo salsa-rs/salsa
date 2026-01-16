@@ -1,17 +1,17 @@
 use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHead, CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
-use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryOrigin, QueryRevisions};
 use crate::{tracing, Cancelled, Cycle};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -65,57 +65,14 @@ where
                 );
                 (new_value, active_query.pop())
             }
-            CycleRecoveryStrategy::FallbackImmediate => {
-                let (mut new_value, active_query) = Self::execute_query(
+            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => self
+                .execute_maybe_iterate(
                     db,
-                    zalsa,
-                    zalsa_local.push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
-                );
-
-                let mut completed_query = active_query.pop();
-
-                if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
-                    // Did the new result we got depend on our own provisional value, in a cycle?
-                    if cycle_heads.contains(&database_key_index) {
-                        // Ignore the computed value, leave the fallback value there.
-                        let memo = self
-                            .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                            .unwrap_or_else(|| {
-                                unreachable!(
-                                    "{database_key_index:#?} is a `FallbackImmediate` cycle head, \
-                                        but no memo found"
-                                )
-                            });
-                        // We need to mark the memo as finalized so other cycle participants that have fallbacks
-                        // will be verified (participants that don't have fallbacks will not be verified).
-                        memo.revisions.verified_final.store(true, Ordering::Release);
-                        return Some(memo);
-                    }
-
-                    // If we're in the middle of a cycle and we have a fallback, use it instead.
-                    // Cycle participants that don't have a fallback will be discarded in
-                    // `validate_provisional()`.
-                    let cycle_heads = std::mem::take(cycle_heads);
-                    let active_query =
-                        zalsa_local.push_query(database_key_index, IterationCount::initial());
-                    new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                    completed_query = active_query.pop();
-                    // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
-                    // When verifying this, we will see we have fallback and mark ourselves verified.
-                    completed_query.revisions.set_cycle_heads(cycle_heads);
-                    completed_query.revisions.verified_final = AtomicBool::new(false);
-                }
-
-                (new_value, completed_query)
-            }
-            CycleRecoveryStrategy::Fixpoint => self.execute_maybe_iterate(
-                db,
-                opt_old_memo,
-                &mut claim_guard,
-                zalsa_local,
-                memo_ingredient_index,
-            ),
+                    &mut claim_guard,
+                    zalsa_local,
+                    memo_ingredient_index,
+                ),
         };
 
         if let Some(old_memo) = opt_old_memo {
@@ -175,6 +132,7 @@ where
         // TODO: Can we seed those somehow?
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let mut iteration_count = IterationCount::initial();
+        let mut flattened_input_outputs: FxIndexSet<QueryEdge> = FxIndexSet::default();
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
@@ -257,6 +215,16 @@ where
                     panic!("cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?}).");
                 };
 
+                // For FallbackImmediate, use the fallback value instead of the computed value
+                // for all cycle participants. This ensures that the results don't depend on the query call order, see
+                // https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285.
+                let new_value = if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                    C::cycle_initial(db, id, C::id_to_input(zalsa, id))
+                } else {
+                    new_value
+                };
+
+                // TODO, merge with flattened input_outputs if any
                 let completed_query = complete_cycle_participant(
                     active_query,
                     claim_guard,
@@ -311,25 +279,34 @@ where
                 iteration_count
             };
 
-            let cycle = Cycle {
-                head_ids: cycle_heads.ids(),
-                id,
-                iteration: iteration_count.as_u32(),
+            // For FallbackImmediate, the value always converges immediately (we use the
+            // fallback directly). We still iterate if metadata hasn't converged.
+            // For Fixpoint, ask the recovery function what value to use and check convergence.
+            let value_converged = if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                // Use the fallback value instead of the computed value.
+                new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+                true
+            } else {
+                let cycle = Cycle {
+                    head_ids: cycle_heads.ids(),
+                    id,
+                    iteration: iteration_count.as_u32(),
+                };
+                // We are in a cycle that hasn't converged; ask the user's
+                // cycle-recovery function what to do (it may return the same value or a different one):
+                new_value = C::recover_from_cycle(
+                    db,
+                    &cycle,
+                    last_provisional_value,
+                    new_value,
+                    C::id_to_input(zalsa, id),
+                );
+
+                C::values_equal(&new_value, last_provisional_value)
             };
-            // We are in a cycle that hasn't converged; ask the user's
-            // cycle-recovery function what to do (it may return the same value or a different one):
-            new_value = C::recover_from_cycle(
-                db,
-                &cycle,
-                last_provisional_value,
-                new_value,
-                C::id_to_input(zalsa, id),
-            );
 
             let new_cycle_heads = active_query.take_cycle_heads();
             assert_no_new_cycle_heads(&cycle_heads, new_cycle_heads, database_key_index);
-
-            let value_converged = C::values_equal(&new_value, last_provisional_value);
 
             let completed_query = match try_complete_cycle_head(
                 active_query,
@@ -339,6 +316,7 @@ where
                 outer_cycle,
                 iteration_count,
                 value_converged,
+                &mut flattened_input_outputs,
             ) {
                 Ok(completed_query) => {
                     break (new_value, completed_query);
@@ -546,7 +524,7 @@ fn collect_all_cycle_heads(
         let mut max_iteration_count = IterationCount::initial();
         let mut depends_on_self = false;
 
-        let ingredient = zalsa.lookup_ingredient(current_head.ingredient_index());
+        let ingredient = CycleHead::lookup_ingredient(zalsa, current_head);
 
         let provisional_status = ingredient
             .provisional_status(zalsa, current_head.key_index())
@@ -651,15 +629,17 @@ fn complete_cycle_participant(
 /// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
 /// Returns `Err` if the cycle head needs to keep iterating.
 fn try_complete_cycle_head(
-    active_query: ActiveQueryGuard,
+    mut active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
     last_provisional_revisions: &QueryRevisions,
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
     value_converged: bool,
+    flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
 ) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
     let me = active_query.database_key_index;
+    let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop();
 
@@ -674,11 +654,27 @@ fn try_complete_cycle_head(
     let this_converged = value_converged && metadata_converged;
 
     if let Some(outer_cycle) = outer_cycle {
-        let me = claim_guard.database_key_index();
-
         tracing::info!(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
+
+        // FIXME: merge with flattened input_outputs if any
+        // if !flattened_input_outputs.is_empty() {
+        //     flattened_input_outputs.extend(
+        //         completed_query
+        //             .revisions
+        //             .origin
+        //             .as_ref()
+        //             .edges()
+        //             .iter()
+        //             .cloned(),
+        //     );
+        //     completed_query.revisions.origin = QueryOrigin::derived(
+        //         std::mem::take(flattened_input_outputs)
+        //             .into_iter()
+        //             .collect::<Box<[_]>>(),
+        //     )
+        // }
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
         // Store whether this cycle has converged, so that the outer cycle can check it.
@@ -694,9 +690,8 @@ fn try_complete_cycle_head(
         return Ok(completed_query);
     }
 
-    let zalsa = claim_guard.zalsa();
-
-    // If this is the outermost cycle, test if all inner cycles have converged as well.
+    // This is the outermost cycle, drive the cycle forward:
+    // ..test if all inner cycles have converged as well.
     let converged = this_converged
         && cycle_heads.iter_not_eq(me).all(|head| {
             let database_key_index = head.database_key_index;
@@ -716,11 +711,34 @@ fn try_complete_cycle_head(
             "{me:?}: execute: fixpoint iteration has a final value after {iteration_count:?} iterations"
         );
 
-        // Set the nested cycles as verified. This is necessary because
-        // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
-        for head in cycle_heads.iter_not_eq(me) {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-            ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
+        complete_iteration(
+            zalsa,
+            me,
+            &completed_query.revisions,
+            true,
+            &cycle_heads,
+            iteration_count,
+            flattened_input_outputs,
+        );
+
+        tracing::info!(
+            "original origin: {:?}, flattened input outputs: {:?}",
+            &completed_query.revisions.origin,
+            flattened_input_outputs
+        );
+
+        if completed_query.revisions.origin.is_derived_untracked() {
+            completed_query.revisions.origin = QueryOrigin::derived_untracked(
+                std::mem::take(flattened_input_outputs)
+                    .into_iter()
+                    .collect(),
+            );
+        } else {
+            completed_query.revisions.origin = QueryOrigin::derived(
+                std::mem::take(flattened_input_outputs)
+                    .into_iter()
+                    .collect(),
+            );
         }
 
         *completed_query.revisions.verified_final.get_mut() = true;
@@ -735,13 +753,21 @@ fn try_complete_cycle_head(
         return Ok(completed_query);
     }
 
-    *completed_query.revisions.verified_final.get_mut() = false;
-
     // The fixpoint iteration hasn't converged. Iterate again...
     let iteration_count = iteration_count.increment().unwrap_or_else(|| {
         tracing::warn!("{me:?}: execute: too many cycle iterations");
         panic!("{me:?}: execute: too many cycle iterations")
     });
+
+    complete_iteration(
+        zalsa,
+        me,
+        &completed_query.revisions,
+        false,
+        &cycle_heads,
+        iteration_count,
+        flattened_input_outputs,
+    );
 
     zalsa.event(&|| {
         Event::new(EventKind::WillIterateCycle {
@@ -752,21 +778,13 @@ fn try_complete_cycle_head(
 
     tracing::info!("{me:?}: execute: iterate again ({iteration_count:?})...",);
 
-    // Update the iteration count of nested cycles.
-    for head in cycle_heads.iter_not_eq(me) {
-        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-
-        ingredient.set_cycle_iteration_count(
-            zalsa,
-            head.database_key_index.key_index(),
-            iteration_count,
-        );
-    }
+    debug_assert!(completed_query.revisions.cycle_heads().is_empty());
 
     // Update the iteration count of this cycle head, but only after restoring
     // the cycle heads array (or this becomes a no-op).
     // We don't call the same method on `cycle_heads` because that one doens't update
     // the `memo.iteration_count`
+    *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
     completed_query
         .revisions
@@ -783,6 +801,47 @@ fn assert_no_new_cycle_heads(
     for head in new_cycle_heads {
         if !cycle_heads.contains(&head.database_key_index) {
             panic!("Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.", head.database_key_index);
+        }
+    }
+}
+
+fn complete_iteration(
+    zalsa: &Zalsa,
+    cycle_head: DatabaseKeyIndex,
+    head: &QueryRevisions,
+    cycle_converged: bool,
+    cycle_heads: &CycleHeads,
+    iteration_count: IterationCount,
+    flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+) {
+    tracing::info!("Completing cycle with head {cycle_head:?}");
+    let mut seen = FxHashSet::default();
+    seen.insert(cycle_head);
+
+    for edge in head.origin.as_ref().edges() {
+        match edge.kind() {
+            QueryEdgeKind::Input(input) => {
+                if seen.insert(input) {
+                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                    // TODO: Use `origin` instead of new method with a `Stack`, similar to what's done in accumulated
+                    ingredient.complete_cycle_iteration(
+                        zalsa,
+                        input.key_index(),
+                        cycle_head,
+                        iteration_count,
+                        cycle_heads,
+                        cycle_converged,
+                        flattened_input_outputs,
+                        &mut seen,
+                    );
+                }
+            }
+
+            QueryEdgeKind::Output(_) => {
+                // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
+                // created by the query head because those are owned by this query.
+                flattened_input_outputs.insert(*edge);
+            }
         }
     }
 }

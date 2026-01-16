@@ -1,8 +1,6 @@
-use rustc_hash::FxHashMap;
-
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
 use crate::function::memo::{Memo, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
@@ -64,6 +62,10 @@ impl VerifyResult {
     pub(crate) const fn is_unchanged(&self) -> bool {
         matches!(self, Self::Unchanged { .. })
     }
+
+    pub(crate) const fn is_changed(&self) -> bool {
+        matches!(self, Self::Changed)
+    }
 }
 
 impl<C> IngredientImpl<C>
@@ -75,7 +77,6 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
-        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
@@ -118,7 +119,6 @@ where
                 id,
                 revision,
                 memo_ingredient_index,
-                cycle_heads,
             ) {
                 return mcs;
             } else {
@@ -128,7 +128,6 @@ where
     }
 
     #[inline(never)]
-    #[expect(clippy::too_many_arguments)]
     fn maybe_changed_after_cold<'db>(
         &'db self,
         zalsa: &Zalsa,
@@ -137,7 +136,6 @@ where
         key_index: Id,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
-        cycle_heads: &mut VerifyCycleHeads,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
@@ -151,11 +149,7 @@ where
                 return None;
             }
             ClaimResult::Cycle { .. } => {
-                return Some(self.maybe_changed_after_cold_cycle(
-                    zalsa_local,
-                    database_key_index,
-                    cycle_heads,
-                ))
+                return Some(self.maybe_changed_after_cold_cycle(zalsa_local, database_key_index))
             }
         };
         // Load the current memo, if any.
@@ -176,12 +170,6 @@ where
         {
             self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
 
-            // If `validate_maybe_provisional` returns `true`, but only because all cycle heads are from the same iteration,
-            // carry over the cycle heads so that the caller verifies them.
-            for head in old_memo.cycle_heads() {
-                cycle_heads.insert_head(head.database_key_index);
-            }
-
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
@@ -194,18 +182,8 @@ where
             });
         }
 
-        if let Some(cached) = cycle_heads.get_result(database_key_index) {
-            return Some(*cached);
-        }
-
-        let deep_verify = self.deep_verify_memo(
-            db,
-            zalsa,
-            old_memo,
-            database_key_index,
-            cycle_heads,
-            can_shallow_update,
-        );
+        let deep_verify =
+            self.deep_verify_memo(db, zalsa, old_memo, database_key_index, can_shallow_update);
 
         if deep_verify.is_unchanged() {
             // Check if the inputs are still valid. We can just compare `changed_at`.
@@ -221,13 +199,7 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        // However, executing the query here is only safe if we are not in a cycle.
-        // In a cycle, it's important that the cycle head gets executed or we
-        // risk that some dependencies of this query haven't been verified yet because
-        // the cycle head returned *fixpoint initial* without validating its dependencies.
-        // `in_cycle` tracks if the enclosing query is in a cycle. `deep_verify.cycle_heads` tracks
-        // if **this query** encountered a cycle (which means there's some provisional value somewhere floating around).
-        if old_memo.value.is_some() && !cycle_heads.has_any() {
+        if old_memo.value.is_some() {
             let memo = self.execute(db, claim_guard, zalsa_local, Some(old_memo))?;
             let changed_at = memo.revisions.changed_at;
 
@@ -258,14 +230,8 @@ where
         &self,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
-        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
-        maybe_changed_after_cold_cycle(
-            zalsa_local,
-            database_key_index,
-            cycle_heads,
-            C::CYCLE_STRATEGY,
-        )
+        maybe_changed_after_cold_cycle(zalsa_local, database_key_index, C::CYCLE_STRATEGY)
     }
 
     /// `Some` if the memo's value and `changed_at` time is still valid in this revision.
@@ -353,14 +319,7 @@ where
 
         let verified_at = memo.verified_at.load();
 
-        validate_provisional(
-            zalsa,
-            database_key_index,
-            &memo.revisions,
-            verified_at,
-            cycle_heads,
-            C::CYCLE_STRATEGY,
-        ) || validate_same_iteration(
+        validate_same_iteration(
             zalsa,
             zalsa_local,
             database_key_index,
@@ -382,12 +341,13 @@ where
         zalsa: &Zalsa,
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
-        cycle_heads: &mut VerifyCycleHeads,
         can_shallow_update: ShallowUpdate,
     ) -> VerifyResult {
+        let is_provisional = old_memo.may_be_provisional();
+
         // If the value is from the same revision but is still provisional, consider it changed
         // because we're now in a new iteration.
-        if can_shallow_update == ShallowUpdate::Verified && old_memo.may_be_provisional() {
+        if can_shallow_update == ShallowUpdate::Verified && is_provisional {
             return VerifyResult::changed();
         }
 
@@ -396,7 +356,79 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        debug_assert!(!cycle_heads.contains_head(database_key_index));
+        let memo_heads = old_memo.all_cycle_heads();
+        // THIS DOES NOT WORK WITH FALLBACK_IMMEDIATE, none of it, because it doesn't flatten its dependencies
+        // AND it never clears its cycle heads.
+        if !memo_heads.is_empty() {
+            tracing::info!("Memo {database_key_index:?} was part of cycle");
+            let last_verified_at = old_memo.verified_at.load();
+
+            for head in memo_heads {
+                let ingredient = head.ingredient(zalsa);
+
+                let head_struct = ingredient
+                    .struct_database_key_index(zalsa, head.database_key_index.key_index());
+
+                // THE issue here is that the tracked struct has been removed when we
+                // call `maybe_changed_after` here. But the tracked struct also doesn't implement
+                // `maybe_changed_after`.
+                // TODO: Understand why the tracked struct is removed.
+                // Decide if we need to implement `maybe_changed_after` for tracked structs.
+
+                // Validate the struct on which the cycle head is stored is still around,
+                if head_struct
+                    .maybe_changed_after(db.into(), zalsa, last_verified_at)
+                    .is_changed()
+                {
+                    return VerifyResult::Changed;
+                }
+
+                // We could add some meta information to provisional status
+                // that tells us that the cycle head uses fallback immediate
+                // so that we can exit the loop and use the regular maybe changed after algorithm.
+                let provisional_status = ingredient
+                    .provisional_status(zalsa, head.database_key_index.key_index())
+                    .expect("Memo to still exist");
+
+                // This is the outer most cycle head
+                tracing::info!("head's provisional status: {provisional_status:?}");
+                if provisional_status.cycle_heads().is_empty() {
+                    let outer_most = head.database_key_index;
+                    crate::tracing::info!(
+                        "Delegate deep_verify_memo to outer_most cycle head {outer_most:?}",
+                    );
+
+                    let result = outer_most.maybe_changed_after(
+                        db.into(),
+                        zalsa,
+                        old_memo.verified_at.load(),
+                    );
+
+                    if result.is_unchanged() {
+                        old_memo.mark_as_verified(zalsa, database_key_index);
+                    }
+
+                    return result;
+                }
+            }
+
+            // Should we return early if `is_provisional` is true?
+            // Because we need to re-execute anyway, even if not a single
+            // input has changed, because the query's value isn't final
+            // so that it can't be fetched.
+            // If we reach this point, than we have a cycle participant but it has never been finalized (all heads are still provisional).
+            // We need to re-execute the cycle to get its final value.
+            assert!(
+                is_provisional,
+                "Finalized query should always have a finalized outer most cycle head"
+            );
+
+            crate::tracing::info!(
+                "Consider memo with cycle heads but no finalized outer most cycle head as changed."
+            );
+
+            return VerifyResult::Changed;
+        }
 
         match old_memo.revisions.origin.as_ref() {
             QueryOriginRef::Derived(edges) => {
@@ -407,20 +439,14 @@ where
                     old_memo.verified_at.load(),
                     edges,
                     database_key_index,
-                    cycle_heads,
                 );
 
                 if result.is_unchanged() {
-                    // 1 and 3 (see cycle head comment in `deep_verify_edges`)
-                    if !cycle_heads.has_own() {
-                        old_memo.mark_as_verified(zalsa, database_key_index);
-                        old_memo
-                            .revisions
-                            .verified_final
-                            .store(true, Ordering::Relaxed);
-                    } else {
-                        cycle_heads.insert_participating_query(database_key_index, result);
-                    }
+                    old_memo.mark_as_verified(zalsa, database_key_index);
+                    old_memo
+                        .revisions
+                        .verified_final
+                        .store(true, Ordering::Relaxed);
                 }
 
                 result
@@ -440,14 +466,6 @@ where
                 // in rev 1 but not in rev 2.
                 VerifyResult::changed()
             }
-            // Return `Unchanged` similar to the initial value that we insert
-            // when we hit the cycle. Any dependencies accessed when creating the fixpoint initial
-            // are tracked by the outer query. Nothing should have changed assuming that the
-            // fixpoint initial function is deterministic.
-            QueryOriginRef::FixpointInitial => {
-                cycle_heads.insert_head(database_key_index);
-                VerifyResult::unchanged()
-            }
             QueryOriginRef::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
                 VerifyResult::changed()
@@ -459,7 +477,6 @@ where
 fn maybe_changed_after_cold_cycle(
     zalsa_local: &ZalsaLocal,
     database_key_index: DatabaseKeyIndex,
-    cycle_heads: &mut VerifyCycleHeads,
     cycle_recovery_strategy: CycleRecoveryStrategy,
 ) -> VerifyResult {
     match cycle_recovery_strategy {
@@ -476,25 +493,10 @@ fn maybe_changed_after_cold_cycle(
         CycleRecoveryStrategy::FallbackImmediate => VerifyResult::unchanged(),
         CycleRecoveryStrategy::Fixpoint => {
             crate::tracing::debug!(
-                    "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
-                );
-            cycle_heads.insert_head(database_key_index);
+                "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning changed",
+            );
 
-            // SAFETY: We don't access the query stack reentrantly.
-            let running = unsafe {
-                zalsa_local.with_query_stack_unchecked(|stack| {
-                    stack
-                        .iter()
-                        .any(|query| query.database_key_index == database_key_index)
-                })
-            };
-
-            // If the cycle head is being executed, consider this query as changed.
-            if running {
-                VerifyResult::changed()
-            } else {
-                VerifyResult::unchanged()
-            }
+            VerifyResult::changed()
         }
     }
 }
@@ -506,11 +508,9 @@ pub(super) fn deep_verify_edges(
     old_verified_at: Revision,
     edges: &[QueryEdge],
     database_key_index: DatabaseKeyIndex,
-    cycle_heads: &mut VerifyCycleHeads,
 ) -> VerifyResult {
     #[cfg(feature = "accumulator")]
     let mut inputs = InputAccumulatedValues::Empty;
-    let mut child_cycle_heads = Vec::new();
 
     // Fully tracked inputs? Iterate over the inputs and check them, one by one.
     //
@@ -521,29 +521,10 @@ pub(super) fn deep_verify_edges(
     for &edge in edges {
         match edge.kind() {
             QueryEdgeKind::Input(dependency_index) => {
-                debug_assert!(child_cycle_heads.is_empty());
-
-                // The `MaybeChangeAfterCycleHeads` is used as an out parameter and it's
-                // the caller's responsibility to pass an empty `heads`, which is what we do here.
-                let mut inner_cycle_heads = VerifyCycleHeads {
-                    has_outer_cycles: cycle_heads.has_any(),
-                    heads: &mut child_cycle_heads,
-                    participating_queries: cycle_heads.participating_queries,
-                };
-
-                let input_result = dependency_index.maybe_changed_after(
-                    db,
-                    zalsa,
-                    old_verified_at,
-                    &mut inner_cycle_heads,
-                );
-
-                // Aggregate the cycle heads into the parent cycle heads
-                cycle_heads.append_heads(&mut child_cycle_heads);
+                let input_result = dependency_index.maybe_changed_after(db, zalsa, old_verified_at);
 
                 match input_result {
                     VerifyResult::Changed => {
-                        cycle_heads.remove_head(database_key_index);
                         return VerifyResult::changed();
                     }
                     #[cfg(feature = "accumulator")]
@@ -575,34 +556,6 @@ pub(super) fn deep_verify_edges(
             }
         }
     }
-
-    // Possible scenarios here:
-    //
-    // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
-    //    cycles, nor found any changed dependencies. We can mark our memo verified and
-    //    return Unchanged with empty cycle heads.
-    //
-    // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
-    //    a cycle, and since we don't know if some other cycle participant that hasn't been
-    //    traversed yet (that is, some other dependency of the cycle head, which is only a
-    //    dependency of ours via the cycle) might still have changed, we can't yet mark our
-    //    memo verified. We can return a provisional Unchanged, with cycle heads.
-    //
-    // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
-    //    a cycle, and we've now traversed the entire cycle and found no changes, but no
-    //    other cycle participants were verified (they would have all hit case 2 above).
-    //    Similar to `execute`, return unchanged and lazily verify the other cycle-participants
-    //    when they're used next.
-    //
-    // 4. Cycle heads is non-empty, and contains our own key index as well as other key
-    //    indices. We are the head of a cycle nested within another cycle. We can't mark
-    //    our own memo verified (for the same reason as in case 2: the full outer cycle
-    //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
-    //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
-    //    future iteration; first the outer cycle head needs to verify itself.
-
-    cycle_heads.remove_head(database_key_index);
-
     let result = VerifyResult::unchanged_with_accumulated(
         #[cfg(feature = "accumulator")]
         inputs,
@@ -614,74 +567,6 @@ pub(super) fn deep_verify_edges(
     old_revisions.accumulated_inputs.store(inputs);
 
     result
-}
-
-/// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
-/// return true, if not return false.
-fn validate_provisional(
-    zalsa: &Zalsa,
-    database_key_index: DatabaseKeyIndex,
-    memo_revisions: &QueryRevisions,
-    memo_verified_at: Revision,
-    cycle_heads: &CycleHeads,
-    cycle_recovery_strategy: CycleRecoveryStrategy,
-) -> bool {
-    crate::tracing::trace!("{database_key_index:?}: validate_provisional({database_key_index:?})",);
-
-    for cycle_head in cycle_heads {
-        // Test if our cycle heads (with the same revision) are now finalized.
-        let Some(kind) = zalsa
-            .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-            .provisional_status(zalsa, cycle_head.database_key_index.key_index())
-        else {
-            return false;
-        };
-
-        match kind {
-            ProvisionalStatus::Provisional { .. } => return false,
-            ProvisionalStatus::Final {
-                iteration,
-                verified_at,
-            } => {
-                // Only consider the cycle head if it is from the same revision as the memo
-                if verified_at != memo_verified_at {
-                    return false;
-                }
-
-                // It's important to also account for the iteration for the case where:
-                // thread 1: `b` -> `a` (but only in the first iteration)
-                //               -> `c` -> `b`
-                // thread 2: `a` -> `b`
-                //
-                // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
-                // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
-                if iteration != cycle_head.iteration_count.load() {
-                    return false;
-                }
-
-                // FIXME: We can ignore this, I just don't have a use-case for this.
-                if cycle_recovery_strategy == CycleRecoveryStrategy::FallbackImmediate {
-                    panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
-                }
-            }
-            ProvisionalStatus::FallbackImmediate => match cycle_recovery_strategy {
-                CycleRecoveryStrategy::Panic => {
-                    // Queries without fallback are not considered when inside a cycle.
-                    return false;
-                }
-                // FIXME: We can do the same as with `CycleRecoveryStrategy::Panic` here, I just don't have
-                // a use-case for this.
-                CycleRecoveryStrategy::Fixpoint => {
-                    panic!("cannot mix `cycle_fn` and `cycle_result` in cycles")
-                }
-                CycleRecoveryStrategy::FallbackImmediate => {}
-            },
-        }
-    }
-    // Relaxed is sufficient here because there are no other writes we need to ensure have
-    // happened before marking this memo as verified-final.
-    memo_revisions.verified_final.store(true, Ordering::Relaxed);
-    true
 }
 
 /// If this is a provisional memo, validate that it was cached in the same iteration of the
@@ -767,113 +652,5 @@ impl ShallowUpdate {
             self,
             ShallowUpdate::Verified | ShallowUpdate::HigherDurability
         )
-    }
-}
-
-/// The cycles encountered while verifying if an ingredient has changed after a given revision.
-///
-/// We use this as an out parameter to avoid increasing the size of [`VerifyResult`].
-/// The `heads` of a `MaybeChangeAfterCycleHeads` must be empty when
-/// calling [`maybe_changed_after`]. The [`maybe_changed_after`] then collects all cycle heads
-/// encountered while verifying this ingredient and its subtree.
-///
-/// Note that `heads` only contains the cycle heads up to the point where [`maybe_changed_after`]
-/// returned [`VerifyResult::Changed`]. Cycles that only manifest when verifying later dependencies
-/// aren't included.
-///
-/// [`maybe_changed_after`]: crate::ingredient::Ingredient::maybe_changed_after
-#[derive(Debug)]
-pub struct VerifyCycleHeads<'a> {
-    /// The cycle heads encountered while verifying this ingredient and its subtree.
-    heads: &'a mut Vec<DatabaseKeyIndex>,
-
-    /// The cached `maybe_changed_after` results for queries that participate in cycles but aren't a cycle head
-    /// themselves. We need to cache the results here to avoid calling `deep_verify_memo` repeatedly
-    /// for queries that have cyclic dependencies (b depends on a (iteration 0) and a depends on b(iteration 1))
-    /// as well as to avoid a run-away situation if a query is dependet on a lot inside a single cycle.
-    participating_queries: &'a mut FxHashMap<DatabaseKeyIndex, VerifyResult>,
-
-    /// Whether the outer query (e.g. the parent query running `maybe_changed_after`) has encountered
-    /// any cycles to this point.
-    has_outer_cycles: bool,
-}
-
-impl<'a> VerifyCycleHeads<'a> {
-    pub(crate) fn new(
-        heads: &'a mut Vec<DatabaseKeyIndex>,
-        participating_queries: &'a mut FxHashMap<DatabaseKeyIndex, VerifyResult>,
-    ) -> Self {
-        Self {
-            heads,
-            participating_queries,
-            has_outer_cycles: false,
-        }
-    }
-
-    /// Returns `true` if this query or any of its dependencies depend on this cycle.
-    #[inline]
-    fn contains_head(&self, key: DatabaseKeyIndex) -> bool {
-        self.heads.contains(&key)
-    }
-
-    #[inline]
-    fn insert_head(&mut self, key: DatabaseKeyIndex) {
-        if !self.heads.contains(&key) {
-            self.heads.push(key);
-        }
-    }
-
-    #[inline]
-    fn remove_head(&mut self, key: DatabaseKeyIndex) -> bool {
-        if self.heads.is_empty() {
-            return false;
-        }
-
-        self.remove_head_slow(key)
-    }
-
-    #[cold]
-    fn remove_head_slow(&mut self, key: DatabaseKeyIndex) -> bool {
-        let found = self.heads.iter().position(|&head| head == key);
-        let Some(found) = found else { return false };
-
-        self.heads.swap_remove(found);
-        true
-    }
-
-    #[inline]
-    fn append_heads(&mut self, heads: &mut Vec<DatabaseKeyIndex>) {
-        if heads.is_empty() {
-            return;
-        }
-
-        self.append_heads_slow(heads);
-    }
-
-    #[cold]
-    fn append_heads_slow(&mut self, other: &mut Vec<DatabaseKeyIndex>) {
-        for key in other.drain(..) {
-            self.insert_head(key);
-        }
-    }
-
-    fn insert_participating_query(&mut self, key: DatabaseKeyIndex, result: VerifyResult) {
-        self.participating_queries.insert(key, result);
-    }
-
-    #[inline]
-    fn get_result(&self, key: DatabaseKeyIndex) -> Option<&VerifyResult> {
-        self.participating_queries.get(&key)
-    }
-
-    /// Returns `true` if this query or any of its dependencies has encountered a cycle or
-    /// if the outer query has encountered a cycle.
-    pub fn has_any(&self) -> bool {
-        self.has_outer_cycles || !self.heads.is_empty()
-    }
-
-    /// Returns `true` if this query has encountered a cycle.
-    fn has_own(&self) -> bool {
-        !self.heads.is_empty()
     }
 }
