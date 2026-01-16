@@ -39,7 +39,7 @@ The database is also used to implement interning (making a canonical version of 
 
 ## Inputs
 
-Every Salsa program begins with an **input**.
+Every Salsa program begins with an **input**. See the [`#[input]` attribute macro's documentation](https://docs.rs/salsa/latest/salsa/attr.input.html) for options.
 Inputs are special structs that define the starting point of your program.
 Everything else in your program is ultimately a deterministic function of these inputs.
 
@@ -123,7 +123,7 @@ This gives the ability to set the [durability](./reference/durability.md) and ot
 
 ## Tracked functions
 
-Once you've defined your inputs, the next thing to define are **tracked functions**:
+Once you've defined your inputs, the next thing to define are **tracked functions**. See the [`#[tracked]` attribute macro's documentation](https://docs.rs/salsa/latest/salsa/attr.tracked.html) for options.
 
 ```rust
 #[salsa::tracked]
@@ -149,7 +149,7 @@ Tracked functions can return any clone-able type. A clone is required since, whe
 
 ## Tracked structs
 
-**Tracked structs** are intermediate structs created during your computation.
+**Tracked structs** are intermediate structs created during your computation. See the [`#[tracked]` attribute macro's documentation](https://docs.rs/salsa/latest/salsa/attr.tracked.html) for options.
 Like inputs, their fields are stored inside the database, and the struct itself just wraps an id.
 Unlike inputs, they can only be created inside a tracked function, and their fields can never change once they are created (until the next revision, at least).
 Getter methods are provided to read the fields, but there are no setter methods.
@@ -179,6 +179,8 @@ fn parse_file(db: &dyn crate::Db, file: ProgramFile) -> Ast {
 ```
 
 ### `#[id]` fields
+
+<!-- FIXME: #[id] fields only currently exist on interned structs -->
 
 When a tracked function is re-executed because its inputs have changed, the tracked structs it creates in the new execution are matched against those from the old execution, and the values of their fields are compared.
 If the field values have not changed, then other tracked functions that only read those fields will not be re-executed.
@@ -246,6 +248,7 @@ Specifying is only possible for tracked functions that take a single tracked str
 The final kind of Salsa struct are **interned structs**.
 Interned structs are useful for quick equality comparison.
 They are commonly used to represent strings or other primitive values.
+ See the [`#[interned]` attribute macro's documentation](https://docs.rs/salsa/latest/salsa/attr.interned.html) for options.
 
 Most compilers, for example, will define a type to represent a user identifier:
 
@@ -273,7 +276,7 @@ You can access the fields of an interned struct using a getter, like `word.text(
 
 ## Accumulators
 
-The final Salsa concept are **accumulators**. Accumulators are a way to report errors or other "side channel" information that is separate from the main return value of your function.
+The final Salsa concept are **accumulators**. Accumulators are a way to report errors or other "side channel" information that is separate from the main return value of your function. See the [`#[accumulator]` attribute macro's documentation](https://docs.rs/salsa/latest/salsa/attr.accumulator.html) for options.
 
 To create an accumulator, you declare a type as an _accumulator_:
 
