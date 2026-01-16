@@ -203,6 +203,7 @@ where
                     .revisions
                     .update_cycle_participant_iteration_count(iteration_count);
 
+                // FIXME: Change to Default?
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
 
                 complete_iteration(
@@ -220,6 +221,10 @@ where
                     .origin
                     .set_edges(flattened_input_outputs.into_iter().collect())
                     .expect("executing query to always have derived or derived untracked origin");
+
+                completed_query
+                    .revisions
+                    .set_finalized_in(zalsa.current_revision());
 
                 break (new_value, completed_query);
             }
@@ -350,6 +355,7 @@ where
                 &mut flattened_input_outputs,
             ) {
                 Ok(completed_query) => {
+                    assert!(flattened_input_outputs.is_empty());
                     break (new_value, completed_query);
                 }
                 Err((completed_query, new_iteration_count)) => {
@@ -715,7 +721,7 @@ fn try_complete_cycle_head(
                     .as_ref()
                     .edges()
                     .iter()
-                    .cloned(),
+                    .copied(),
             );
             completed_query
                 .revisions
@@ -779,6 +785,9 @@ fn try_complete_cycle_head(
             flattened_input_outputs
         );
 
+        completed_query
+            .revisions
+            .set_finalized_in(zalsa.current_revision());
         completed_query
             .revisions
             .origin

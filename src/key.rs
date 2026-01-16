@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::function::VerifyResult;
+use crate::ingredient::Backdate;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::Id;
 
@@ -38,6 +39,7 @@ impl DatabaseKeyIndex {
         db: crate::database::RawDatabase<'_>,
         zalsa: &Zalsa,
         last_verified_at: crate::Revision,
+        backdate: Backdate,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {
@@ -45,7 +47,7 @@ impl DatabaseKeyIndex {
             // hierarchy is concerned)
             zalsa
                 .lookup_ingredient(self.ingredient_index())
-                .maybe_changed_after(zalsa, db, self.key_index(), last_verified_at)
+                .maybe_changed_after(zalsa, db, self.key_index(), last_verified_at, backdate)
         }
     }
 

@@ -16,7 +16,7 @@ use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
-use crate::ingredient::Ingredient;
+use crate::ingredient::{Backdate, Ingredient};
 use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::revision::AtomicRevision;
 use crate::sync::{Arc, Mutex, OnceLock};
@@ -895,6 +895,7 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         _revision: Revision,
+        _backdate: Backdate,
     ) -> VerifyResult {
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();

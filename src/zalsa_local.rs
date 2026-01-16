@@ -18,6 +18,7 @@ use crate::active_query::{CompletedQuery, QueryStack};
 use crate::cycle::{empty_cycle_heads, AtomicIterationCount, CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
+use crate::revision::OptionalAtomicRevision;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::table::{PageIndex, Slot, Table};
@@ -567,6 +568,7 @@ impl QueryRevisionsExtra {
                 tracked_struct_ids,
                 iteration: iteration.into(),
                 cycle_converged: false,
+                finalized_in: OptionalAtomicRevision::none(),
             }))
         };
 
@@ -619,6 +621,8 @@ struct QueryRevisionsExtraInner {
     /// This value is always `false` for other queries.
     #[cfg_attr(feature = "persistence", serde(skip))]
     cycle_converged: bool,
+
+    finalized_in: OptionalAtomicRevision,
 }
 
 impl QueryRevisionsExtraInner {
@@ -631,6 +635,7 @@ impl QueryRevisionsExtraInner {
             cycle_heads,
             iteration: _,
             cycle_converged: _,
+            finalized_in: _,
         } = self;
 
         #[cfg(feature = "accumulator")]
@@ -686,7 +691,7 @@ const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
-    [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
+    [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 8 } else { 4 }]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, iteration: IterationCount) -> Self {
@@ -778,6 +783,46 @@ impl QueryRevisions {
             .update_iteration_count(database_key_index, iteration_count);
     }
 
+    pub(crate) fn store_finalized_in(&self, finalized_in: Revision) {
+        let extra = self
+            .extra
+            .0
+            .as_deref()
+            .expect("should only be called on query participants");
+
+        extra.finalized_in.swap(Some(finalized_in));
+    }
+
+    pub(crate) fn set_finalized_in(&mut self, finalized_in: Revision) {
+        let extra = self.get_or_insert_extra();
+        extra.finalized_in.set(Some(finalized_in));
+    }
+
+    pub(crate) fn finalized_in(&self) -> Option<Revision> {
+        self.extra
+            .0
+            .as_deref()
+            .and_then(|extra| extra.finalized_in.load())
+    }
+
+    fn get_or_insert_extra(&mut self) -> &mut QueryRevisionsExtraInner {
+        self.extra.0.get_or_insert_with(|| {
+            Box::new(QueryRevisionsExtraInner {
+                #[cfg(feature = "accumulator")]
+                accumulated: AccumulatedMap::default(),
+                tracked_struct_ids: ThinVec::default(),
+                cycle_heads: empty_cycle_heads().clone(),
+                iteration: IterationCount::default().into(),
+                cycle_converged: false,
+                finalized_in: OptionalAtomicRevision::none(),
+            })
+        })
+    }
+
+    fn extra(&self) -> Option<&QueryRevisionsExtraInner> {
+        self.extra.0.as_deref()
+    }
+
     /// Updates the iteration count of the memo without updating the iteration in `cycle_heads`.
     ///
     /// Don't call this method on a cycle head, as it results in diverging iteration counts
@@ -786,20 +831,8 @@ impl QueryRevisions {
         &mut self,
         iteration_count: IterationCount,
     ) {
-        match &mut self.extra.0 {
-            None => {
-                self.extra = QueryRevisionsExtra::new(
-                    #[cfg(feature = "accumulator")]
-                    AccumulatedMap::default(),
-                    ThinVec::default(),
-                    empty_cycle_heads().clone(),
-                    iteration_count,
-                );
-            }
-            Some(extra) => {
-                extra.iteration.store_mut(iteration_count);
-            }
-        }
+        let extra = self.get_or_insert_extra();
+        extra.iteration.set(iteration_count.into());
     }
 
     /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
@@ -808,31 +841,16 @@ impl QueryRevisions {
         cycle_head_index: DatabaseKeyIndex,
         iteration_count: IterationCount,
     ) {
-        match &mut self.extra.0 {
-            None => {
-                self.extra = QueryRevisionsExtra::new(
-                    #[cfg(feature = "accumulator")]
-                    AccumulatedMap::default(),
-                    ThinVec::default(),
-                    empty_cycle_heads().clone(),
-                    iteration_count,
-                );
-            }
-            Some(extra) => {
-                extra.iteration.store_mut(iteration_count);
-
-                extra
-                    .cycle_heads
-                    .update_iteration_count_mut(cycle_head_index, iteration_count);
-            }
-        }
+        let extra = self.get_or_insert_extra();
+        extra.iteration.set(iteration_count);
+        extra
+            .cycle_heads
+            .update_iteration_count_mut(cycle_head_index, iteration_count);
     }
 
     /// Returns the ids of the tracked structs created when running this query.
     pub fn tracked_struct_ids(&self) -> &[(Identity, Id)] {
-        self.extra
-            .0
-            .as_ref()
+        self.extra()
             .map(|extra| &*extra.tracked_struct_ids)
             .unwrap_or_default()
     }
