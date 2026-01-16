@@ -11,7 +11,7 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, Provisiona
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Ingredient, TrackedFunctionIngredient, WaitForResult};
+use crate::ingredient::{Backdate, Ingredient, TrackedFunctionIngredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
@@ -322,10 +322,11 @@ where
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
+        backdate: Backdate,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision)
+        self.maybe_changed_after(db, input, revision, backdate)
     }
 
     fn collect_minimum_serialized_edges(
@@ -411,6 +412,7 @@ where
         if cycle_converged {
             tracing::info!("Marking {database_key_index:?} as finalized");
             memo.revisions.verified_final.store(true, Ordering::Release);
+            memo.revisions.store_finalized_in(zalsa.current_revision());
         } else {
             memo.revisions
                 .set_iteration_count(database_key_index, iteration);
@@ -615,6 +617,10 @@ where
                 iteration,
                 verified_at: memo.verified_at.load(),
                 cycle_heads: memo.all_cycle_heads(),
+                finalized_in: memo
+                    .revisions
+                    .finalized_in()
+                    .expect("Finalized in to be set for any finalized query"),
             }
         } else {
             ProvisionalStatus::Provisional {

@@ -51,6 +51,7 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
+        backdate: Backdate,
     ) -> VerifyResult;
 
     /// Collects the minimum edges necessary to serialize a given dependency edge on this ingredient,
@@ -324,4 +325,16 @@ pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available,
     Cycle { inner: bool },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Backdate {
+    Allowed,
+    Disallowed,
+}
+
+impl Backdate {
+    pub const fn is_allowed(self) -> bool {
+        matches!(self, Backdate::Allowed)
+    }
 }

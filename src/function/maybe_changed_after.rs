@@ -7,6 +7,7 @@ use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
 
 use crate::hash::FxHashSet;
+use crate::ingredient::Backdate;
 use crate::key::DatabaseKeyIndex;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef, QueryRevisions, ZalsaLocal};
@@ -78,6 +79,7 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
+        backdate: Backdate,
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
@@ -120,6 +122,7 @@ where
                 id,
                 revision,
                 memo_ingredient_index,
+                backdate,
             ) {
                 return mcs;
             } else {
@@ -137,6 +140,7 @@ where
         key_index: Id,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
+        backdate: Backdate,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
@@ -150,7 +154,11 @@ where
                 return None;
             }
             ClaimResult::Cycle { .. } => {
-                return Some(self.maybe_changed_after_cold_cycle(zalsa_local, database_key_index))
+                return Some(maybe_changed_after_cold_cycle(
+                    zalsa_local,
+                    database_key_index,
+                    C::CYCLE_STRATEGY,
+                ))
             }
         };
         // Load the current memo, if any.
@@ -165,6 +173,7 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
+        // TODO: Is this still worth it?
         let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
         if can_shallow_update.yes()
             && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, old_memo)
@@ -199,7 +208,9 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        if old_memo.value.is_some() {
+        if old_memo.value.is_some() && backdate.is_allowed() && !old_memo.may_be_provisional() {
+            // FIXME: IS THIS an issu? Like, we returned changed, so we didn't verify all cycle participants
+            // Is there a chance that we access some dependency that we didn't get to verifying in `deep_verify_memo`?
             let memo = self.execute(db, claim_guard, zalsa_local, Some(old_memo))?;
             let changed_at = memo.revisions.changed_at;
 
@@ -222,16 +233,6 @@ where
 
         // Otherwise, nothing for it: have to consider the value to have changed.
         Some(VerifyResult::changed())
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn maybe_changed_after_cold_cycle(
-        &self,
-        zalsa_local: &ZalsaLocal,
-        database_key_index: DatabaseKeyIndex,
-    ) -> VerifyResult {
-        maybe_changed_after_cold_cycle(zalsa_local, database_key_index, C::CYCLE_STRATEGY)
     }
 
     /// `Some` if the memo's value and `changed_at` time is still valid in this revision.
@@ -357,13 +358,16 @@ where
                     return VerifyResult::changed();
                 }
 
-                let memo_heads = old_memo.all_cycle_heads();
                 let verified_at = old_memo.verified_at.load();
                 let db: RawDatabase = db.into();
 
-                let result = if let Some(result) =
-                    verify_outer_most_cycle(db, zalsa, database_key_index, memo_heads, verified_at)
-                {
+                let result = if let Some(result) = verify_outer_most_cycle(
+                    db,
+                    zalsa,
+                    database_key_index,
+                    &old_memo.revisions,
+                    verified_at,
+                ) {
                     result
                 } else {
                     deep_verify_edges(
@@ -438,13 +442,19 @@ fn verify_outer_most_cycle(
     db: RawDatabase,
     zalsa: &Zalsa,
     me: DatabaseKeyIndex,
-    heads: &CycleHeads,
+    revisions: &QueryRevisions,
     last_verified_at: Revision,
 ) -> Option<VerifyResult> {
+    let heads = revisions.cycle_heads();
+
     // The query is the cycle head.
     if heads.is_empty() {
         return None;
     }
+
+    let Some(finalized_in) = revisions.finalized_in() else {
+        return Some(VerifyResult::changed());
+    };
 
     let mut seen: FxHashSet<_> = heads
         .iter()
@@ -462,7 +472,7 @@ fn verify_outer_most_cycle(
 
         // Has the struct changed on which the cycle head is stored?
         if struct_key
-            .maybe_changed_after(db, zalsa, last_verified_at)
+            .maybe_changed_after(db, zalsa, last_verified_at, Backdate::Allowed)
             .is_changed()
         {
             return Some(VerifyResult::changed());
@@ -474,12 +484,20 @@ fn verify_outer_most_cycle(
                 "cycle head memo to be available because `maybe_changed_after` returned unchanged",
             );
 
+        // The cycle head was re-executed but this query was no longer part of it (or not finalized).
+        // It must be re-executed.
+        if status.finalized_in() != Some(finalized_in) {
+            return Some(VerifyResult::changed());
+        }
+
         if status.cycle_heads().is_empty() {
             // If this is the outer most cycle head, delegate to its maybe changed after
-            return Some(
-                next.database_key_index
-                    .maybe_changed_after(db, zalsa, last_verified_at),
-            );
+            return Some(next.database_key_index.maybe_changed_after(
+                db,
+                zalsa,
+                last_verified_at,
+                Backdate::Disallowed,
+            ));
         }
 
         queue.extend(
@@ -513,7 +531,12 @@ fn deep_verify_edges(
     for &edge in edges {
         match edge.kind() {
             QueryEdgeKind::Input(dependency_index) => {
-                let input_result = dependency_index.maybe_changed_after(db, zalsa, old_verified_at);
+                let input_result = dependency_index.maybe_changed_after(
+                    db,
+                    zalsa,
+                    old_verified_at,
+                    Backdate::Allowed,
+                );
 
                 match input_result {
                     VerifyResult::Changed => {

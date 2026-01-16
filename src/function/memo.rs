@@ -414,6 +414,7 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                     ProvisionalStatus::Final {
                         iteration,
                         verified_at,
+                        finalized_in: _,
                         cycle_heads: _,
                     } => (iteration, verified_at),
                 };

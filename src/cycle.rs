@@ -189,7 +189,7 @@ impl AtomicIterationCount {
         self.0.store(value.0, Ordering::Release);
     }
 
-    pub(crate) fn store_mut(&mut self, value: IterationCount) {
+    pub(crate) fn set(&mut self, value: IterationCount) {
         *self.0.get_mut() = value.0;
     }
 }
@@ -300,7 +300,7 @@ impl CycleHeads {
             .iter_mut()
             .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
         {
-            cycle_head.iteration_count.store_mut(new_iteration_count);
+            cycle_head.iteration_count.set(new_iteration_count);
         }
     }
 
@@ -345,7 +345,7 @@ impl CycleHeads {
 
             if *removed {
                 *removed = false;
-                existing.iteration_count.store_mut(iteration_count);
+                existing.iteration_count.set(iteration_count);
 
                 true
             } else {
@@ -520,6 +520,7 @@ pub enum ProvisionalStatus<'db> {
     Final {
         iteration: IterationCount,
         verified_at: Revision,
+        finalized_in: Revision,
         cycle_heads: &'db CycleHeads,
     },
 }
@@ -534,5 +535,12 @@ impl<'db> ProvisionalStatus<'db> {
 
     pub(crate) const fn is_provisional(&self) -> bool {
         matches!(self, ProvisionalStatus::Provisional { .. })
+    }
+
+    pub(crate) const fn finalized_in(&self) -> Option<Revision> {
+        match self {
+            ProvisionalStatus::Provisional { .. } => None,
+            ProvisionalStatus::Final { finalized_in, .. } => Some(*finalized_in),
+        }
     }
 }
