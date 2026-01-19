@@ -108,6 +108,10 @@ impl ActiveQuery {
         std::mem::take(&mut self.cycle_heads)
     }
 
+    pub(super) fn take_input_outputs(&mut self) -> FxIndexSet<QueryEdge> {
+        std::mem::take(&mut self.input_outputs)
+    }
+
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
