@@ -137,7 +137,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         unreachable!("accumulator does not allocate pages")
     }
 
-    fn complete_cycle_iteration(
+    fn flatten_cycle_head_dependencies(
         &self,
         _zalsa: &Zalsa,
         _id: Id,

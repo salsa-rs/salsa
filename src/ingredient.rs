@@ -182,7 +182,7 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
     }
 
-    fn complete_cycle_iteration(
+    fn flatten_cycle_head_dependencies(
         &self,
         zalsa: &Zalsa,
         id: Id,

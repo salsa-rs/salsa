@@ -1013,7 +1013,7 @@ where
         panic!("nothing should ever depend on a tracked struct directly")
     }
 
-    fn complete_cycle_iteration(
+    fn flatten_cycle_head_dependencies(
         &self,
         _zalsa: &Zalsa,
         _id: Id,

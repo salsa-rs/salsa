@@ -196,7 +196,11 @@ where
 
                 // We can skip flattening in the common case where we didn't encounter a cycle.
                 if !iteration_count.is_initial() {
-                    complete_iteration(zalsa, database_key_index, &mut completed_query.revisions);
+                    flatten_cycle_dependencies(
+                        zalsa,
+                        database_key_index,
+                        &mut completed_query.revisions,
+                    );
                 }
 
                 iteration_count = iteration_count.increment().unwrap_or_else(|| {
@@ -627,7 +631,7 @@ fn complete_cycle_participant(
     let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
 
-    complete_iteration(zalsa, database_key_index, &mut completed_query.revisions);
+    flatten_cycle_dependencies(zalsa, database_key_index, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -681,7 +685,7 @@ fn try_complete_cycle_head(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
 
-        complete_iteration(zalsa, me, &mut completed_query.revisions);
+        flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
         // Store whether this cycle has converged, so that the outer cycle can check it.
@@ -718,7 +722,7 @@ fn try_complete_cycle_head(
             "{me:?}: execute: fixpoint iteration has a final value after {iteration_count:?} iterations"
         );
 
-        complete_iteration(zalsa, me, &mut completed_query.revisions);
+        flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
 
         // Set the nested cycles as verified. This is necessary because
         // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
@@ -745,7 +749,7 @@ fn try_complete_cycle_head(
         panic!("{me:?}: execute: too many cycle iterations")
     });
 
-    complete_iteration(zalsa, me, &mut completed_query.revisions);
+    flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
 
     zalsa.event(&|| {
         Event::new(EventKind::WillIterateCycle {
@@ -794,23 +798,35 @@ fn assert_no_new_cycle_heads(
     }
 }
 
-fn complete_iteration(zalsa: &Zalsa, cycle_head: DatabaseKeyIndex, head: &mut QueryRevisions) {
-    tracing::info!("Completing cycle with head {cycle_head:?}");
+/// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
+/// or salsa structs (input, tracked, interned).
+fn flatten_cycle_dependencies(
+    zalsa: &Zalsa,
+    cycle_head: DatabaseKeyIndex,
+    head: &mut QueryRevisions,
+) {
+    // Don't insert `self` here. This is important to ensure that we copy over the
+    // dependencies from this memo in the previous iteration.
+    // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
     let mut seen = FxHashSet::default();
     let mut flattened = FxIndexSet::default();
+
+    let edges = head.origin.as_ref().edges();
+    seen.reserve(edges.len());
+    flattened.reserve(edges.len());
 
     for edge in head.origin.as_ref().edges() {
         match edge.kind() {
             QueryEdgeKind::Input(input) => {
-                if seen.insert(input) {
-                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                    ingredient.complete_cycle_iteration(
-                        zalsa,
-                        input.key_index(),
-                        &mut flattened,
-                        &mut seen,
-                    );
-                }
+                seen.insert(input);
+
+                let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                ingredient.flatten_cycle_head_dependencies(
+                    zalsa,
+                    input.key_index(),
+                    &mut flattened,
+                    &mut seen,
+                );
             }
 
             QueryEdgeKind::Output(_) => {
