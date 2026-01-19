@@ -63,7 +63,7 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     fn collect_minimum_serialized_edges(
         &self,
         zalsa: &Zalsa,
-        edge: QueryEdge,
+        edge: &QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         visited_edges: &mut FxHashSet<QueryEdge>,
     );

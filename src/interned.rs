@@ -931,7 +931,7 @@ where
     fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
-        edge: QueryEdge,
+        edge: &QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
@@ -941,7 +941,7 @@ where
             // invalidate a dependency without a base input necessarily being updated. Thus, we must
             // preserve the transitive dependency on the interned struct, if garbage collection is
             // enabled.
-            serialized_edges.insert(edge);
+            serialized_edges.insert(edge.clone());
         }
 
         // Otherwise, the dependency is covered by the base inputs.

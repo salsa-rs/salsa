@@ -79,7 +79,9 @@ where
                 stack.reserve(edges.len());
             }
 
-            stack.extend(origin.inputs().rev());
+            // Collect and reverse since inputs() no longer returns DoubleEndedIterator
+            let inputs: Vec<_> = origin.inputs().collect();
+            stack.extend(inputs.into_iter().rev());
 
             visited.reserve(stack.len());
         }

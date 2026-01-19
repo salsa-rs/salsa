@@ -331,11 +331,27 @@ where
     fn collect_minimum_serialized_edges(
         &self,
         zalsa: &Zalsa,
-        edge: QueryEdge,
+        edge: &QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
-        let input = edge.key().key_index();
+        // Handle Segment edges by recursively processing their contents
+        if let QueryEdge::Segment(segment) = edge {
+            for inner_edge in segment.iter() {
+                self.collect_minimum_serialized_edges(
+                    zalsa,
+                    inner_edge,
+                    serialized_edges,
+                    visited_edges,
+                );
+            }
+            return;
+        }
+
+        let Some(key) = edge.key() else {
+            return;
+        };
+        let input = key.key_index();
 
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
@@ -345,7 +361,7 @@ where
 
         let origin = memo.revisions.origin.as_ref();
 
-        visited_edges.insert(edge);
+        visited_edges.insert(edge.clone());
 
         // Collect the minimum dependency tree.
         for edge in origin.edges() {
@@ -359,10 +375,25 @@ where
                 continue;
             }
 
-            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+            let Some(key) = edge.key() else {
+                // Handle Segment edges recursively
+                if let QueryEdge::Segment(segment) = edge {
+                    for inner_edge in segment.iter() {
+                        self.collect_minimum_serialized_edges(
+                            zalsa,
+                            inner_edge,
+                            serialized_edges,
+                            visited_edges,
+                        );
+                    }
+                }
+                continue;
+            };
+
+            let dependency = zalsa.lookup_ingredient(key.ingredient_index());
             dependency.collect_minimum_serialized_edges(
                 zalsa,
-                *edge,
+                edge,
                 serialized_edges,
                 visited_edges,
             )
@@ -441,6 +472,7 @@ where
         if !seen.insert(database_key_index) {
             return;
         }
+
         let inputs = memo.revisions.origin.as_ref().inputs();
 
         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic {
@@ -747,12 +779,26 @@ mod persistence {
         visited_edges: &mut FxHashSet<QueryEdge>,
         flattened_edges: &mut FxIndexSet<QueryEdge>,
     ) {
-        for &edge in edges {
-            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+        for edge in edges {
+            // Handle Segment edges by recursively processing
+            if let QueryEdge::Segment(segment) = edge {
+                Self::collect_minimum_serialized_edges(
+                    zalsa,
+                    segment,
+                    visited_edges,
+                    flattened_edges,
+                );
+                continue;
+            }
+
+            let Some(key) = edge.key() else {
+                continue;
+            };
+            let dependency = zalsa.lookup_ingredient(key.ingredient_index());
 
             if dependency.is_persistable() {
                 // If the dependency will be serialized, we can serialize the edge directly.
-                flattened_edges.insert(edge);
+                flattened_edges.insert(edge.clone());
             } else {
                 // Otherwise, serialize the minimum edges necessary to cover the dependency.
                 dependency.collect_minimum_serialized_edges(

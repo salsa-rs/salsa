@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef, QueryRevisions, ZalsaLocal};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Id, Revision};
 
 /// Result of memo validation.
@@ -444,9 +444,18 @@ fn deep_verify_edges(
     // they executed. It's possible that if the value of some input I0 is no longer
     // valid, then some later input I1 might never have executed at all, so verifying
     // it is still up to date is meaningless.
-    for &edge in edges {
-        match edge.kind() {
-            QueryEdgeKind::Input(dependency_index) => {
+    //
+    // We use a stack to handle nested Segments (Segments can contain other Segments)
+    let mut stack: Vec<std::slice::Iter<'_, QueryEdge>> = vec![edges.iter()];
+
+    while let Some(iter) = stack.last_mut() {
+        let Some(edge) = iter.next() else {
+            stack.pop();
+            continue;
+        };
+
+        match edge {
+            QueryEdge::Input(dependency_index) => {
                 let input_result = dependency_index.maybe_changed_after(db, zalsa, old_verified_at);
 
                 match input_result {
@@ -461,7 +470,7 @@ fn deep_verify_edges(
                     VerifyResult::Unchanged { .. } => {}
                 }
             }
-            QueryEdgeKind::Output(dependency_index) => {
+            QueryEdge::Output(dependency_index) => {
                 // Subtle: Mark outputs as validated now, even though we may
                 // later find an input that requires us to re-execute the function.
                 // Even if it re-execute, the function will wind up writing the same value,
@@ -479,6 +488,10 @@ fn deep_verify_edges(
                 // so even if we mark them as valid here, the function will re-execute
                 // and overwrite the contents.
                 dependency_index.mark_validated_output(zalsa, database_key_index);
+            }
+            QueryEdge::Segment(segment) => {
+                // Push segment contents onto the stack to process them
+                stack.push(segment.iter());
             }
         }
     }

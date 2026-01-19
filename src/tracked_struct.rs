@@ -1020,7 +1020,7 @@ where
     fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
-        _edge: QueryEdge,
+        _edge: &QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {

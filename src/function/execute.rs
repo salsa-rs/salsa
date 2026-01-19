@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
@@ -839,7 +841,13 @@ fn flatten_cycle_dependencies(
             QueryEdgeKind::Output(_) => {
                 // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
                 // created by the query head because those are owned by this query.
-                flattened.insert(*edge);
+                flattened.insert(edge.clone());
+            }
+
+            QueryEdgeKind::Segment(segment) => {
+                // Segments contain already-flattened edges, insert them directly
+                // This enables O(1) copying from inner cycle heads
+                flattened.insert(QueryEdge::Segment(Arc::clone(segment)));
             }
         }
     }

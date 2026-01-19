@@ -3,6 +3,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 use thin_vec::ThinVec;
@@ -799,7 +800,7 @@ pub enum QueryOriginRef<'a> {
 impl<'a> QueryOriginRef<'a> {
     /// Indices for queries *read* by this query
     #[inline]
-    pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
+    pub(crate) fn inputs(self) -> impl Iterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
             QueryOriginRef::Assigned(_) => None,
@@ -808,7 +809,7 @@ impl<'a> QueryOriginRef<'a> {
     }
 
     /// Indices for queries *written* by this query (if any)
-    pub(crate) fn outputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
+    pub(crate) fn outputs(self) -> impl Iterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
             QueryOriginRef::Assigned(_) => None,
@@ -1083,84 +1084,156 @@ impl std::fmt::Debug for QueryOrigin {
 
 /// An input or output query edge.
 ///
-/// This type is a packed version of `QueryEdgeKind`, tagging the `IngredientIndex`
-/// in `key` with a discriminator for the input and output variants without increasing
-/// the size of the type. Notably, this type is 12 bytes as opposed to the 16 byte
-/// `QueryEdgeKind`, which is meaningful as inputs and outputs are stored contiguously.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "persistence", serde(transparent))]
-pub struct QueryEdge {
-    key: DatabaseKeyIndex,
+/// Represents an edge in the dependency graph between queries.
+///
+/// This can be:
+/// - An input edge (dependency on another query)
+/// - An output edge (this query produced a tracked struct)
+/// - A segment (a shared collection of edges from a flattened cycle head)
+///
+/// The Segment variant enables O(1) copying of flattened edges from inner cycle
+/// heads to outer cycle heads, avoiding repeated traversal and copying.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum QueryEdge {
+    /// An input dependency on another query.
+    Input(DatabaseKeyIndex),
+    /// An output (tracked struct) produced by this query.
+    Output(DatabaseKeyIndex),
+    /// A shared segment of edges from a flattened cycle head.
+    /// Uses Arc<Vec<...>> (thin pointer) to minimize size impact.
+    Segment(Arc<Vec<QueryEdge>>),
 }
 
 impl QueryEdge {
     /// Create an input query edge with the given index.
+    #[inline]
     pub fn input(key: DatabaseKeyIndex) -> QueryEdge {
-        Self { key }
+        QueryEdge::Input(key)
     }
 
     /// Create an output query edge with the given index.
+    #[inline]
     pub fn output(key: DatabaseKeyIndex) -> QueryEdge {
-        let ingredient_index = key.ingredient_index().with_tag(true);
-
-        Self {
-            key: DatabaseKeyIndex::new(ingredient_index, key.key_index()),
-        }
+        QueryEdge::Output(key)
     }
 
-    /// Return the key of this query edge.
-    pub fn key(self) -> DatabaseKeyIndex {
-        // Clear the tag to restore the original index.
-        DatabaseKeyIndex::new(
-            self.key.ingredient_index().with_tag(false),
-            self.key.key_index(),
-        )
+    /// Create a segment edge containing shared edges from a flattened cycle head.
+    #[inline]
+    pub fn segment(edges: Arc<Vec<QueryEdge>>) -> QueryEdge {
+        QueryEdge::Segment(edges)
+    }
+
+    /// Return the key of this query edge, if it's an Input or Output.
+    /// Returns None for Segment edges.
+    #[inline]
+    pub fn key(&self) -> Option<DatabaseKeyIndex> {
+        match self {
+            QueryEdge::Input(key) | QueryEdge::Output(key) => Some(*key),
+            QueryEdge::Segment(_) => None,
+        }
     }
 
     /// Returns the kind of this query edge.
-    pub fn kind(self) -> QueryEdgeKind {
-        if self.key.ingredient_index().tag() {
-            QueryEdgeKind::Output(self.key())
-        } else {
-            QueryEdgeKind::Input(self.key())
+    #[inline]
+    pub fn kind(&self) -> QueryEdgeKind<'_> {
+        match self {
+            QueryEdge::Input(key) => QueryEdgeKind::Input(*key),
+            QueryEdge::Output(key) => QueryEdgeKind::Output(*key),
+            QueryEdge::Segment(edges) => QueryEdgeKind::Segment(edges),
         }
+    }
+
+    /// Returns true if this is an input edge.
+    #[inline]
+    pub fn is_input(&self) -> bool {
+        matches!(self, QueryEdge::Input(_))
+    }
+
+    /// Returns true if this is an output edge.
+    #[inline]
+    pub fn is_output(&self) -> bool {
+        matches!(self, QueryEdge::Output(_))
+    }
+
+    /// Returns true if this is a segment edge.
+    #[inline]
+    pub fn is_segment(&self) -> bool {
+        matches!(self, QueryEdge::Segment(_))
     }
 }
 
 impl std::fmt::Debug for QueryEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.kind().fmt(f)
+        match self {
+            QueryEdge::Input(key) => f.debug_tuple("Input").field(key).finish(),
+            QueryEdge::Output(key) => f.debug_tuple("Output").field(key).finish(),
+            QueryEdge::Segment(edges) => f.debug_tuple("Segment").field(&edges.len()).finish(),
+        }
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum QueryEdgeKind {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum QueryEdgeKind<'a> {
     Input(DatabaseKeyIndex),
     Output(DatabaseKeyIndex),
+    Segment(&'a Arc<Vec<QueryEdge>>),
+}
+
+/// Iterator that flattens nested Segments to yield Input/Output edges.
+pub struct FlattenedEdgeIter<'a> {
+    stack: Vec<std::slice::Iter<'a, QueryEdge>>,
+}
+
+impl<'a> FlattenedEdgeIter<'a> {
+    fn new(edges: &'a [QueryEdge]) -> Self {
+        Self {
+            stack: vec![edges.iter()],
+        }
+    }
+}
+
+impl<'a> Iterator for FlattenedEdgeIter<'a> {
+    type Item = &'a QueryEdge;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let iter = self.stack.last_mut()?;
+            match iter.next() {
+                Some(edge @ QueryEdge::Input(_)) | Some(edge @ QueryEdge::Output(_)) => {
+                    return Some(edge);
+                }
+                Some(QueryEdge::Segment(segment)) => {
+                    self.stack.push(segment.iter());
+                }
+                None => {
+                    self.stack.pop();
+                }
+            }
+        }
+    }
 }
 
 /// Returns the (tracked) inputs that were executed in computing this memoized value.
 ///
-/// These will always be in execution order.
+/// These will always be in execution order, flattening through any Segment edges (including nested).
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
-) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
-    input_outputs.iter().filter_map(|&edge| match edge.kind() {
-        QueryEdgeKind::Input(dependency_index) => Some(dependency_index),
-        QueryEdgeKind::Output(_) => None,
+) -> impl Iterator<Item = DatabaseKeyIndex> + use<'_> {
+    FlattenedEdgeIter::new(input_outputs).filter_map(|edge| match edge {
+        QueryEdge::Input(key) => Some(*key),
+        _ => None,
     })
 }
 
 /// Returns the (tracked) outputs that were executed in computing this memoized value.
 ///
-/// These will always be in execution order.
+/// These will always be in execution order, flattening through any Segment edges (including nested).
 pub(crate) fn output_edges(
     input_outputs: &[QueryEdge],
-) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
-    input_outputs.iter().filter_map(|&edge| match edge.kind() {
-        QueryEdgeKind::Output(dependency_index) => Some(dependency_index),
-        QueryEdgeKind::Input(_) => None,
+) -> impl Iterator<Item = DatabaseKeyIndex> + use<'_> {
+    FlattenedEdgeIter::new(input_outputs).filter_map(|edge| match edge {
+        QueryEdge::Output(key) => Some(*key),
+        _ => None,
     })
 }
 
