@@ -10,9 +10,7 @@ fn query_a(db: &dyn Database) {
     query_d(db, b);
 }
 
-fn a_cycle_initial(_db: &dyn Database, _id: salsa::Id) {
-    
-}
+fn a_cycle_initial(_db: &dyn Database, _id: salsa::Id) {}
 
 #[salsa::interned]
 struct Interned {

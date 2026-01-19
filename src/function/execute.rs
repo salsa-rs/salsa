@@ -184,22 +184,23 @@ where
 
             // If there are no cycle heads, break out of the loop.
             if cycle_heads.is_empty() {
+                let mut completed_query = active_query.pop();
+
+                // We can skip flattening in the common case where we didn't encounter a cycle.
+                if !iteration_count.is_initial() {
+                    complete_iteration(zalsa, database_key_index, &mut completed_query.revisions);
+                }
+
                 iteration_count = iteration_count.increment().unwrap_or_else(|| {
                     tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
                     panic!("{database_key_index:?}: execute: too many cycle iterations")
                 });
-
-                let mut completed_query = active_query.pop();
                 completed_query
                     .revisions
                     .update_cycle_participant_iteration_count(iteration_count);
 
                 // FIXME: Change to Default?
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
-
-                if !iteration_count.is_initial() {
-                    complete_iteration(zalsa, database_key_index, &mut completed_query.revisions);
-                }
 
                 break (new_value, completed_query);
             }
