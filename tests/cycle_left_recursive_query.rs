@@ -1,3 +1,5 @@
+#![cfg(all(feature = "inventory", feature = "accumulator"))]
+
 use crate::common::{ExecuteValidateLoggerDatabase, LogDatabase};
 use expect_test::expect;
 use salsa::{Database, Durability, Id};
