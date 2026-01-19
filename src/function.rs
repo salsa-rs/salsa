@@ -592,10 +592,6 @@ impl<C> TrackedFunctionIngredient for IngredientImpl<C>
 where
     C: Configuration,
 {
-    fn struct_database_key_index(&self, zalsa: &Zalsa, input: Id) -> DatabaseKeyIndex {
-        <C::SalsaStruct<'_> as SalsaStructInDb>::database_key_index(zalsa, input)
-    }
-
     fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
         self.origin(zalsa, key)
     }

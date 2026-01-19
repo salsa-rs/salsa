@@ -470,10 +470,6 @@ mod _memory_usage {
         fn entries(_: &Zalsa) -> impl Iterator<Item = crate::DatabaseKeyIndex> + '_ {
             std::iter::empty()
         }
-
-        fn database_key_index(_: &Zalsa, _: Id) -> crate::DatabaseKeyIndex {
-            unimplemented!()
-        }
     }
 
     struct DummyConfiguration;

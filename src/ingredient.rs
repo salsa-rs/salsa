@@ -309,8 +309,6 @@ impl dyn Ingredient {
 }
 
 pub trait TrackedFunctionIngredient {
-    fn struct_database_key_index(&self, zalsa: &Zalsa, input: Id) -> DatabaseKeyIndex;
-
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>>;
 

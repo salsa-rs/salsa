@@ -168,7 +168,10 @@ impl<C: Configuration> Jar for JarImpl<C> {
     }
 }
 
-pub trait TrackedStructInDb: SalsaStructInDb {}
+pub trait TrackedStructInDb: SalsaStructInDb {
+    /// Converts the identifier for this tracked struct into a `DatabaseKeyIndex`.
+    fn database_key_index(zalsa: &Zalsa, id: Id) -> DatabaseKeyIndex;
+}
 
 /// Created for each tracked struct.
 ///
