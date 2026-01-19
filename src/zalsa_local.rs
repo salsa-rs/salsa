@@ -1199,7 +1199,6 @@ impl ActiveQueryGuard<'_> {
             QueryOriginRef::DerivedUntracked(_)
         );
 
-        // TODO: Only cary over outputs?
         let tracked_ids = previous.tracked_struct_ids();
 
         // SAFETY: We do not access the query stack reentrantly.
