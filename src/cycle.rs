@@ -504,7 +504,6 @@ pub enum ProvisionalStatus<'db> {
     Final {
         iteration: IterationCount,
         verified_at: Revision,
-        cycle_heads: &'db CycleHeads,
     },
 }
 
@@ -512,7 +511,7 @@ impl<'db> ProvisionalStatus<'db> {
     pub(crate) fn cycle_heads(&self) -> &'db CycleHeads {
         match self {
             ProvisionalStatus::Provisional { cycle_heads, .. } => cycle_heads,
-            ProvisionalStatus::Final { cycle_heads, .. } => cycle_heads,
+            ProvisionalStatus::Final { .. } => empty_cycle_heads(),
         }
     }
 
