@@ -177,11 +177,6 @@ const _: () = {
                     .memos::<zalsa_struct_::Value<Configuration_>>(id, current_revision)
             }
         }
-
-        #[inline]
-        fn database_key_index(zalsa: &zalsa_::Zalsa, id: zalsa_::Id) -> zalsa_::DatabaseKeyIndex {
-            <Configuration_>::ingredient(zalsa).database_key_index(id)
-        }
     }
 
     unsafe impl zalsa_::Update for InternedString<'_> {
