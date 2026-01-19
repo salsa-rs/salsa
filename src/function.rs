@@ -438,19 +438,20 @@ where
             return;
         }
 
+        if !seen.insert(database_key_index) {
+            return;
+        }
         let inputs = memo.revisions.origin.as_ref().inputs();
 
         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic {
             for input in inputs {
-                if seen.insert(input) {
-                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                    ingredient.flatten_cycle_head_dependencies(
-                        zalsa,
-                        input.key_index(),
-                        flattened_input_outputs,
-                        seen,
-                    );
-                }
+                let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                ingredient.flatten_cycle_head_dependencies(
+                    zalsa,
+                    input.key_index(),
+                    flattened_input_outputs,
+                    seen,
+                );
             }
         } else {
             flattened_input_outputs.extend(inputs.map(QueryEdge::input));

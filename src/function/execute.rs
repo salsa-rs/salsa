@@ -799,14 +799,11 @@ fn flatten_cycle_dependencies(
     let mut flattened = FxIndexSet::default();
 
     let edges = head.origin.as_ref().edges();
-    seen.reserve(edges.len());
     flattened.reserve(edges.len());
 
     for edge in head.origin.as_ref().edges() {
         match edge.kind() {
             QueryEdgeKind::Input(input) => {
-                seen.insert(input);
-
                 let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
                 ingredient.flatten_cycle_head_dependencies(
                     zalsa,
