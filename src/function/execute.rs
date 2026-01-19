@@ -198,26 +198,33 @@ where
                 let mut completed_query = active_query.pop();
 
                 // We can skip flattening in the common case where we didn't encounter a cycle.
-                if !iteration_count.is_initial() {
-                    flatten_cycle_dependencies(
-                        zalsa,
-                        database_key_index,
-                        &mut completed_query.revisions,
-                        &mut flattened,
-                        &mut seen,
-                    );
+                if iteration_count.is_initial() {
+                    break (new_value, completed_query);
                 }
+
+                // The query used to be part of an outer cycle but
+                // it now is no-more. Finalize the cycle.
+
+                claim_guard.set_release_mode(ReleaseMode::SelfOnly);
+
+                flatten_cycle_dependencies(
+                    zalsa,
+                    database_key_index,
+                    &mut completed_query.revisions,
+                    &mut flattened,
+                    &mut seen,
+                );
 
                 iteration_count = iteration_count.increment().unwrap_or_else(|| {
                     tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
                     panic!("{database_key_index:?}: execute: too many cycle iterations")
                 });
+
                 completed_query
                     .revisions
                     .update_cycle_participant_iteration_count(iteration_count);
 
                 // FIXME: Change to Default?
-                claim_guard.set_release_mode(ReleaseMode::SelfOnly);
 
                 break (new_value, completed_query);
             }
