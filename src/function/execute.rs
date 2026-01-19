@@ -187,35 +187,26 @@ where
 
             // If there are no cycle heads, break out of the loop.
             if cycle_heads.is_empty() {
-                // We can skip flattening in the common case where we didn't encounter a cycle.
-                let completed_query = if !iteration_count.is_initial() {
-                    let input_outputs = active_query.take_input_outputs();
-                    let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop();
 
+                // We can skip flattening in the common case where we didn't encounter a cycle.
+                if !iteration_count.is_initial() {
                     flatten_cycle_dependencies(
                         zalsa,
                         database_key_index,
-                        input_outputs,
                         &mut completed_query.revisions,
                         &mut flattened,
                         &mut seen,
                     );
+                }
 
-                    iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                        tracing::warn!(
-                            "{database_key_index:?}: execute: too many cycle iterations"
-                        );
-                        panic!("{database_key_index:?}: execute: too many cycle iterations")
-                    });
-
-                    completed_query
-                        .revisions
-                        .update_cycle_participant_iteration_count(iteration_count);
-
-                    completed_query
-                } else {
-                    active_query.pop()
-                };
+                iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                    tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
+                    panic!("{database_key_index:?}: execute: too many cycle iterations")
+                });
+                completed_query
+                    .revisions
+                    .update_cycle_participant_iteration_count(iteration_count);
 
                 // FIXME: Change to Default?
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
@@ -620,7 +611,7 @@ fn collect_all_cycle_heads(
 // Called when completing the query of a cycle head participating
 // in an outer cycle head (which doesn't depend on itself).
 fn complete_cycle_participant(
-    mut active_query: ActiveQueryGuard,
+    active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
     outer_cycle: DatabaseKeyIndex,
@@ -636,13 +627,11 @@ fn complete_cycle_participant(
     let zalsa = claim_guard.zalsa();
 
     let database_key_index = active_query.database_key_index;
-    let input_outputs = active_query.take_input_outputs();
     let mut completed_query = active_query.pop();
 
     flatten_cycle_dependencies(
         zalsa,
         database_key_index,
-        input_outputs,
         &mut completed_query.revisions,
         flattened,
         seen,
@@ -672,7 +661,7 @@ fn complete_cycle_participant(
 /// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
 /// Returns `Err` if the cycle head needs to keep iterating.
 fn try_complete_cycle_head(
-    mut active_query: ActiveQueryGuard,
+    active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
     last_provisional_revisions: &QueryRevisions,
@@ -685,16 +674,8 @@ fn try_complete_cycle_head(
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
 
-    let input_outputs = active_query.take_input_outputs();
     let mut completed_query = active_query.pop();
-    flatten_cycle_dependencies(
-        zalsa,
-        me,
-        input_outputs,
-        &mut completed_query.revisions,
-        flattened,
-        seen,
-    );
+    flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions, flattened, seen);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -823,7 +804,6 @@ fn assert_no_new_cycle_heads(
 fn flatten_cycle_dependencies(
     zalsa: &Zalsa,
     cycle_head: DatabaseKeyIndex,
-    input_outputs: FxIndexSet<QueryEdge>,
     head: &mut QueryRevisions,
     flattened: &mut FxIndexSet<QueryEdge>,
     seen: &mut FxHashSet<DatabaseKeyIndex>,
@@ -834,9 +814,10 @@ fn flatten_cycle_dependencies(
     // Don't insert `self` here. This is important to ensure that we copy over the
     // dependencies from this memo in the previous iteration.
     // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
-    flattened.reserve(input_outputs.len());
+    let edges = head.origin.as_ref().edges();
+    flattened.reserve(edges.len());
 
-    for edge in input_outputs {
+    for edge in head.origin.as_ref().edges() {
         match edge.kind() {
             QueryEdgeKind::Input(input) => {
                 let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
@@ -851,7 +832,7 @@ fn flatten_cycle_dependencies(
             QueryEdgeKind::Output(_) => {
                 // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
                 // created by the query head because those are owned by this query.
-                flattened.insert(edge);
+                flattened.insert(*edge);
             }
         }
     }
