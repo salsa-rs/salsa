@@ -58,7 +58,7 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     /// Evicts the existing memo for the given key, replacing it
-    /// with an equivalent memo that has no value. If the memo is untracked, FixpointInitial,
+    /// with an equivalent memo that has no value. If the memo is untracked
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for(
         table: MemoTableWithTypesMut<'_>,
@@ -66,9 +66,7 @@ impl<C: Configuration> IngredientImpl<C> {
     ) {
         let map = |memo: &mut Memo<'static, C>| {
             match memo.revisions.origin.as_ref() {
-                QueryOriginRef::Assigned(_)
-                | QueryOriginRef::DerivedUntracked(_)
-                | QueryOriginRef::FixpointInitial => {
+                QueryOriginRef::Assigned(_) | QueryOriginRef::DerivedUntracked(_) => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs
