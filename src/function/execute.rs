@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
-use crate::cycle::{CycleHead, CycleHeads, CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
@@ -529,7 +529,7 @@ fn collect_all_cycle_heads(
         let mut max_iteration_count = IterationCount::initial();
         let mut depends_on_self = false;
 
-        let ingredient = CycleHead::lookup_ingredient(zalsa, current_head);
+        let ingredient = zalsa.lookup_ingredient(current_head.ingredient_index());
 
         let provisional_status = ingredient
             .provisional_status(zalsa, current_head.key_index())

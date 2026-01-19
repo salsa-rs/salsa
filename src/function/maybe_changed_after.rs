@@ -583,9 +583,9 @@ fn validate_provisional(
 
     // Test if our cycle heads (with the same revision) are now finalized.
     for cycle_head in cycle_heads {
-        let ingredient = cycle_head.ingredient(zalsa);
-        let Some(provisional_status) =
-            ingredient.provisional_status(zalsa, cycle_head.database_key_index.key_index())
+        let Some(provisional_status) = zalsa
+            .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
+            .provisional_status(zalsa, cycle_head.database_key_index.key_index())
         else {
             return false;
         };
