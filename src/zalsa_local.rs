@@ -15,6 +15,7 @@ use crate::accumulator::{
 use crate::active_query::{CompletedQuery, QueryStack};
 use crate::cycle::{empty_cycle_heads, AtomicIterationCount, CycleHeads, IterationCount};
 use crate::durability::Durability;
+use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
@@ -1221,6 +1222,18 @@ impl ActiveQueryGuard<'_> {
                 assert_eq!(stack.len(), self.push_len);
                 let frame = stack.last_mut().unwrap();
                 frame.take_cycle_heads()
+            })
+        }
+    }
+
+    pub(crate) fn take_input_outputs(&mut self) -> FxIndexSet<QueryEdge> {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.local_state.with_query_stack_unchecked_mut(|stack| {
+                #[cfg(debug_assertions)]
+                assert_eq!(stack.len(), self.push_len);
+                let frame = stack.last_mut().unwrap();
+                frame.take_input_outputs()
             })
         }
     }
