@@ -11,7 +11,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryEdgeKind, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
 use crate::{tracing, Cancelled, Cycle};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -133,6 +133,9 @@ where
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let mut iteration_count = IterationCount::initial();
 
+        let mut flattened = FxIndexSet::default();
+        let mut seen = FxHashSet::default();
+
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
                 // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
@@ -192,6 +195,8 @@ where
                         zalsa,
                         database_key_index,
                         &mut completed_query.revisions,
+                        &mut flattened,
+                        &mut seen,
                     );
                 }
 
@@ -241,6 +246,8 @@ where
                     cycle_heads,
                     outer_cycle,
                     iteration_count,
+                    &mut flattened,
+                    &mut seen,
                 );
 
                 break (new_value, completed_query);
@@ -326,6 +333,8 @@ where
                 outer_cycle,
                 iteration_count,
                 value_converged,
+                &mut flattened,
+                &mut seen,
             ) {
                 Ok(completed_query) => {
                     break (new_value, completed_query);
@@ -607,6 +616,8 @@ fn complete_cycle_participant(
     cycle_heads: CycleHeads,
     outer_cycle: DatabaseKeyIndex,
     iteration_count: IterationCount,
+    flattened: &mut FxIndexSet<QueryEdge>,
+    seen: &mut FxHashSet<DatabaseKeyIndex>,
 ) -> CompletedQuery {
     // For as long as this query participates in any cycle, don't release its lock, instead
     // transfer it to the outermost cycle head. This prevents any other thread
@@ -618,7 +629,13 @@ fn complete_cycle_participant(
     let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
 
-    flatten_cycle_dependencies(zalsa, database_key_index, &mut completed_query.revisions);
+    flatten_cycle_dependencies(
+        zalsa,
+        database_key_index,
+        &mut completed_query.revisions,
+        flattened,
+        seen,
+    );
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -651,11 +668,14 @@ fn try_complete_cycle_head(
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
     value_converged: bool,
+    flattened: &mut FxIndexSet<QueryEdge>,
+    seen: &mut FxHashSet<DatabaseKeyIndex>,
 ) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop();
+    flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions, flattened, seen);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -671,8 +691,6 @@ fn try_complete_cycle_head(
         tracing::info!(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
-
-        flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
         // Store whether this cycle has converged, so that the outer cycle can check it.
@@ -709,8 +727,6 @@ fn try_complete_cycle_head(
             "{me:?}: execute: fixpoint iteration has a final value after {iteration_count:?} iterations"
         );
 
-        flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
-
         // Set the nested cycles as verified. This is necessary because
         // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
         for head in cycle_heads.iter_not_eq(me) {
@@ -735,8 +751,6 @@ fn try_complete_cycle_head(
         tracing::warn!("{me:?}: execute: too many cycle iterations");
         panic!("{me:?}: execute: too many cycle iterations")
     });
-
-    flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
 
     zalsa.event(&|| {
         Event::new(EventKind::WillIterateCycle {
@@ -791,13 +805,15 @@ fn flatten_cycle_dependencies(
     zalsa: &Zalsa,
     cycle_head: DatabaseKeyIndex,
     head: &mut QueryRevisions,
+    flattened: &mut FxIndexSet<QueryEdge>,
+    seen: &mut FxHashSet<DatabaseKeyIndex>,
 ) {
+    debug_assert!(flattened.is_empty());
+    debug_assert!(seen.is_empty());
+
     // Don't insert `self` here. This is important to ensure that we copy over the
     // dependencies from this memo in the previous iteration.
     // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
-    let mut seen = FxHashSet::default();
-    let mut flattened = FxIndexSet::default();
-
     let edges = head.origin.as_ref().edges();
     flattened.reserve(edges.len());
 
@@ -808,8 +824,8 @@ fn flatten_cycle_dependencies(
                 ingredient.flatten_cycle_head_dependencies(
                     zalsa,
                     input.key_index(),
-                    &mut flattened,
-                    &mut seen,
+                    flattened,
+                    seen,
                 );
             }
 
@@ -824,6 +840,8 @@ fn flatten_cycle_dependencies(
     tracing::info!("Flattened input and outputs of {cycle_head:?}: {flattened:?}");
 
     head.origin
-        .set_edges(flattened.into_iter().collect())
+        .set_edges(flattened.drain(..).collect())
         .expect("Executing query to always be derived or derived untracked.");
+
+    seen.clear();
 }
