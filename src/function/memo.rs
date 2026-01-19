@@ -10,7 +10,6 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
-
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -401,8 +400,7 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                 // participates in the cycle and some other query is blocked on this thread.
                 crate::tracing::trace!("Waiting for {head_database_key:?} results in a cycle");
 
-                let provisional_status = head
-                    .ingredient(self.zalsa)
+                let provisional_status = ingredient
                     .provisional_status(self.zalsa, head_key_index)
                     .expect("cycle head memo to exist");
                 let (current_iteration_count, verified_at) = match provisional_status {

@@ -64,18 +64,13 @@ where
                 continue;
             }
 
-            let Some(tracked_function_ingredient) = ingredient.as_tracked_function_ingredient()
-            else {
-                continue;
-            };
-
             // Find the inputs of `k` and push them onto the stack.
             //
             // Careful: to ensure the user gets a consistent ordering in their
             // output vector, we want to push in execution order, so reverse order to
             // ensure the first child that was executed will be the first child popped
             // from the stack.
-            let Some(origin) = tracked_function_ingredient.origin(zalsa, k.key_index()) else {
+            let Some(origin) = ingredient.origin(zalsa, k.key_index()) else {
                 continue;
             };
 
