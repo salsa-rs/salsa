@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{CycleHeads, IterationCount, ProvisionalStatus};
+use crate::cycle::{IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -51,7 +51,6 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        backdate: Backdate,
     ) -> VerifyResult;
 
     /// Collects the minimum edges necessary to serialize a given dependency edge on this ingredient,
@@ -154,14 +153,26 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         unreachable!("cycle_converged should only be called on cycle heads and only functions can be cycle heads");
     }
 
+    /// Updates the iteration count for the (nested) cycle head `_input` to `iteration_count`.
+    ///
+    /// This is a no-op if the memo doesn't exist or if called on a Memo without cycle heads.
+    fn set_cycle_iteration_count(
+        &self,
+        _zalsa: &Zalsa,
+        _input: Id,
+        _iteration_count: IterationCount,
+    ) {
+        unreachable!("increment_iteration_count should only be called on cycle heads and only functions can be cycle heads");
+    }
+
+    fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
+        unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
+    }
+
     fn complete_cycle_iteration(
         &self,
         zalsa: &Zalsa,
         id: Id,
-        outermost_head: DatabaseKeyIndex,
-        iteration: IterationCount,
-        cycle_heads: &CycleHeads,
-        cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     );
@@ -325,16 +336,4 @@ pub enum WaitForResult<'me> {
     Running(Running<'me>),
     Available,
     Cycle { inner: bool },
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Backdate {
-    Allowed,
-    Disallowed,
-}
-
-impl Backdate {
-    pub const fn is_allowed(self) -> bool {
-        matches!(self, Backdate::Allowed)
-    }
 }

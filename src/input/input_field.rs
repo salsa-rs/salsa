@@ -1,10 +1,9 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::cycle::{CycleHeads, IterationCount};
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Backdate, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -62,7 +61,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        _backdate: Backdate,
     ) -> VerifyResult {
         let value = <IngredientImpl<C>>::data(zalsa, input);
         VerifyResult::changed_if(value.revisions[self.field_index] > revision)
@@ -89,10 +87,6 @@ where
         &self,
         _zalsa: &Zalsa,
         id: Id,
-        _outermost_head: DatabaseKeyIndex,
-        _iteration: IterationCount,
-        _cycle_heads: &CycleHeads,
-        _cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<crate::DatabaseKeyIndex>,
     ) {

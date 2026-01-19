@@ -7,10 +7,9 @@ use std::panic::UnwindSafe;
 
 use accumulated::{Accumulated, AnyAccumulated};
 
-use crate::cycle::{CycleHeads, IterationCount};
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Backdate, Ingredient, Jar};
+use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -108,7 +107,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _backdate: Backdate,
     ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
     }
@@ -143,10 +141,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         &self,
         _zalsa: &Zalsa,
         _id: Id,
-        _outermost_head: DatabaseKeyIndex,
-        _iteration: IterationCount,
-        _cycle_heads: &CycleHeads,
-        _cycle_converged: bool,
         _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {

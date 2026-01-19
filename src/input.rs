@@ -8,11 +8,10 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
-use crate::cycle::{CycleHeads, IterationCount};
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId, FromIdWithDb};
-use crate::ingredient::{Backdate, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, Jar, ZalsaLocal};
@@ -302,7 +301,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _backdate: Backdate,
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
@@ -326,10 +324,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         &self,
         _zalsa: &Zalsa,
         _id: Id,
-        _outermost_head: DatabaseKeyIndex,
-        _iteration: IterationCount,
-        _cycle_heads: &CycleHeads,
-        _cycle_converged: bool,
         _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {

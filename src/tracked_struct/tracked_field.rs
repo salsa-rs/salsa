@@ -1,9 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::cycle::{CycleHeads, IterationCount};
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Backdate, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
@@ -67,7 +66,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: crate::Revision,
-        _backdate: Backdate,
     ) -> VerifyResult {
         let data = <super::IngredientImpl<C>>::data_raw(zalsa.table(), input);
         let field_changed_at = unsafe { (&(*data).revisions)[self.field_index].load() };
@@ -89,10 +87,6 @@ where
         &self,
         _zalsa: &Zalsa,
         id: Id,
-        _outermost_head: DatabaseKeyIndex,
-        _iteration: IterationCount,
-        _cycle_heads: &CycleHeads,
-        _cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<crate::DatabaseKeyIndex>,
     ) {

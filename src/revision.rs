@@ -191,12 +191,6 @@ impl From<Revision> for OptionalAtomicRevision {
 }
 
 impl OptionalAtomicRevision {
-    pub(crate) const fn none() -> Self {
-        Self {
-            data: AtomicUsize::new(0),
-        }
-    }
-
     pub(crate) fn new(revision: Option<Revision>) -> Self {
         Self {
             data: AtomicUsize::new(revision.map_or(0, |r| r.as_usize())),
@@ -212,10 +206,6 @@ impl OptionalAtomicRevision {
             self.data
                 .swap(val.map_or(0, |r| r.as_usize()), Ordering::AcqRel),
         )
-    }
-
-    pub(crate) fn set(&mut self, val: Option<Revision>) {
-        *self.data.get_mut() = val.map_or(0, |r| r.as_usize());
     }
 
     pub(crate) fn compare_exchange(
