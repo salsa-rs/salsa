@@ -320,7 +320,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("nothing should ever depend on an input struct directly")
     }
 
-    fn complete_cycle_iteration(
+    fn flatten_cycle_head_dependencies(
         &self,
         _zalsa: &Zalsa,
         _id: Id,

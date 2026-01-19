@@ -83,7 +83,7 @@ where
         serialized_edges.insert(edge);
     }
 
-    fn complete_cycle_iteration(
+    fn flatten_cycle_head_dependencies(
         &self,
         _zalsa: &Zalsa,
         id: Id,

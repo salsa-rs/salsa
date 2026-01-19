@@ -419,7 +419,7 @@ where
         memo.revisions.verified_final.store(true, Ordering::Release);
     }
 
-    fn complete_cycle_iteration(
+    fn flatten_cycle_head_dependencies(
         &self,
         zalsa: &Zalsa,
         id: Id,
@@ -441,7 +441,7 @@ where
         for input in memo.revisions.origin.as_ref().inputs() {
             if seen.insert(input) {
                 let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                ingredient.complete_cycle_iteration(
+                ingredient.flatten_cycle_head_dependencies(
                     zalsa,
                     input.key_index(),
                     flattened_input_outputs,

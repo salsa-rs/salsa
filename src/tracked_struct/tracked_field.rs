@@ -83,7 +83,7 @@ where
         // the base inputs.
     }
 
-    fn complete_cycle_iteration(
+    fn flatten_cycle_head_dependencies(
         &self,
         _zalsa: &Zalsa,
         id: Id,
