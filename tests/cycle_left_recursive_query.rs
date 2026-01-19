@@ -26,7 +26,7 @@ fn query_b<'db>(db: &'db dyn Database) -> Interned<'db> {
 #[salsa::tracked]
 fn query_x<'db>(_db: &'db dyn Database, _i: Interned<'db>) {}
 
-fn cycle_initial<'db>(db: &'db dyn Database, _id: Id) -> Interned<'db> {
+fn cycle_initial(db: &dyn Database, _id: Id) -> Interned<'_> {
     Interned::new(db, 0)
 }
 
