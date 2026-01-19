@@ -841,5 +841,5 @@ fn flatten_cycle_dependencies(
 
     head.origin
         .set_edges(flattened.into_iter().collect())
-        .expect("Executing query to always be derived or derived untracked.")
+        .expect("Executing query to always be derived or derived untracked.");
 }
