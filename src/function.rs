@@ -388,7 +388,6 @@ where
             ProvisionalStatus::Final {
                 iteration,
                 verified_at: memo.verified_at.load(),
-                cycle_heads: memo.all_cycle_heads(),
             }
         } else {
             ProvisionalStatus::Provisional {
