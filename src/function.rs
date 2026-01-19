@@ -7,11 +7,11 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Backdate, Ingredient, TrackedFunctionIngredient, WaitForResult};
+use crate::ingredient::{Ingredient, TrackedFunctionIngredient, WaitForResult};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
@@ -322,11 +322,10 @@ where
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        backdate: Backdate,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision, backdate)
+        self.maybe_changed_after(db, input, revision)
     }
 
     fn collect_minimum_serialized_edges(
@@ -370,14 +369,31 @@ where
         }
     }
 
+    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return;
+        };
+
+        memo.revisions
+            .set_iteration_count(Self::database_key_index(self, input), iteration_count);
+    }
+
+    fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
+        let Some(memo) =
+            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        else {
+            return;
+        };
+
+        memo.revisions.verified_final.store(true, Ordering::Release);
+    }
+
     fn complete_cycle_iteration(
         &self,
         zalsa: &Zalsa,
         id: Id,
-        outermost_head: DatabaseKeyIndex,
-        iteration: IterationCount,
-        cycle_heads: &CycleHeads,
-        cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {
@@ -399,23 +415,10 @@ where
                 ingredient.complete_cycle_iteration(
                     zalsa,
                     input.key_index(),
-                    outermost_head,
-                    iteration,
-                    cycle_heads,
-                    cycle_converged,
                     flattened_input_outputs,
                     seen,
                 );
             }
-        }
-
-        if cycle_converged {
-            tracing::info!("Marking {database_key_index:?} as finalized");
-            memo.revisions.verified_final.store(true, Ordering::Release);
-            memo.revisions.store_finalized_in(zalsa.current_revision());
-        } else {
-            memo.revisions
-                .set_iteration_count(database_key_index, iteration);
         }
     }
 
@@ -617,10 +620,6 @@ where
                 iteration,
                 verified_at: memo.verified_at.load(),
                 cycle_heads: memo.all_cycle_heads(),
-                finalized_in: memo
-                    .revisions
-                    .finalized_in()
-                    .expect("Finalized in to be set for any finalized query"),
             }
         } else {
             ProvisionalStatus::Provisional {

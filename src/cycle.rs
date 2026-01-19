@@ -520,7 +520,6 @@ pub enum ProvisionalStatus<'db> {
     Final {
         iteration: IterationCount,
         verified_at: Revision,
-        finalized_in: Revision,
         cycle_heads: &'db CycleHeads,
     },
 }
@@ -535,12 +534,5 @@ impl<'db> ProvisionalStatus<'db> {
 
     pub(crate) const fn is_provisional(&self) -> bool {
         matches!(self, ProvisionalStatus::Provisional { .. })
-    }
-
-    pub(crate) const fn finalized_in(&self) -> Option<Revision> {
-        match self {
-            ProvisionalStatus::Provisional { .. } => None,
-            ProvisionalStatus::Final { finalized_in, .. } => Some(*finalized_in),
-        }
     }
 }

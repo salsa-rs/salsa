@@ -11,12 +11,11 @@ use crossbeam_utils::CachePadded;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use rustc_hash::FxBuildHasher;
 
-use crate::cycle::{CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
-use crate::ingredient::{Backdate, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::revision::AtomicRevision;
 use crate::sync::{Arc, Mutex, OnceLock};
@@ -896,7 +895,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         _revision: Revision,
-        _backdate: Backdate,
     ) -> VerifyResult {
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();
@@ -954,10 +952,6 @@ where
         &self,
         _zalsa: &Zalsa,
         id: Id,
-        _outermost_head: DatabaseKeyIndex,
-        _iteration: IterationCount,
-        _cycle_heads: &CycleHeads,
-        _cycle_converged: bool,
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {

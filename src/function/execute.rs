@@ -11,7 +11,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdgeKind, QueryRevisions};
 use crate::{tracing, Cancelled, Cycle};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -166,7 +166,6 @@ where
 
         let _poison_guard =
             PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
-        let mut flattened_input_outputs: FxIndexSet<QueryEdge> = FxIndexSet::default();
 
         let (new_value, completed_query) = loop {
             let active_query = claim_guard
@@ -206,25 +205,9 @@ where
                 // FIXME: Change to Default?
                 claim_guard.set_release_mode(ReleaseMode::SelfOnly);
 
-                complete_iteration(
-                    zalsa,
-                    database_key_index,
-                    &completed_query.revisions,
-                    true,
-                    &cycle_heads,
-                    iteration_count,
-                    &mut flattened_input_outputs,
-                );
-
-                completed_query
-                    .revisions
-                    .origin
-                    .set_edges(flattened_input_outputs.into_iter().collect())
-                    .expect("executing query to always have derived or derived untracked origin");
-
-                completed_query
-                    .revisions
-                    .set_finalized_in(zalsa.current_revision());
+                if !iteration_count.is_initial() {
+                    complete_iteration(zalsa, database_key_index, &mut completed_query.revisions);
+                }
 
                 break (new_value, completed_query);
             }
@@ -266,7 +249,6 @@ where
                     cycle_heads,
                     outer_cycle,
                     iteration_count,
-                    flattened_input_outputs,
                 );
 
                 break (new_value, completed_query);
@@ -352,10 +334,8 @@ where
                 outer_cycle,
                 iteration_count,
                 value_converged,
-                &mut flattened_input_outputs,
             ) {
                 Ok(completed_query) => {
-                    assert!(flattened_input_outputs.is_empty());
                     break (new_value, completed_query);
                 }
                 Err((completed_query, new_iteration_count)) => {
@@ -627,41 +607,29 @@ fn collect_all_cycle_heads(
     (max_iteration_count, depends_on_self)
 }
 
+// Called when completing the query of a cycle head participating
+// in an outer cycle head (which doesn't depend on itself).
 fn complete_cycle_participant(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
     outer_cycle: DatabaseKeyIndex,
     iteration_count: IterationCount,
-    mut flattened_input_outputs: FxIndexSet<QueryEdge>,
 ) -> CompletedQuery {
     // For as long as this query participates in any cycle, don't release its lock, instead
     // transfer it to the outermost cycle head. This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
+    let zalsa = claim_guard.zalsa();
 
     let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
+
+    complete_iteration(zalsa, database_key_index, &mut completed_query.revisions);
+
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
-
-    if !flattened_input_outputs.is_empty() {
-        flattened_input_outputs.extend(
-            completed_query
-                .revisions
-                .origin
-                .as_ref()
-                .edges()
-                .iter()
-                .cloned(),
-        );
-        completed_query
-            .revisions
-            .origin
-            .set_edges(flattened_input_outputs.into_iter().collect())
-            .expect("Executing query to have derived or derived untracked origin.");
-    }
 
     let iteration_count = iteration_count.increment().unwrap_or_else(|| {
         tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
@@ -691,7 +659,6 @@ fn try_complete_cycle_head(
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
     value_converged: bool,
-    flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
 ) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
@@ -713,26 +680,7 @@ fn try_complete_cycle_head(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
 
-        if !flattened_input_outputs.is_empty() {
-            flattened_input_outputs.extend(
-                completed_query
-                    .revisions
-                    .origin
-                    .as_ref()
-                    .edges()
-                    .iter()
-                    .copied(),
-            );
-            completed_query
-                .revisions
-                .origin
-                .set_edges(
-                    std::mem::take(flattened_input_outputs)
-                        .into_iter()
-                        .collect(),
-                )
-                .expect("Executing query to always have a derived or derived untracked origin.");
-        }
+        complete_iteration(zalsa, me, &mut completed_query.revisions);
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
         // Store whether this cycle has converged, so that the outer cycle can check it.
@@ -769,34 +717,14 @@ fn try_complete_cycle_head(
             "{me:?}: execute: fixpoint iteration has a final value after {iteration_count:?} iterations"
         );
 
-        complete_iteration(
-            zalsa,
-            me,
-            &completed_query.revisions,
-            true,
-            &cycle_heads,
-            iteration_count,
-            flattened_input_outputs,
-        );
+        complete_iteration(zalsa, me, &mut completed_query.revisions);
 
-        tracing::info!(
-            "original origin: {:?}, flattened input outputs: {:?}",
-            &completed_query.revisions.origin,
-            flattened_input_outputs
-        );
-
-        completed_query
-            .revisions
-            .set_finalized_in(zalsa.current_revision());
-        completed_query
-            .revisions
-            .origin
-            .set_edges(
-                std::mem::take(flattened_input_outputs)
-                    .into_iter()
-                    .collect(),
-            )
-            .expect("An executing query to have a derived or derived untracked origin");
+        // Set the nested cycles as verified. This is necessary because
+        // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
+        for head in cycle_heads.iter_not_eq(me) {
+            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+            ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
+        }
 
         *completed_query.revisions.verified_final.get_mut() = true;
 
@@ -816,15 +744,7 @@ fn try_complete_cycle_head(
         panic!("{me:?}: execute: too many cycle iterations")
     });
 
-    complete_iteration(
-        zalsa,
-        me,
-        &completed_query.revisions,
-        false,
-        &cycle_heads,
-        iteration_count,
-        flattened_input_outputs,
-    );
+    complete_iteration(zalsa, me, &mut completed_query.revisions);
 
     zalsa.event(&|| {
         Event::new(EventKind::WillIterateCycle {
@@ -834,6 +754,17 @@ fn try_complete_cycle_head(
     });
 
     tracing::info!("{me:?}: execute: iterate again ({iteration_count:?})...",);
+
+    // Update the iteration count of nested cycles.
+    for head in cycle_heads.iter_not_eq(me) {
+        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+
+        ingredient.set_cycle_iteration_count(
+            zalsa,
+            head.database_key_index.key_index(),
+            iteration_count,
+        );
+    }
 
     debug_assert!(completed_query.revisions.cycle_heads().is_empty());
 
@@ -862,18 +793,10 @@ fn assert_no_new_cycle_heads(
     }
 }
 
-fn complete_iteration(
-    zalsa: &Zalsa,
-    cycle_head: DatabaseKeyIndex,
-    head: &QueryRevisions,
-    cycle_converged: bool,
-    cycle_heads: &CycleHeads,
-    iteration_count: IterationCount,
-    flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
-) {
+fn complete_iteration(zalsa: &Zalsa, cycle_head: DatabaseKeyIndex, head: &mut QueryRevisions) {
     tracing::info!("Completing cycle with head {cycle_head:?}");
     let mut seen = FxHashSet::default();
-    seen.insert(cycle_head);
+    let mut flattened = FxIndexSet::default();
 
     for edge in head.origin.as_ref().edges() {
         match edge.kind() {
@@ -883,11 +806,7 @@ fn complete_iteration(
                     ingredient.complete_cycle_iteration(
                         zalsa,
                         input.key_index(),
-                        cycle_head,
-                        iteration_count,
-                        cycle_heads,
-                        cycle_converged,
-                        flattened_input_outputs,
+                        &mut flattened,
                         &mut seen,
                     );
                 }
@@ -896,8 +815,14 @@ fn complete_iteration(
             QueryEdgeKind::Output(_) => {
                 // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
                 // created by the query head because those are owned by this query.
-                flattened_input_outputs.insert(*edge);
+                flattened.insert(*edge);
             }
         }
     }
+
+    tracing::info!("Flattened input and outputs of {cycle_head:?}: {flattened:?}");
+
+    head.origin
+        .set_edges(flattened.into_iter().collect())
+        .expect("Executing query to always be derived or derived untracked.")
 }
