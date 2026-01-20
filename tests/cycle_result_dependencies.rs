@@ -16,7 +16,7 @@ fn cycle_result(db: &dyn Database, _id: salsa::Id, input: Input) -> i32 {
     input.value(db)
 }
 
-#[test_log::test]
+#[test]
 fn cycle_result_dependencies_are_recorded() {
     let mut db = salsa::DatabaseImpl::default();
     let input = Input::new(&db, 123);

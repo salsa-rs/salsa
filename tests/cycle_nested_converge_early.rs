@@ -66,7 +66,7 @@ fn initial(_db: &dyn salsa::Database, _id: salsa::Id) -> CycleValue {
     MIN
 }
 
-#[test_log::test]
+#[test]
 fn the_test() {
     let db = ExecuteValidateLoggerDatabase::default();
     let result = query_a(&db);
