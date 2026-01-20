@@ -182,6 +182,17 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
     }
 
+    /// Flattens the dependencies of a query with cycle handling that participates in a cycle.
+    ///
+    /// This query recursively walks the dependency graph of `id` and flattens input dependencies
+    /// on provisial queries into `flattened_input_outputs`. Outputs aren't flattened because
+    /// outputs are owned by the creating query and not the cycle head.
+    ///
+    /// Flattening the dependencies is necessary because the memo's depdency graph only captures
+    /// the dependencies from the last iteration. It also ensures that the dependency graph doesn't
+    /// contain any cycles.
+    ///
+    /// See `cycle_dependency_order_different_entry_queries` and `cycle_left_recursive_query`.
     fn flatten_cycle_head_dependencies(
         &self,
         zalsa: &Zalsa,

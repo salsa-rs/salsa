@@ -139,12 +139,10 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
-    /// Returns the cycle heads from the last iteration.
-    ///
-    /// Unlike `cycle_heads`, this function also returns the cycle heads if this memo has been finalized.
+    /// Returns `true` if this memo was part of a cycle in it's last iteration.
     #[inline(always)]
-    pub(super) fn last_iteration_cycle_heads(&self) -> &CycleHeads {
-        self.revisions.cycle_heads()
+    pub(super) fn was_cycle_participant(&self) -> bool {
+        !self.revisions.cycle_heads().is_empty()
     }
 
     /// Mark memo as having been verified in the `revision_now`, which should

@@ -357,7 +357,21 @@ where
                 let verified_at = old_memo.verified_at.load();
                 let db: RawDatabase = db.into();
 
-                if !old_memo.last_iteration_cycle_heads().is_empty()
+                // If the old memo participate in a cycle, but the query doesn't have cycle handling,
+                // always return changed. The reasoning here is:
+                //
+                // * cycle heads flatten their dependecies. Therefore, no query with cycle handling
+                //   participating in the same cycle should ever call `maybe_changed_after` on any other query.
+                //   (we don't get here).
+                // * the query can't be reached from any other query without cycle handling because,
+                //   executing it would immediately panic because of the cycle.
+                // * The only other place where we can reach this code is from `fetch`, this is when
+                //   the outer cycle is being re-executed. Given that the cycle re-executes, this
+                //   query must always be considered changed.
+                //
+                // For queries with cycle handling, verify the flattened
+                // dependencies of the cycle head instead.
+                if old_memo.was_cycle_participant()
                     && C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic
                 {
                     return VerifyResult::changed();
@@ -417,6 +431,11 @@ fn maybe_changed_after_cold_cycle(
                 );
             })
         },
+        // We flatten the dependencies of queries with cycle handling that participate in a query.
+        // Verifying those queries should never result in a cycle because all function dependencies were removed.
+        // That means, if we hit this path, then some query introduced a new cycle that didn't exist
+        // in the previous revision. We have to consider this query changed so that we ultimately
+        // insert the fixpoint initial value in `fetch_cold_cycle`.
         CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
             crate::tracing::debug!(
                 "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning changed",

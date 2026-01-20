@@ -202,11 +202,7 @@ where
                 // The query used to be part of an outer cycle but
                 // it now is no-more. Finalize the cycle.
 
-                flatten_cycle_dependencies(
-                    zalsa,
-                    database_key_index,
-                    &mut completed_query.revisions,
-                );
+                flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
                 iteration_count = iteration_count.increment().unwrap_or_else(|| {
                     tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
@@ -250,7 +246,6 @@ where
                     new_value
                 };
 
-                // TODO, merge with flattened input_outputs if any
                 let completed_query = complete_cycle_participant(
                     active_query,
                     claim_guard,
@@ -634,7 +629,7 @@ fn complete_cycle_participant(
     let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
 
-    flatten_cycle_dependencies(zalsa, database_key_index, &mut completed_query.revisions);
+    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -672,7 +667,7 @@ fn try_complete_cycle_head(
     let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop();
-    flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
+    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -797,16 +792,15 @@ fn assert_no_new_cycle_heads(
 }
 
 thread_local! {
+    /// Pool the `seen` and `flattened` sets for reuse on the same thread.
+    ///
+    /// Benchmarks showed that repeatedly allocating and regrowing those sets is expensive.
     static FLATTEN_MAPS: std::cell::Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>> = const { std::cell::Cell::new(None) };
 }
 
 /// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
 /// or salsa structs (input, tracked, interned).
-fn flatten_cycle_dependencies(
-    zalsa: &Zalsa,
-    cycle_head: DatabaseKeyIndex,
-    head: &mut QueryRevisions,
-) {
+fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
     let (mut flattened, mut seen) = FLATTEN_MAPS.take().unwrap_or_default();
 
     debug_assert!(flattened.is_empty());
@@ -837,8 +831,6 @@ fn flatten_cycle_dependencies(
             }
         }
     }
-
-    tracing::info!("Flattened input and outputs of {cycle_head:?}: {flattened:?}");
 
     head.origin
         .set_edges(flattened.drain(..).collect())
