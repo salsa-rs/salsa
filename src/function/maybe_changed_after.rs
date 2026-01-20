@@ -1,7 +1,6 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
-use crate::database::RawDatabase;
 use crate::function::memo::{Memo, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
@@ -354,9 +353,6 @@ where
                     return VerifyResult::changed();
                 }
 
-                let verified_at = old_memo.verified_at.load();
-                let db: RawDatabase = db.into();
-
                 // If the old memo participate in a cycle, but the query doesn't have cycle handling,
                 // always return changed. The reasoning here is:
                 //
@@ -371,14 +367,16 @@ where
                 //
                 // For queries with cycle handling, verify the flattened
                 // dependencies of the cycle head instead.
-                if old_memo.was_cycle_participant()
-                    && C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic
+                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic
+                    && old_memo.was_cycle_participant()
                 {
                     return VerifyResult::changed();
                 }
 
+                let verified_at = old_memo.verified_at.load();
+
                 let result = deep_verify_edges(
-                    db,
+                    db.into(),
                     zalsa,
                     &old_memo.revisions,
                     verified_at,
