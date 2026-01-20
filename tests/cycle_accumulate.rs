@@ -1,5 +1,29 @@
 #![cfg(all(feature = "inventory", feature = "accumulator"))]
 
+//! Some historical tests related to accumulated values and fixpoint iteration.
+//!
+//! All these tests are currently expected to panic because accumulated values
+//! require preserving the query's dependency tree in full, but fixpoint iteration
+//! now flattens the cycle head dependencies, breaking accumulated values.
+//!
+//! We keep this tests around as they're a good starting point if we decide
+//! to support accumulated values in fixpoint queries.
+//!
+//! One test that should be added which is a case that was broken even before
+//! we migrated fixpoint iteration to flatten the cycle head dependencies is
+//! a case roughly like this:
+//!
+//! * `a` (outer most cycle head, calls `c` in every iteration)
+//! * `b` (inner cycle), calls `c` only in the first iteration
+//! * `c` calls `a` and `b` and creates an accumulated value in each iteration.
+//!
+//! The query `b` finalizes after the first iteration. The accumulated values of
+//! `b` should only include the accumulated values of `c` from the **first** iteration.
+//!
+//! Using today's dependency traversal, this would require expressing the iteration count
+//! in the dependency tree, so that the accumulator knows from which iteration
+//! to aggregate the accumulated values from.
+
 use std::collections::HashSet;
 
 mod common;
@@ -108,6 +132,7 @@ fn accumulate_with_dep() {
 }
 
 #[test]
+#[should_panic(expected = "doesn't support accumulated values")]
 fn accumulate_with_cycle() {
     let mut db = LoggerDatabase::default();
 
@@ -132,11 +157,18 @@ fn accumulate_with_cycle() {
             Diagnostic(
                 "file file_b: issue 2",
             ),
+            Diagnostic(
+                "file file_a: issue 1",
+            ),
+            Diagnostic(
+                "file file_a: issue 2",
+            ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
+#[should_panic(expected = "doesn't support accumulated values")]
 fn accumulate_with_cycle_second_revision() {
     let mut db = LoggerDatabase::default();
 
@@ -160,6 +192,12 @@ fn accumulate_with_cycle_second_revision() {
             ),
             Diagnostic(
                 "file file_b: issue 2",
+            ),
+            Diagnostic(
+                "file file_a: issue 1",
+            ),
+            Diagnostic(
+                "file file_a: issue 2",
             ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
@@ -186,11 +224,21 @@ fn accumulate_with_cycle_second_revision() {
             Diagnostic(
                 "file file_a: issue 3",
             ),
+            Diagnostic(
+                "file file_b: issue 1",
+            ),
+            Diagnostic(
+                "file file_b: issue 2",
+            ),
+            Diagnostic(
+                "file file_b: issue 3",
+            ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
+#[should_panic(expected = "doesn't support accumulated values")]
 fn accumulate_add_cycle() {
     let mut db = LoggerDatabase::default();
 
@@ -237,11 +285,18 @@ fn accumulate_add_cycle() {
             Diagnostic(
                 "file file_a: issue 2",
             ),
+            Diagnostic(
+                "file file_b: issue 1",
+            ),
+            Diagnostic(
+                "file file_b: issue 2",
+            ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
+#[should_panic(expected = "doesn't support accumulated values")]
 fn accumulate_remove_cycle() {
     let mut db = LoggerDatabase::default();
 
@@ -265,6 +320,12 @@ fn accumulate_remove_cycle() {
             ),
             Diagnostic(
                 "file file_b: issue 2",
+            ),
+            Diagnostic(
+                "file file_a: issue 1",
+            ),
+            Diagnostic(
+                "file file_a: issue 2",
             ),
         ]"#]]
     .assert_eq(&format!("{diagnostics:#?}"));

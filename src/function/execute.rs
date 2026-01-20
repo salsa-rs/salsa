@@ -806,6 +806,14 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
     debug_assert!(flattened.is_empty());
     debug_assert!(seen.is_empty());
 
+    #[cfg(feature = "accumulator")]
+    {
+        assert!(
+            head.accumulated_inputs.load().is_empty(),
+            "Fixpoint iteration doesn't support accumulated values because it doesn't preserve the original query dependency tree."
+        )
+    }
+
     // Don't insert `self` here. This is important to ensure that we copy over the
     // dependencies from this memo in the previous iteration.
     // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
