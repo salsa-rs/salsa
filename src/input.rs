@@ -304,10 +304,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        // However, `deep_verify_memo` calls `maybe_changed_after` for queries participating
-        // in a cycle and the first step is to check if the memo on which the cycle head is stored
-        // is unchanged. We never collect inputs, so we can always assume that the memo is unchanged (but its fields might not).
-        VerifyResult::unchanged()
+        panic!("nothing should ever depend on an input struct directly")
     }
 
     fn collect_minimum_serialized_edges(

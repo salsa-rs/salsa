@@ -972,28 +972,14 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        zalsa: &crate::zalsa::Zalsa,
+        _zalsa: &Zalsa,
         _db: crate::database::RawDatabase<'_>,
-        input: Id,
-        revision: Revision,
+        _input: Id,
+        _revision: Revision,
     ) -> VerifyResult {
         // Any change to a tracked struct results in a new ID generation, so there
         // are no direct dependencies on the struct, only on its tracked fields.
-        // However, we need to verify the tracked struct when resolving the cycle head in `deep_verify_memo`.
-        let data_raw = Self::data_raw(zalsa.table(), input);
-
-        let last_updated_at = unsafe { (*data_raw).updated_at.load() };
-
-        if let Some(last_updated_at) = last_updated_at {
-            if last_updated_at > revision {
-                VerifyResult::changed()
-            } else {
-                VerifyResult::unchanged()
-            }
-        } else {
-            // Collected
-            VerifyResult::changed()
-        }
+        panic!("nothing should ever depend on a tracked struct directly")
     }
 
     fn collect_minimum_serialized_edges(
