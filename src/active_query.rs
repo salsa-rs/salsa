@@ -83,13 +83,13 @@ impl ActiveQuery {
     ) {
         assert!(self.input_outputs.is_empty());
 
-        // Copy over outputs for `diff_outputs`, don't copy inputs because they're
-        // flattened
+        // Copy over outputs for `diff_outputs`, don't copy inputs because cycle heads
+        // flatten all input dependencies.
         self.input_outputs.extend(
             edges
                 .iter()
                 .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)))
-                .cloned(),
+                .copied(),
         );
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);

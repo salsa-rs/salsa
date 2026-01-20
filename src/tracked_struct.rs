@@ -473,7 +473,7 @@ impl DisambiguatorMap {
         self.map.clear()
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 }
