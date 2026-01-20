@@ -139,9 +139,6 @@ where
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let mut iteration_count = IterationCount::initial();
 
-        let mut flattened = FxIndexSet::default();
-        let mut seen = FxHashSet::default();
-
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
                 // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
@@ -211,8 +208,6 @@ where
                     zalsa,
                     database_key_index,
                     &mut completed_query.revisions,
-                    &mut flattened,
-                    &mut seen,
                 );
 
                 iteration_count = iteration_count.increment().unwrap_or_else(|| {
@@ -266,8 +261,6 @@ where
                     cycle_heads,
                     outer_cycle,
                     iteration_count,
-                    &mut flattened,
-                    &mut seen,
                 );
 
                 break (new_value, completed_query);
@@ -353,8 +346,6 @@ where
                 outer_cycle,
                 iteration_count,
                 value_converged,
-                &mut flattened,
-                &mut seen,
             ) {
                 Ok(completed_query) => {
                     break (new_value, completed_query);
@@ -636,8 +627,6 @@ fn complete_cycle_participant(
     cycle_heads: CycleHeads,
     outer_cycle: DatabaseKeyIndex,
     iteration_count: IterationCount,
-    flattened: &mut FxIndexSet<QueryEdge>,
-    seen: &mut FxHashSet<DatabaseKeyIndex>,
 ) -> CompletedQuery {
     // For as long as this query participates in any cycle, don't release its lock, instead
     // transfer it to the outermost cycle head. This prevents any other thread
@@ -649,13 +638,7 @@ fn complete_cycle_participant(
     let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
 
-    flatten_cycle_dependencies(
-        zalsa,
-        database_key_index,
-        &mut completed_query.revisions,
-        flattened,
-        seen,
-    );
+    flatten_cycle_dependencies(zalsa, database_key_index, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -688,14 +671,12 @@ fn try_complete_cycle_head(
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
     value_converged: bool,
-    flattened: &mut FxIndexSet<QueryEdge>,
-    seen: &mut FxHashSet<DatabaseKeyIndex>,
 ) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop();
-    flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions, flattened, seen);
+    flatten_cycle_dependencies(zalsa, me, &mut completed_query.revisions);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -819,15 +800,19 @@ fn assert_no_new_cycle_heads(
     }
 }
 
+thread_local! {
+    static FLATTEN_MAPS: std::cell::Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>> = const { std::cell::Cell::new(None) };
+}
+
 /// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
 /// or salsa structs (input, tracked, interned).
 fn flatten_cycle_dependencies(
     zalsa: &Zalsa,
     cycle_head: DatabaseKeyIndex,
     head: &mut QueryRevisions,
-    flattened: &mut FxIndexSet<QueryEdge>,
-    seen: &mut FxHashSet<DatabaseKeyIndex>,
 ) {
+    let (mut flattened, mut seen) = FLATTEN_MAPS.take().unwrap_or_default();
+
     debug_assert!(flattened.is_empty());
     debug_assert!(seen.is_empty());
 
@@ -844,8 +829,8 @@ fn flatten_cycle_dependencies(
                 ingredient.flatten_cycle_head_dependencies(
                     zalsa,
                     input.key_index(),
-                    flattened,
-                    seen,
+                    &mut flattened,
+                    &mut seen,
                 );
             }
 
@@ -864,4 +849,6 @@ fn flatten_cycle_dependencies(
         .expect("Executing query to always be derived or derived untracked.");
 
     seen.clear();
+
+    FLATTEN_MAPS.set(Some((flattened, seen)));
 }

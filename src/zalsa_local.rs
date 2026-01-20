@@ -1003,11 +1003,24 @@ impl QueryOrigin {
         match self.kind {
             QueryOriginKind::Assigned => Err(input_outputs),
             QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
-                let old_edges = self.take_edges();
-
                 // Exceeding `u32::MAX` query edges should never happen in real-world usage.
                 let length = u32::try_from(input_outputs.len())
                     .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
+
+                // SAFETY: `data.input_outputs` is initialized when the tag is `QueryOriginKind::Derived`
+                // or `QueryOriginKind::DerivedUntracked`.
+                let prev_input_outputs = unsafe { self.data.input_outputs };
+                let prev_length = self.metadata as usize;
+
+                // SAFETY: `input_outputs` and `self.metadata` form a valid slice when the tag is
+                // `QueryOriginKind::DerivedUntracked` or `QueryOriginKind::DerivedUntracked`, and
+                // we have `&mut self`.
+                let prev_input_outputs: Box<[QueryEdge]> = unsafe {
+                    Box::from_raw(ptr::slice_from_raw_parts_mut(
+                        prev_input_outputs.as_ptr(),
+                        prev_length,
+                    ))
+                };
 
                 // SAFETY: `Box::into_raw` returns a non-null pointer.
                 let input_outputs = unsafe {
@@ -1017,32 +1030,8 @@ impl QueryOrigin {
                 self.data = QueryOriginData { input_outputs };
                 self.metadata = length;
 
-                Ok(old_edges)
+                Ok(prev_input_outputs)
             }
-        }
-    }
-
-    fn take_edges(&mut self) -> Box<[QueryEdge]> {
-        match self.kind {
-            QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
-                // SAFETY: `data.input_outputs` is initialized when the tag is `QueryOriginKind::Derived`
-                // or `QueryOriginKind::DerivedUntracked`.
-                let input_outputs = unsafe { self.data.input_outputs };
-                let length = self.metadata as usize;
-
-                // SAFETY: `input_outputs` and `self.metadata` form a valid slice when the tag is
-                // `QueryOriginKind::DerivedUntracked` or `QueryOriginKind::DerivedUntracked`, and
-                // we have `&mut self`.
-                unsafe {
-                    Box::from_raw(ptr::slice_from_raw_parts_mut(
-                        input_outputs.as_ptr(),
-                        length,
-                    ))
-                }
-            }
-
-            // The data stored for this variant is `Copy`.
-            QueryOriginKind::Assigned => Box::default(),
         }
     }
 
@@ -1136,7 +1125,27 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
 
 impl Drop for QueryOrigin {
     fn drop(&mut self) {
-        drop(self.take_edges());
+        match self.kind {
+            QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
+                // SAFETY: `data.input_outputs` is initialized when the tag is `QueryOriginKind::Derived`
+                // or `QueryOriginKind::DerivedUntracked`.
+                let input_outputs = unsafe { self.data.input_outputs };
+                let length = self.metadata as usize;
+
+                // SAFETY: `input_outputs` and `self.metadata` form a valid slice when the tag is
+                // `QueryOriginKind::DerivedUntracked` or `QueryOriginKind::DerivedUntracked`, and
+                // we have `&mut self`.
+                let _input_outputs: Box<[QueryEdge]> = unsafe {
+                    Box::from_raw(ptr::slice_from_raw_parts_mut(
+                        input_outputs.as_ptr(),
+                        length,
+                    ))
+                };
+            }
+
+            // The data stored for this variant is `Copy`.
+            QueryOriginKind::Assigned => {}
+        }
     }
 }
 
