@@ -139,8 +139,11 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
+    /// Returns the cycle heads from the last iteration.
+    ///
+    /// Unlike `cycle_heads`, this function also returns the cycle heads if this memo has been finalized.
     #[inline(always)]
-    pub(super) fn all_cycle_heads(&self) -> &CycleHeads {
+    pub(super) fn last_iteration_cycle_heads(&self) -> &CycleHeads {
         self.revisions.cycle_heads()
     }
 

@@ -202,8 +202,6 @@ where
                 // The query used to be part of an outer cycle but
                 // it now is no-more. Finalize the cycle.
 
-                claim_guard.set_release_mode(ReleaseMode::SelfOnly);
-
                 flatten_cycle_dependencies(
                     zalsa,
                     database_key_index,
@@ -218,8 +216,6 @@ where
                 completed_query
                     .revisions
                     .update_cycle_participant_iteration_count(iteration_count);
-
-                // FIXME: Change to Default?
 
                 break (new_value, completed_query);
             }

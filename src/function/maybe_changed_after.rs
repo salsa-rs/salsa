@@ -166,7 +166,6 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        // TODO: Is this still worth it?
         let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
         if can_shallow_update.yes()
             && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, old_memo)
@@ -358,7 +357,7 @@ where
                 let verified_at = old_memo.verified_at.load();
                 let db: RawDatabase = db.into();
 
-                if !old_memo.all_cycle_heads().is_empty()
+                if !old_memo.last_iteration_cycle_heads().is_empty()
                     && C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic
                 {
                     return VerifyResult::changed();

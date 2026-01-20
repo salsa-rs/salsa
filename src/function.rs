@@ -393,7 +393,7 @@ where
             ProvisionalStatus::Provisional {
                 iteration,
                 verified_at: memo.verified_at.load(),
-                cycle_heads: memo.all_cycle_heads(),
+                cycle_heads: memo.cycle_heads(),
             }
         })
     }
@@ -441,6 +441,7 @@ where
         if !seen.insert(database_key_index) {
             return;
         }
+
         let inputs = memo.revisions.origin.as_ref().inputs();
 
         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic {
