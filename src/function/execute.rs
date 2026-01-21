@@ -172,7 +172,6 @@ where
         // This is different from `opt_old_memo` which might be from a different revision.
         let mut last_provisional_memo_opt: Option<&Memo<'db, C>> = None;
 
-        // TODO: Can we seed those somehow?
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let mut iteration_count = IterationCount::initial();
 
