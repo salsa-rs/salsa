@@ -417,6 +417,10 @@ where
 
     /// Fields of this tracked struct. They can change across revisions,
     /// but they do not change within a particular revision.
+    ///
+    /// TODO: Consider whether we need a more explicit aliasing barrier or whether
+    /// this should be restructured (e.g., with a nested struct for `fields` + `memos`)
+    /// to make the aliasing guarantees more obvious. See PR #741 for prior discussion.
     fields: C::Fields<'static>,
 
     /// Memo table storing the results of query functions etc.
