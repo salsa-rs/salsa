@@ -194,24 +194,18 @@ where
             if cycle_heads.is_empty() {
                 let mut completed_query = active_query.pop();
 
-                // We can skip flattening in the common case where we didn't encounter a cycle.
-                if iteration_count.is_initial() {
-                    break (new_value, completed_query);
+                if !iteration_count.is_initial() {
+                    iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                        tracing::warn!(
+                            "{database_key_index:?}: execute: too many cycle iterations"
+                        );
+                        panic!("{database_key_index:?}: execute: too many cycle iterations")
+                    });
+
+                    completed_query
+                        .revisions
+                        .update_cycle_participant_iteration_count(iteration_count);
                 }
-
-                // The query used to be part of an outer cycle but
-                // it now is no-more. Finalize the cycle.
-
-                flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
-
-                iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                    tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
-                    panic!("{database_key_index:?}: execute: too many cycle iterations")
-                });
-
-                completed_query
-                    .revisions
-                    .update_cycle_participant_iteration_count(iteration_count);
 
                 break (new_value, completed_query);
             }
