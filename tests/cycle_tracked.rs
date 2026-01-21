@@ -302,3 +302,36 @@ fn test_cycle_with_fixpoint_structs() {
             "DidDiscard { key: IterationNode(Id(402)) }",
         ]"#]]);
 }
+
+#[salsa::tracked(debug)]
+struct NameWithOffset<'db> {
+    name: String,
+
+    #[tracked]
+    offset: u32,
+}
+
+#[test]
+fn cycle_tracked_struct_with_tracked_field() {
+    #[salsa::tracked(cycle_initial=|_,_| 0)]
+    fn query_a(db: &dyn salsa::Database) -> u32 {
+        let offset = query_b(db);
+
+        let tracked = NameWithOffset::new(db, "test".to_string(), offset);
+
+        tracked.offset(db)
+    }
+
+    #[salsa::tracked]
+    fn query_b(db: &dyn salsa::Database) -> u32 {
+        let base_offset = query_a(db);
+
+        (base_offset + 1).min(5)
+    }
+
+    let db = salsa::DatabaseImpl::default();
+
+    let result = query_a(&db);
+
+    assert_eq!(result, 5);
+}

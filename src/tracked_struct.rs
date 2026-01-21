@@ -461,11 +461,20 @@ impl DisambiguatorMap {
         result
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn seed<'a>(&mut self, identities: impl Iterator<Item = &'a Identity>) {
+        for identity in identities {
+            self.disambiguate(IdentityHash {
+                ingredient_index: identity.ingredient_index,
+                hash: identity.hash,
+            });
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
         self.map.clear()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 }

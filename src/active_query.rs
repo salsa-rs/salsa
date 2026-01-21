@@ -89,6 +89,8 @@ impl ActiveQuery {
         // Mark all tracked structs from the previous iteration as active.
         self.tracked_struct_ids
             .mark_all_active(active_tracked_ids.iter().copied());
+        self.disambiguator_map
+            .seed(active_tracked_ids.iter().map(|(id, _)| id));
     }
 
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
