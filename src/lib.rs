@@ -166,8 +166,6 @@ pub mod plumbing {
 
     pub mod tracked_struct {
         pub use crate::tracked_struct::tracked_field::FieldIngredientImpl;
-        pub use crate::tracked_struct::{
-            Configuration, IngredientImpl, JarImpl, Value, ValueWithMetadata,
-        };
+        pub use crate::tracked_struct::{Configuration, IngredientImpl, JarImpl, Value};
     }
 }
