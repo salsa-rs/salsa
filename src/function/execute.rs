@@ -808,7 +808,7 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
         )
     }
 
-    // Don't insert `self` here. This is important to ensure that we copy over the
+    // Don't insert the key of `head` here. This is important to ensure that we copy over the
     // dependencies from this memo in the previous iteration.
     // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
     let edges = head.origin.as_ref().edges();

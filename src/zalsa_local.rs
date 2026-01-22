@@ -994,7 +994,7 @@ impl QueryOrigin {
         origin
     }
 
-    /// Sets the `input_outputs` of this query orivin if it's derived or derived untracked.
+    /// Sets the `input_outputs` of this query's origin if it's derived or derived untracked.
     /// Returns `Err` if the query origin isn't derived.
     pub fn set_edges(
         &mut self,

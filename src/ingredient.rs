@@ -185,10 +185,10 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     /// Flattens the dependencies of a query with cycle handling that participates in a cycle.
     ///
     /// This query recursively walks the dependency graph of `id` and flattens input dependencies
-    /// on provisial queries into `flattened_input_outputs`. Outputs aren't flattened because
+    /// on provisional queries into `flattened_input_outputs`. Outputs aren't flattened because
     /// outputs are owned by the creating query and not the cycle head.
     ///
-    /// Flattening the dependencies is necessary because the memo's depdency graph only captures
+    /// Flattening the dependencies is necessary because the memo's dependency graph only captures
     /// the dependencies from the last iteration. It also ensures that the dependency graph doesn't
     /// contain any cycles.
     ///
