@@ -112,7 +112,7 @@ where
         {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
-                blocked_on.block_on(zalsa);
+                let _ = blocked_on.block_on(zalsa);
                 return None;
             }
             ClaimResult::Cycle { .. } => {
