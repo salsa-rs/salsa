@@ -3,6 +3,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 use thin_vec::ThinVec;
@@ -39,6 +41,45 @@ pub struct ZalsaLocal {
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
     most_recent_pages: UnsafeCell<FxHashMap<IngredientIndex, PageIndex>>,
+
+    cancelled: CancellationToken,
+}
+
+/// A cancellation token that can be used to cancel a query computation for a specific local `Database`.
+#[derive(Default, Clone, Debug)]
+pub struct CancellationToken(Arc<AtomicU8>);
+
+impl CancellationToken {
+    const CANCELLED_MASK: u8 = 0b01;
+    const DISABLED_MASK: u8 = 0b10;
+
+    /// Inform the database to cancel the current query computation.
+    pub fn cancel(&self) {
+        self.0.fetch_or(Self::CANCELLED_MASK, Ordering::Relaxed);
+    }
+
+    /// Check if the query computation has been requested to be cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed) & Self::CANCELLED_MASK != 0
+    }
+
+    #[inline]
+    fn set_cancellation_disabled(&self, disabled: bool) -> bool {
+        let previous_disabled_bit = if disabled {
+            self.0.fetch_or(Self::DISABLED_MASK, Ordering::Relaxed)
+        } else {
+            self.0.fetch_and(!Self::DISABLED_MASK, Ordering::Relaxed)
+        };
+        previous_disabled_bit & Self::DISABLED_MASK != 0
+    }
+
+    fn should_trigger_local_cancellation(&self) -> bool {
+        self.0.load(Ordering::Relaxed) == Self::CANCELLED_MASK
+    }
+
+    fn reset(&self) {
+        self.0.store(0, Ordering::Relaxed);
+    }
 }
 
 impl ZalsaLocal {
@@ -46,6 +87,7 @@ impl ZalsaLocal {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: UnsafeCell::new(FxHashMap::default()),
+            cancelled: CancellationToken::default(),
         }
     }
 
@@ -386,11 +428,34 @@ impl ZalsaLocal {
         }
     }
 
+    #[inline]
+    pub(crate) fn cancellation_token(&self) -> CancellationToken {
+        self.cancelled.clone()
+    }
+
+    #[inline]
+    pub(crate) fn uncancel(&self) {
+        self.cancelled.reset();
+    }
+
+    #[inline]
+    pub fn should_trigger_local_cancellation(&self) -> bool {
+        self.cancelled.should_trigger_local_cancellation()
+    }
+
     #[cold]
-    pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
-        // Why is this reporting an untracked read? We do not store the query revisions on unwind do we?
-        self.report_untracked_read(current_revision);
+    pub(crate) fn unwind_pending_write(&self) {
         Cancelled::PendingWrite.throw();
+    }
+
+    #[cold]
+    pub(crate) fn unwind_cancelled(&self) {
+        Cancelled::Local.throw();
+    }
+
+    #[inline]
+    pub(crate) fn set_cancellation_disabled(&self, was_disabled: bool) -> bool {
+        self.cancelled.set_cancellation_disabled(was_disabled)
     }
 }
 

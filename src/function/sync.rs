@@ -2,6 +2,7 @@ use rustc_hash::FxHashMap;
 use std::collections::hash_map::OccupiedEntry;
 
 use crate::key::DatabaseKeyIndex;
+use crate::plumbing::ZalsaLocal;
 use crate::runtime::{
     BlockOnTransferredOwner, BlockResult, BlockTransferredResult, Running, WaitResult,
 };
@@ -21,6 +22,8 @@ pub(crate) struct SyncTable {
 }
 
 pub(crate) enum ClaimResult<'a, Guard = ClaimGuard<'a>> {
+    /// Successfully claimed the query.
+    Claimed(Guard),
     /// Can't claim the query because it is running on an other thread.
     Running(Running<'a>),
     /// Claiming the query results in a cycle.
@@ -30,8 +33,6 @@ pub(crate) enum ClaimResult<'a, Guard = ClaimGuard<'a>> {
         /// [`SyncTable::try_claim`] with [`Reentrant::Allow`].
         inner: bool,
     },
-    /// Successfully claimed the query.
-    Claimed(Guard),
 }
 
 pub(crate) struct SyncState {
@@ -68,6 +69,7 @@ impl SyncTable {
     pub(crate) fn try_claim<'me>(
         &'me self,
         zalsa: &'me Zalsa,
+        zalsa_local: &'me ZalsaLocal,
         key_index: Id,
         reentrant: Reentrancy,
     ) -> ClaimResult<'me> {
@@ -77,7 +79,12 @@ impl SyncTable {
                 let id = match occupied_entry.get().id {
                     SyncOwner::Thread(id) => id,
                     SyncOwner::Transferred => {
-                        return match self.try_claim_transferred(zalsa, occupied_entry, reentrant) {
+                        return match self.try_claim_transferred(
+                            zalsa,
+                            zalsa_local,
+                            occupied_entry,
+                            reentrant,
+                        ) {
                             Ok(claimed) => claimed,
                             Err(other_thread) => match other_thread.block(write) {
                                 BlockResult::Cycle => ClaimResult::Cycle { inner: false },
@@ -115,6 +122,7 @@ impl SyncTable {
                 ClaimResult::Claimed(ClaimGuard {
                     key_index,
                     zalsa,
+                    zalsa_local,
                     sync_table: self,
                     mode: ReleaseMode::Default,
                 })
@@ -172,6 +180,7 @@ impl SyncTable {
     fn try_claim_transferred<'me>(
         &'me self,
         zalsa: &'me Zalsa,
+        zalsa_local: &'me ZalsaLocal,
         mut entry: OccupiedEntry<Id, SyncState>,
         reentrant: Reentrancy,
     ) -> Result<ClaimResult<'me>, Box<BlockOnTransferredOwner<'me>>> {
@@ -195,6 +204,7 @@ impl SyncTable {
                 Ok(ClaimResult::Claimed(ClaimGuard {
                     key_index,
                     zalsa,
+                    zalsa_local,
                     sync_table: self,
                     mode: ReleaseMode::SelfOnly,
                 }))
@@ -214,6 +224,7 @@ impl SyncTable {
                 Ok(ClaimResult::Claimed(ClaimGuard {
                     key_index,
                     zalsa,
+                    zalsa_local,
                     sync_table: self,
                     mode: ReleaseMode::Default,
                 }))
@@ -277,7 +288,7 @@ pub enum SyncOwner {
 
     /// The query's lock ownership has been transferred to another query.
     /// E.g. if `a` transfers its ownership to `b`, then only the thread in the critical path
-    /// to complete b` can claim `a` (in most instances, only the thread owning `b` can claim `a`).
+    /// to complete `b` can claim `a` (in most instances, only the thread owning `b` can claim `a`).
     ///
     /// The thread owning `a` is stored in the `DependencyGraph`.
     ///
@@ -295,11 +306,16 @@ pub(crate) struct ClaimGuard<'me> {
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,
     mode: ReleaseMode,
+    zalsa_local: &'me ZalsaLocal,
 }
 
 impl<'me> ClaimGuard<'me> {
     pub(crate) const fn zalsa(&self) -> &'me Zalsa {
         self.zalsa
+    }
+
+    pub(crate) fn zalsa_local(&self) -> &'me ZalsaLocal {
+        self.zalsa_local
     }
 
     pub(crate) const fn database_key_index(&self) -> DatabaseKeyIndex {
@@ -315,12 +331,17 @@ impl<'me> ClaimGuard<'me> {
     fn release_panicking(&self) {
         let mut syncs = self.sync_table.syncs.lock();
         let state = syncs.remove(&self.key_index).expect("key claimed twice?");
+        let result = if self.zalsa_local.should_trigger_local_cancellation() {
+            WaitResult::Cancelled
+        } else {
+            WaitResult::Panicked
+        };
         tracing::debug!(
-            "Release claim on {:?} due to panic",
-            self.database_key_index()
+            "Release claim on {:?} due to {:?}",
+            self.database_key_index(),
+            result
         );
-
-        self.release(state, WaitResult::Panicked);
+        self.release(state, result);
     }
 
     #[inline(always)]

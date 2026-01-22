@@ -106,10 +106,15 @@ where
     ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let claim_guard = match self.sync_table.try_claim(zalsa, id, Reentrancy::Allow) {
+        let claim_guard = match self
+            .sync_table
+            .try_claim(zalsa, zalsa_local, id, Reentrancy::Allow)
+        {
             ClaimResult::Claimed(guard) => guard,
             ClaimResult::Running(blocked_on) => {
-                blocked_on.block_on(zalsa);
+                if !blocked_on.block_on(zalsa) {
+                    return None;
+                }
 
                 if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                     let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
@@ -177,7 +182,7 @@ where
             }
         }
 
-        self.execute(db, claim_guard, zalsa_local, opt_old_memo)
+        self.execute(db, claim_guard, opt_old_memo)
     }
 
     #[cold]

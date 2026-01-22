@@ -3,6 +3,7 @@ use std::ptr::NonNull;
 
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, ZalsaDatabase};
+use crate::zalsa_local::CancellationToken;
 use crate::{Durability, Revision};
 
 #[derive(Copy, Clone)]
@@ -59,12 +60,17 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
         zalsa_mut.runtime_mut().report_tracked_write(durability);
     }
 
-    /// This method triggers cancellation.
+    /// This method cancels all outstanding computations.
     /// If you invoke it while a snapshot exists, it
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     fn trigger_cancellation(&mut self) {
         let _ = self.zalsa_mut();
+    }
+
+    /// Retrieves a [`CancellationToken`] for the current database handle.
+    fn cancellation_token(&self) -> CancellationToken {
+        self.zalsa_local().cancellation_token()
     }
 
     /// Reports that the query depends on some state unknown to salsa.

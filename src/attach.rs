@@ -40,6 +40,9 @@ impl Attached {
         Db: ?Sized + Database,
     {
         struct DbGuard<'s> {
+            /// The database that *we* attached on scope entry.
+            ///
+            /// `None` if one was already attached by a parent scope.
             state: Option<&'s Attached>,
         }
 
@@ -47,6 +50,7 @@ impl Attached {
             #[inline]
             fn new(attached: &'s Attached, db: &dyn Database) -> Self {
                 match attached.database.get() {
+                    // A database is already attached, make sure it's the same as the new one.
                     Some(current_db) => {
                         let new_db = NonNull::from(db);
                         if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
@@ -54,8 +58,8 @@ impl Attached {
                         }
                         Self { state: None }
                     }
+                    // No database is attached, attach the new one.
                     None => {
-                        // Otherwise, set the database.
                         attached.database.set(Some(NonNull::from(db)));
                         Self {
                             state: Some(attached),
@@ -70,7 +74,10 @@ impl Attached {
             fn drop(&mut self) {
                 // Reset database to null if we did anything in `DbGuard::new`.
                 if let Some(attached) = self.state {
-                    attached.database.set(None);
+                    if let Some(prev) = attached.database.replace(None) {
+                        // SAFETY: `prev` is a valid pointer to a database.
+                        unsafe { prev.as_ref().zalsa_local().uncancel() };
+                    }
                 }
             }
         }
@@ -85,17 +92,45 @@ impl Attached {
         Db: ?Sized + Database,
     {
         struct DbGuard<'s> {
-            state: &'s Attached,
+            /// The database that *we* attached on scope entry.
+            ///
+            /// `None` if one was already attached by a parent scope.
+            state: Option<&'s Attached>,
+            /// The previously attached database that we replaced, if any.
+            ///
+            /// We need to make sure to rollback and activate it again when we exit the scope.
             prev: Option<NonNull<dyn Database>>,
         }
 
         impl<'s> DbGuard<'s> {
             #[inline]
             fn new(attached: &'s Attached, db: &dyn Database) -> Self {
-                let prev = attached.database.replace(Some(NonNull::from(db)));
-                Self {
-                    state: attached,
-                    prev,
+                let db = NonNull::from(db);
+                match attached.database.replace(Some(db)) {
+                    // A database was already attached by a parent scope.
+                    Some(prev) => {
+                        if std::ptr::eq(db.as_ptr(), prev.as_ptr()) {
+                            // and it was the same as ours, so we did not change anything.
+                            Self {
+                                state: None,
+                                prev: None,
+                            }
+                        } else {
+                            // and it was the a different one from ours, record the state changes.
+                            Self {
+                                state: Some(attached),
+                                prev: Some(prev),
+                            }
+                        }
+                    }
+                    // No database is attached, attach the new one.
+                    None => {
+                        attached.database.set(Some(db));
+                        Self {
+                            state: Some(attached),
+                            prev: None,
+                        }
+                    }
                 }
             }
         }
@@ -103,7 +138,13 @@ impl Attached {
         impl Drop for DbGuard<'_> {
             #[inline]
             fn drop(&mut self) {
-                self.state.database.set(self.prev);
+                // Reset database to null if we did anything in `DbGuard::new`.
+                if let Some(attached) = self.state {
+                    if let Some(prev) = attached.database.replace(self.prev) {
+                        // SAFETY: `prev` is a valid pointer to a database.
+                        unsafe { prev.as_ref().zalsa_local().uncancel() };
+                    }
+                }
             }
         }
 
