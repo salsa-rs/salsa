@@ -142,17 +142,17 @@ where
             {
                 ClaimResult::Claimed(guard) => guard,
                 ClaimResult::Running(blocked_on) => {
-                    _ =blocked_on.block_on(zalsa);
-                return None;
-            }
-            ClaimResult::Cycle { .. } => {
-                return Some(maybe_changed_after_cold_cycle(
-                    zalsa_local,
-                    database_key_index,
-                    C::CYCLE_STRATEGY,
-                ))
-            }
-        };
+                    let _ = blocked_on.block_on(zalsa);
+                    return None;
+                }
+                ClaimResult::Cycle { .. } => {
+                    return Some(maybe_changed_after_cold_cycle(
+                        zalsa_local,
+                        database_key_index,
+                        C::CYCLE_STRATEGY,
+                    ))
+                }
+            };
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
         else {

@@ -124,7 +124,7 @@ jobs:
 
   benchmarks:
     # https://github.com/CodSpeedHQ/action/issues/126
-    if: github.event_name != 'merge_group'
+    if: github.repository == 'salsa-rs/salsa' &&github.event_name != 'merge_group'
     name: Benchmarks
     runs-on: ubuntu-latest
     steps:
