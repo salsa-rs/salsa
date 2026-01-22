@@ -521,18 +521,12 @@ impl<'s> SalsaField<'s> {
     fn options(&self) -> TokenStream {
         let returns = &self.returns;
 
-        let backdate_ident = if self.has_no_eq_attr {
-            syn::Ident::new("no_backdate", Span::call_site())
-        } else {
-            syn::Ident::new("backdate", Span::call_site())
-        };
-
         let default_ident = if self.has_default_attr {
             syn::Ident::new("default", Span::call_site())
         } else {
             syn::Ident::new("required", Span::call_site())
         };
 
-        quote!((#returns, #backdate_ident, #default_ident))
+        quote!((#returns, #default_ident))
     }
 }

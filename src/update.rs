@@ -8,9 +8,7 @@ use std::path::PathBuf;
 #[cfg(feature = "rayon")]
 use rayon::iter::Either;
 
-use crate::revision::AtomicRevision;
 use crate::sync::Arc;
-use crate::Revision;
 
 /// This is used by the macro generated code.
 /// If possible, uses `Update` trait, but else requires `'static`.
@@ -101,17 +99,16 @@ where
     }
 }
 
-/// Helper for generated code. Updates `*old_pointer` with `new_value`
-/// and updates `*old_revision` with `new_revision.` Used for fields
-/// tagged with `#[no_eq]`
-pub fn always_update<T>(
-    old_revision: &AtomicRevision,
-    new_revision: Revision,
-    old_pointer: &mut T,
-    new_value: T,
-) {
-    old_revision.store(new_revision);
-    *old_pointer = new_value;
+/// Helper for generated code. Updates `*old_pointer` with `new_value`.
+/// Used for fields tagged with `#[no_eq]`
+///
+/// # Safety
+///
+/// See `Update::maybe_update`
+pub unsafe fn always_update<T>(old_pointer: *mut T, new_value: T) -> bool {
+    unsafe { *old_pointer = new_value };
+
+    true
 }
 
 /// # Safety

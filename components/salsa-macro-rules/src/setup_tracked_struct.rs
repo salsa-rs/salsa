@@ -58,24 +58,17 @@ macro_rules! setup_tracked_struct {
 
         // A set of "field options" for each tracked field.
         //
-        // Each field option is a tuple `(return_mode, maybe_backdate)` where:
+        // Each field option is a tuple `(return_mode, maybe_default)` where:
         //
         // * `return_mode` is an identifier as specified in `salsa_macros::options::Option::returns`
-        // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
+        // * `maybe_default` is either the identifier `default` or `required`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
         // (see e.g. @return_mode below).
         tracked_options: [$($tracked_option:tt),*],
 
         // A set of "field options" for each untracked field.
-        //
-        // Each field option is a tuple `(return_mode, maybe_backdate)` where:
-        //
-        // * `return_mode` is an identifier as specified in `salsa_macros::options::Option::returns`
-        // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
-        //
-        // These are used to drive conditional logic for each field via recursive macro invocation
-        // (see e.g. @return_mode below).
+        // (see docs for `tracked_options`).
         untracked_options: [$($untracked_option:tt),*],
 
         // Attrs for each field.
@@ -177,15 +170,9 @@ macro_rules! setup_tracked_struct {
                     use $zalsa::UpdateFallback as _;
                     unsafe {
                         $(
-                            $crate::maybe_backdate!(
-                                $tracked_option,
-                                $tracked_maybe_update,
-                                (*old_fields).$absolute_tracked_index,
-                                new_fields.$absolute_tracked_index,
-                                revisions[$relative_tracked_index],
-                                current_revision,
-                                $zalsa,
-                            );
+                            if $tracked_maybe_update(std::ptr::addr_of_mut!((*old_fields).$absolute_tracked_index), new_fields.$absolute_tracked_index) {
+                                revisions[$relative_tracked_index].store(current_revision);
+                            }
                         )*;
 
                         // If any untracked field has changed, return `true`, indicating that the tracked struct
