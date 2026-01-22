@@ -12,6 +12,7 @@ on:
 jobs:
   book:
     name: Book
+    if: github.repository == 'salsa-rs/salsa'
     runs-on: ubuntu-latest
     env:
       MDBOOK_VERSION: "0.4.40"
