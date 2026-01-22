@@ -4,7 +4,7 @@
 #[macro_export]
 macro_rules! return_mode_expression {
     (
-        (copy, $maybe_backdate:ident, $maybe_default:ident),
+        (copy, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -12,7 +12,7 @@ macro_rules! return_mode_expression {
     };
 
     (
-        (clone, $maybe_backdate:ident, $maybe_default:ident),
+        (clone, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -20,7 +20,7 @@ macro_rules! return_mode_expression {
     };
 
     (
-        (ref, $maybe_backdate:ident, $maybe_default:ident),
+        (ref, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -28,7 +28,7 @@ macro_rules! return_mode_expression {
     };
 
     (
-        (deref, $maybe_backdate:ident, $maybe_default:ident),
+        (deref, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -36,7 +36,7 @@ macro_rules! return_mode_expression {
     };
 
     (
-        (as_ref, $maybe_backdate:ident, $maybe_default:ident),
+        (as_ref, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -44,7 +44,7 @@ macro_rules! return_mode_expression {
     };
 
     (
-        (as_deref, $maybe_backdate:ident, $maybe_default:ident),
+        (as_deref, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -55,7 +55,7 @@ macro_rules! return_mode_expression {
 #[macro_export]
 macro_rules! return_mode_ty {
     (
-        (copy, $maybe_backdate:ident, $maybe_default:ident),
+        (copy, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
@@ -63,7 +63,7 @@ macro_rules! return_mode_ty {
     };
 
     (
-        (clone, $maybe_backdate:ident, $maybe_default:ident),
+        (clone, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
@@ -71,7 +71,7 @@ macro_rules! return_mode_ty {
     };
 
     (
-        (ref, $maybe_backdate:ident, $maybe_default:ident),
+        (ref, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
@@ -79,7 +79,7 @@ macro_rules! return_mode_ty {
     };
 
     (
-        (deref, $maybe_backdate:ident, $maybe_default:ident),
+        (deref, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
@@ -87,7 +87,7 @@ macro_rules! return_mode_ty {
     };
 
     (
-        (as_ref, $maybe_backdate:ident, $maybe_default:ident),
+        (as_ref, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
@@ -95,7 +95,7 @@ macro_rules! return_mode_ty {
     };
 
     (
-        (as_deref, $maybe_backdate:ident, $maybe_default:ident),
+        (as_deref, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
