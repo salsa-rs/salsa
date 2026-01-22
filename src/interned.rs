@@ -12,7 +12,7 @@ use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, Unsaf
 use rustc_hash::FxBuildHasher;
 
 use crate::durability::Durability;
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
@@ -784,7 +784,8 @@ where
                 let last_changed_revision = zalsa.last_changed_revision(value_shared.durability);
                 ({ value_shared.last_interned_at }) >= last_changed_revision
             },
-            "Data was not interned in the latest revision for its durability."
+            "Data for `{database_key:?}` was not interned in the latest revision for its durability.",
+            database_key = self.database_key_index(id),
         );
 
         // SAFETY: Interned values are only exposed if they have been validated in the
@@ -894,7 +895,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();
@@ -946,6 +946,16 @@ where
         }
 
         // Otherwise, the dependency is covered by the base inputs.
+    }
+
+    fn flatten_cycle_head_dependencies(
+        &self,
+        _zalsa: &Zalsa,
+        id: Id,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
     }
 
     fn debug_name(&self) -> &'static str {

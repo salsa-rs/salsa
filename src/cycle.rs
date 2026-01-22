@@ -173,7 +173,7 @@ impl AtomicIterationCount {
         self.0.store(value.0, Ordering::Release);
     }
 
-    pub(crate) fn store_mut(&mut self, value: IterationCount) {
+    pub(crate) fn set(&mut self, value: IterationCount) {
         *self.0.get_mut() = value.0;
     }
 }
@@ -284,7 +284,7 @@ impl CycleHeads {
             .iter_mut()
             .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
         {
-            cycle_head.iteration_count.store_mut(new_iteration_count);
+            cycle_head.iteration_count.set(new_iteration_count);
         }
     }
 
@@ -329,7 +329,7 @@ impl CycleHeads {
 
             if *removed {
                 *removed = false;
-                existing.iteration_count.store_mut(iteration_count);
+                existing.iteration_count.set(iteration_count);
 
                 true
             } else {
@@ -511,7 +511,7 @@ impl<'db> ProvisionalStatus<'db> {
     pub(crate) fn cycle_heads(&self) -> &'db CycleHeads {
         match self {
             ProvisionalStatus::Provisional { cycle_heads, .. } => cycle_heads,
-            _ => empty_cycle_heads(),
+            ProvisionalStatus::Final { .. } => empty_cycle_heads(),
         }
     }
 

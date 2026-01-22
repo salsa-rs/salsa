@@ -7,7 +7,7 @@ use std::panic::UnwindSafe;
 
 use accumulated::{Accumulated, AnyAccumulated};
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::ZalsaLocal;
@@ -15,7 +15,7 @@ use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
-use crate::{Database, Id, Revision};
+use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 mod accumulated;
 pub(crate) mod accumulated_map;
@@ -107,7 +107,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
     }
@@ -136,6 +135,16 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes> {
         unreachable!("accumulator does not allocate pages")
+    }
+
+    fn flatten_cycle_head_dependencies(
+        &self,
+        _zalsa: &Zalsa,
+        _id: Id,
+        _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        panic!("nothing should ever depend on an accumulator directly")
     }
 }
 

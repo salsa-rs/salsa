@@ -778,6 +778,23 @@ impl QueryRevisions {
             .update_iteration_count(database_key_index, iteration_count);
     }
 
+    fn get_or_insert_extra(&mut self) -> &mut QueryRevisionsExtraInner {
+        self.extra.0.get_or_insert_with(|| {
+            Box::new(QueryRevisionsExtraInner {
+                #[cfg(feature = "accumulator")]
+                accumulated: AccumulatedMap::default(),
+                tracked_struct_ids: ThinVec::default(),
+                cycle_heads: empty_cycle_heads().clone(),
+                iteration: IterationCount::default().into(),
+                cycle_converged: false,
+            })
+        })
+    }
+
+    fn extra(&self) -> Option<&QueryRevisionsExtraInner> {
+        self.extra.0.as_deref()
+    }
+
     /// Updates the iteration count of the memo without updating the iteration in `cycle_heads`.
     ///
     /// Don't call this method on a cycle head, as it results in diverging iteration counts
@@ -786,20 +803,8 @@ impl QueryRevisions {
         &mut self,
         iteration_count: IterationCount,
     ) {
-        match &mut self.extra.0 {
-            None => {
-                self.extra = QueryRevisionsExtra::new(
-                    #[cfg(feature = "accumulator")]
-                    AccumulatedMap::default(),
-                    ThinVec::default(),
-                    empty_cycle_heads().clone(),
-                    iteration_count,
-                );
-            }
-            Some(extra) => {
-                extra.iteration.store_mut(iteration_count);
-            }
-        }
+        let extra = self.get_or_insert_extra();
+        extra.iteration.set(iteration_count);
     }
 
     /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
@@ -808,31 +813,16 @@ impl QueryRevisions {
         cycle_head_index: DatabaseKeyIndex,
         iteration_count: IterationCount,
     ) {
-        match &mut self.extra.0 {
-            None => {
-                self.extra = QueryRevisionsExtra::new(
-                    #[cfg(feature = "accumulator")]
-                    AccumulatedMap::default(),
-                    ThinVec::default(),
-                    empty_cycle_heads().clone(),
-                    iteration_count,
-                );
-            }
-            Some(extra) => {
-                extra.iteration.store_mut(iteration_count);
-
-                extra
-                    .cycle_heads
-                    .update_iteration_count_mut(cycle_head_index, iteration_count);
-            }
-        }
+        let extra = self.get_or_insert_extra();
+        extra.iteration.set(iteration_count);
+        extra
+            .cycle_heads
+            .update_iteration_count_mut(cycle_head_index, iteration_count);
     }
 
     /// Returns the ids of the tracked structs created when running this query.
     pub fn tracked_struct_ids(&self) -> &[(Identity, Id)] {
-        self.extra
-            .0
-            .as_ref()
+        self.extra()
             .map(|extra| &*extra.tracked_struct_ids)
             .unwrap_or_default()
     }
@@ -874,7 +864,6 @@ pub enum QueryOriginRef<'a> {
 impl<'a> QueryOriginRef<'a> {
     /// Indices for queries *read* by this query
     #[inline]
-    #[cfg(feature = "accumulator")]
     pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
             QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
@@ -1003,6 +992,47 @@ impl QueryOrigin {
         let mut origin = QueryOrigin::derived(input_outputs);
         origin.kind = QueryOriginKind::DerivedUntracked;
         origin
+    }
+
+    /// Sets the `input_outputs` of this query's origin if it's derived or derived untracked.
+    /// Returns `Err` if the query origin isn't derived.
+    pub fn set_edges(
+        &mut self,
+        input_outputs: Box<[QueryEdge]>,
+    ) -> Result<Box<[QueryEdge]>, Box<[QueryEdge]>> {
+        match self.kind {
+            QueryOriginKind::Assigned => Err(input_outputs),
+            QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
+                // Exceeding `u32::MAX` query edges should never happen in real-world usage.
+                let length = u32::try_from(input_outputs.len())
+                    .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
+
+                // SAFETY: `data.input_outputs` is initialized when the tag is `QueryOriginKind::Derived`
+                // or `QueryOriginKind::DerivedUntracked`.
+                let prev_input_outputs = unsafe { self.data.input_outputs };
+                let prev_length = self.metadata as usize;
+
+                // SAFETY: `input_outputs` and `self.metadata` form a valid slice when the tag is
+                // `QueryOriginKind::DerivedUntracked` or `QueryOriginKind::DerivedUntracked`, and
+                // we have `&mut self`.
+                let prev_input_outputs: Box<[QueryEdge]> = unsafe {
+                    Box::from_raw(ptr::slice_from_raw_parts_mut(
+                        prev_input_outputs.as_ptr(),
+                        prev_length,
+                    ))
+                };
+
+                // SAFETY: `Box::into_raw` returns a non-null pointer.
+                let input_outputs = unsafe {
+                    NonNull::new_unchecked(Box::into_raw(input_outputs).cast::<QueryEdge>())
+                };
+
+                self.data = QueryOriginData { input_outputs };
+                self.metadata = length;
+
+                Ok(prev_input_outputs)
+            }
+        }
     }
 
     /// Create a query origin of type `QueryOriginKind::Assigned`, with the given key.
@@ -1187,7 +1217,6 @@ pub enum QueryEdgeKind {
 /// Returns the (tracked) inputs that were executed in computing this memoized value.
 ///
 /// These will always be in execution order.
-#[cfg(feature = "accumulator")]
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
@@ -1243,6 +1272,7 @@ impl ActiveQueryGuard<'_> {
             previous.origin.as_ref(),
             QueryOriginRef::DerivedUntracked(_)
         );
+
         let tracked_ids = previous.tracked_struct_ids();
 
         // SAFETY: We do not access the query stack reentrantly.

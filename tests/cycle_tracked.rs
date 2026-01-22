@@ -175,7 +175,6 @@ fn main() {
             "WillExecute { database_key: cost_to_start(Id(402)) }",
             "WillCheckCancellation",
             "WillCheckCancellation",
-            "WillCheckCancellation",
             "WillExecute { database_key: cost_to_start(Id(401)) }",
             "WillCheckCancellation",
             "WillCheckCancellation",

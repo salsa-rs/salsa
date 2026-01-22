@@ -8,7 +8,7 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::Ingredient;
@@ -301,7 +301,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
@@ -314,6 +313,16 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
+    ) {
+        panic!("nothing should ever depend on an input struct directly")
+    }
+
+    fn flatten_cycle_head_dependencies(
+        &self,
+        _zalsa: &Zalsa,
+        _id: Id,
+        _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {
         panic!("nothing should ever depend on an input struct directly")
     }

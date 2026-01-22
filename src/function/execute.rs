@@ -5,12 +5,13 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
 use crate::{tracing, Cancelled, Cycle};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -191,17 +192,21 @@ where
 
             // If there are no cycle heads, break out of the loop.
             if cycle_heads.is_empty() {
-                iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                    tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
-                    panic!("{database_key_index:?}: execute: too many cycle iterations")
-                });
-
                 let mut completed_query = active_query.pop();
-                completed_query
-                    .revisions
-                    .update_cycle_participant_iteration_count(iteration_count);
 
-                claim_guard.set_release_mode(ReleaseMode::SelfOnly);
+                if !iteration_count.is_initial() {
+                    iteration_count = iteration_count.increment().unwrap_or_else(|| {
+                        tracing::warn!(
+                            "{database_key_index:?}: execute: too many cycle iterations"
+                        );
+                        panic!("{database_key_index:?}: execute: too many cycle iterations")
+                    });
+
+                    completed_query
+                        .revisions
+                        .update_cycle_participant_iteration_count(iteration_count);
+                }
+
                 break (new_value, completed_query);
             }
 
@@ -599,6 +604,8 @@ fn collect_all_cycle_heads(
     (max_iteration_count, depends_on_self)
 }
 
+// Called when completing the query of a cycle head participating
+// in an outer cycle head (which doesn't depend on itself).
 fn complete_cycle_participant(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
@@ -611,9 +618,13 @@ fn complete_cycle_participant(
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
+    let zalsa = claim_guard.zalsa();
 
     let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
+
+    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
+
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
 
@@ -647,8 +658,10 @@ fn try_complete_cycle_head(
     value_converged: bool,
 ) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
     let me = active_query.database_key_index;
+    let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop();
+    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -661,8 +674,6 @@ fn try_complete_cycle_head(
     let this_converged = value_converged && metadata_converged;
 
     if let Some(outer_cycle) = outer_cycle {
-        let me = claim_guard.database_key_index();
-
         tracing::info!(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
@@ -681,9 +692,8 @@ fn try_complete_cycle_head(
         return Ok(completed_query);
     }
 
-    let zalsa = claim_guard.zalsa();
-
-    // If this is the outermost cycle, test if all inner cycles have converged as well.
+    // This is the outermost cycle, drive the cycle forward:
+    // ..test if all inner cycles have converged as well.
     let converged = this_converged
         && cycle_heads.iter_not_eq(me).all(|head| {
             let database_key_index = head.database_key_index;
@@ -722,8 +732,6 @@ fn try_complete_cycle_head(
         return Ok(completed_query);
     }
 
-    *completed_query.revisions.verified_final.get_mut() = false;
-
     // The fixpoint iteration hasn't converged. Iterate again...
     let iteration_count = iteration_count.increment().unwrap_or_else(|| {
         tracing::warn!("{me:?}: execute: too many cycle iterations");
@@ -750,10 +758,13 @@ fn try_complete_cycle_head(
         );
     }
 
+    debug_assert!(completed_query.revisions.cycle_heads().is_empty());
+
     // Update the iteration count of this cycle head, but only after restoring
     // the cycle heads array (or this becomes a no-op).
     // We don't call the same method on `cycle_heads` because that one doens't update
     // the `memo.iteration_count`
+    *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.revisions.set_cycle_heads(cycle_heads);
     completed_query
         .revisions
@@ -772,4 +783,62 @@ fn assert_no_new_cycle_heads(
             panic!("Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.", head.database_key_index);
         }
     }
+}
+
+thread_local! {
+    /// Pool the `seen` and `flattened` sets for reuse on the same thread.
+    ///
+    /// Benchmarks showed that repeatedly allocating and regrowing those sets is expensive.
+    static FLATTEN_MAPS: std::cell::Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
+/// or salsa structs (input, tracked, interned).
+fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
+    let (mut flattened, mut seen) = FLATTEN_MAPS.take().unwrap_or_default();
+
+    debug_assert!(flattened.is_empty());
+    debug_assert!(seen.is_empty());
+
+    #[cfg(feature = "accumulator")]
+    {
+        assert!(
+            head.accumulated_inputs.load().is_empty(),
+            "Fixpoint iteration doesn't support accumulated values because it doesn't preserve the original query dependency tree."
+        )
+    }
+
+    // Don't insert the key of `head` here. This is important to ensure that we copy over the
+    // dependencies from this memo in the previous iteration.
+    // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
+    let edges = head.origin.as_ref().edges();
+    flattened.reserve(edges.len());
+
+    for edge in head.origin.as_ref().edges() {
+        match edge.kind() {
+            QueryEdgeKind::Input(input) => {
+                let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                ingredient.flatten_cycle_head_dependencies(
+                    zalsa,
+                    input.key_index(),
+                    &mut flattened,
+                    &mut seen,
+                );
+            }
+
+            QueryEdgeKind::Output(_) => {
+                // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
+                // created by the query head because those are owned by this query.
+                flattened.insert(*edge);
+            }
+        }
+    }
+
+    head.origin
+        .set_edges(flattened.drain(..).collect())
+        .expect("Executing query to always be derived or derived untracked.");
+
+    seen.clear();
+
+    FLATTEN_MAPS.set(Some((flattened, seen)));
 }

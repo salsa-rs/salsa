@@ -1,7 +1,7 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
@@ -9,7 +9,7 @@ use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
-use crate::{Id, Revision};
+use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///
@@ -37,6 +37,10 @@ where
             phantom: PhantomData,
         }
     }
+
+    fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(self.index, id)
+    }
 }
 
 impl<C> Ingredient for FieldIngredientImpl<C>
@@ -57,7 +61,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         let value = <IngredientImpl<C>>::data(zalsa, input);
         VerifyResult::changed_if(value.revisions[self.field_index] > revision)
@@ -78,6 +81,16 @@ where
 
         // Input dependencies are the leaves of the minimum dependency tree.
         serialized_edges.insert(edge);
+    }
+
+    fn flatten_cycle_head_dependencies(
+        &self,
+        _zalsa: &Zalsa,
+        id: Id,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<crate::DatabaseKeyIndex>,
+    ) {
+        flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

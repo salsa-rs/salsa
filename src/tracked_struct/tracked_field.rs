@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::Ingredient;
 use crate::sync::Arc;
@@ -8,7 +8,7 @@ use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
-use crate::Id;
+use crate::{DatabaseKeyIndex, Id};
 
 /// Created for each tracked struct.
 ///
@@ -42,6 +42,10 @@ where
             phantom: PhantomData,
         }
     }
+
+    fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(self.ingredient_index, id)
+    }
 }
 
 impl<C> Ingredient for FieldIngredientImpl<C>
@@ -62,7 +66,6 @@ where
         _db: crate::database::RawDatabase<'_>,
         input: Id,
         revision: crate::Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         let data = <super::IngredientImpl<C>>::data_raw(zalsa.table(), input);
         let field_changed_at = unsafe { (&(*data).revisions)[self.field_index].load() };
@@ -78,6 +81,16 @@ where
     ) {
         // Tracked fields do not have transitive dependencies, and their dependencies are covered by
         // the base inputs.
+    }
+
+    fn flatten_cycle_head_dependencies(
+        &self,
+        _zalsa: &Zalsa,
+        id: Id,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<crate::DatabaseKeyIndex>,
+    ) {
+        flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

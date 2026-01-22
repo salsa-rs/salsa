@@ -10,7 +10,6 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
-
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -138,6 +137,12 @@ impl<'db, C: Configuration> Memo<'db, C> {
         } else {
             empty_cycle_heads()
         }
+    }
+
+    /// Returns `true` if this memo was part of a cycle in it's last iteration.
+    #[inline(always)]
+    pub(super) fn was_cycle_participant(&self) -> bool {
+        !self.revisions.cycle_heads().is_empty()
     }
 
     /// Mark memo as having been verified in the `revision_now`, which should

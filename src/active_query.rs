@@ -10,7 +10,9 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{
+    QueryEdge, QueryEdgeKind, QueryOrigin, QueryRevisions, QueryRevisionsExtra,
+};
 use crate::Revision;
 use crate::{
     cycle::{CycleHeads, IterationCount},
@@ -81,10 +83,19 @@ impl ActiveQuery {
     ) {
         assert!(self.input_outputs.is_empty());
 
-        self.input_outputs.extend(edges.iter().cloned());
+        // Copy over outputs for `diff_outputs`, don't copy inputs because cycle heads
+        // flatten all input dependencies.
+        self.input_outputs.extend(
+            edges
+                .iter()
+                .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)))
+                .copied(),
+        );
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;
+        self.disambiguator_map
+            .seed(active_tracked_ids.iter().map(|(id, _)| id));
 
         // Mark all tracked structs from the previous iteration as active.
         self.tracked_struct_ids

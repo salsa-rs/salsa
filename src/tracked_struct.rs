@@ -11,7 +11,7 @@ use hashbrown::hash_table::Entry;
 use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
@@ -473,7 +473,7 @@ impl DisambiguatorMap {
         self.map.clear()
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 }
@@ -972,11 +972,10 @@ where
 
     unsafe fn maybe_changed_after(
         &self,
-        _zalsa: &crate::zalsa::Zalsa,
+        _zalsa: &Zalsa,
         _db: crate::database::RawDatabase<'_>,
         _input: Id,
         _revision: Revision,
-        _cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult {
         // Any change to a tracked struct results in a new ID generation, so there
         // are no direct dependencies on the struct, only on its tracked fields.
@@ -997,6 +996,16 @@ where
         // TODO: We could flatten the identity map here if the tracked struct is being
         // persisted, in order to more aggressively preserve the tracked struct IDs if
         // the transitive query is re-executed.
+        panic!("nothing should ever depend on a tracked struct directly")
+    }
+
+    fn flatten_cycle_head_dependencies(
+        &self,
+        _zalsa: &Zalsa,
+        _id: Id,
+        _flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        _seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
         panic!("nothing should ever depend on a tracked struct directly")
     }
 

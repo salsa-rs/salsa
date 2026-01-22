@@ -63,7 +63,6 @@ fn the_test() {
             "DidSetCancellationFlag",
             "WillCheckCancellation",
             "WillCheckCancellation",
-            "WillCheckCancellation",
             "WillExecute { database_key: query(Id(0)) }",
             "WillCheckCancellation",
             "WillIterateCycle { database_key: query(Id(0)), iteration_count: IterationCount(1) }",

@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::cycle::{IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
-use crate::function::{VerifyCycleHeads, VerifyResult};
+use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::runtime::Running;
 use crate::sync::Arc;
@@ -35,7 +35,7 @@ pub struct Location {
     pub line: u32,
 }
 
-pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
+pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     fn debug_name(&self) -> &'static str;
     fn location(&self) -> &'static Location;
     fn jar_kind(&self) -> JarKind;
@@ -47,11 +47,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// The passed in database needs to be the same one that the ingredient was created with.
     unsafe fn maybe_changed_after(
         &self,
-        zalsa: &crate::zalsa::Zalsa,
+        zalsa: &Zalsa,
         db: RawDatabase<'_>,
         input: Id,
         revision: Revision,
-        cycle_heads: &mut VerifyCycleHeads,
     ) -> VerifyResult;
 
     /// Collects the minimum edges necessary to serialize a given dependency edge on this ingredient,
@@ -109,12 +108,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
     /// in the current revision.
-    fn mark_validated_output(
-        &self,
-        zalsa: &Zalsa,
-        executor: DatabaseKeyIndex,
-        output_key: crate::Id,
-    ) {
+    fn mark_validated_output(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex, output_key: Id) {
         let _ = (zalsa, executor, output_key);
         unreachable!("only tracked struct and function ingredients can have validatable outputs")
     }
@@ -160,7 +154,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes>;
 
-    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name(), index, fmt)
     }
     // Function ingredient methods
@@ -187,6 +181,25 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
         unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
     }
+
+    /// Flattens the dependencies of a query with cycle handling that participates in a cycle.
+    ///
+    /// This query recursively walks the dependency graph of `id` and flattens input dependencies
+    /// on provisional queries into `flattened_input_outputs`. Outputs aren't flattened because
+    /// outputs are owned by the creating query and not the cycle head.
+    ///
+    /// Flattening the dependencies is necessary because the memo's dependency graph only captures
+    /// the dependencies from the last iteration. It also ensures that the dependency graph doesn't
+    /// contain any cycles.
+    ///
+    /// See `cycle_dependency_order_different_entry_queries` and `cycle_left_recursive_query`.
+    fn flatten_cycle_head_dependencies(
+        &self,
+        zalsa: &Zalsa,
+        id: Id,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        seen: &mut FxHashSet<DatabaseKeyIndex>,
+    );
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>> {
