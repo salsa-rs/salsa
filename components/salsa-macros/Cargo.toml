@@ -17,6 +17,10 @@ quote = "1.0"
 syn = { version = "2.0.104", features = ["full", "visit-mut"] }
 synstructure = "0.13.2"
 
+[dev-dependencies]
+# For doc-tests
+salsa.path = "../../"
+
 [features]
 default = []
 persistence = []
