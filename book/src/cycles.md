@@ -52,18 +52,18 @@ It is permitted to call other Salsa queries from within the `cycle_fn` and `cycl
 
 ## Fallback Values
 
-You can use `cycle_result` to specify a fallback value if Salsa detects a cycle. Queries with `cycle_fallback` always run to completion, but the resulting value will be replaced with the fallback value if a cycle is encountered.
+You can use `cycle_result` to specify a fallback value if Salsa detects a cycle. Queries with `cycle_result` always run to completion, but the resulting value will be replaced with the fallback value if a cycle is encountered.
 
 ```rust
-#[salsa::tracked(cycle_fallback=cycle_fallback)]
+#[salsa::tracked(cycle_result=cycle_result)]
 fn query(db: &dyn salsa::Database) -> u32 {
     // ...
 }
 
-fn cycle_fallback(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
+fn cycle_result(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
     42
 }
 ```
 
-Unlike fixpoint iteration, queries attributed with `cycle_fallback` also use their fallback value if 
+Unlike fixpoint iteration, queries attributed with `cycle_result` also use their fallback value if 
 they participate in a cycle. This is to ensure the query result doesn't depend on the query execution order ([details](https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285)).
