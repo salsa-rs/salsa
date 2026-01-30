@@ -41,7 +41,7 @@ This means that if the input changes, we will always re-parse the entire input a
 We'll see later that this _doesn't_ mean we will always re-run the type checker and other parts of the compiler.
 
 This trade-off makes sense because (a) parsing is very cheap, so the overhead of tracking and enabling finer-grained reuse doesn't pay off
-and because (b) since strings are just a big blob-o-bytes without any structure, it's rather hard to identify which parts of the IR need to be reparsed.
+and because (b) since strings are just a big blob-of-bytes without any structure, it's rather hard to identify which parts of the IR need to be reparsed.
 Some systems do choose to do more granular reparsing, often by doing a "first pass" over the string to give it a bit of structure,
 e.g. to identify the functions,
 but deferring the parsing of the body of each function until later.
@@ -57,12 +57,19 @@ Tracked functions may take other arguments as well, though our examples here do 
 Functions that take additional arguments are less efficient and flexible.
 It's generally better to structure tracked functions as functions of a single Salsa struct if possible.
 
-### The `returns(ref)` annotation
 
-You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(returns(ref))]`.
-Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
-The `returns(ref)` attribute means that a reference into the database is returned instead.
-So, when called, `parse_statements` will return an `&Vec<Statement>` rather than cloning the `Vec`.
-This is useful as a performance optimization.
-(You may recall the `returns(ref)` annotation from the [ir](./ir.md) section of the tutorial,
-where it was placed on struct fields, with roughly the same meaning.)
+## The `returns` attribute for functions
+
+You may have noticed that `parse_statements` is tagged with `#[salsa::tracked]`.
+Ordinarily, when you call a tracked function, the result you get back
+**is cloned** out of the database. You may recall the different `returns(_)`
+annotations from the [IR](./ir.md#the-returns-attribute-for-struct-fields) chapter.
+
+They all apply to salsa functions the same way:
+
+- `salsa::tracked(returns(clone))` (**the default**):  Returns a clone of the return type. Requires `Clone`.
+- `salsa::tracked(returns(ref))`: Returns a ref to the return type.
+- `salsa::tracked(returns(copy))`: Returns a copy. Requires `Copy`.
+- `salsa::tracked(returns(deref))`: Returns the result of calling `Deref::deref`. Requires `Deref`.
+- `salsa::tracked(returns(as_ref))`: Returns the result of `SalsaAsRef::as_ref`. Requires `SalsaAsRef`.
+- `salsa::tracked(returns(as_deref))`: Returns the result of `SalsaAsDeref::as_deref`. Requires `SalsaAsDeref`.

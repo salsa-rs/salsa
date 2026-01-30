@@ -101,7 +101,7 @@ in other words, you cannot change the values of a `salsa::Input`.
 
 The `'db` lifetime also allows tracked structs to be implemented
 using a pointer (versus the numeric id found in `salsa::input` structs).
-This doesn't really effect you as a user except that it allows accessing fields from tracked structs—
+This doesn't really affect you as a user except that it allows accessing fields from tracked structs—
 a very common operation—to be optimized.
 
 ## Representing functions
@@ -113,7 +113,7 @@ The `Function` struct is going to be created by the parser to represent each of 
 {{#include ../../../examples/calc/ir.rs:functions}}
 ```
 
-If we had created some `Function` instance `f`, for example, we might find that `the f.body` field changes
+If we had created some `Function` instance `f`, for example, we might find that the `f.body` field changes
 because the user changed the definition of `f`.
 This would mean that we have to re-execute those parts of the code that depended on `f.body`
 (but not those parts of the code that depended on the body of _other_ functions).
@@ -177,3 +177,62 @@ whenever anything in a function body changes, we consider the entire function bo
 It usually makes sense to draw some kind of "reasonably coarse" boundary like this.
 
 One downside of the way we have set things up: we inlined the position into each of the structs.
+
+## The `returns` attribute for struct fields
+
+You may have noticed that some fields of salsa structs are annotated with
+`returns(ref)`. There are 6 possible return annotations for struct fields.
+Some of them require implementing standard library traits or `salsa` specific
+traits.
+
+Given this salsa struct definition:
+
+```rust
+/// Number wraps an i32 and implements Copy & Clone required for
+/// `returns(copy)` and `returns(clone)`.
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+struct Number(i32);
+
+/// Deref is required for `returns(deref)`.
+impl std::ops::Deref for Number {
+    type Target = i32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// SalsaAsDeref is required for `returns(as_deref)`.
+impl salsa::SalsaAsDeref for Number {
+    type AsDeref<'a> = i32;
+
+    fn as_deref(&self) -> i32 {
+        self.0
+    }
+}
+
+/// SalsaAsRef is required for `returns(as_ref)`.
+impl salsa::SalsaAsRef for Number {
+    type AsRef<'a> = &'a i32;
+
+    fn as_ref(&self) -> &i32 {
+        &self.0
+    }
+}
+
+/// Salsa struct.
+#[salsa::input]
+struct Input {
+    #[returns(clone)] // We can use the different returns annotations here.
+    number: Number,
+}
+```
+
+We can use one of these annotations for the `Input::number` field:
+
+- `returns(clone)` (**the default**):  Reading the field returns a clone: `Number`. Requires `Clone`.
+- `returns(ref)`:  Reading the field returns a ref: `&Number`.
+- `returns(copy)`:  Reading the field returns a Copy: `Number`. Requires `Copy`.
+- `returns(deref)`:  Reading the field returns the dereferenced value: `&i32`. Requires `Deref`.
+- `returns(as_ref)`:  Reading the field returns a ref to internal values: `&i32`. Requires `SalsaAsRef`.
+- `returns(as_deref)`:  Reading the field returns the dereferenced value: `i32`. Requires `SalsaAsDeref`.
