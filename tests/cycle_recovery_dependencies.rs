@@ -24,11 +24,7 @@ fn entry(db: &dyn salsa::Database, input: Input) -> u32 {
 #[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
 fn query(db: &dyn salsa::Database, input: Input) -> u32 {
     let val = query(db, input);
-    if val < 5 {
-        val + 1
-    } else {
-        val
-    }
+    if val < 5 { val + 1 } else { val }
 }
 
 fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id, _input: Input) -> u32 {

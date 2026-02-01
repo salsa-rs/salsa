@@ -69,11 +69,12 @@ impl<'db> Parser<'_, 'db> {
     // Invoke `f` and, if it returns `None`, then restore the parsing position.
     fn probe<T: std::fmt::Debug>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
         let p = self.position;
-        if let Some(v) = f(self) {
-            Some(v)
-        } else {
-            self.position = p;
-            None
+        match f(self) {
+            Some(v) => Some(v),
+            _ => {
+                self.position = p;
+                None
+            }
         }
     }
 
@@ -307,11 +308,7 @@ impl<'db> Parser<'_, 'db> {
             self.consume(ch);
         }
 
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
+        if s.is_empty() { None } else { Some(s) }
     }
 
     /// Parses a number.

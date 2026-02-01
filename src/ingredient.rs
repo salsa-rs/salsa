@@ -7,9 +7,9 @@ use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::runtime::Running;
 use crate::sync::Arc;
-use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
-use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, JarKind, Zalsa};
+use crate::table::memo::MemoTableTypes;
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa, transmute_data_mut_ptr, transmute_data_ptr};
 use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{DatabaseKeyIndex, Id, Revision};
 
@@ -78,7 +78,9 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         _zalsa: &'db Zalsa,
         _input: Id,
     ) -> Option<ProvisionalStatus<'db>> {
-        unreachable!("provisional_status should only be called on cycle heads and only functions can be cycle heads");
+        unreachable!(
+            "provisional_status should only be called on cycle heads and only functions can be cycle heads"
+        );
     }
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
@@ -163,7 +165,9 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     ///
     /// Returns `false` if the Memo doesn't exist or if called on a non-cycle head.
     fn cycle_converged(&self, _zalsa: &Zalsa, _input: Id) -> bool {
-        unreachable!("cycle_converged should only be called on cycle heads and only functions can be cycle heads");
+        unreachable!(
+            "cycle_converged should only be called on cycle heads and only functions can be cycle heads"
+        );
     }
 
     /// Updates the iteration count for the (nested) cycle head `_input` to `iteration_count`.
@@ -175,11 +179,15 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         _input: Id,
         _iteration_count: IterationCount,
     ) {
-        unreachable!("increment_iteration_count should only be called on cycle heads and only functions can be cycle heads");
+        unreachable!(
+            "increment_iteration_count should only be called on cycle heads and only functions can be cycle heads"
+        );
     }
 
     fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
-        unreachable!("finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads");
+        unreachable!(
+            "finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads"
+        );
     }
 
     /// Flattens the dependencies of a query with cycle handling that participates in a cycle.

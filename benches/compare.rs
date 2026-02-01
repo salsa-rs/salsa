@@ -2,7 +2,7 @@ use std::hint::black_box;
 use std::mem::transmute;
 
 use codspeed_criterion_compat::{
-    criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion,
+    BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main,
 };
 use salsa::Setter;
 

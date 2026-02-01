@@ -1,8 +1,8 @@
+use crate::Backtrace;
+use crate::DatabaseKeyIndex;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa_local::QueryRevisions;
-use crate::Backtrace;
-use crate::DatabaseKeyIndex;
 use std::fmt;
 
 impl<C> IngredientImpl<C>

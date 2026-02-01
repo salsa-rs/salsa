@@ -1,5 +1,5 @@
 use proc_macro2::{Literal, Span, TokenStream};
-use syn::{parenthesized, parse::ParseStream, spanned::Spanned, Token};
+use syn::{Token, parenthesized, parse::ParseStream, spanned::Spanned};
 use synstructure::BindStyle;
 
 use crate::{hygiene::Hygiene, kw};

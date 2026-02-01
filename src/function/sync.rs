@@ -6,8 +6,8 @@ use crate::plumbing::ZalsaLocal;
 use crate::runtime::{
     BlockOnTransferredOwner, BlockResult, BlockTransferredResult, Running, WaitResult,
 };
-use crate::sync::thread::{self};
 use crate::sync::Mutex;
+use crate::sync::thread::{self};
 use crate::tracing;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
@@ -90,7 +90,7 @@ impl SyncTable {
                                 BlockResult::Cycle => ClaimResult::Cycle { inner: false },
                                 BlockResult::Running(running) => ClaimResult::Running(running),
                             },
-                        }
+                        };
                     }
                 };
 
@@ -149,7 +149,7 @@ impl SyncTable {
                                 BlockResult::Cycle => ClaimResult::Cycle { inner: false },
                                 BlockResult::Running(running) => ClaimResult::Running(running),
                             },
-                        }
+                        };
                     }
                 };
 

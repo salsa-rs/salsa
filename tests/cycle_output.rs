@@ -28,11 +28,7 @@ fn query_a(db: &dyn Db, input: InputValue) -> u32 {
     let read = read_value(db, output);
     assert_eq!(read, val);
     query_d(db);
-    if val > 2 {
-        val
-    } else {
-        val + input.value(db)
-    }
+    if val > 2 { val } else { val + input.value(db) }
 }
 
 #[salsa::tracked(cycle_initial=cycle_initial)]

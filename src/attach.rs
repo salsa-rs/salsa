@@ -54,7 +54,9 @@ impl Attached {
                     Some(current_db) => {
                         let new_db = NonNull::from(db);
                         if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
-                            panic!("Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}");
+                            panic!(
+                                "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}"
+                            );
                         }
                         Self { state: None }
                     }

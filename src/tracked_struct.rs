@@ -790,14 +790,14 @@ where
 
         // We want to set `updated_at` to `None`, signalling that other field values
         // cannot be read. The current value should be `Some(R0)` for some older revision.
-        match unsafe { (*data).updated_at.swap(None) }{
+        match unsafe { (*data).updated_at.swap(None) } {
             None => {
                 panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
             }
             Some(r) if r == zalsa.current_revision() => panic!(
                 "cannot delete read-locked id `{id:?}`; value leaked across threads or user functions not deterministic"
             ),
-            Some(_) => ()
+            Some(_) => (),
         }
 
         // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
@@ -1288,7 +1288,7 @@ mod persistence {
     use std::fmt;
 
     use serde::ser::{SerializeMap, SerializeStruct};
-    use serde::{de, Deserialize};
+    use serde::{Deserialize, de};
 
     use super::{Configuration, IngredientImpl, Value};
     use crate::plumbing::Ingredient;

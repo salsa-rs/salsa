@@ -4,8 +4,8 @@ pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrancy, SyncGuard, SyncOwner,
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
-use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 
 use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
@@ -16,8 +16,8 @@ use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
-use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
+use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryEdge, QueryOriginRef};

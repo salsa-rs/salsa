@@ -1,8 +1,8 @@
 use std::fmt;
 
+use crate::Id;
 use crate::function::VerifyResult;
 use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::Id;
 
 // ANCHOR: DatabaseKeyIndex
 /// An integer that uniquely identifies a particular query instance within the

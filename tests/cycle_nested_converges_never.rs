@@ -25,11 +25,7 @@ fn query_a(db: &dyn salsa::Database) -> CycleValue {
     let b = query_b(db);
 
     tracing::info!("query_b: {b:?}");
-    if b < CycleValue(1) {
-        query_c(db)
-    } else {
-        b
-    }
+    if b < CycleValue(1) { query_c(db) } else { b }
 }
 
 #[salsa::tracked(cycle_initial=initial)]

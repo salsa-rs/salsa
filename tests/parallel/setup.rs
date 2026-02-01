@@ -3,8 +3,8 @@
 use salsa::{Database, Storage};
 
 use super::signal::Signal;
-use super::sync::atomic::{AtomicUsize, Ordering};
 use super::sync::Arc;
+use super::sync::atomic::{AtomicUsize, Ordering};
 
 /// Various "knobs" and utilities used by tests to force
 /// a certain behavior.

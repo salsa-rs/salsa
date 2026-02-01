@@ -8,7 +8,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use crossbeam_utils::CachePadded;
-use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
+use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef, intrusive_adapter};
 use rustc_hash::FxBuildHasher;
 
 use crate::durability::Durability;
@@ -19,8 +19,8 @@ use crate::ingredient::Ingredient;
 use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::revision::AtomicRevision;
 use crate::sync::{Arc, Mutex, OnceLock};
-use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::Slot;
+use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
@@ -1478,7 +1478,7 @@ mod persistence {
 
     use intrusive_collections::LinkedListLink;
     use serde::ser::{SerializeMap, SerializeStruct};
-    use serde::{de, Deserialize};
+    use serde::{Deserialize, de};
 
     use super::{Configuration, IngredientImpl, Value, ValueShared};
     use crate::plumbing::Ingredient;

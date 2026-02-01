@@ -148,7 +148,7 @@ impl Macro {
                     return Err(syn::Error::new_spanned(
                         self.args.specify.as_ref().unwrap(),
                         "only functions with a single salsa struct as their input can be specified",
-                    ))
+                    ));
                 }
                 FunctionType::SalsaStruct => {}
             }

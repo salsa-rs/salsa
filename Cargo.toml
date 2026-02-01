@@ -113,7 +113,7 @@ members = ["components/salsa-macro-rules", "components/salsa-macros"]
 
 [workspace.package]
 authors = ["Salsa developers"]
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/salsa-rs/salsa"
 rust-version = "1.85"

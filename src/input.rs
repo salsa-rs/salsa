@@ -483,14 +483,14 @@ mod persistence {
     use std::fmt;
 
     use serde::ser::{SerializeMap, SerializeStruct};
-    use serde::{de, Deserialize};
+    use serde::{Deserialize, de};
 
     use super::{Configuration, IngredientImpl, Value};
+    use crate::Id;
     use crate::input::singleton::SingletonChoice;
     use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
     use crate::zalsa::Zalsa;
-    use crate::Id;
 
     pub struct SerializeIngredient<'db, C>
     where

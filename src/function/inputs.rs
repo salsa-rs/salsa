@@ -1,7 +1,7 @@
+use crate::Id;
 use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa::Zalsa;
 use crate::zalsa_local::QueryOriginRef;
-use crate::Id;
 
 impl<C> IngredientImpl<C>
 where

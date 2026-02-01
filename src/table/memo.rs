@@ -3,10 +3,10 @@ use std::fmt::Debug;
 use std::mem;
 use std::ptr::{self, NonNull};
 
+use crate::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
-use crate::DatabaseKeyIndex;
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument

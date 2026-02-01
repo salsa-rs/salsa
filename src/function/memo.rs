@@ -4,7 +4,7 @@ use std::mem::transmute;
 use std::ptr::NonNull;
 
 use crate::cycle::{
-    empty_cycle_heads, CycleHeads, CycleHeadsIterator, IterationCount, ProvisionalStatus,
+    CycleHeads, CycleHeadsIterator, IterationCount, ProvisionalStatus, empty_cycle_heads,
 };
 use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
@@ -235,14 +235,14 @@ where
 
 #[cfg(feature = "persistence")]
 mod persistence {
-    use crate::function::memo::Memo;
     use crate::function::Configuration;
+    use crate::function::memo::Memo;
     use crate::revision::AtomicRevision;
     use crate::zalsa_local::persistence::MappedQueryRevisions;
     use crate::zalsa_local::{QueryOrigin, QueryRevisions};
 
-    use serde::ser::SerializeStruct;
     use serde::Deserialize;
+    use serde::ser::SerializeStruct;
 
     /// A reference to the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
     pub(crate) struct MappedMemo<'memo, 'db, C: Configuration> {

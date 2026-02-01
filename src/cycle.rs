@@ -45,11 +45,11 @@
 //! hangs (but not deadlocks).
 
 use std::iter::FusedIterator;
-use thin_vec::{thin_vec, ThinVec};
+use thin_vec::{ThinVec, thin_vec};
 
 use crate::key::DatabaseKeyIndex;
-use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::sync::OnceLock;
+use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::{Id, Revision};
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
