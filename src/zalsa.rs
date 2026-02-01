@@ -159,7 +159,7 @@ pub struct Zalsa {
     ingredients_vec: Vec<Box<dyn Ingredient>>,
 
     /// Indices of ingredients that require reset when a new revision starts.
-    ingredients_requiring_reset: boxcar::Vec<IngredientIndex>,
+    ingredients_requiring_reset: Vec<IngredientIndex>,
 
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
@@ -185,7 +185,7 @@ impl Zalsa {
             jar_map: HashMap::default(),
             ingredient_to_id_struct_type_id_map: Default::default(),
             ingredients_vec: Vec::new(),
-            ingredients_requiring_reset: boxcar::Vec::new(),
+            ingredients_requiring_reset: Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
             event_callback,
@@ -438,14 +438,9 @@ impl Zalsa {
         let new_revision = self.runtime.new_revision();
         let _span = crate::tracing::debug_span!("new_revision", ?new_revision).entered();
 
-        for (_, index) in self.ingredients_requiring_reset.iter() {
-            let index = index.as_u32() as usize;
-            let ingredient = self
-                .ingredients_vec
-                .get_mut(index)
-                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
-
-            ingredient.reset_for_new_revision(self.runtime.table_mut());
+        for ingredient in &self.ingredients_requiring_reset {
+            self.ingredients_vec[ingredient.as_u32() as usize]
+                .reset_for_new_revision(self.runtime.table_mut());
         }
 
         new_revision
@@ -455,11 +450,8 @@ impl Zalsa {
     #[doc(hidden)]
     pub fn evict_lru(&mut self) {
         let _span = crate::tracing::debug_span!("evict_lru").entered();
-        for (_, index) in self.ingredients_requiring_reset.iter() {
-            let index = index.as_u32() as usize;
-            self.ingredients_vec
-                .get_mut(index)
-                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
+        for ingredient in &self.ingredients_requiring_reset {
+            self.ingredients_vec[ingredient.as_u32() as usize]
                 .reset_for_new_revision(self.runtime.table_mut());
         }
     }
