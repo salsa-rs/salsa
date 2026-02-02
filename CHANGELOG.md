@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.25.2...salsa-v0.26.0) - 2026-02-02
+
+### Added
+
+- Allow opt-ing out of LRU at compile time ([#1051](https://github.com/salsa-rs/salsa/pull/1051))
+- Allow tracked function cycle attributes to take closures ([#1048](https://github.com/salsa-rs/salsa/pull/1048))
+
+### Fixed
+
+- Do not alias fields of `tracked_struct` `Value`s when updating ([#741](https://github.com/salsa-rs/salsa/pull/741))
+
+### Other
+
+- Remove unnecessary `boxcar::Vec` ([#1072](https://github.com/salsa-rs/salsa/pull/1072))
+- replace remaining instances of `cycle_fallback` with `cycle_result` in the docs ([#1071](https://github.com/salsa-rs/salsa/pull/1071))
+- Fix out-of-order verification of cycle head dependencies ([#1061](https://github.com/salsa-rs/salsa/pull/1061))
+- Update compile fail tests ([#1070](https://github.com/salsa-rs/salsa/pull/1070))
+- Merge `FallbackImmediate` and `Fixpoint` code paths ([#1063](https://github.com/salsa-rs/salsa/pull/1063))
+- Introduce a `CancellationToken` for cancelling specific computations ([#1007](https://github.com/salsa-rs/salsa/pull/1007))
+- Remove unnecessary backdate field macros ([#1069](https://github.com/salsa-rs/salsa/pull/1069))
+- Remove `ValueWithMetadata` ([#1057](https://github.com/salsa-rs/salsa/pull/1057))
+- Fix stale tracked struct values in later iterations ([#1068](https://github.com/salsa-rs/salsa/pull/1068))
+- Skip book deployment on forks ([#1066](https://github.com/salsa-rs/salsa/pull/1066))
+- Remove `QueryOriginKind::FixpointInitial` ([#1062](https://github.com/salsa-rs/salsa/pull/1062))
+- Document cycle_fallback in the book ([#1056](https://github.com/salsa-rs/salsa/pull/1056))
+- Fix book build with newer mdbook versions ([#1055](https://github.com/salsa-rs/salsa/pull/1055))
+- Implement `Lookup` and `HashEqLike` for `Cow` ([#1054](https://github.com/salsa-rs/salsa/pull/1054))
+- Add `DidFinalizeCycle` event, add more tests for cyclic nested queries ([#1052](https://github.com/salsa-rs/salsa/pull/1052))
+- Collect cycle heads transitively ([#1050](https://github.com/salsa-rs/salsa/pull/1050))
+- Remove unused database forking ([#1049](https://github.com/salsa-rs/salsa/pull/1049))
+- Reduce monomorphized code in maybe_changed_after ([#1047](https://github.com/salsa-rs/salsa/pull/1047))
+- Reduce monomorphized code in `execute_maybe_iterate` ([#1046](https://github.com/salsa-rs/salsa/pull/1046))
+- Add `salsa::Update` trait bounds to generics when deriving `salsa::Update` ([#1041](https://github.com/salsa-rs/salsa/pull/1041))
+
 ## [0.25.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.25.1...salsa-v0.25.2) - 2025-12-17
 
 ### Other

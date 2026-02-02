@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.25.2...salsa-macro-rules-v0.26.0) - 2026-02-02
+
+### Added
+
+- Allow opt-ing out of LRU at compile time ([#1051](https://github.com/salsa-rs/salsa/pull/1051))
+
+### Fixed
+
+- Do not alias fields of `tracked_struct` `Value`s when updating ([#741](https://github.com/salsa-rs/salsa/pull/741))
+
+### Other
+
+- Remove unnecessary backdate field macros ([#1069](https://github.com/salsa-rs/salsa/pull/1069))
+- Remove `ValueWithMetadata` ([#1057](https://github.com/salsa-rs/salsa/pull/1057))
+- Implement `Lookup` and `HashEqLike` for `Cow` ([#1054](https://github.com/salsa-rs/salsa/pull/1054))
+
 ## [0.25.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.24.0...salsa-macro-rules-v0.25.0) - 2025-12-16
 
 ### Other

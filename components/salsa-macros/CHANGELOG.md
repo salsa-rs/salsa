@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.25.2...salsa-macros-v0.26.0) - 2026-02-02
+
+### Added
+
+- Allow opt-ing out of LRU at compile time ([#1051](https://github.com/salsa-rs/salsa/pull/1051))
+- Allow tracked function cycle attributes to take closures ([#1048](https://github.com/salsa-rs/salsa/pull/1048))
+
+### Other
+
+- Remove unnecessary backdate field macros ([#1069](https://github.com/salsa-rs/salsa/pull/1069))
+- Add `salsa::Update` trait bounds to generics when deriving `salsa::Update` ([#1041](https://github.com/salsa-rs/salsa/pull/1041))
+
 ## [0.25.1](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.25.0...salsa-macros-v0.25.1) - 2025-12-16
 
 ### Other
