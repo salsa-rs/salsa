@@ -102,9 +102,8 @@ impl fmt::Display for BackdateViolation {
             self.index, self.old_changed_at, self.new_changed_at,
         )?;
 
-        match &self.backtrace {
-            Some(backtrace) => write!(f, "\n{backtrace}")?,
-            None => {}
+        if let Some(backtrace) = &self.backtrace {
+            write!(f, "\n{backtrace}")?;
         }
 
         Ok(())
