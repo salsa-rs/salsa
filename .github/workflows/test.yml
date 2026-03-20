@@ -126,7 +126,7 @@ jobs:
     # https://github.com/CodSpeedHQ/action/issues/126
     if: github.repository == 'salsa-rs/salsa' &&github.event_name != 'merge_group'
     name: Benchmarks
-    runs-on: ubuntu-latest
+    runs-on: codspeed-macro
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -150,18 +150,18 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-benchmark
-            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-benchmark
+            ${{ runner.os }}-${{ runner.arch }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
 
       - name: "Build benchmarks"
-        run: cargo codspeed build
+        run: cargo codspeed build -m simulation
 
       - name: "Run benchmarks"
         uses: CodSpeedHQ/action@v4
         with:
-          mode: instrumentation
+          mode: simulation
           run: cargo codspeed run
           token: ${{ secrets.CODSPEED_TOKEN }}
