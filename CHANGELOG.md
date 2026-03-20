@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.0...salsa-v0.26.1) - 2026-03-20
+
+### Other
+
+- Bump the edition to 2024 ([#1073](https://github.com/salsa-rs/salsa/pull/1073))
+- Don't panic if a query branched on an untracked state ([#1075](https://github.com/salsa-rs/salsa/pull/1075))
+
 ## [0.26.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.25.2...salsa-v0.26.0) - 2026-02-02
 
 ### Added
