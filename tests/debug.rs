@@ -66,6 +66,58 @@ fn untracked_dependencies() {
 }
 
 #[salsa::tracked]
+fn dep_a(db: &dyn salsa::Database, input: MyInput) -> u32 {
+    input.field(db)
+}
+
+#[salsa::tracked]
+fn dep_b(db: &dyn salsa::Database, input: MyInput) -> u32 {
+    input.field(db)
+}
+
+#[salsa::tracked]
+fn debug_branch_query(db: &dyn salsa::Database, selector: MyInput, a: MyInput, b: MyInput) -> u32 {
+    // `Debug` for salsa structs is explicitly untracked; branching on it is unsound.
+    // This test demonstrates it can break the backdate invariant.
+    let s = format!("{selector:?}");
+    if s.contains("field: 0") {
+        dep_a(db, a)
+    } else {
+        dep_b(db, b)
+    }
+}
+
+/// Backdating warns about branching on the output of a Salsa struct's derived `Debug` output,
+/// because it doesn't track its reads (can lead to stale results).
+#[test]
+#[cfg_attr(debug_assertions, should_panic(expected = "returned the same value"))]
+fn debug_branch_can_trip_backdate_assertion() {
+    let mut db = salsa::DatabaseImpl::new();
+
+    let selector = MyInput::new(&db, 0);
+    let a = MyInput::new(&db, 0);
+    let b = MyInput::new(&db, 0);
+
+    // R1: depends on `a`, returns 0
+    assert_eq!(debug_branch_query(&db, selector, a, b), 0);
+
+    // R2: force `debug_branch_query` to change (0 -> 1) so its memo's changed_at advances.
+    a.set_field(&mut db).to(1);
+    assert_eq!(debug_branch_query(&db, selector, a, b), 1);
+
+    // R3: change back to 0; memo value is 0 but changed_at is now "recent".
+    a.set_field(&mut db).to(0);
+    assert_eq!(debug_branch_query(&db, selector, a, b), 0);
+
+    // R4/R5: change `selector` (untracked) so the query switches to `b`, and change `a`
+    // to force re-execution. New execution returns 0 (equal) but depends only on older `b`,
+    // so `new.changed_at < old.changed_at` and backdating asserts.
+    selector.set_field(&mut db).to(1);
+    a.set_field(&mut db).to(1);
+    let _ = debug_branch_query(&db, selector, a, b);
+}
+
+#[salsa::tracked]
 struct DerivedCustom<'db> {
     my_input: MyInput,
     value: u32,

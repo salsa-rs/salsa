@@ -1,7 +1,9 @@
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa_local::QueryRevisions;
+use crate::Backtrace;
 use crate::DatabaseKeyIndex;
+use std::fmt;
 
 impl<C> IngredientImpl<C>
 where
@@ -39,9 +41,71 @@ where
                     old_memo.revisions.changed_at,
                 );
 
-                assert!(old_memo.revisions.changed_at <= revisions.changed_at);
+                if old_memo.revisions.changed_at > revisions.changed_at {
+                    report_backdate_violation(
+                        index,
+                        old_memo.revisions.changed_at,
+                        revisions.changed_at,
+                    );
+                }
+
                 revisions.changed_at = old_memo.revisions.changed_at;
             }
         }
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn report_backdate_violation(
+    index: DatabaseKeyIndex,
+    old_changed_at: crate::Revision,
+    new_changed_at: crate::Revision,
+) {
+    if cfg!(debug_assertions) {
+        let message = BackdateViolation {
+            index,
+            old_changed_at,
+            new_changed_at,
+            backtrace: None,
+        };
+        panic!("{message}");
+    } else {
+        let message = BackdateViolation {
+            index,
+            old_changed_at,
+            new_changed_at,
+            backtrace: Backtrace::capture(),
+        };
+        crate::tracing::warn!("{message}");
+    }
+}
+
+struct BackdateViolation {
+    index: DatabaseKeyIndex,
+    old_changed_at: crate::Revision,
+    new_changed_at: crate::Revision,
+    backtrace: Option<Backtrace>,
+}
+
+impl fmt::Display for BackdateViolation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "query {:?} returned the same value, but the previous execution changed at {:?} and \
+             the new execution changed at {:?}. This usually means the query re-executed because \
+             an input changed, but then branched on untracked state (for example, a global \
+             variable, a non-salsa field on the database, or filesystem state read outside salsa) \
+             and no longer read that input. This is usually a bug in the query implementation. \
+             Queries that branch on untracked state can also produce stale results. If the query \
+             has no untracked reads, please open a Salsa issue.",
+            self.index, self.old_changed_at, self.new_changed_at,
+        )?;
+
+        if let Some(backtrace) = &self.backtrace {
+            write!(f, "\n{backtrace}")?;
+        }
+
+        Ok(())
     }
 }
