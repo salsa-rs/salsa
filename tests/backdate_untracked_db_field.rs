@@ -56,7 +56,7 @@ fn db_field_branch_query(db: &dyn Db, a: MyInput, b: MyInput) -> u32 {
 }
 
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "cannot backdate query"))]
+#[cfg_attr(debug_assertions, should_panic(expected = "returned the same value"))]
 fn db_field_branch_can_trip_backdate_assertion() {
     let mut db = ExtraFieldDatabase::default();
     db.set_extra(0);

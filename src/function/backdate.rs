@@ -40,16 +40,17 @@ where
                 );
 
                 if old_memo.revisions.changed_at > revisions.changed_at {
-                    let message = format_args!(
-                        "query {index:?} returned the same value, but the previous execution \
-                         changed at {:?} and the new execution changed at {:?}. This usually \
-                         means the query re-executed because an input changed, but then branched \
-                         on untracked state (for example, a global variable, a non-salsa field \
-                         on the database, or filesystem state read outside salsa) and no longer \
-                         read that input. This is usually a bug in the query implementation. \
-                         Queries that branch on untracked state can also produce stale results. \
-                         If the query has no untracked reads, please open a salsa issue.",
-                        old_memo.revisions.changed_at, revisions.changed_at,
+                    let message = format!(
+                        "query {index:?} returned the same value, but the previous execution changed at \
+                         {:?} and the new execution changed at {:?}. This usually means the query \
+                         re-executed because an input changed, but then branched on untracked state \
+                         (for example, a global variable, a non-salsa field on the database, or \
+                         filesystem state read outside salsa) and no longer read that input. This is \
+                         usually a bug in the query implementation. Queries that branch on untracked \
+                         state can also produce stale results. If the query has no untracked reads, \
+                         please open a salsa issue.",
+                        old_memo.revisions.changed_at,
+                        revisions.changed_at,
                     );
 
                     if cfg!(debug_assertions) {

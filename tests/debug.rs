@@ -90,7 +90,7 @@ fn debug_branch_query(db: &dyn salsa::Database, selector: MyInput, a: MyInput, b
 /// Backdating warns about branching on the output of a Salsa struct's derived `Debug` output,
 /// because it doesn't track its reads (can lead to stale results).
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "cannot backdate query"))]
+#[cfg_attr(debug_assertions, should_panic(expected = "returned the same value"))]
 fn debug_branch_can_trip_backdate_assertion() {
     let mut db = salsa::DatabaseImpl::new();
 
