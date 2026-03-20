@@ -27,16 +27,13 @@ fn compute(db: &dyn LogDatabase, input: List) -> u32 {
     // always pushes 0
     Integers(0).accumulate(db);
 
-    let result = if let Some(next) = input.next(db) {
+    // return value changes
+    if let Some(next) = input.next(db) {
         let next_integers = compute::accumulated::<Integers>(db, next);
-        let v = input.value(db) + next_integers.iter().map(|i| i.0).sum::<u32>();
-        v
+        input.value(db) + next_integers.iter().map(|i| i.0).sum::<u32>()
     } else {
         input.value(db)
-    };
-
-    // return value changes
-    result
+    }
 }
 
 #[test]

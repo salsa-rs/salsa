@@ -28,8 +28,7 @@ enum MyList<'db> {
 #[salsa::tracked]
 fn create_tracked_list(db: &dyn Database, input: MyInput) -> MyTracked<'_> {
     let t0 = MyTracked::new(db, input, MyList::None);
-    let t1 = MyTracked::new(db, input, MyList::Next(t0));
-    t1
+    MyTracked::new(db, input, MyList::Next(t0))
 }
 
 #[test]
