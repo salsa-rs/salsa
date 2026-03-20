@@ -27,7 +27,7 @@ use crate::sync::Arc;
 pub mod helper {
     use std::marker::PhantomData;
 
-    use super::{update_fallback, Update};
+    use super::{Update, update_fallback};
 
     pub struct Dispatch<D>(PhantomData<D>);
 

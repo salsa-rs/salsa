@@ -3,8 +3,8 @@
 //! Test that a `tracked` fn with lru options
 //! compiles and executes successfully.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod common;
 use common::LogDatabase;

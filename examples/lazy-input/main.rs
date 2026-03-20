@@ -4,12 +4,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crossbeam_channel::{unbounded, Sender};
-use dashmap::mapref::entry::Entry;
+use crossbeam_channel::{Sender, unbounded};
 use dashmap::DashMap;
-use eyre::{eyre, Context, Report, Result};
+use dashmap::mapref::entry::Entry;
+use eyre::{Context, Report, Result, eyre};
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
+use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 use salsa::{Accumulator, Setter, Storage};
 
 // ANCHOR: main

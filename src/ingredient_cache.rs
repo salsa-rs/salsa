@@ -2,10 +2,10 @@ pub use imp::IngredientCache;
 
 #[cfg(feature = "inventory")]
 mod imp {
+    use crate::IngredientIndex;
     use crate::plumbing::Ingredient;
     use crate::sync::atomic::{self, AtomicU32, Ordering};
     use crate::zalsa::Zalsa;
-    use crate::IngredientIndex;
 
     use std::marker::PhantomData;
 
@@ -99,11 +99,11 @@ mod imp {
 
 #[cfg(not(feature = "inventory"))]
 mod imp {
+    use crate::IngredientIndex;
     use crate::nonce::Nonce;
     use crate::plumbing::Ingredient;
     use crate::sync::atomic::{AtomicU64, Ordering};
     use crate::zalsa::{StorageNonce, Zalsa};
-    use crate::IngredientIndex;
 
     use std::marker::PhantomData;
     use std::mem;

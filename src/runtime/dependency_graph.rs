@@ -5,10 +5,10 @@ use smallvec::SmallVec;
 
 use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::runtime::WaitResult;
-use crate::sync::thread::ThreadId;
+use crate::runtime::dependency_graph::edge::EdgeCondvar;
 use crate::sync::MutexGuard;
+use crate::sync::thread::ThreadId;
 use crate::tracing;
 
 type QueryDependents = FxHashMap<DatabaseKeyIndex, SmallVec<[ThreadId; 4]>>;

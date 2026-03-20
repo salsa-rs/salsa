@@ -20,11 +20,7 @@ fn cycle_initial(_db: &dyn Database, _id: salsa::Id, _input: MyTracked) -> u32 {
 fn memoized_b<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> u32 {
     let incr = tracked.field(db);
     let a = memoized_a(db, tracked);
-    if a > 8 {
-        a
-    } else {
-        a + incr
-    }
+    if a > 8 { a } else { a + incr }
 }
 
 #[salsa::input]

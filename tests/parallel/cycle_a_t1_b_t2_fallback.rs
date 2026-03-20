@@ -51,8 +51,8 @@ fn cycle_result_b(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
 
 #[test_log::test]
 fn the_test() {
-    use crate::sync::thread;
     use crate::Knobs;
+    use crate::sync::thread;
 
     crate::sync::check(|| {
         tracing::debug!("Starting new run");

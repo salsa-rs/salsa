@@ -2,7 +2,7 @@
 //!
 //! This is the default eviction policy when no LRU capacity is specified.
 
-use crate::{function::EvictionPolicy, Id};
+use crate::{Id, function::EvictionPolicy};
 
 /// No eviction - cache grows unbounded.
 pub struct NoopEviction;

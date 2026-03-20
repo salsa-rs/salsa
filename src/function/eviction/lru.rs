@@ -5,9 +5,9 @@
 
 use std::num::NonZeroUsize;
 
+use crate::Id;
 use crate::hash::FxLinkedHashSet;
 use crate::sync::Mutex;
-use crate::Id;
 
 use super::{EvictionPolicy, HasCapacity};
 

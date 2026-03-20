@@ -1,7 +1,7 @@
+use crate::Revision;
 use crate::cycle::IterationCount;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::thread::{self, ThreadId};
-use crate::Revision;
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given

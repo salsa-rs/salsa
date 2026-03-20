@@ -5,7 +5,7 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::{database::RawDatabase, Database};
+use crate::{Database, database::RawDatabase};
 
 /// A `Views` struct is associated with some specific database type
 /// (a `DatabaseImpl<U>` for some existential `U`). It contains functions

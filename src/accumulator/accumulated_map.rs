@@ -2,10 +2,10 @@ use std::ops;
 
 use rustc_hash::FxBuildHasher;
 
+use crate::IngredientIndex;
 use crate::accumulator::accumulated::Accumulated;
 use crate::accumulator::{Accumulator, AnyAccumulated};
 use crate::sync::atomic::{AtomicBool, Ordering};
-use crate::IngredientIndex;
 
 #[derive(Default)]
 pub struct AccumulatedMap {
@@ -80,11 +80,7 @@ impl InputAccumulatedValues {
     }
 
     pub fn or_else(self, other: impl FnOnce() -> Self) -> Self {
-        if self.is_any() {
-            Self::Any
-        } else {
-            other()
-        }
+        if self.is_any() { Self::Any } else { other() }
     }
 }
 

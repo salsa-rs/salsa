@@ -12,7 +12,7 @@ use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
-use crate::{tracing, Cancelled, Cycle};
+use crate::{Cancelled, Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -111,11 +111,7 @@ where
             memo_ingredient_index,
         );
 
-        if claim_guard.drop() {
-            None
-        } else {
-            Some(memo)
-        }
+        if claim_guard.drop() { None } else { Some(memo) }
     }
 
     fn execute_maybe_iterate<'db>(
@@ -150,7 +146,9 @@ where
                 // b) It's guaranteed that this query will panic again anyway.
                 // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
                 if old_memo.value.is_none() {
-                    tracing::warn!("Propagating panic for cycle head that panicked in an earlier execution in that revision");
+                    tracing::warn!(
+                        "Propagating panic for cycle head that panicked in an earlier execution in that revision"
+                    );
                     Cancelled::PropagatedPanic.throw();
                 }
 
@@ -228,7 +226,9 @@ where
             // If not, return because this query is not a cycle head.
             if !depends_on_self {
                 let Some(outer_cycle) = outer_cycle else {
-                    panic!("cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?}).");
+                    panic!(
+                        "cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?})."
+                    );
                 };
 
                 // For FallbackImmediate, use the fallback value instead of the computed value
@@ -780,7 +780,10 @@ fn assert_no_new_cycle_heads(
 ) {
     for head in new_cycle_heads {
         if !cycle_heads.contains(&head.database_key_index) {
-            panic!("Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.", head.database_key_index);
+            panic!(
+                "Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.",
+                head.database_key_index
+            );
         }
     }
 }

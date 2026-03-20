@@ -150,7 +150,7 @@ where
                         zalsa_local,
                         database_key_index,
                         C::CYCLE_STRATEGY,
-                    ))
+                    ));
                 }
             };
         // Load the current memo, if any.

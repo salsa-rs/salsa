@@ -1,5 +1,5 @@
-use crate::sync::atomic::{AtomicU64, Ordering};
 use crate::Id;
+use crate::sync::atomic::{AtomicU64, Ordering};
 
 mod sealed {
     pub trait Sealed {}

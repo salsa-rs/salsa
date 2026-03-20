@@ -2,9 +2,9 @@ use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
 use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
+use crate::sync::Mutex;
 use crate::sync::atomic::{AtomicBool, Ordering};
 use crate::sync::thread::{self, ThreadId};
-use crate::sync::Mutex;
 use crate::table::Table;
 use crate::zalsa::Zalsa;
 use crate::{Cancelled, Event, EventKind, Revision};
@@ -296,7 +296,9 @@ impl Runtime {
         let dg = self.dependency_graph.lock();
 
         if dg.depends_on(other_id, thread_id) {
-            crate::tracing::debug!("block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}");
+            crate::tracing::debug!(
+                "block_on: cycle detected for {database_key:?} in thread {thread_id:?} on {other_id:?}"
+            );
             return BlockResult::Cycle;
         }
 

@@ -1,6 +1,6 @@
 use std::hint::black_box;
 
-use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
+use codspeed_criterion_compat::{BatchSize, Criterion, criterion_group, criterion_main};
 use salsa::Accumulator;
 
 #[salsa::input]

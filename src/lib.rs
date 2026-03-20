@@ -38,7 +38,7 @@ mod zalsa_local;
 mod nonce;
 
 #[cfg(feature = "macros")]
-pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
+pub use salsa_macros::{Supertype, Update, accumulator, db, input, interned, tracked};
 
 #[cfg(feature = "salsa_unstable")]
 pub use self::database::IngredientInfo;
@@ -96,7 +96,7 @@ pub mod plumbing {
     pub use crate::accumulator::Accumulator;
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::CycleRecoveryStrategy;
-    pub use crate::database::{current_revision, Database};
+    pub use crate::database::{Database, current_revision};
     pub use crate::durability::Durability;
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
     pub use crate::ingredient::{Ingredient, Jar, Location};
@@ -108,17 +108,17 @@ pub mod plumbing {
         NewMemoIngredientIndices,
     };
     pub use crate::revision::{AtomicRevision, Revision};
-    pub use crate::runtime::{stamp, Runtime, Stamp};
+    pub use crate::runtime::{Runtime, Stamp, stamp};
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::table::memo::MemoTableWithTypes;
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::helper::{Dispatch as UpdateDispatch, Fallback as UpdateFallback};
-    pub use crate::update::{always_update, Update};
+    pub use crate::update::{Update, always_update};
     pub use crate::views::DatabaseDownCaster;
     pub use crate::zalsa::{
-        register_jar, transmute_data_ptr, views, ErasedJar, HasJar, IngredientIndex, JarKind,
-        Zalsa, ZalsaDatabase,
+        ErasedJar, HasJar, IngredientIndex, JarKind, Zalsa, ZalsaDatabase, register_jar,
+        transmute_data_ptr, views,
     };
     pub use crate::zalsa_local::ZalsaLocal;
 

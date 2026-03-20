@@ -3,7 +3,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
-use crate::zalsa_local::{output_edges, QueryOriginRef, QueryRevisions};
+use crate::zalsa_local::{QueryOriginRef, QueryRevisions, output_edges};
 use crate::{DatabaseKeyIndex, Event, EventKind};
 
 impl<C> IngredientImpl<C>
