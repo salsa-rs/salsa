@@ -50,6 +50,59 @@ mod tracked_struct;
 mod update;
 mod xform;
 
+/// Collection of all attributes' documentation. Copy these and filter with
+/// [`options::AllowedOptions`] and [`salsa_struct::SalsaStructAllowedOptions`] implementations.
+///
+/// # Container attributes
+///
+/// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
+/// - `specify`: Indicate that the value can be externally specified (only works with a single Salsa struct as the input. Incompatible with `lru`)
+// For functions:
+/// - `no_eq`: Always mark the output as updated when function is re-created. The type does not have to implement [`Eq`]. This is incompatible with `cycle_fn`.
+/// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
+// Explicitly not documented due to deprecation: - `no_lifetime`: TODO
+// Explicitly not documented: - `unsafe(non_update_return_type)`
+/// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
+// Explicitly not documented as it's unused: - `data = <ident>`: Name of the data type for an interned struct.
+// Explicitly not documented as it's unused: - `db = <path>`: Path to the database.
+// For functions:
+/// - `cycle_fn = <path>`: Cycle recovery function. TODO (default: `salsa::plumbing::unexpected_cycle_recovery!`)
+// For functions:
+/// - `cycle_initial = <path>`: Initial value for cycle iteration. TODO (default: `salsa::plumbing::unexpected_cycle_initial!`)
+// For functions:
+/// - `cycle_result = <expr>`: Result for non-fixpoint cycle. TODO
+/// - `lru = <usize>`: Set the LRU capacity (default: 0)
+/// - `constructor = <ident>`: Name of the constructor function. (default: `new`)
+// Explicitly not documented: - `id = <path>`: custom ID for interned structs. Must implement `salsa::plumbing::AsId`. (default: `salsa::Id`)
+/// - `revisions = <expr as usize>`: minimum number of revisions to keep a value interned.
+///   (default: `salsa::plumbing::internal::Configuration::REVISIONS`)
+/// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Output) -> usize`, default: none)
+/// - `self_ty = <type>`: Set the self type of the tracked impl, merely to refine the query name.
+/// - `persist` (Only with <span class="stab portability"><code>persistence</code></span> feature)
+/// - `persist([serialize = <path>], [deserialize = <path>])` (Only with <span class="stab portability"><code>persistence</code></span> feature)
+///   * Type of `serialize`: `fn(&Fields<'_>, S) -> Result<S::Ok, S::Error> where S: serde::Serializer`
+///   * Type of `deserialize`: `fn(D) -> Result<Fields<'static>, D::Error> where D: serde::Deserializer<'de>`
+///
+/// # Field attributes
+///
+// Only if [`salsa_struct::SalsaStructAllowedOptions::ALLOW_TRACKED`]:
+/// - `tracked`: Marks the field as tracked. Fields without this attribute must implement [`Hash`](std::hash::Hash).
+///   * Modifications to tracked fields only invalidates the data depending on the tracked fields. Use tracked fields when you need fine-grained incremental recomputation.
+///   * Modifications to untracked fields invalidates everything depending on the whole tracked struct. Use untracked fields for identity-defining data that rarely changes.
+// Only if [`salsa_struct::SalsaStructAllowedOptions::ALLOW_DEFAULT`]:
+/// - `default`: Marks the field as optional and as having a [`Default`] implementation.
+/// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
+// For input structs:
+/// - `no_eq`: Always mark the field as updated when its setter is called. The type does not have to implement [`Eq`].
+// For tracked structs:
+/// - `no_eq`: Always mark the field as updated when the struct is recreated inside a tracked function. The type does not have to implement [`Eq`].
+/// - `get(<ident>)`: Name of the getter function (default: field name)
+// Only for inputs:
+/// - `set(<ident>)`: Name of the setter function (default: `set_` + field name)
+// Only if [`salsa_struct::SalsaStructAllowedOptions::ALLOW_MAYBE_UPDATE`]:
+// Explicitly not documented: - `maybe_update(<expr>)`: Function of type `unsafe fn(*mut #field_ty, #field_ty) -> bool`. TODO
+mod attrs_doc {}
+
 #[proc_macro_attribute]
 pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
     accumulator::accumulator(args, input)
@@ -109,15 +162,28 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Creates interned structs.
 ///
-/// **Container attributes:**
+/// **Interned structs** are dedpulicated, immutable structs used as parameters to tracked
+/// functions.
+///
+/// # Container attributes
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
+// Explicitly not documented due to deprecation: - `no_lifetime`: TODO
 /// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
-/// - TODO
+// Explicitly not documented as it's unused: - `data = <ident>`: TODO
+/// - `constructor = <ident>`: Name of the constructor function. (default: `new`)
+// Explicitly not documented: - `id = <path>`: TODO (default: `salsa::Id`)
+/// - `revisions = <expr as usize>`: minimum number of revisions to keep a value interned.
+///   (default: `salsa::plumbing::internal::Configuration::REVISIONS`)
+/// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Output) -> usize`, default: none)
+/// - `persist([serialize = <path>], [deserialize = <path>])` (Only with <span class="stab portability"><code>persistence</code></span> feature)
+///   * Type of `serialize`: `fn(&Fields<'_>, S) -> Result<S::Ok, S::Error> where S: serde::Serializer`
+///   * Type of `deserialize`: `fn(D) -> Result<Fields<'static>, D::Error> where D: serde::Deserializer<'de>`
 ///
-/// **Field attributes:**
+/// # Field attributes
 ///
-/// - TODO
+/// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
+/// - `get(<ident>)`: Name of the getter function (default: field name)
 ///
 /// # Example
 ///
@@ -126,6 +192,14 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// struct MyInterned<'db> {
 ///     field: String,
 /// }
+///
+/// let db = salsa::DatabaseImpl::new();
+/// let a = MyInterned::new(&db, "example");
+/// let b = MyInterned::new(&db, "example");
+///
+/// // There is only one String allocation.
+///
+/// # drop((a, b));
 /// ```
 #[proc_macro_attribute]
 pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -139,17 +213,25 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 
 /// Creates input structs.
 ///
-/// **Container attributes:**
+/// **Input structs** are the starting point of your program. Everything else in your program is
+/// a deterministic function of these inputs.
+///
+/// # Container attributes
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 /// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
-/// - TODO
+// Explicitly not documented as it's unused: - `data = <ident>`: TODO
+/// - `constructor = <ident>`: Name of the constructor function. (default: `new`)
+/// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Output) -> usize`, default: none)
+/// - `persist([serialize = <path>], [deserialize = <path>])` (Only with <span class="stab portability"><code>persistence</code></span> feature)
+///   * Type of `serialize`: `fn(&Fields<'_>, S) -> Result<S::Ok, S::Error> where S: serde::Serializer`
+///   * Type of `deserialize`: `fn(D) -> Result<Fields<'static>, D::Error> where D: serde::Deserializer<'de>`
 ///
-/// **Field attributes:**
+/// # Field attributes
 ///
-/// - `default`: Marks the field as tracked.
+/// - `default`: Marks the field as optional and as having a [`Default`] implementation.
 /// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
-/// - `no_eq`: Signal that the output type does not implement the `Eq` trait (incompatible with `cycle_fn`)
+/// - `no_eq`: Always mark the field as updated when its setter is called. The type does not have to implement [`Eq`].
 /// - `get`: Name of the getter function (default: field name)
 /// - `set`: Name of the setter function (default: `set_` + field name)
 ///
@@ -160,10 +242,15 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 ///
 /// #[salsa::input]
 /// struct File {
-// Doesn't work without the std::path:: prefix...
+// FIXME: Doesn't work without the std::path:: prefix...
 ///     path: std::path::PathBuf,
 ///     #[returns(ref)]
 ///     contents: String,
+/// }
+///
+/// #[salsa::input(singleton, debug)]
+/// struct MySingleton {
+///     field: u32,
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -177,24 +264,26 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// **Tracked structs** are usually used as parameters to tracked functions. They can only be created inside tracked functions.
 ///
-/// **Container attributes:**
+/// ## Container attributes
 ///
 /// - `debug`: Generate a [`Debug`](std::fmt::Debug) implementation for the struct.
 /// - `singleton`: Marks the struct as a singleton. There is a maximum of one instance of a singleton struct in a Salsa database. Singletons additionally have `get` and `try_get` methods, and their `new` method sets the singleton.
-/// - `data`: TODO
-/// - `constructor_name`: TODO
-/// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Fields) -> usize`, default: none)
-/// - `persist(serialize = <path>, deserialize = <path>)` (Only with <span class="stab portability"><code>persistence</code></span> feature)
+// Explicitly not documented as it's unused: - `data = <ident>`: TODO
+/// - `constructor = <ident>`: Name of the constructor function. (default: `new`)
+/// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Output) -> usize`, default: none)
+/// - `persist([serialize = <path>], [deserialize = <path>])` (Only with <span class="stab portability"><code>persistence</code></span> feature)
 ///   * Type of `serialize`: `fn(&Fields<'_>, S) -> Result<S::Ok, S::Error> where S: serde::Serializer`
 ///   * Type of `deserialize`: `fn(D) -> Result<Fields<'static>, D::Error> where D: serde::Deserializer<'de>`
 ///
-/// **Field attributes:**
+/// ## Field attributes
 ///
-/// - `tracked`: Marks the field as tracked. TODO: what does this actually mean? Fields without this attribute must implement [`Hash`](std::hash::Hash).
+/// - `tracked`: Marks the field as tracked. Fields without this attribute must implement [`Hash`](std::hash::Hash).
+///   * Modifications to tracked fields only invalidates the data depending on the tracked fields. Use tracked fields when you need fine-grained incremental recomputation.
+///   * Modifications to untracked fields invalidates everything depending on the whole tracked struct. Use untracked fields for identity-defining data that rarely changes.
 /// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
-/// - `no_eq`: Signal that the output type does not implement the `Eq` trait (incompatible with `cycle_fn`)
-/// - `get`: Name of the getter function (default: field name)
-/// - `maybe_update`: TODO
+/// - `no_eq`: Always mark the field as updated when the struct is recreated inside a tracked function. The type does not have to implement [`Eq`].
+/// - `get(<ident>)`: Name of the getter function (default: field name)
+// Explicitly not documented: - `maybe_update(<expr>)`: Function of type `unsafe fn(*mut #field_ty, #field_ty) -> bool`. TODO
 ///
 /// # Tracked functions
 ///
@@ -202,25 +291,25 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// Tracked functions always take the database as the first argument and can take [`#[input]`](fn@input), [`#[tracked]`](fn@tracked), [`#[interned]`](fn@interned) and [`#[accumulator]`](fn@accumulator) structs for the rest of the arguments.
 ///
-/// **Attributes:**
+/// ## Attributes
 ///
 /// - `returns(copy | clone | ref | deref | as_ref | as_deref)`: Configure the "return mode" (default: `clone`)
-/// - `specify`: Signal that the value can be externally specified (only works with a single Salsa struct as the input. incompatible with `lru`)
-/// - `no_eq`: Signal that the output type does not implement the `Eq` trait (incompatible with `cycle_fn`)
+/// - `specify`: Indicate that the value can be externally specified (only works with a single Salsa struct as the input. Incompatible with `lru`)
+/// - `no_eq`: Always mark the output as updated when function is re-created. The type does not have to implement [`Eq`]. This is incompatible with `cycle_fn`.
 // Explicitly not documented: - `unsafe(non_update_return_type)`
-/// - `cycle_fn = <path>`: TODO
-/// - `cycle_initial = <path>`: TODO
-/// - `cycle_result = <path>`: TODO
+/// - `cycle_fn = <path>`: Cycle recovery function. TODO
+/// - `cycle_initial = <path>`: Initial value for cycle iteration. TODO
+/// - `cycle_result = <expr>`: Result for non-fixpoint cycle. TODO
 /// - `lru = <usize>`: Set the LRU capacity (default: 0)
 /// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Output) -> usize`, default: none)
-/// - `self_ty = <Ty>`: Set the self type of the tracked impl, merely to refine the query name
+/// - `self_ty = <type>`: Set the self type of the tracked impl, merely to refine the query name.
 /// - `persist` (Only with <span class="stab portability"><code>persistence</code></span> feature)
 ///
 /// # Tracked [`impl`]s
 ///
 /// TODO
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// #[salsa::tracked]
@@ -240,6 +329,27 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///             .sum::<u32>()
 /// }
 ///
+/// ```
+///
+/// ```
+/// //! Comparison between tracked and untracked fields.
+///
+/// #[salsa::tracked]
+/// struct MyStruct<'db> {
+///     #[tracked]
+///     tracked_field: u32,
+///     untracked_field: String, // No #[tracked] attribute
+/// }
+///
+/// // If untracked_field changes, both functions re-execute
+/// #[salsa::tracked]
+/// fn uses_tracked<'db>(db: &'db dyn salsa::Database, s: MyStruct<'db>) -> u32 {
+///     s.tracked_field(db)
+/// }
+/// #[salsa::tracked]
+/// fn uses_untracked<'db>(db: &'db dyn salsa::Database, s: MyStruct<'db>) -> String {
+///     s.untracked_field(db)
+/// }
 /// ```
 ///
 /// [`impl`]: https://doc.rust-lang.org/std/keyword.impl.html

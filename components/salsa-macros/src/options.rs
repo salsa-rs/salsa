@@ -163,24 +163,47 @@ impl<A: AllowedOptions> Default for Options<A> {
 
 /// These flags determine which options are allowed in a given context
 pub(crate) trait AllowedOptions {
+    /// Syntax: `returns(copy | clone | ref | deref | as_ref | as_deref)`
     const RETURNS: bool;
+    /// Syntax: `specify`
     const SPECIFY: bool;
+    /// Syntax: `no_eq`
     const NO_EQ: bool;
+    /// Syntax: `debug`
     const DEBUG: bool;
+    /// Syntax: `no_lifetime`
     const NO_LIFETIME: bool;
+    /// Syntax: `unsafe(non_update_return_type)`
     const NON_UPDATE_RETURN_TYPE: bool;
+    /// Syntax: `singleton`
     const SINGLETON: bool;
+    /// Syntax: `data = <ident>`
     const DATA: bool;
+    /// Syntax: `db = <path>`
     const DB: bool;
+    /// Syntax: `cycle_fn = <path>`
     const CYCLE_FN: bool;
+    /// Syntax: `cycle_initial = <path>`
     const CYCLE_INITIAL: bool;
+    /// Syntax: `cycle_result = <expr>`
     const CYCLE_RESULT: bool;
+    /// Syntax: `lru = <usize>`
     const LRU: bool;
+    /// Syntax: `constructor = <ident>`
     const CONSTRUCTOR_NAME: bool;
+    /// Syntax: `id = <path>`
     const ID: bool;
+    /// Syntax: `revisions = <expr>`
     const REVISIONS: bool;
+    /// Syntax: `heap_size = <path>`
     const HEAP_SIZE: bool;
+    /// Syntax: `self_ty = <type>`
     const SELF_TY: bool;
+    /// Syntax: `persist | persist([serialize = <path>], [deserialize = <path>])`
+    ///
+    /// Only with the `persistence` feature and not [`AllowedPersistOptions::Invalid`].
+    ///
+    /// Overriding `serialize` and `deserialize` is only allowed with [`AllowedPersistOptions::AllowedValue`].
     const PERSIST: AllowedPersistOptions;
 }
 

@@ -39,7 +39,7 @@ pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
 }
 
 pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
-    /// The kind of struct (e.g., interned, input, tracked).
+    /// The name of derive macro (e.g., interned, input, tracked).
     const KIND: &'static str;
 
     /// Are `#[maybe_update]` fields allowed?
@@ -72,6 +72,7 @@ pub(crate) struct SalsaField<'s> {
 }
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
+/// When updating this, also update the documentation in [`AllowedOptions::RETURNS`] and elsewhere.
 const ALLOWED_RETURN_MODES: &[&str] = &["copy", "clone", "ref", "deref", "as_ref", "as_deref"];
 
 #[allow(clippy::type_complexity)]
