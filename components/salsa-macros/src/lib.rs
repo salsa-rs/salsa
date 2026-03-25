@@ -71,7 +71,7 @@ mod xform;
 /// - `cycle_initial = <path>`: Initial value for cycle iteration. TODO (default: `salsa::plumbing::unexpected_cycle_initial!`)
 // For functions:
 /// - `cycle_result = <expr>`: Result for non-fixpoint cycle. TODO
-/// - `lru = <usize>`: Set the LRU capacity (default: 0)
+/// - `lru = <usize>`: Set to a nonzero value to enable LRU (Least Recently Used) eviction of memoized values and set the LRU capacity. (default: 0)
 /// - `constructor = <ident>`: Name of the constructor function. (default: `new`)
 // Explicitly not documented: - `id = <path>`: custom ID for interned structs. Must implement `salsa::plumbing::AsId`. (default: `salsa::Id`)
 /// - `revisions = <expr as usize>`: minimum number of revisions to keep a value interned.
@@ -287,9 +287,14 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// # Tracked functions
 ///
-/// When you call a **tracked function**, Salsa will track which inputs it accesses and memoize the return value based on it. This data is saved in the database. When it's called again, the inputs are compared. If they're identical, the first call's return value is returned.
+/// When you call a **tracked function**, Salsa will track which queries it runs and memoize the return value based on it. This data is saved in the database. When the function is called again and there is no matching memoized value (e.g. when inputs change), the queries are re-run and their outputs are compared. If they're identical, the first output is returned.
 ///
-/// Tracked functions always take the database as the first argument and can take [`#[input]`](fn@input), [`#[tracked]`](fn@tracked), [`#[interned]`](fn@interned) and [`#[accumulator]`](fn@accumulator) structs for the rest of the arguments.
+/// Tracked functions always take the database as the first argument and can take ingredients for the rest of the inputs.
+///
+/// **Ingredients** are structs tagged with [`#[input]`](fn@input), [`#[tracked]`](fn@tracked),
+/// [`#[interned]`](fn@interned) and [`#[accumulator]`](fn@accumulator).
+/// **Queries** are getters of ingredients' fields (like `input.value(db)` in the example below) or
+/// other tracked functions.
 ///
 /// ## Attributes
 ///
@@ -300,7 +305,7 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `cycle_fn = <path>`: Cycle recovery function. TODO
 /// - `cycle_initial = <path>`: Initial value for cycle iteration. TODO
 /// - `cycle_result = <expr>`: Result for non-fixpoint cycle. TODO
-/// - `lru = <usize>`: Set the LRU capacity (default: 0)
+/// - `lru = <usize>`: Set to a nonzero value to enable LRU (Least Recently Used) eviction of memoized values and set the LRU capacity. (default: 0)
 /// - `heap_size = <path>`: Function to calculate the heap memory usage of memoized values (type: `fn(&Output) -> usize`, default: none)
 /// - `self_ty = <type>`: Set the self type of the tracked impl, merely to refine the query name.
 /// - `persist` (Only with <span class="stab portability"><code>persistence</code></span> feature)
