@@ -8,6 +8,15 @@ use crate::{DatabaseKeyIndex, Id, Revision};
 pub trait SalsaStructInDb: Sized {
     type MemoIngredientMap: MemoIngredientMap;
 
+    /// The type IDs of all concrete (leaf) salsa struct types that this type can contain.
+    ///
+    /// For concrete salsa structs (input/tracked/interned), this is a single-element slice
+    /// containing the struct's own type ID.
+    ///
+    /// For supertype enums, this is the concatenation of all variants' leaf type IDs,
+    /// enabling transitive overlap detection.
+    const LEAF_TYPE_IDS: &'static [typeid::ConstTypeId];
+
     /// Lookup or create ingredient indices.
     ///
     /// Note that this method does *not* create the ingredients themselves, this is handled by
@@ -78,4 +87,28 @@ pub trait SalsaStructInDb: Sized {
         id: Id,
         current_revision: Revision,
     ) -> MemoTableWithTypes<'_>;
+}
+
+/// Asserts that no two variants of a supertype enum transitively contain the same concrete
+/// salsa type. Called once at runtime from the generated `lookup_ingredient_index`.
+pub fn assert_supertype_no_overlap(
+    enum_name: &str,
+    variant_leaves: &[&[typeid::ConstTypeId]],
+    variant_names: &[&str],
+) {
+    for i in 0..variant_leaves.len() {
+        for j in (i + 1)..variant_leaves.len() {
+            for a in variant_leaves[i] {
+                for b in variant_leaves[j] {
+                    assert!(
+                        a != b,
+                        "supertype enum `{enum_name}` has overlapping variants: \
+                         `{}` and `{}` (transitively) contain the same concrete salsa type",
+                        variant_names[i],
+                        variant_names[j],
+                    );
+                }
+            }
+        }
+    }
 }

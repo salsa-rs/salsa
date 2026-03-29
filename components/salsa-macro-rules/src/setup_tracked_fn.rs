@@ -123,6 +123,7 @@ macro_rules! setup_tracked_fn {
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
+                        const LEAF_TYPE_IDS: &'static [$zalsa::ConstTypeId] = &[$zalsa::ConstTypeId::of::<$InternedData>()];
 
                         fn lookup_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
                             $zalsa::IngredientIndices::empty()

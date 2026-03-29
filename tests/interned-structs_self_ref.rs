@@ -142,6 +142,9 @@ const _: () = {
     impl zalsa_::SalsaStructInDb for InternedString<'_> {
         type MemoIngredientMap = zalsa_::MemoIngredientSingletonIndex;
 
+        const LEAF_TYPE_IDS: &'static [salsa::plumbing::ConstTypeId] =
+            &[salsa::plumbing::ConstTypeId::of::<InternedString>()];
+
         fn lookup_ingredient_index(aux: &Zalsa) -> salsa::plumbing::IngredientIndices {
             aux.lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
                 .into()

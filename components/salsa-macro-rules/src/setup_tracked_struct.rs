@@ -254,6 +254,7 @@ macro_rules! setup_tracked_struct {
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
                 type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
+                const LEAF_TYPE_IDS: &'static [$zalsa::ConstTypeId] = &[$zalsa::ConstTypeId::of::<$Struct<'static>>()];
 
                 fn lookup_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
                     aux.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
