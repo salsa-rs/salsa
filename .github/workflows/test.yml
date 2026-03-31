@@ -157,11 +157,11 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-cargo-
 
       - name: "Build benchmarks"
-        run: cargo codspeed build -m simulation
+        run: cargo codspeed build -m simulation -m memory
 
       - name: "Run benchmarks"
         uses: CodSpeedHQ/action@v4
         with:
-          mode: simulation
+          mode: "simulation,memory"
           run: cargo codspeed run
           token: ${{ secrets.CODSPEED_TOKEN }}
