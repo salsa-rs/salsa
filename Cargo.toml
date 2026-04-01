@@ -12,7 +12,7 @@ description = "A generic framework for on-demand, incrementalized computation (e
 salsa-macro-rules = { version = "0.26.1", path = "components/salsa-macro-rules" }
 salsa-macros = { version = "0.26.1", path = "components/salsa-macros", optional = true }
 
-boxcar = "0.2.13"
+boxcar = "0.2.14"
 crossbeam-queue = "0.3.12"
 crossbeam-utils = "0.8.21"
 hashbrown = "0.15"
@@ -27,7 +27,7 @@ thin-vec = { version = "0.2.14" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # Automatic ingredient registration.
-inventory = { version = "0.3.20", optional = true }
+inventory = { version = "0.3.24", optional = true }
 
 # parallel map
 rayon = { version = "1.10.0", optional = true }
@@ -41,7 +41,7 @@ shuttle = { version = "0.8.1", optional = true }
 erased-serde = { version = "0.4.6", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
-ordermap = { version = "1.0.0", optional = true }
+ordermap = { version = "1", optional = true }
 
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
@@ -76,10 +76,10 @@ ordered-float = "5.0.0"
 
 # tests/benches
 annotate-snippets = "0.11.5"
-codspeed-criterion-compat = { version = "3.0.5", default-features = false }
+codspeed-criterion-compat = { version = "4.4.1", default-features = false }
 expect-test = "1.5.1"
 rustversion = "1.0"
-test-log = { version = "0.2.18", features = ["trace"] }
+test-log = { version = "0.2.19", features = ["trace"] }
 trybuild = "1.0"
 serde_json = "1.0.140"
 
