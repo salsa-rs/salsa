@@ -22,11 +22,3 @@ In addition to the struct itself, we must add an impl of `salsa::Database`:
 ```rust
 {{#include ../../../examples/calc/db.rs:db_impl}}
 ```
-
-## Implementing the `salsa::ParallelDatabase` trait
-
-If you want to permit accessing your database from multiple threads at once, then you also need to implement the `ParallelDatabase` trait:
-
-```rust
-{{#include ../../../examples/calc/db.rs:par_db_impl}}
-```
