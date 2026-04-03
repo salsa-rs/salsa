@@ -26,9 +26,11 @@ struct Macro {
 
 struct AssociatedFunctionArguments<'syn> {
     self_token: Option<&'syn syn::token::SelfValue>,
+    db_input_index: usize,
     db_ty: &'syn syn::Type,
     db_ident: &'syn syn::Ident,
-    db_lt: Option<&'syn syn::Lifetime>,
+    db_lt: syn::Lifetime,
+    has_explicit_db_lt: bool,
     input_ids: Vec<syn::Ident>,
     input_tys: Vec<&'syn syn::Type>,
     output_ty: syn::Type,
@@ -103,13 +105,16 @@ impl Macro {
 
         let AssociatedFunctionArguments {
             self_token,
+            db_input_index,
             db_ty,
             db_ident,
             db_lt,
+            has_explicit_db_lt,
             input_ids,
             input_tys,
             output_ty,
         } = self.validity_check(impl_item, fn_item)?;
+        let db_ty = self.with_db_lifetime(db_ty, &db_lt);
 
         let mut inner_fn = fn_item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
@@ -165,9 +170,23 @@ impl Macro {
         };
 
         // Update the method that will actually appear in the impl to have the new body
-        // and its true return type
-        let db_lt = db_lt.cloned();
-        self.update_return_type(&mut fn_item.sig, &args, &db_lt)?;
+        // and its true return type.
+        let outer_db_lt = if self.return_mode_uses_db_lifetime(&args)
+            && (has_explicit_db_lt || self.return_mode_requires_named_db_lifetime(&args))
+        {
+            Some(db_lt.clone())
+        } else {
+            None
+        };
+
+        if let Some(outer_db_lt) = &outer_db_lt {
+            if !has_explicit_db_lt {
+                fn_item.sig.generics.params.push(parse_quote!(#outer_db_lt));
+            }
+            self.update_db_argument_lifetime(&mut fn_item.sig, db_input_index, outer_db_lt)?;
+        }
+
+        self.update_return_type(&mut fn_item.sig, &args, outer_db_lt.as_ref())?;
         fn_item.block = block;
 
         Ok(())
@@ -178,7 +197,10 @@ impl Macro {
         impl_item: &'syn syn::ItemImpl,
         fn_item: &'syn syn::ImplItemFn,
     ) -> syn::Result<AssociatedFunctionArguments<'syn>> {
-        let db_lt = self.extract_db_lifetime(impl_item, fn_item)?;
+        let explicit_db_lt = self.extract_db_lifetime(impl_item, fn_item)?;
+        let db_lt = explicit_db_lt
+            .cloned()
+            .unwrap_or_else(|| crate::db_lifetime::default_db_lifetime(fn_item.sig.ident.span()));
 
         let is_method = matches!(&fn_item.sig.inputs[0], syn::FnArg::Receiver(_));
 
@@ -193,12 +215,14 @@ impl Macro {
         let input_ids: Vec<syn::Ident> =
             crate::fn_util::input_ids(&self.hygiene, &fn_item.sig, skipped_inputs);
         let input_tys = crate::fn_util::input_tys(&fn_item.sig, skipped_inputs)?;
-        let output_ty = crate::fn_util::output_ty(db_lt, &fn_item.sig)?;
+        let output_ty = crate::fn_util::output_ty(Some(&db_lt), &fn_item.sig)?;
 
         Ok(AssociatedFunctionArguments {
             self_token,
+            db_input_index,
             db_ident,
             db_lt,
+            has_explicit_db_lt: explicit_db_lt.is_some(),
             db_ty,
             input_ids,
             input_tys,
@@ -330,11 +354,68 @@ impl Macro {
         Ok((db_ident, db_ty))
     }
 
+    fn with_db_lifetime(&self, db_ty: &syn::Type, db_lt: &syn::Lifetime) -> syn::Type {
+        let mut db_ty = db_ty.clone();
+        self.set_db_lifetime(&mut db_ty, db_lt);
+        db_ty
+    }
+
+    fn update_db_argument_lifetime(
+        &self,
+        sig: &mut syn::Signature,
+        db_input_index: usize,
+        db_lt: &syn::Lifetime,
+    ) -> syn::Result<()> {
+        let Some(input) = sig.inputs.iter_mut().nth(db_input_index) else {
+            return Err(syn::Error::new_spanned(
+                &sig.ident,
+                "tracked methods must take a database parameter",
+            ));
+        };
+
+        let syn::FnArg::Typed(typed) = input else {
+            return Err(syn::Error::new_spanned(
+                input,
+                "tracked methods must take a database parameter",
+            ));
+        };
+
+        self.set_db_lifetime(typed.ty.as_mut(), db_lt);
+        Ok(())
+    }
+
+    fn set_db_lifetime(&self, db_ty: &mut syn::Type, db_lt: &syn::Lifetime) {
+        let syn::Type::Reference(reference) = db_ty else {
+            return;
+        };
+
+        match &reference.lifetime {
+            Some(lifetime) if lifetime.ident != "_" => {}
+            _ => reference.lifetime = Some(db_lt.clone()),
+        }
+    }
+
+    fn return_mode_uses_db_lifetime(&self, args: &FnArgs) -> bool {
+        if let Some(returns) = &args.returns {
+            returns == "ref" || returns == "deref" || returns == "as_ref" || returns == "as_deref"
+        } else {
+            false
+        }
+    }
+
+    fn return_mode_requires_named_db_lifetime(&self, args: &FnArgs) -> bool {
+        if let Some(returns) = &args.returns {
+            returns == "as_ref" || returns == "as_deref"
+        } else {
+            false
+        }
+    }
+
     fn update_return_type(
         &self,
         sig: &mut syn::Signature,
         args: &FnArgs,
-        db_lt: &Option<syn::Lifetime>,
+        db_lt: Option<&syn::Lifetime>,
     ) -> syn::Result<()> {
         if let Some(returns) = &args.returns {
             if let syn::ReturnType::Type(_, t) = &mut sig.output {
