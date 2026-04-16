@@ -18,6 +18,7 @@ mod cycle_nested_three_threads;
 mod cycle_nested_three_threads_changed;
 mod cycle_panic;
 mod cycle_provisional_depending_on_itself;
+mod lru_eviction_cancels_cycle;
 
 #[cfg(not(feature = "shuttle"))]
 pub(crate) mod sync {
