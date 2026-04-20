@@ -46,10 +46,3 @@ error: cannot find attribute `tracked` in this scope
    |
 33 |     #[tracked]
    |       ^^^^^^^
-   |
-help: consider importing one of these attribute macros
-   |
- 1 + use salsa::tracked;
-   |
- 1 + use salsa_macros::tracked;
-   |
