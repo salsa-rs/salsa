@@ -20,7 +20,7 @@ pub struct Revision {
 
 impl Revision {
     #[inline]
-    pub(crate) fn max() -> Self {
+    pub const fn max() -> Self {
         Self::from(usize::MAX)
     }
 
@@ -33,7 +33,7 @@ impl Revision {
     }
 
     #[inline]
-    pub(crate) fn from(g: usize) -> Self {
+    pub(crate) const fn from(g: usize) -> Self {
         Self {
             generation: NonZeroUsize::new(g).unwrap(),
         }
