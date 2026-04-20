@@ -1,15 +1,15 @@
-error[E0277]: the trait bound `MyInput: TrackedStructInDb` is not satisfied
+error[E0277]: the trait bound `MyInput: salsa::plumbing::TrackedStructInDb` is not satisfied
   --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-input.rs:15:1
    |
 15 | #[salsa::tracked(specify)]
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
-help: the trait `TrackedStructInDb` is not implemented for `MyInput`
+help: the trait `salsa::plumbing::TrackedStructInDb` is not implemented for `MyInput`
   --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-input.rs:5:1
    |
  5 | #[salsa::input]
    | ^^^^^^^^^^^^^^^
-help: the trait `TrackedStructInDb` is implemented for `MyTracked<'_>`
+help: the trait `salsa::plumbing::TrackedStructInDb` is implemented for `MyTracked<'_>`
   --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-input.rs:10:1
    |
 10 | #[salsa::tracked]

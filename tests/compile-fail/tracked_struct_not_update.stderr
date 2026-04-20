@@ -1,8 +1,8 @@
-error[E0599]: the function or associated item `maybe_update` exists for struct `UpdateDispatch<NotUpdate>`, but its trait bounds were not satisfied
+error[E0599]: the function or associated item `maybe_update` exists for struct `salsa::plumbing::UpdateDispatch<NotUpdate>`, but its trait bounds were not satisfied
  --> tests/compile-fail/tracked_struct_not_update.rs:1:1
   |
 1 | #[salsa::tracked]
-  | ^^^^^^^^^^^^^^^^^ function or associated item cannot be called on `UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
+  | ^^^^^^^^^^^^^^^^^ function or associated item cannot be called on `salsa::plumbing::UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
 ...
 7 | struct NotUpdate;
   | ---------------- doesn't satisfy `NotUpdate: PartialEq` or `NotUpdate: Update`
@@ -12,7 +12,7 @@ error[E0599]: the function or associated item `maybe_update` exists for struct `
   |     pub struct Dispatch<D>(PhantomData<D>);
   |     ---------------------- doesn't satisfy `_: UpdateFallback<NotUpdate>`
   |
-note: if you're trying to build a new `UpdateDispatch<NotUpdate>`, consider using `UpdateDispatch::<D>::new` which returns `UpdateDispatch<_>`
+note: if you're trying to build a new `salsa::plumbing::UpdateDispatch<NotUpdate>`, consider using `salsa::plumbing::UpdateDispatch::<D>::new` which returns `salsa::plumbing::UpdateDispatch<_>`
  --> src/update.rs
   |
   |         pub fn new() -> Self {
@@ -20,7 +20,7 @@ note: if you're trying to build a new `UpdateDispatch<NotUpdate>`, consider usin
   = note: the following trait bounds were not satisfied:
           `NotUpdate: Update`
           `NotUpdate: PartialEq`
-          which is required by `UpdateDispatch<NotUpdate>: UpdateFallback<NotUpdate>`
+          which is required by `salsa::plumbing::UpdateDispatch<NotUpdate>: salsa::plumbing::UpdateFallback<NotUpdate>`
 note: the trait `Update` must be implemented
  --> src/update.rs
   |
@@ -29,6 +29,6 @@ note: the trait `Update` must be implemented
   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
   |
-  7 + #[derive(PartialEq)]
-  8 | struct NotUpdate;
-    |
+7 + #[derive(PartialEq)]
+8 | struct NotUpdate;
+  |
