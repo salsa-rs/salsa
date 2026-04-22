@@ -15,7 +15,7 @@ salsa-macros = { version = "0.26.1", path = "components/salsa-macros", optional 
 boxcar = "0.2.14"
 crossbeam-queue = "0.3.12"
 crossbeam-utils = "0.8.21"
-hashbrown = "0.15"
+hashbrown = "0.17"
 hashlink = "0.10"
 indexmap = "2"
 intrusive-collections = "0.9.7"
