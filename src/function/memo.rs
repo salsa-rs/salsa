@@ -452,6 +452,7 @@ mod _memory_usage {
 
     impl SalsaStructInDb for DummyStruct {
         type MemoIngredientMap = MemoIngredientSingletonIndex;
+        const LEAF_TYPE_IDS: &'static [typeid::ConstTypeId] = &[];
 
         fn lookup_ingredient_index(_: &Zalsa) -> IngredientIndices {
             unimplemented!()

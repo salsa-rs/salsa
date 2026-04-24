@@ -1,4 +1,5 @@
 use proc_macro2::TokenStream;
+use syn::visit_mut::VisitMut;
 
 use crate::token_stream_with_error;
 
@@ -66,13 +67,68 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
         }
     };
 
+    // Build variant types with all enum lifetime params replaced by 'static,
+    // for use in const context (where generic lifetime params are not available).
+    let enum_lifetimes: Vec<syn::Lifetime> = enum_item
+        .generics
+        .lifetimes()
+        .map(|lt| lt.lifetime.clone())
+        .collect();
+    let variant_types_static: Vec<syn::Type> = variant_types
+        .iter()
+        .map(|ty| replace_lifetimes_with_static(ty, &enum_lifetimes))
+        .collect();
+
+    // Generate variant index identifiers for the const concatenation
+    let variant_indices: Vec<syn::Ident> = variant_names
+        .iter()
+        .enumerate()
+        .map(|(i, _)| quote::format_ident!("__VARIANT_{}", i))
+        .collect();
+
     let salsa_struct_in_db = quote! {
         impl #impl_generics zalsa::SalsaStructInDb for #enum_name #type_generics
         #where_clause {
             type MemoIngredientMap = zalsa::MemoIngredientIndices;
 
+            const LEAF_TYPE_IDS: &'static [zalsa::ConstTypeId] = {
+                // Get each variant's leaf type IDs as consts.
+                // We use the 'static version of variant types since consts
+                // cannot reference generic lifetime parameters.
+                #(
+                    const #variant_indices: &[zalsa::ConstTypeId] =
+                        <#variant_types_static as zalsa::SalsaStructInDb>::LEAF_TYPE_IDS;
+                )*
+
+                // Total number of leaf type IDs across all variants
+                const __N: usize = #( #variant_indices.len() + )* 0;
+
+                // Build concatenated array
+                const __IDS: [zalsa::ConstTypeId; __N] = {
+                    let mut __result = [zalsa::ConstTypeId::of::<()>(); __N];
+                    let mut __dst: usize = 0;
+                    #(
+                        {
+                            let mut __i: usize = 0;
+                            while __i < #variant_indices.len() {
+                                __result[__dst] = #variant_indices[__i];
+                                __dst += 1;
+                                __i += 1;
+                            }
+                        }
+                    )*
+                    __result
+                };
+                &__IDS
+            };
+
             #[inline]
             fn lookup_ingredient_index(__zalsa: &zalsa::Zalsa) -> zalsa::IngredientIndices {
+                zalsa::assert_supertype_no_overlap(
+                    stringify!(#enum_name),
+                    &[#( <#variant_types_static as zalsa::SalsaStructInDb>::LEAF_TYPE_IDS ),*],
+                    &[#( stringify!(#variant_names) ),*],
+                );
                 zalsa::IngredientIndices::merge([ #( <#variant_types as zalsa::SalsaStructInDb>::lookup_ingredient_index(__zalsa) ),* ])
             }
 
@@ -122,4 +178,24 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
         };
     };
     Ok(all_impls)
+}
+
+/// Replace all occurrences of the given lifetime parameters with `'static`.
+///
+/// This is needed because associated consts cannot reference generic lifetime
+/// parameters from the enclosing impl block.
+fn replace_lifetimes_with_static(ty: &syn::Type, lifetimes: &[syn::Lifetime]) -> syn::Type {
+    struct LifetimeReplacer<'a>(&'a [syn::Lifetime]);
+
+    impl VisitMut for LifetimeReplacer<'_> {
+        fn visit_lifetime_mut(&mut self, lt: &mut syn::Lifetime) {
+            if self.0.iter().any(|param_lt| param_lt.ident == lt.ident) {
+                *lt = syn::Lifetime::new("'static", lt.apostrophe);
+            }
+        }
+    }
+
+    let mut ty = ty.clone();
+    LifetimeReplacer(lifetimes).visit_type_mut(&mut ty);
+    ty
 }

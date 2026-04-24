@@ -82,6 +82,7 @@ pub mod prelude {
 pub mod plumbing {
     pub use std::any::TypeId;
     pub use std::option::Option::{self, None, Some};
+    pub use typeid::ConstTypeId;
 
     #[cfg(feature = "accumulator")]
     pub use salsa_macro_rules::setup_accumulator_impl;
@@ -109,7 +110,7 @@ pub mod plumbing {
     };
     pub use crate::revision::{AtomicRevision, Revision};
     pub use crate::runtime::{Runtime, Stamp, stamp};
-    pub use crate::salsa_struct::SalsaStructInDb;
+    pub use crate::salsa_struct::{SalsaStructInDb, assert_supertype_no_overlap};
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::table::memo::MemoTableWithTypes;
     pub use crate::tracked_struct::TrackedStructInDb;
