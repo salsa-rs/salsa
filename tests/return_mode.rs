@@ -159,6 +159,15 @@ fn as_deref_fn(db: &dyn Database, input: AsDerefInput) -> Option<String> {
     input.map(|s| s.to_owned())
 }
 
+#[salsa::tracked]
+impl AsDerefInput {
+    #[salsa::tracked(returns(as_deref))]
+    fn as_deref_method(self, db: &dyn Database) -> Option<String> {
+        let input: Option<&str> = self.text(db);
+        input.map(|s| s.to_owned())
+    }
+}
+
 #[test]
 fn as_deref_test() {
     salsa::DatabaseImpl::new().attach(|db| {
@@ -170,5 +179,15 @@ fn as_deref_test() {
             )
         "#]]
         .assert_debug_eq(&x);
-    })
+    });
+    salsa::DatabaseImpl::new().attach(|db| {
+        let input = AsDerefInput::new(db, Some("Test".into()));
+        let x: Option<&str> = input.as_deref_method(db);
+        expect_test::expect![[r#"
+            Some(
+                "Test",
+            )
+        "#]]
+        .assert_debug_eq(&x);
+    });
 }
