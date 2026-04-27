@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.1...salsa-v0.26.2) - 2026-04-27
+
+### Fixed
+
+- fix tracked impl db lifetime for as_deref return mode ([#1084](https://github.com/salsa-rs/salsa/pull/1084))
+
+### Other
+
+- Exclude the book from published crates ([#1089](https://github.com/salsa-rs/salsa/pull/1089))
+- Detect overlapping supertype variants via leaf type IDs ([#1080](https://github.com/salsa-rs/salsa/pull/1080))
+- Bump hashbrown to 0.17 ([#1087](https://github.com/salsa-rs/salsa/pull/1087))
+- Expose `Revision::max()` and make it const ([#1086](https://github.com/salsa-rs/salsa/pull/1086))
+
 ## [0.26.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.0...salsa-v0.26.1) - 2026-03-20
 
 ### Other

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.2](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.26.1...salsa-macro-rules-v0.26.2) - 2026-04-27
+
+### Other
+
+- Detect overlapping supertype variants via leaf type IDs ([#1080](https://github.com/salsa-rs/salsa/pull/1080))
+
 ## [0.26.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.25.2...salsa-macro-rules-v0.26.0) - 2026-02-02
 
 ### Added
