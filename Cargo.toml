@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
+exclude = [
+    "book/",
+]
 
 [dependencies]
 salsa-macro-rules = { version = "0.26.1", path = "components/salsa-macro-rules" }
