@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.26.1"
+version = "0.26.2"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,8 +12,8 @@ exclude = [
 ]
 
 [dependencies]
-salsa-macro-rules = { version = "0.26.1", path = "components/salsa-macro-rules" }
-salsa-macros = { version = "0.26.1", path = "components/salsa-macros", optional = true }
+salsa-macro-rules = { version = "0.26.2", path = "components/salsa-macro-rules" }
+salsa-macros = { version = "0.26.2", path = "components/salsa-macros", optional = true }
 
 boxcar = "0.2.14"
 crossbeam-queue = "0.3.12"
@@ -68,7 +68,7 @@ salsa_unstable = []
 # which may ultimately result in odd issues due to the proc-macro
 # output mismatching with the declarative macro inputs
 [target.'cfg(any())'.dependencies]
-salsa-macros = { version = "=0.26.1", path = "components/salsa-macros" }
+salsa-macros = { version = "=0.26.2", path = "components/salsa-macros" }
 
 [dev-dependencies]
 # examples

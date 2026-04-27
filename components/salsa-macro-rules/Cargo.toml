@@ -1,6 +1,6 @@
 [package]
 name = "salsa-macro-rules"
-version = "0.26.1"
+version = "0.26.2"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
