@@ -7,7 +7,7 @@ use salsa::{Database, Durability, Id};
 mod common;
 
 #[salsa::tracked(cycle_initial=cycle_initial)]
-fn query_a<'db>(db: &'db dyn salsa::Database) -> Interned<'db> {
+fn query_a(db: &dyn salsa::Database) -> Interned<'_> {
     let interned = query_b(db);
     let value = interned.value(db);
 
@@ -19,7 +19,7 @@ fn query_a<'db>(db: &'db dyn salsa::Database) -> Interned<'db> {
 }
 
 #[salsa::tracked]
-fn query_b<'db>(db: &'db dyn Database) -> Interned<'db> {
+fn query_b(db: &dyn Database) -> Interned<'_> {
     let interned = query_a(db);
     query_x(db, interned);
     interned

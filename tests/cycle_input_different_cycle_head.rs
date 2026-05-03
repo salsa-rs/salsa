@@ -62,7 +62,7 @@ struct Interned {
 }
 
 #[salsa::tracked(cycle_initial=cycle_initial)]
-fn query_b<'db>(db: &'db dyn MyDb) -> u32 {
+fn query_b(db: &dyn MyDb) -> u32 {
     query_c(db)
 }
 

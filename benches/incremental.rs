@@ -15,7 +15,7 @@ struct Tracked<'db> {
 
 #[salsa::tracked(returns(ref))]
 #[inline(never)]
-fn index<'db>(db: &'db dyn salsa::Database, input: Input) -> Vec<Tracked<'db>> {
+fn index(db: &dyn salsa::Database, input: Input) -> Vec<Tracked<'_>> {
     (0..input.field(db)).map(|i| Tracked::new(db, i)).collect()
 }
 

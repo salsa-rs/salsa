@@ -55,7 +55,7 @@ fn execute() {
 }
 
 #[salsa::tracked]
-fn create_tracked<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+fn create_tracked(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, BadHash::from(input.field(db)))
 }
 

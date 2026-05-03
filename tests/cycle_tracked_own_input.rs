@@ -53,7 +53,7 @@ impl Type<'_> {
 }
 
 #[salsa::tracked(cycle_initial=infer_class_initial)]
-fn infer_class<'db>(db: &'db dyn salsa::Database, node: ClassNode) -> Type<'db> {
+fn infer_class(db: &dyn salsa::Database, node: ClassNode) -> Type<'_> {
     Type::Class(Class::new(
         db,
         node.name(db),
@@ -62,7 +62,7 @@ fn infer_class<'db>(db: &'db dyn salsa::Database, node: ClassNode) -> Type<'db> 
 }
 
 #[salsa::tracked]
-fn infer_type_param<'db>(db: &'db dyn salsa::Database, node: TypeParamNode) -> TypeParam<'db> {
+fn infer_type_param(db: &dyn salsa::Database, node: TypeParamNode) -> TypeParam<'_> {
     if let Some(constraint) = node.constraint(db) {
         // Reuse the type param from the class if any.
         // The example is a bit silly, because it's a reduction of what we have in Astral's type checker

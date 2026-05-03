@@ -207,10 +207,7 @@ struct IterationNode<'db> {
 /// 4. Third iteration (only for variant=1): returns `[iter_0, iter_1, iter_2]`
 /// 5. Further iterations: no change, fixpoint reached
 #[salsa::tracked(cycle_initial=initial_with_structs)]
-fn create_tracked_in_cycle<'db>(
-    db: &'db dyn Database,
-    input: GraphInput,
-) -> Vec<IterationNode<'db>> {
+fn create_tracked_in_cycle(db: &dyn Database, input: GraphInput) -> Vec<IterationNode<'_>> {
     // Check if we should create more nodes based on the input.
     let variant = input.fixpoint_variant(db);
 

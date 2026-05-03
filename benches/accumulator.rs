@@ -19,7 +19,7 @@ struct Expression<'db> {
 
 #[salsa::tracked]
 #[inline(never)]
-fn root<'db>(db: &'db dyn salsa::Database, input: Input) -> Vec<usize> {
+fn root(db: &dyn salsa::Database, input: Input) -> Vec<usize> {
     (0..input.expressions(db))
         .map(|i| infer_expression(db, Expression::new(db, i)))
         .collect()

@@ -39,7 +39,7 @@ struct NestedInterned<'db> {
 #[test]
 fn test_intern_new() {
     #[salsa::tracked]
-    fn function<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
+    fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
 
@@ -106,7 +106,7 @@ fn test_reintern() {
 #[test]
 fn test_durability() {
     #[salsa::tracked]
-    fn function<'db>(db: &'db dyn Database, _input: Input) -> Interned<'db> {
+    fn function(db: &dyn Database, _input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(0))
     }
 
@@ -143,7 +143,7 @@ struct Immortal<'db> {
 #[test]
 fn test_immortal() {
     #[salsa::tracked]
-    fn function<'db>(db: &'db dyn Database, input: Input) -> Immortal<'db> {
+    fn function(db: &dyn Database, input: Input) -> Immortal<'_> {
         Immortal::new(db, BadHash(input.field1(db)))
     }
 
@@ -167,7 +167,7 @@ fn test_immortal() {
 #[test]
 fn test_reuse() {
     #[salsa::tracked]
-    fn function<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
+    fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
 
@@ -267,12 +267,12 @@ fn test_reuse() {
 #[test]
 fn test_reuse_indirect() {
     #[salsa::tracked]
-    fn intern<'db>(db: &'db dyn Database, input: Input, value: usize) -> Interned<'db> {
+    fn intern(db: &dyn Database, input: Input, value: usize) -> Interned<'_> {
         intern_inner(db, input, value)
     }
 
     #[salsa::tracked]
-    fn intern_inner<'db>(db: &'db dyn Database, input: Input, value: usize) -> Interned<'db> {
+    fn intern_inner(db: &dyn Database, input: Input, value: usize) -> Interned<'_> {
         let _i = input.field1(db); // Only low durability interned values are garbage collected.
         Interned::new(db, BadHash(value))
     }
@@ -313,7 +313,7 @@ fn test_reuse_indirect() {
 fn test_reuse_interned_input() {
     // A query that creates an interned value.
     #[salsa::tracked]
-    fn create_interned<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
+    fn create_interned(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
 
@@ -355,7 +355,7 @@ fn test_reuse_interned_input() {
 fn test_reuse_multiple_interned_input() {
     // A query that creates an interned value.
     #[salsa::tracked]
-    fn create_interned<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
+    fn create_interned(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
 
@@ -422,7 +422,7 @@ fn test_reuse_multiple_interned_input() {
 #[test]
 fn test_durability_increase() {
     #[salsa::tracked]
-    fn intern<'db>(db: &'db dyn Database, input: Input, value: usize) -> Interned<'db> {
+    fn intern(db: &dyn Database, input: Input, value: usize) -> Interned<'_> {
         let _f = input.field1(db);
         Interned::new(db, BadHash(value))
     }

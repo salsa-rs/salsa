@@ -317,13 +317,13 @@ fn partial_query() {
     use salsa::plumbing::ZalsaDatabase;
 
     #[salsa::tracked(persist)]
-    fn query<'db>(db: &'db dyn salsa::Database, input: MyInput) -> usize {
+    fn query(db: &dyn salsa::Database, input: MyInput) -> usize {
         inner_query(db, input) + 1
     }
 
     // Note that the inner query is not persisted, but we should still preserve the dependency on `input.field`.
     #[salsa::tracked]
-    fn inner_query<'db>(db: &'db dyn salsa::Database, input: MyInput) -> usize {
+    fn inner_query(db: &dyn salsa::Database, input: MyInput) -> usize {
         input.field(db)
     }
 
@@ -427,17 +427,13 @@ fn partial_query_interned() {
     use salsa::plumbing::{AsId, ZalsaDatabase};
 
     #[salsa::tracked(persist)]
-    fn intern<'db>(db: &'db dyn salsa::Database, input: MyInput, value: usize) -> MyInterned<'db> {
+    fn intern(db: &dyn salsa::Database, input: MyInput, value: usize) -> MyInterned<'_> {
         do_intern(db, input, value)
     }
 
     // Note that the inner query is not persisted, but we should still preserve the dependency on `MyInterned`.
     #[salsa::tracked]
-    fn do_intern<'db>(
-        db: &'db dyn salsa::Database,
-        input: MyInput,
-        value: usize,
-    ) -> MyInterned<'db> {
+    fn do_intern(db: &dyn salsa::Database, input: MyInput, value: usize) -> MyInterned<'_> {
         let _i = input.field(db); // Only low durability interned values are garbage collected.
         MyInterned::new(db, value.to_string())
     }
@@ -572,7 +568,7 @@ fn partial_query_interned() {
 #[should_panic(expected = "must be persistable")]
 fn invalid_specified_dependency() {
     #[salsa::tracked]
-    fn specify<'db>(db: &'db dyn salsa::Database) {
+    fn specify(db: &dyn salsa::Database) {
         let tracked = MyTracked::new(db, "a".to_string());
         specified_query::specify(db, tracked, 2222);
     }

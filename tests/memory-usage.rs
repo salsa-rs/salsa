@@ -16,22 +16,22 @@ struct MyInterned<'db> {
 }
 
 #[salsa::tracked]
-fn input_to_interned<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyInterned<'db> {
+fn input_to_interned(db: &dyn salsa::Database, input: MyInput) -> MyInterned<'_> {
     MyInterned::new(db, input.field(db))
 }
 
 #[salsa::tracked]
-fn input_to_tracked<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'db> {
+fn input_to_tracked(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db))
 }
 
 #[salsa::tracked]
-fn input_to_string<'db>(_db: &'db dyn salsa::Database) -> String {
+fn input_to_string(_db: &dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
 #[salsa::tracked(heap_size = string_size_of)]
-fn input_to_string_get_size<'db>(_db: &'db dyn salsa::Database) -> String {
+fn input_to_string_get_size(_db: &dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
@@ -44,10 +44,10 @@ fn string_tuple_size_of((x,): &(String,)) -> usize {
 }
 
 #[salsa::tracked]
-fn input_to_tracked_tuple<'db>(
-    db: &'db dyn salsa::Database,
+fn input_to_tracked_tuple(
+    db: &dyn salsa::Database,
     input: MyInput,
-) -> (MyTracked<'db>, MyTracked<'db>) {
+) -> (MyTracked<'_>, MyTracked<'_>) {
     (
         MyTracked::new(db, input.field(db)),
         MyTracked::new(db, input.field(db)),
