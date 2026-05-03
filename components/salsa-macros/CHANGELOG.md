@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.2](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.26.1...salsa-macros-v0.26.2) - 2026-05-03
+
+### Fixed
+
+- fix tracked impl db lifetime for as_deref return mode ([#1084](https://github.com/salsa-rs/salsa/pull/1084))
+
+### Other
+
+- Detect overlapping supertype variants via leaf type IDs ([#1080](https://github.com/salsa-rs/salsa/pull/1080))
+
 ## [0.26.1](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.26.0...salsa-macros-v0.26.1) - 2026-03-20
 
 ### Other
