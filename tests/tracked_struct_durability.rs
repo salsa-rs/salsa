@@ -57,13 +57,13 @@ struct Inference<'db> {
 }
 
 #[salsa::tracked]
-fn index<'db>(db: &'db dyn Db, file: File) -> Index<'db> {
+fn index(db: &dyn Db, file: File) -> Index<'_> {
     let _ = file.field(db);
     Index::new(db, Definitions::new(db, Definition::new(db, file)))
 }
 
 #[salsa::tracked]
-fn definitions<'db>(db: &'db dyn Db, file: File) -> Definitions<'db> {
+fn definitions(db: &dyn Db, file: File) -> Definitions<'_> {
     index(db, file).definitions(db)
 }
 
@@ -81,7 +81,7 @@ fn infer<'db>(db: &'db dyn Db, definition: Definition<'db>) -> Inference<'db> {
 }
 
 #[salsa::tracked]
-fn check<'db>(db: &'db dyn Db, file: File) -> Inference<'db> {
+fn check(db: &dyn Db, file: File) -> Inference<'_> {
     let defs = definitions(db, file);
     infer(db, defs.definition(db))
 }

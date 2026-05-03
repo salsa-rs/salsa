@@ -51,7 +51,7 @@ impl Type {
 }
 
 #[salsa::tracked(cycle_fn=use_cycle_recover, cycle_initial=use_cycle_initial)]
-fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
+fn infer_use(db: &dyn Db, u: Use) -> Type {
     let defs = u.reaching_definitions(db);
     match defs[..] {
         [] => Type::Bottom,
@@ -61,7 +61,7 @@ fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
 }
 
 #[salsa::tracked(cycle_fn=def_cycle_recover, cycle_initial=def_cycle_initial)]
-fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
+fn infer_definition(db: &dyn Db, def: Definition) -> Type {
     let increment_ty = Type::Values(Box::from([def.increment(db)]));
     if let Some(base) = def.base(db) {
         let base_ty = infer_use(db, base);

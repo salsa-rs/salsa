@@ -20,7 +20,7 @@ struct Interned {
 }
 
 #[salsa::tracked(cycle_initial=|db, _| Interned::new(db, 0))]
-fn query_b<'db>(db: &'db dyn Database) -> Interned<'db> {
+fn query_b(db: &dyn Database) -> Interned<'_> {
     query_c(db);
     Interned::new(db, 2)
 }
