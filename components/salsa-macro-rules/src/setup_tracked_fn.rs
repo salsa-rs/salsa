@@ -95,13 +95,43 @@ macro_rules! setup_tracked_fn {
         ) -> ::salsa::plumbing::return_mode_ty!(($return_mode, __), $db_lt, $output_ty) {
             use ::salsa::plumbing as $zalsa;
 
+            $zalsa::attach($db, || {
+                let (zalsa, zalsa_local) = $db.zalsas();
+                let result = $zalsa::macro_if! {
+                    if $needs_interner {
+                        {
+                            let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
+                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
+                        }
+                    } else {
+                        {
+                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
+                        }
+                    }
+                };
+
+                $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
+            })
+        }
+
+        // The module needs be last in the macro expansion in order to make the tracked
+        // function's ident be identified as a function, not a struct, during semantic highlighting.
+        // for more details, see https://github.com/salsa-rs/salsa/pull/612.
+        #[doc(hidden)]
+        #[allow(non_camel_case_types)]
+        $vis struct $fn_name {
+            _priv: ::std::convert::Infallible,
+        }
+
+        const _: () = {
+            use ::salsa::plumbing as $zalsa;
+
             struct $Configuration;
 
             $zalsa::register_jar! {
                 $zalsa::ErasedJar::erase::<$fn_name>()
             }
 
-            #[allow(non_local_definitions)]
             impl $zalsa::HasJar for $fn_name {
                 type Jar = $fn_name;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::TrackedFn;
@@ -357,7 +387,6 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
-            #[allow(non_local_definitions)]
             impl $zalsa::Jar for $fn_name {
                 fn create_ingredients(
                     zalsa: &mut $zalsa::Zalsa,
@@ -421,7 +450,6 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
-            #[allow(non_local_definitions)]
             impl $fn_name {
                 $zalsa::gate_accumulated! {
                     pub fn accumulated<$db_lt, A: ::salsa::Accumulator>(
@@ -466,34 +494,21 @@ macro_rules! setup_tracked_fn {
                 fn set_lru_capacity(db: &mut dyn $Db, value: usize) where for<'trivial_bounds> $Eviction: $zalsa::function::HasCapacity {
                     $Configuration::fn_ingredient_mut(db).set_capacity(value);
                 }
-            }
 
-            $zalsa::attach($db, || {
-                let (zalsa, zalsa_local) = $db.zalsas();
-                let result = $zalsa::macro_if! {
-                    if $needs_interner {
-                        {
-                            let key = $Configuration::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
-                            $Configuration::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
-                        }
-                    } else {
-                        {
-                            $Configuration::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
-                        }
+                $zalsa::macro_if! { $needs_interner =>
+                    #[inline]
+                    fn intern_ingredient_(
+                        zalsa: &$zalsa::Zalsa,
+                    ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
+                        $Configuration::intern_ingredient_(zalsa)
                     }
-                };
+                }
 
-                $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
-            })
-        }
-
-        // The struct needs be last in the macro expansion in order to make the tracked
-        // function's ident be identified as a function, not a struct, during semantic highlighting.
-        // for more details, see https://github.com/salsa-rs/salsa/pull/612.
-        #[doc(hidden)]
-        #[allow(non_camel_case_types)]
-        $vis struct $fn_name {
-            _priv: ::std::convert::Infallible,
-        }
+                #[inline]
+                fn fn_ingredient_<'z>(db: &dyn $Db, zalsa: &'z $zalsa::Zalsa) -> &'z $zalsa::function::IngredientImpl<$Configuration> {
+                    $Configuration::fn_ingredient_(db, zalsa)
+                }
+            }
+        };
     };
 }
