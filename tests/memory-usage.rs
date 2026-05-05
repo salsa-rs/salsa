@@ -1,4 +1,6 @@
 #![cfg(feature = "inventory")]
+// Expected sizes assume a 64-bit target.
+#![cfg(target_pointer_width = "64")]
 
 #[salsa::input(heap_size = string_tuple_size_of)]
 struct MyInput {
