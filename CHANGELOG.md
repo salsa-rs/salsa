@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.3](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.2...salsa-v0.26.3) - 2026-05-06
+
+### Other
+
+- Remove outdated RELEASES.md file; exclude a few more files from published crates ([#1091](https://github.com/salsa-rs/salsa/pull/1091))
+- Skip memory usage tests on 32-bit (non-64-bit) targets ([#1094](https://github.com/salsa-rs/salsa/pull/1094))
+- Convert CRLF-terminated sources to LF-terminated ([#1092](https://github.com/salsa-rs/salsa/pull/1092))
+
 ## [0.26.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.1...salsa-v0.26.2) - 2026-05-03
 
 ### Fixed
