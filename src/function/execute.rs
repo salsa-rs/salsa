@@ -190,9 +190,31 @@ where
 
             // If there are no cycle heads, break out of the loop.
             if cycle_heads.is_empty() {
-                let mut completed_query = active_query.pop();
-
                 if !iteration_count.is_initial() {
+                    // This query *was* mid-fixpoint and its recursive
+                    // dependency was dropped this iteration (the conditional-
+                    // dependency case, see `cycle.rs` `CycleHead::removed`), so
+                    // its cycle-head set is now empty. We must not memoize
+                    // `new_value` as final without checking it against the last
+                    // provisional value: doing so accepts an arbitrary
+                    // mid-iteration value of a recurrence that may not have
+                    // converged. The convergence contract (`cycle.rs`) is that
+                    // the cycle is final only once a computed value equals the
+                    // previous iteration's provisional value.
+                    let last_provisional_memo = last_provisional_memo_opt.unwrap_or_else(|| {
+                        self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                            .unwrap_or_else(|| {
+                                unreachable!(
+                                    "{database_key_index:#?} was mid-fixpoint, \
+                                         but no provisional memo found"
+                                )
+                            })
+                    });
+                    let converged = last_provisional_memo
+                        .value
+                        .as_ref()
+                        .is_some_and(|last| C::values_equal(&new_value, last));
+
                     iteration_count = iteration_count.increment().unwrap_or_else(|| {
                         tracing::warn!(
                             "{database_key_index:?}: execute: too many cycle iterations"
@@ -200,11 +222,40 @@ where
                         panic!("{database_key_index:?}: execute: too many cycle iterations")
                     });
 
+                    if !converged {
+                        // Not converged: re-iterate with `new_value` as the
+                        // next provisional rather than silently memoizing an
+                        // unconverged value. A genuinely non-converging
+                        // `cycle_fn` will hit the `MAX_ITERATIONS` backstop
+                        // above, which is its documented contract.
+                        let mut completed_query = active_query.pop();
+                        completed_query
+                            .revisions
+                            .update_cycle_participant_iteration_count(iteration_count);
+
+                        let new_memo = self.insert_memo(
+                            zalsa,
+                            id,
+                            Memo::new(
+                                Some(new_value),
+                                zalsa.current_revision(),
+                                completed_query.revisions,
+                            ),
+                            memo_ingredient_index,
+                        );
+                        last_provisional_memo_opt = Some(new_memo);
+                        last_stale_tracked_ids = completed_query.stale_tracked_structs;
+                        continue;
+                    }
+
+                    let mut completed_query = active_query.pop();
                     completed_query
                         .revisions
                         .update_cycle_participant_iteration_count(iteration_count);
+                    break (new_value, completed_query);
                 }
 
+                let completed_query = active_query.pop();
                 break (new_value, completed_query);
             }
 
