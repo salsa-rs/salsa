@@ -16,14 +16,28 @@
 //! loop breaks and memoizes that freshly computed value with no convergence
 //! comparison and without calling the user's `cycle_fn` for that iterate.
 //!
+//! On the impurity. The bug is specifically about a recursive dependency that
+//! is dropped on a *particular iterate* by something that is **not part of
+//! the recurrence's fixpoint**. That asymmetry is essential: if the drop
+//! trigger is folded into the cycle (e.g. a second tracked query that reads
+//! the recurrence's provisional value), the mutually-recursive system gains a
+//! genuine self-consistent fixpoint at the dropped value, Salsa correctly
+//! converges to it, and there is no bug to reproduce. A trigger that varies
+//! across iterations of the same query in the same revision *without* being
+//! part of the fixpoint is, by definition, an untracked read. So this test
+//! keeps the iteration-driven drop but declares the impurity the
+//! Salsa-sanctioned way, via `db.report_untracked_read()` (the same idiom
+//! `tests/cycle.rs` uses), rather than hiding it: cache invalidation stays
+//! sound and the construction is honest about what it is.
+//!
 //! Construction. `query_x` is a self-cycle head with a monotone, bounded
-//! recurrence `inner + 1` capped at `cap`, whose unique fixpoint is `cap`.
+//! recurrence `inner + 1` capped at `cap`, whose unique fixpoint is `V(cap)`.
 //! While its recursive self-dependency is live it iterates normally (its
-//! `cycle_fn` is consulted each iteration). On a chosen iteration *before*
-//! the recurrence has reached `cap` it stops recursing and returns an
-//! unrelated value (`V(99)`), dropping its self-dependency so its cycle-head
-//! set becomes empty. On HEAD that iteration exits via the early-break and
-//! `V(99)` is memoized as the final result, even though the recurrence has a
+//! `cycle_fn` is consulted each iteration). On a chosen entry *before* the
+//! recurrence has reached `cap` it stops recursing and returns an unrelated
+//! value (`V(99)`), dropping its self-dependency so its cycle-head set
+//! becomes empty. On HEAD that iterate exits via the early-break and `V(99)`
+//! is memoized as the final result, even though the recurrence has a
 //! well-defined fixpoint `V(cap)` it had not yet reached, the last
 //! provisional value was far from `V(99)`, and the user's `cycle_fn` was
 //! never asked about `V(99)`.
@@ -55,13 +69,13 @@ fn x_initial(_db: &dyn Db, _id: salsa::Id, _input: Input) -> V {
     V(0)
 }
 
-fn x_recover(_db: &dyn Db, _c: &salsa::Cycle, _last: &V, value: V, _i: Input) -> V {
-    // Drive `query_x` toward its own fixpoint normally (identity recovery).
-    value
-}
-
-#[salsa::tracked(cycle_fn = x_recover, cycle_initial = x_initial)]
+#[salsa::tracked(cycle_initial = x_initial)]
 fn query_x(db: &dyn Db, input: Input) -> V {
+    // The drop trigger is an entry counter that is deliberately *outside* the
+    // fixpoint (see the module docs for why it must be). That makes this
+    // query impure, so declare the untracked read explicitly: Salsa then
+    // knows not to assume purity and cache invalidation stays correct.
+    db.report_untracked_read();
     let run = X_RUNS.with(|c| {
         let n = c.get() + 1;
         c.set(n);
@@ -70,7 +84,7 @@ fn query_x(db: &dyn Db, input: Input) -> V {
 
     if run == input.drop_at(db) {
         // Conditional dependency dropped: no recursive self-call this
-        // iteration, so `query_x`'s cycle-head set is empty here. `V(99)` is
+        // iterate, so `query_x`'s cycle-head set is empty here. `V(99)` is
         // deliberately not on the recurrence trajectory.
         return V(99);
     }
