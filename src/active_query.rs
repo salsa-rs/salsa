@@ -68,6 +68,9 @@ pub(crate) struct ActiveQuery {
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
 
+    /// Provisional memos that this query depends on.
+    provisional_memos: FxIndexSet<DatabaseKeyIndex>,
+
     /// If this query is a cycle head, iteration count of that cycle.
     iteration_count: IterationCount,
 }
@@ -80,6 +83,7 @@ impl ActiveQuery {
         edges: &[QueryEdge],
         untracked_read: bool,
         active_tracked_ids: &[(Identity, Id)],
+        provisional_memos: &[DatabaseKeyIndex],
     ) {
         assert!(self.input_outputs.is_empty());
 
@@ -102,6 +106,8 @@ impl ActiveQuery {
             .mark_all_active(active_tracked_ids.iter().copied());
         self.disambiguator_map
             .seed(active_tracked_ids.iter().map(|(id, _)| id));
+        self.provisional_memos
+            .extend(provisional_memos.iter().copied());
     }
 
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
@@ -114,6 +120,7 @@ impl ActiveQuery {
         durability: Durability,
         changed_at: Revision,
         cycle_heads: &CycleHeads,
+        provisional_memos: &[DatabaseKeyIndex],
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
@@ -121,6 +128,11 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(changed_at);
         self.input_outputs.insert(QueryEdge::input(input));
         self.cycle_heads.extend(cycle_heads);
+        if !cycle_heads.is_empty() {
+            self.provisional_memos.insert(input);
+        }
+        self.provisional_memos
+            .extend(provisional_memos.iter().copied());
         #[cfg(feature = "accumulator")]
         {
             self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
@@ -157,6 +169,10 @@ impl ActiveQuery {
         self.input_outputs.insert(QueryEdge::output(key));
     }
 
+    pub(super) fn add_provisional_memo(&mut self, key: DatabaseKeyIndex) {
+        self.provisional_memos.insert(key);
+    }
+
     /// True if the given key was output by this query.
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
         self.disambiguator_map.disambiguate(key)
@@ -189,6 +205,7 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
+            provisional_memos: FxIndexSet::default(),
             iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
@@ -207,6 +224,7 @@ impl ActiveQuery {
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
+            ref mut provisional_memos,
             iteration_count,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
@@ -232,6 +250,7 @@ impl ActiveQuery {
             active_tracked_structs,
             mem::take(cycle_heads),
             iteration_count,
+            provisional_memos.drain(..).collect(),
         );
 
         let revisions = QueryRevisions {
@@ -250,7 +269,7 @@ impl ActiveQuery {
         }
     }
 
-    fn clear(&mut self) {
+    fn clear(&mut self) -> FxIndexSet<DatabaseKeyIndex> {
         let Self {
             database_key_index: _,
             durability: _,
@@ -260,6 +279,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            provisional_memos,
             iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated,
@@ -270,9 +290,12 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
+        let provisional_memos = mem::take(provisional_memos);
         *iteration_count = IterationCount::initial();
         #[cfg(feature = "accumulator")]
         accumulated.clear();
+
+        provisional_memos
     }
 
     fn reset_for(
@@ -289,6 +312,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            provisional_memos,
             iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated,
@@ -314,6 +338,10 @@ impl ActiveQuery {
         );
         debug_assert!(
             cycle_heads.is_empty(),
+            "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
+        );
+        debug_assert!(
+            provisional_memos.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
         );
         #[cfg(feature = "accumulator")]
@@ -400,7 +428,11 @@ impl QueryStack {
         self.stack[self.len].top_into_revisions()
     }
 
-    pub(crate) fn pop(&mut self, key: DatabaseKeyIndex, #[cfg(debug_assertions)] push_len: usize) {
+    pub(crate) fn pop(
+        &mut self,
+        key: DatabaseKeyIndex,
+        #[cfg(debug_assertions)] push_len: usize,
+    ) -> FxIndexSet<DatabaseKeyIndex> {
         #[cfg(debug_assertions)]
         assert_eq!(push_len, self.len(), "unbalanced push/pop");
         debug_assert_ne!(self.len, 0, "too many pops");
