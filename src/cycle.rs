@@ -48,6 +48,7 @@ use std::iter::FusedIterator;
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::key::DatabaseKeyIndex;
+use crate::runtime::CancellationCount;
 use crate::sync::OnceLock;
 use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::{Id, Revision};
@@ -499,11 +500,13 @@ pub enum ProvisionalStatus<'db> {
     Provisional {
         iteration: IterationCount,
         verified_at: Revision,
+        cancellation_count: CancellationCount,
         cycle_heads: &'db CycleHeads,
     },
     Final {
         iteration: IterationCount,
         verified_at: Revision,
+        cancellation_count: CancellationCount,
     },
 }
 

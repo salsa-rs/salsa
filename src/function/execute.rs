@@ -125,6 +125,7 @@ where
 
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
+        let cancellation_count = zalsa.runtime().cancellation_count();
 
         let id = database_key_index.key_index();
 
@@ -136,7 +137,9 @@ where
         let mut iteration_count = IterationCount::initial();
 
         if let Some(old_memo) = opt_old_memo {
-            if old_memo.verified_at.load() == zalsa.current_revision() {
+            if old_memo.verified_at.load() == zalsa.current_revision()
+                && old_memo.revisions.cancellation_count == cancellation_count
+            {
                 // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
                 // However, the locking doesn't handle the case where a thread fetches the result of a panicking
                 // cycle head query **after** all locks were released. That's what we do here.
@@ -162,8 +165,13 @@ where
             }
         }
 
-        let _poison_guard =
-            PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
+        let _poison_guard = PoisonProvisionalIfPanicking::new(
+            self,
+            zalsa,
+            id,
+            memo_ingredient_index,
+            cancellation_count,
+        );
 
         let (new_value, completed_query) = loop {
             let active_query = claim_guard
@@ -386,6 +394,7 @@ where
             // * ensure the final returned memo depends on all inputs from all iterations.
             if old_memo.may_be_provisional()
                 && old_memo.verified_at.load() == zalsa.current_revision()
+                && old_memo.revisions.cancellation_count == active_query.cancellation_count()
             {
                 active_query.seed_iteration(&old_memo.revisions);
             }
@@ -423,6 +432,7 @@ struct PoisonProvisionalIfPanicking<'a, C: Configuration> {
     zalsa: &'a Zalsa,
     id: Id,
     memo_ingredient_index: MemoIngredientIndex,
+    cancellation_count: crate::runtime::CancellationCount,
 }
 
 impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
@@ -431,12 +441,14 @@ impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
         zalsa: &'a Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
+        cancellation_count: crate::runtime::CancellationCount,
     ) -> Self {
         Self {
             ingredient,
             zalsa,
             id,
             memo_ingredient_index,
+            cancellation_count,
         }
     }
 }
@@ -447,6 +459,7 @@ impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
             let revisions = QueryRevisions::fixpoint_initial(
                 self.ingredient.database_key_index(self.id),
                 IterationCount::initial(),
+                self.cancellation_count,
             );
 
             let memo = Memo::new(None, self.zalsa.current_revision(), revisions);

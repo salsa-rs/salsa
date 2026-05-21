@@ -183,6 +183,10 @@ where
                 })
             },
             CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
+                let cancellation_count = zalsa_local
+                    .active_query_cancellation_count()
+                    .unwrap_or_else(|| zalsa_local.cancellation_count());
+
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists
@@ -193,6 +197,7 @@ where
                     // on the value OR a concurrent `Vec` for cycle heads.
                     if memo.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
+                        && memo.revisions.cancellation_count == cancellation_count
                         && memo.revisions.cycle_heads().contains(&database_key_index)
                     {
                         memo.revisions
@@ -219,6 +224,7 @@ where
                     .and_then(|old_memo| {
                         if old_memo.verified_at.load() == zalsa.current_revision()
                             && old_memo.value.is_some()
+                            && old_memo.revisions.cancellation_count == cancellation_count
                         {
                             Some(old_memo.revisions.iteration())
                         } else {
@@ -226,7 +232,11 @@ where
                         }
                     })
                     .unwrap_or(IterationCount::initial());
-                let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
+                let revisions = QueryRevisions::fixpoint_initial(
+                    database_key_index,
+                    iteration,
+                    cancellation_count,
+                );
 
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                 self.insert_memo(
