@@ -20,7 +20,7 @@ use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -265,10 +265,17 @@ where
     fn insert_memo<'db>(
         &'db self,
         zalsa: &'db Zalsa,
+        zalsa_local: Option<&ZalsaLocal>,
         id: Id,
         mut memo: memo::Memo<'db, C>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<'db, C> {
+        let may_be_provisional = memo.may_be_provisional();
+        if may_be_provisional {
+            memo.revisions
+                .add_provisional_memo(self.database_key_index(id));
+        }
+
         if let Some(tracked_struct_ids) = memo.revisions.tracked_struct_ids_mut() {
             tracked_struct_ids.shrink_to_fit();
         }
@@ -289,7 +296,15 @@ where
             unsafe { self.deleted_entries.push(old_value) };
         }
         // SAFETY: memo has been inserted into the table
-        unsafe { self.extend_memo_lifetime(memo.as_ref()) }
+        let memo = unsafe { self.extend_memo_lifetime(memo.as_ref()) };
+
+        if may_be_provisional {
+            if let Some(zalsa_local) = zalsa_local {
+                zalsa_local.record_provisional_memo(self.database_key_index(id));
+            }
+        }
+
+        memo
     }
 
     #[inline]
@@ -417,6 +432,31 @@ where
         };
 
         memo.revisions.verified_final.store(true, Ordering::Release);
+    }
+
+    fn invalidate_provisional_memo(&self, zalsa: &Zalsa, input: Id) {
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, input);
+        let Some(memo) = self.get_memo_from_table_for(zalsa, input, memo_ingredient_index) else {
+            return;
+        };
+
+        if !memo.may_be_provisional() || memo.value.is_none() {
+            return;
+        }
+
+        let database_key_index = self.database_key_index(input);
+        let revisions =
+            QueryRevisions::fixpoint_initial(database_key_index, IterationCount::initial());
+
+        let memo = memo::Memo::new(
+            None,
+            // Keep this distinct from the current revision so a retry treats
+            // the memo as stale instead of same-revision provisional state.
+            Revision::max(),
+            revisions,
+        );
+
+        self.insert_memo(zalsa, None, input, memo, memo_ingredient_index);
     }
 
     fn flatten_cycle_head_dependencies(

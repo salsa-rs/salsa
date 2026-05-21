@@ -190,6 +190,11 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         );
     }
 
+    /// Invalidates a provisional memo left behind by an unwinding fixpoint query.
+    fn invalidate_provisional_memo(&self, _zalsa: &Zalsa, _input: Id) {
+        unreachable!("invalidate_provisional_memo should only be called on functions");
+    }
+
     /// Flattens the dependencies of a query with cycle handling that participates in a cycle.
     ///
     /// This query recursively walks the dependency graph of `id` and flattens input dependencies

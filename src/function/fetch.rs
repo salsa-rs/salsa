@@ -33,11 +33,18 @@ where
 
         self.eviction.record_use(id);
 
+        let provisional_memos = if memo.may_be_provisional() {
+            memo.revisions.provisional_memos()
+        } else {
+            &[]
+        };
+
         zalsa_local.report_tracked_read(
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
             memo.cycle_heads(),
+            provisional_memos,
             #[cfg(feature = "accumulator")]
             memo.revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
@@ -231,6 +238,7 @@ where
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                 self.insert_memo(
                     zalsa,
+                    Some(zalsa_local),
                     id,
                     Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
                     memo_ingredient_index,

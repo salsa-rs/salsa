@@ -176,11 +176,12 @@ impl ZalsaLocal {
     }
 
     #[inline]
-    pub(crate) fn push_query(
-        &self,
+    pub(crate) fn push_query<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
         database_key_index: DatabaseKeyIndex,
         iteration_count: IterationCount,
-    ) -> ActiveQueryGuard<'_> {
+    ) -> ActiveQueryGuard<'db> {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
@@ -188,6 +189,7 @@ impl ZalsaLocal {
 
                 ActiveQueryGuard {
                     local_state: self,
+                    zalsa,
                     database_key_index,
                     #[cfg(debug_assertions)]
                     push_len: stack.len(),
@@ -307,6 +309,7 @@ impl ZalsaLocal {
         durability: Durability,
         changed_at: Revision,
         cycle_heads: &CycleHeads,
+        provisional_memos: &[DatabaseKeyIndex],
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
@@ -326,6 +329,7 @@ impl ZalsaLocal {
                         durability,
                         changed_at,
                         cycle_heads,
+                        provisional_memos,
                         #[cfg(feature = "accumulator")]
                         has_accumulated,
                         #[cfg(feature = "accumulator")]
@@ -457,6 +461,27 @@ impl ZalsaLocal {
     pub(crate) fn set_cancellation_disabled(&self, was_disabled: bool) -> bool {
         self.cancelled.set_cancellation_disabled(was_disabled)
     }
+
+    pub(crate) fn record_provisional_memo(&self, key: DatabaseKeyIndex) {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.with_query_stack_unchecked_mut(|stack| {
+                if let Some(top_query) = stack.last_mut() {
+                    top_query.add_provisional_memo(key);
+                }
+            })
+        }
+    }
+}
+
+pub(crate) fn invalidate_provisional_memos(
+    zalsa: &Zalsa,
+    memos: impl IntoIterator<Item = DatabaseKeyIndex>,
+) {
+    for database_key_index in memos {
+        let ingredient = zalsa.lookup_ingredient(database_key_index.ingredient_index());
+        ingredient.invalidate_provisional_memo(zalsa, database_key_index.key_index());
+    }
 }
 
 // Okay to implement as `ZalsaLocal`` is !Sync
@@ -546,6 +571,7 @@ impl QueryRevisionsExtra {
         mut tracked_struct_ids: ThinVec<(Identity, Id)>,
         cycle_heads: CycleHeads,
         iteration: IterationCount,
+        mut provisional_memos: ThinVec<DatabaseKeyIndex>,
     ) -> Self {
         #[cfg(feature = "accumulator")]
         let acc = accumulated.is_empty();
@@ -555,16 +581,19 @@ impl QueryRevisionsExtra {
             && tracked_struct_ids.is_empty()
             && cycle_heads.is_empty()
             && iteration.is_initial()
+            && provisional_memos.is_empty()
         {
             None
         } else {
             tracked_struct_ids.shrink_to_fit();
+            provisional_memos.shrink_to_fit();
 
             Some(Box::new(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
                 accumulated,
                 cycle_heads,
                 tracked_struct_ids,
+                provisional_memos,
                 iteration: iteration.into(),
                 cycle_converged: false,
             }))
@@ -603,6 +632,11 @@ struct QueryRevisionsExtraInner {
     // be created with new IDs anyways.
     tracked_struct_ids: ThinVec<(Identity, Id)>,
 
+    /// Provisional memos that contributed to this result and should be
+    /// invalidated if the surrounding fixpoint query unwinds.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    provisional_memos: ThinVec<DatabaseKeyIndex>,
+
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
     /// for managing a fixpoint iteration. In a cycle like
@@ -628,6 +662,7 @@ impl QueryRevisionsExtraInner {
             #[cfg(feature = "accumulator")]
             accumulated,
             tracked_struct_ids,
+            provisional_memos,
             cycle_heads,
             iteration: _,
             cycle_converged: _,
@@ -637,7 +672,9 @@ impl QueryRevisionsExtraInner {
         let b = accumulated.allocation_size();
         #[cfg(not(feature = "accumulator"))]
         let b = 0;
-        b + cycle_heads.allocation_size() + std::mem::size_of_val(tracked_struct_ids.as_slice())
+        b + cycle_heads.allocation_size()
+            + std::mem::size_of_val(tracked_struct_ids.as_slice())
+            + std::mem::size_of_val(provisional_memos.as_slice())
     }
 }
 
@@ -686,7 +723,7 @@ const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
-    [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
+    [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 8 } else { 4 }]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, iteration: IterationCount) -> Self {
@@ -703,6 +740,7 @@ impl QueryRevisions {
                 ThinVec::default(),
                 CycleHeads::initial(query, iteration),
                 iteration,
+                std::iter::once(query).collect(),
             ),
         }
     }
@@ -725,6 +763,25 @@ impl QueryRevisions {
         }
     }
 
+    pub(crate) fn provisional_memos(&self) -> &[DatabaseKeyIndex] {
+        self.extra()
+            .map(|extra| &*extra.provisional_memos)
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn add_provisional_memo(&mut self, key: DatabaseKeyIndex) {
+        let extra = self.get_or_insert_extra();
+        if !extra.provisional_memos.contains(&key) {
+            extra.provisional_memos.push(key);
+        }
+    }
+
+    pub(crate) fn clear_provisional_memos(&mut self) {
+        if let Some(extra) = &mut self.extra.0 {
+            extra.provisional_memos.clear();
+        }
+    }
+
     /// Sets the `CycleHeads` for this query.
     pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads) {
         match &mut self.extra.0 {
@@ -736,6 +793,7 @@ impl QueryRevisions {
                     ThinVec::default(),
                     cycle_heads,
                     IterationCount::default(),
+                    ThinVec::default(),
                 );
             }
         };
@@ -784,6 +842,7 @@ impl QueryRevisions {
                 #[cfg(feature = "accumulator")]
                 accumulated: AccumulatedMap::default(),
                 tracked_struct_ids: ThinVec::default(),
+                provisional_memos: ThinVec::default(),
                 cycle_heads: empty_cycle_heads().clone(),
                 iteration: IterationCount::default().into(),
                 cycle_converged: false,
@@ -1244,6 +1303,7 @@ pub(crate) fn output_edges(
 /// destructor will also remove the query.
 pub(crate) struct ActiveQueryGuard<'me> {
     local_state: &'me ZalsaLocal,
+    zalsa: &'me Zalsa,
     #[cfg(debug_assertions)]
     push_len: usize,
     pub(crate) database_key_index: DatabaseKeyIndex,
@@ -1274,6 +1334,7 @@ impl ActiveQueryGuard<'_> {
         );
 
         let tracked_ids = previous.tracked_struct_ids();
+        let provisional_memos = previous.provisional_memos();
 
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
@@ -1281,7 +1342,14 @@ impl ActiveQueryGuard<'_> {
                 #[cfg(debug_assertions)]
                 assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
                 let frame = stack.last_mut().unwrap();
-                frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
+                frame.seed_iteration(
+                    durability,
+                    changed_at,
+                    edges,
+                    untracked_read,
+                    tracked_ids,
+                    provisional_memos,
+                );
             })
         }
     }
@@ -1326,15 +1394,17 @@ impl ActiveQueryGuard<'_> {
 impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
         // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
+        let provisional_memos = unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
                 stack.pop(
                     self.database_key_index,
                     #[cfg(debug_assertions)]
                     self.push_len,
-                );
+                )
             })
         };
+
+        invalidate_provisional_memos(self.zalsa, provisional_memos);
     }
 }
 

@@ -99,7 +99,7 @@ where
             memo.tracing_debug(),
             key
         );
-        self.insert_memo(zalsa, key, memo, memo_ingredient_index);
+        self.insert_memo(zalsa, Some(zalsa_local), key, memo, memo_ingredient_index);
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);

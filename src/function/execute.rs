@@ -8,11 +8,12 @@ use crate::function::{ClaimGuard, Configuration, IngredientImpl};
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
-use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
-use crate::{Cancelled, Cycle, tracing};
+use crate::zalsa_local::{
+    ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions, invalidate_provisional_memos,
+};
+use crate::{Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -59,27 +60,25 @@ where
                 let (new_value, active_query) = Self::execute_query(
                     db,
                     zalsa,
-                    claim_guard
-                        .zalsa_local()
-                        .push_query(database_key_index, IterationCount::initial()),
+                    claim_guard.zalsa_local().push_query(
+                        zalsa,
+                        database_key_index,
+                        IterationCount::initial(),
+                    ),
                     opt_old_memo,
                 );
                 (new_value, active_query.pop())
             }
             CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
                 let zalsa_local = claim_guard.zalsa_local();
-                let was_disabled = zalsa_local.set_cancellation_disabled(true);
+                let _cancellation_guard = CancellationDisabledGuard::new(zalsa_local);
 
-                let res = self.execute_maybe_iterate(
+                self.execute_maybe_iterate(
                     db,
                     opt_old_memo,
                     &mut claim_guard,
                     memo_ingredient_index,
-                );
-
-                zalsa_local.set_cancellation_disabled(was_disabled);
-
-                res
+                )
             }
         };
 
@@ -102,6 +101,7 @@ where
 
         let memo = self.insert_memo(
             zalsa,
+            Some(claim_guard.zalsa_local()),
             id,
             Memo::new(
                 Some(new_value),
@@ -111,7 +111,12 @@ where
             memo_ingredient_index,
         );
 
-        if claim_guard.drop() { None } else { Some(memo) }
+        let mut provisional_guard =
+            ProvisionalMemoInvalidationGuard::new(zalsa, memo.revisions.provisional_memos());
+        let refetch = claim_guard.drop();
+        provisional_guard.defuse();
+
+        if refetch { None } else { Some(memo) }
     }
 
     fn execute_maybe_iterate<'db>(
@@ -136,22 +141,7 @@ where
         let mut iteration_count = IterationCount::initial();
 
         if let Some(old_memo) = opt_old_memo {
-            if old_memo.verified_at.load() == zalsa.current_revision() {
-                // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
-                // However, the locking doesn't handle the case where a thread fetches the result of a panicking
-                // cycle head query **after** all locks were released. That's what we do here.
-                // We could consider re-executing the entire cycle but:
-                // a) It's tricky to ensure that all queries participating in the cycle will re-execute
-                //    (we can't rely on `iteration_count` being updated for nested cycles because the nested cycles may have completed successfully).
-                // b) It's guaranteed that this query will panic again anyway.
-                // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
-                if old_memo.value.is_none() {
-                    tracing::warn!(
-                        "Propagating panic for cycle head that panicked in an earlier execution in that revision"
-                    );
-                    Cancelled::PropagatedPanic.throw();
-                }
-
+            if old_memo.value.is_some() && old_memo.verified_at.load() == zalsa.current_revision() {
                 // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
                 // force at least two executions.
                 if old_memo.cycle_heads().contains(&database_key_index) {
@@ -162,13 +152,11 @@ where
             }
         }
 
-        let _poison_guard =
-            PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
-
         let (new_value, completed_query) = loop {
-            let active_query = claim_guard
-                .zalsa_local()
-                .push_query(database_key_index, iteration_count);
+            let active_query =
+                claim_guard
+                    .zalsa_local()
+                    .push_query(zalsa, database_key_index, iteration_count);
 
             // Tracked struct ids that existed in the previous revision
             // but weren't recreated in the last iteration. It's important that we seed the next
@@ -343,6 +331,7 @@ where
 
             let new_memo = self.insert_memo(
                 zalsa,
+                Some(claim_guard.zalsa_local()),
                 id,
                 Memo::new(
                     Some(new_value),
@@ -384,7 +373,8 @@ where
             // * ensure that tracked struct created during the previous iteration
             //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
             // * ensure the final returned memo depends on all inputs from all iterations.
-            if old_memo.may_be_provisional()
+            if old_memo.value.is_some()
+                && old_memo.may_be_provisional()
                 && old_memo.verified_at.load() == zalsa.current_revision()
             {
                 active_query.seed_iteration(&old_memo.revisions);
@@ -402,56 +392,52 @@ where
     }
 }
 
-/// Replaces any inserted memo with a fixpoint initial memo without a value if the current thread panics.
-///
-/// A regular query doesn't insert any memo if it panics and the query
-/// simply gets re-executed if any later called query depends on the panicked query (and will panic again unless the query isn't deterministic).
-///
-/// Unfortunately, this isn't the case for cycle heads because Salsa first inserts the fixpoint initial memo and later inserts
-/// provisional memos for every iteration. Detecting whether a query has previously panicked
-/// in `fetch` (e.g., `validate_same_iteration`) and requires re-execution is probably possible but not very straightforward
-/// and it's easy to get it wrong, which results in infinite loops where `Memo::provisional_retry` keeps retrying to get the latest `Memo`
-/// but `fetch` doesn't re-execute the query for reasons.
-///
-/// Specifically, a Memo can linger after a panic, which is then incorrectly returned
-/// by `fetch_cold_cycle` because it passes the `shallow_verified_memo` check instead of inserting
-/// a new fix point initial value if that happens.
-///
-/// We could insert a fixpoint initial value here, but it seems unnecessary.
-struct PoisonProvisionalIfPanicking<'a, C: Configuration> {
-    ingredient: &'a IngredientImpl<C>,
-    zalsa: &'a Zalsa,
-    id: Id,
-    memo_ingredient_index: MemoIngredientIndex,
+struct CancellationDisabledGuard<'db> {
+    zalsa_local: &'db ZalsaLocal,
+    was_disabled: bool,
 }
 
-impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
-    fn new(
-        ingredient: &'a IngredientImpl<C>,
-        zalsa: &'a Zalsa,
-        id: Id,
-        memo_ingredient_index: MemoIngredientIndex,
-    ) -> Self {
+impl<'db> CancellationDisabledGuard<'db> {
+    fn new(zalsa_local: &'db ZalsaLocal) -> Self {
+        let was_disabled = zalsa_local.set_cancellation_disabled(true);
         Self {
-            ingredient,
-            zalsa,
-            id,
-            memo_ingredient_index,
+            zalsa_local,
+            was_disabled,
         }
     }
 }
 
-impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
+impl Drop for CancellationDisabledGuard<'_> {
     fn drop(&mut self) {
-        if thread::panicking() {
-            let revisions = QueryRevisions::fixpoint_initial(
-                self.ingredient.database_key_index(self.id),
-                IterationCount::initial(),
-            );
+        self.zalsa_local
+            .set_cancellation_disabled(self.was_disabled);
+    }
+}
 
-            let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
-            self.ingredient
-                .insert_memo(self.zalsa, self.id, memo, self.memo_ingredient_index);
+struct ProvisionalMemoInvalidationGuard<'db> {
+    zalsa: &'db Zalsa,
+    memos: Vec<DatabaseKeyIndex>,
+    defused: bool,
+}
+
+impl<'db> ProvisionalMemoInvalidationGuard<'db> {
+    fn new(zalsa: &'db Zalsa, memos: &[DatabaseKeyIndex]) -> Self {
+        Self {
+            zalsa,
+            memos: memos.to_vec(),
+            defused: false,
+        }
+    }
+
+    fn defuse(&mut self) {
+        self.defused = true;
+    }
+}
+
+impl Drop for ProvisionalMemoInvalidationGuard<'_> {
+    fn drop(&mut self) {
+        if !self.defused {
+            invalidate_provisional_memos(self.zalsa, self.memos.drain(..));
         }
     }
 }
@@ -721,6 +707,7 @@ fn try_complete_cycle_head(
         }
 
         *completed_query.revisions.verified_final.get_mut() = true;
+        completed_query.revisions.clear_provisional_memos();
 
         zalsa.event(&|| {
             Event::new(EventKind::DidFinalizeCycle {
