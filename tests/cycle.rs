@@ -977,7 +977,7 @@ fn cycle_unchanged_nested_intertwined() {
         // `verified_final` in R6 (this revision), which will leave us in the next revision (R7)
         // with a chain of could-be-provisional memos from the previous revision which should be
         // final but were never confirmed as such; this triggers the case in `deep_verify_memo`
-        // where we need to double-check `validate_provisional` after traversing dependencies.
+        // where we need to double-check provisional state after traversing dependencies.
         //
         // Second time we run this test, fetch everything in R6, to check the behavior of
         // `maybe_changed_after` with all validated-final memos.
@@ -1137,7 +1137,7 @@ fn repeat_provisional_query_incremental() {
     // * Once as part of iterating
     //
     // If it runs more than once before iterating, than this suggests that
-    // `validate_same_iteration` incorrectly returns `false`.
+    // the active cycle's current-iteration state incorrectly treats it as stale.
     db.assert_logs(expect![[r#"
         [
             "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",

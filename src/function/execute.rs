@@ -1,5 +1,3 @@
-use smallvec::SmallVec;
-
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
@@ -12,7 +10,7 @@ use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
-use crate::{Cancelled, Cycle, tracing};
+use crate::{Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
@@ -136,33 +134,23 @@ where
 
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let mut iteration_count = IterationCount::initial();
+        let mut current_active_cycle = None;
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
-                // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
-                // However, the locking doesn't handle the case where a thread fetches the result of a panicking
-                // cycle head query **after** all locks were released. That's what we do here.
-                // We could consider re-executing the entire cycle but:
-                // a) It's tricky to ensure that all queries participating in the cycle will re-execute
-                //    (we can't rely on `iteration_count` being updated for nested cycles because the nested cycles may have completed successfully).
-                // b) It's guaranteed that this query will panic again anyway.
-                // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
-                if old_memo.value.is_none() {
-                    tracing::warn!(
-                        "Propagating panic for cycle head that panicked in an earlier execution in that revision"
-                    );
-                    Cancelled::PropagatedPanic.throw();
-                }
+                current_active_cycle = old_memo.revisions.active_cycle();
 
-                let cycle_state = old_memo.cycle_state(zalsa, database_key_index);
-
-                // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
-                // force at least two executions.
-                if cycle_state.cycle_heads().contains(&database_key_index) {
+                if current_active_cycle.is_some_and(|active_cycle| {
+                    zalsa
+                        .active_cycles()
+                        .contains_participant(active_cycle, database_key_index)
+                }) {
                     last_provisional_memo_opt = Some(old_memo);
                 }
 
-                iteration_count = cycle_state.iteration();
+                iteration_count = current_active_cycle
+                    .and_then(|active_cycle| zalsa.active_cycles().iteration(active_cycle))
+                    .unwrap_or_else(IterationCount::initial);
             }
         }
 
@@ -190,36 +178,41 @@ where
             );
 
             // Take the cycle heads to not-fight-rust's-borrow-checker.
-            let mut cycle_heads = active_query.take_cycle_heads();
+            let cycle_heads = active_query.take_cycle_heads();
 
             // If there are no cycle heads, break out of the loop.
             if cycle_heads.is_empty() {
-                let mut completed_query = active_query.pop();
-
-                if !iteration_count.is_initial() {
-                    iteration_count = iteration_count.increment().unwrap_or_else(|| {
-                        tracing::warn!(
-                            "{database_key_index:?}: execute: too many cycle iterations"
-                        );
-                        panic!("{database_key_index:?}: execute: too many cycle iterations")
-                    });
-
-                    completed_query
-                        .revisions
-                        .update_cycle_participant_iteration_count(iteration_count);
-                }
-
-                break (new_value, completed_query);
+                break (new_value, active_query.pop());
             }
 
-            let (max_iteration_count, depends_on_self) = collect_all_cycle_heads(
-                zalsa,
-                &mut cycle_heads,
-                database_key_index,
-                iteration_count,
-            );
+            let active_cycle = active_query
+                .active_cycle()
+                .or(current_active_cycle)
+                .or_else(|| {
+                    cycle_heads
+                        .iter()
+                        .find_map(|head| zalsa.active_cycles().key_for(head.database_key_index))
+                });
+            current_active_cycle = active_cycle;
+            if let Some(active_cycle) = active_cycle {
+                for head in &cycle_heads {
+                    if let Some(head_cycle) = zalsa.active_cycles().key_for(head.database_key_index)
+                        && head_cycle != active_cycle
+                    {
+                        zalsa.active_cycles().merge(active_cycle, head_cycle);
+                    }
+                    zalsa
+                        .active_cycles()
+                        .add_head(active_cycle, head.database_key_index);
+                }
+                if let Some(active_iteration) = zalsa.active_cycles().iteration(active_cycle) {
+                    iteration_count = active_iteration;
+                }
+            }
 
-            let outer_cycle = outer_cycle(
+            let depends_on_self = cycle_heads.contains(&database_key_index);
+
+            let local_outer_cycle = outer_cycle(
                 zalsa,
                 claim_guard.zalsa_local(),
                 &cycle_heads,
@@ -229,12 +222,15 @@ where
             // Did the new result we got depend on our own provisional value, in a cycle?
             // If not, return because this query is not a cycle head.
             if !depends_on_self {
-                let Some(outer_cycle) = outer_cycle else {
-                    panic!(
-                        "cycle participant with non-empty cycle heads and that doesn't depend on itself must have an outer cycle responsible to finalize the query later (query: {database_key_index:?}, cycle heads: {cycle_heads:?})."
-                    );
-                };
-
+                let outer_cycle = local_outer_cycle.or_else(|| {
+                    let active_cycle_heads = zalsa.active_cycles().current_heads(active_cycle?)?;
+                    outer_cycle(
+                        zalsa,
+                        claim_guard.zalsa_local(),
+                        &active_cycle_heads,
+                        database_key_index,
+                    )
+                });
                 // For FallbackImmediate, use the fallback value instead of the computed value
                 // for all cycle participants. This ensures that the results don't depend on the query call order, see
                 // https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285.
@@ -244,13 +240,8 @@ where
                     new_value
                 };
 
-                let completed_query = complete_cycle_participant(
-                    active_query,
-                    claim_guard,
-                    cycle_heads,
-                    outer_cycle,
-                    iteration_count,
-                );
+                let completed_query =
+                    complete_cycle_participant(active_query, claim_guard, cycle_heads, outer_cycle);
 
                 break (new_value, completed_query);
             }
@@ -282,20 +273,6 @@ where
                 "{database_key_index:?}: execute: \
                 I am a cycle head, comparing last provisional value with new value"
             );
-
-            // If this is the outermost cycle, use the maximum iteration count of all cycles.
-            // This is important for when later iterations introduce new cycle heads (that then
-            // become the outermost cycle). We want to ensure that the iteration count keeps increasing
-            // for all queries or they won't be re-executed because `validate_same_iteration` would
-            // pass when we go from 1 -> 0 and then increment by 1 to 1).
-            iteration_count = if outer_cycle.is_none() {
-                max_iteration_count
-            } else {
-                // Otherwise keep the iteration count because outer cycles
-                // already have a cycle head with this exact iteration count (and we don't allow
-                // heads from different iterations).
-                iteration_count
-            };
 
             // For FallbackImmediate, the value always converges immediately (we use the
             // fallback directly). We still iterate if metadata hasn't converged.
@@ -331,14 +308,14 @@ where
                 claim_guard,
                 cycle_heads,
                 &last_provisional_memo.revisions,
-                outer_cycle,
+                local_outer_cycle,
                 iteration_count,
                 value_converged,
             ) {
-                Ok(completed_query) => {
+                CycleHeadCompletion::Complete(completed_query) => {
                     break (new_value, completed_query);
                 }
-                Err((completed_query, new_iteration_count)) => {
+                CycleHeadCompletion::Iterate(completed_query, new_iteration_count) => {
                     iteration_count = new_iteration_count;
                     completed_query
                 }
@@ -406,22 +383,14 @@ where
     }
 }
 
-/// Replaces any inserted memo with a fixpoint initial memo without a value if the current thread panics.
+/// Removes central cycle state if the current thread panics.
 ///
 /// A regular query doesn't insert any memo if it panics and the query
 /// simply gets re-executed if any later called query depends on the panicked query (and will panic again unless the query isn't deterministic).
 ///
-/// Unfortunately, this isn't the case for cycle heads because Salsa first inserts the fixpoint initial memo and later inserts
-/// provisional memos for every iteration. Detecting whether a query has previously panicked
-/// in `fetch` (e.g., `validate_same_iteration`) and requires re-execution is probably possible but not very straightforward
-/// and it's easy to get it wrong, which results in infinite loops where `Memo::provisional_retry` keeps retrying to get the latest `Memo`
-/// but `fetch` doesn't re-execute the query for reasons.
-///
-/// Specifically, a Memo can linger after a panic, which is then incorrectly returned
-/// by `fetch_cold_cycle` because it passes the `shallow_verified_memo` check instead of inserting
-/// a new fix point initial value if that happens.
-///
-/// We could insert a fixpoint initial value here, but it seems unnecessary.
+/// Cycle heads insert provisional memos before the cycle finishes. If the query panics,
+/// removing the central state makes those provisional memos fail the same-iteration lookup
+/// and forces a later read to re-execute them.
 struct PoisonProvisionalIfPanicking<'a, C: Configuration> {
     ingredient: &'a IngredientImpl<C>,
     zalsa: &'a Zalsa,
@@ -451,7 +420,8 @@ impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
             let active_cycle = self
                 .ingredient
                 .get_memo_from_table_for(self.zalsa, self.id, self.memo_ingredient_index)
-                .and_then(|_| {
+                .and_then(|memo| memo.revisions.active_cycle())
+                .or_else(|| {
                     self.zalsa
                         .active_cycles()
                         .key_for(self.ingredient.database_key_index(self.id))
@@ -459,15 +429,6 @@ impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
             if let Some(active_cycle) = active_cycle {
                 self.zalsa.active_cycles().remove(active_cycle);
             }
-
-            let revisions = QueryRevisions::fixpoint_initial(
-                self.ingredient.database_key_index(self.id),
-                IterationCount::initial(),
-            );
-
-            let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
-            self.ingredient
-                .insert_memo(self.zalsa, self.id, memo, self.memo_ingredient_index);
         }
     }
 }
@@ -513,127 +474,20 @@ fn outer_cycle(
         .map(|head| head.database_key_index)
 }
 
-/// Ensure that we resolve the latest cycle heads from any provisional value this query depended on during execution.
-///
-/// ```txt
-/// E -> C -> D -> B -> A -> B (cycle)
-///                     -- A completes, heads = [B]
-/// E -> C -> D -> B -> C (cycle)
-///                  -> D (cycle)
-///                -- B completes, heads = [B, C, D]
-/// E -> C -> D -> E (cycle)
-///           -- D completes, heads = [E, B, C, D]
-/// E -> C
-///      -- C completes, heads = [E, B, C, D]
-/// E -> X -> A
-///      -- X completes, heads = [B]
-/// ```
-///
-/// Note how `X` only depends on `A`. It doesn't know that it's part of the outer cycle `X`.
-/// An old implementation resolved the cycle heads 1-level deep but that's not enough, because
-/// `X` then completes with `[B, C, D]` as it's heads. But `B`, `C`, and `D` are no longer on the stack
-/// when `X` completes (which is the real outermost cycle). That's why we need to resolve all cycle heads
-/// recursively, so that `X` completes with `[B, C, D, E]
-fn collect_all_cycle_heads(
-    zalsa: &Zalsa,
-    cycle_heads: &mut CycleHeads,
-    database_key_index: DatabaseKeyIndex,
-    iteration_count: IterationCount,
-) -> (IterationCount, bool) {
-    fn collect_recursive(
-        zalsa: &Zalsa,
-        current_head: DatabaseKeyIndex,
-        me: DatabaseKeyIndex,
-        query_heads: &CycleHeads,
-        missing_heads: &mut SmallVec<[(DatabaseKeyIndex, IterationCount); 4]>,
-    ) -> (IterationCount, bool) {
-        if current_head == me {
-            return (IterationCount::initial(), true);
-        }
-
-        let mut max_iteration_count = IterationCount::initial();
-        let mut depends_on_self = false;
-
-        let ingredient = zalsa.lookup_ingredient(current_head.ingredient_index());
-
-        let provisional_status = ingredient
-            .provisional_status(zalsa, current_head.key_index())
-            .expect("cycle head memo must have been created during the execution");
-
-        // A query should only ever depend on other heads that are provisional.
-        // If this invariant is violated, it means that this query participates in a cycle,
-        // but it wasn't executed in the last iteration of said cycle.
-        assert!(provisional_status.is_provisional());
-
-        for head in provisional_status.cycle_heads() {
-            let iteration_count = head.iteration_count.load();
-            max_iteration_count = max_iteration_count.max(iteration_count);
-
-            if query_heads.contains(&head.database_key_index) {
-                continue;
-            }
-
-            let head_as_tuple = (head.database_key_index, iteration_count);
-
-            if missing_heads.contains(&head_as_tuple) {
-                continue;
-            }
-
-            missing_heads.push((head.database_key_index, iteration_count));
-
-            let (nested_max_iteration_count, nested_depends_on_self) = collect_recursive(
-                zalsa,
-                head.database_key_index,
-                me,
-                query_heads,
-                missing_heads,
-            );
-
-            max_iteration_count = max_iteration_count.max(nested_max_iteration_count);
-            depends_on_self |= nested_depends_on_self;
-        }
-
-        (max_iteration_count, depends_on_self)
-    }
-
-    let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationCount); 4]> = SmallVec::new();
-    let mut max_iteration_count = iteration_count;
-    let mut depends_on_self = false;
-
-    for head in &*cycle_heads {
-        let (recursive_max_iteration, recursive_depends_on_self) = collect_recursive(
-            zalsa,
-            head.database_key_index,
-            database_key_index,
-            cycle_heads,
-            &mut missing_heads,
-        );
-
-        max_iteration_count = max_iteration_count.max(recursive_max_iteration);
-        depends_on_self |= recursive_depends_on_self;
-    }
-
-    for (head, iteration) in missing_heads {
-        cycle_heads.insert(head, iteration);
-    }
-
-    (max_iteration_count, depends_on_self)
-}
-
 // Called when completing the query of a cycle head participating
 // in an outer cycle head (which doesn't depend on itself).
 fn complete_cycle_participant(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
-    outer_cycle: DatabaseKeyIndex,
-    iteration_count: IterationCount,
+    outer_cycle: Option<DatabaseKeyIndex>,
 ) -> CompletedQuery {
-    // For as long as this query participates in any cycle, don't release its lock, instead
-    // transfer it to the outermost cycle head. This prevents any other thread
-    // from claiming this query (all cycle heads are potential entry points to the same cycle),
-    // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
-    claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
+    // Keep the participant locked by a proven outer owner when one exists. If the
+    // active cycle no longer has a blocking owner, releasing the lock is safe: the
+    // central cycle state still makes the provisional memo stale on the next read.
+    if let Some(outer_cycle) = outer_cycle {
+        claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
+    }
     let zalsa = claim_guard.zalsa();
 
     let database_key_index = active_query.database_key_index;
@@ -642,28 +496,23 @@ fn complete_cycle_participant(
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
-    completed_query.revisions.set_cycle_heads(cycle_heads);
-
-    let iteration_count = iteration_count.increment().unwrap_or_else(|| {
-        tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
-        panic!("{database_key_index:?}: execute: too many cycle iterations")
-    });
-
-    // The outermost query only bumps the iteration count of cycle heads. It doesn't
-    // increment the iteration count for cycle participants. It's important that we bump the
-    // iteration count here or the head will re-use the same iteration count in the next
-    // iteration (which can break cache invalidation).
-    completed_query
-        .revisions
-        .update_cycle_participant_iteration_count(iteration_count);
+    completed_query.cycle_heads = cycle_heads;
+    completed_query.active_cycle = completed_query
+        .cycle_heads
+        .iter()
+        .find_map(|head| zalsa.active_cycles().key_for(head.database_key_index))
+        .or_else(|| zalsa.active_cycles().key_for(database_key_index))
+        .or_else(|| outer_cycle.and_then(|outer_cycle| zalsa.active_cycles().key_for(outer_cycle)));
 
     completed_query
 }
 
+enum CycleHeadCompletion {
+    Complete(CompletedQuery),
+    Iterate(CompletedQuery, IterationCount),
+}
+
 /// Tries to complete the cycle head if it has converged.
-///
-/// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
-/// Returns `Err` if the cycle head needs to keep iterating.
 fn try_complete_cycle_head(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
@@ -672,7 +521,7 @@ fn try_complete_cycle_head(
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
     value_converged: bool,
-) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
+) -> CycleHeadCompletion {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
     let active_cycle = zalsa.active_cycles().key_for(me);
@@ -695,8 +544,8 @@ fn try_complete_cycle_head(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
 
-        completed_query.revisions.set_cycle_heads(cycle_heads);
         *completed_query.revisions.verified_final.get_mut() = false;
+        completed_query.cycle_heads = cycle_heads;
         completed_query.active_cycle = active_cycle;
         if let Some(active_cycle) = active_cycle {
             zalsa
@@ -708,23 +557,14 @@ fn try_complete_cycle_head(
         // and other threads don't compete for the same lock.
         claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
 
-        return Ok(completed_query);
+        return CycleHeadCompletion::Complete(completed_query);
     }
 
-    // This is the outermost cycle, drive the cycle forward:
-    // ..test if all inner cycles have converged as well.
-    let inner_cycles_converged = cycle_heads.iter_not_eq(me).all(|head| {
-        let database_key_index = head.database_key_index;
-        let ingredient = zalsa.lookup_ingredient(database_key_index.ingredient_index());
-
-        let converged = ingredient.cycle_converged(zalsa, database_key_index.key_index());
-
-        if !converged {
-            tracing::debug!("inner cycle {database_key_index:?} has not converged",);
-        }
-
-        converged
-    });
+    // This is the outermost cycle, drive the cycle forward. Nested heads record
+    // their convergence directly on the shared active cycle state.
+    let inner_cycles_converged = active_cycle
+        .and_then(|active_cycle| zalsa.active_cycles().converged(active_cycle))
+        .unwrap_or(true);
 
     let converged = this_converged && inner_cycles_converged;
 
@@ -733,15 +573,27 @@ fn try_complete_cycle_head(
             "{me:?}: execute: fixpoint iteration has a final value after {iteration_count:?} iterations"
         );
 
-        // Set the nested cycles as verified. This is necessary because
-        // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
-        for head in cycle_heads.iter_not_eq(me) {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-            ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
-        }
-
         if let Some(active_cycle) = active_cycle {
-            zalsa.active_cycles().finish(active_cycle);
+            let completed_whole_cycle = zalsa
+                .active_cycles()
+                .heads_are_covered_by(active_cycle, &cycle_heads)
+                .unwrap_or(true);
+            let memos = if completed_whole_cycle {
+                zalsa.active_cycles().current_memo_keys(active_cycle)
+            } else {
+                zalsa
+                    .active_cycles()
+                    .take_memo_keys(active_cycle, &cycle_heads)
+            };
+            if let Some(memos) = memos {
+                for memo in memos {
+                    let ingredient = zalsa.lookup_ingredient(memo.ingredient_index());
+                    ingredient.finalize_cycle_head(zalsa, memo.key_index());
+                }
+            }
+            if completed_whole_cycle {
+                zalsa.active_cycles().remove(active_cycle);
+            }
         }
         completed_query.active_cycle = None;
 
@@ -754,7 +606,7 @@ fn try_complete_cycle_head(
             })
         });
 
-        return Ok(completed_query);
+        return CycleHeadCompletion::Complete(completed_query);
     }
 
     // The fixpoint iteration hasn't converged. Iterate again...
@@ -772,31 +624,18 @@ fn try_complete_cycle_head(
 
     tracing::info!("{me:?}: execute: iterate again ({iteration_count:?})...",);
 
-    // Update the iteration count of nested cycles.
-    for head in cycle_heads.iter_not_eq(me) {
-        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-
-        ingredient.set_cycle_iteration_count(
-            zalsa,
-            head.database_key_index.key_index(),
-            iteration_count,
-        );
+    if let Some(active_cycle) = active_cycle {
+        zalsa
+            .active_cycles()
+            .start_next_iteration(active_cycle, iteration_count);
+        zalsa.active_cycles().add_head(active_cycle, me);
     }
 
-    debug_assert!(completed_query.revisions.cycle_heads().is_empty());
-
-    // Update the iteration count of this cycle head, but only after restoring
-    // the cycle heads array (or this becomes a no-op).
-    // We don't call the same method on `cycle_heads` because that one doens't update
-    // the `memo.iteration_count`
     *completed_query.revisions.verified_final.get_mut() = false;
-    completed_query.revisions.set_cycle_heads(cycle_heads);
-    completed_query
-        .revisions
-        .update_iteration_count_mut(me, iteration_count);
+    completed_query.cycle_heads = cycle_heads;
     completed_query.active_cycle = active_cycle;
 
-    Err((completed_query, iteration_count))
+    CycleHeadCompletion::Iterate(completed_query, iteration_count)
 }
 
 fn assert_no_new_cycle_heads(

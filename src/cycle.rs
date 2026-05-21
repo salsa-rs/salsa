@@ -11,9 +11,9 @@
 //! of the cycle. When a cycle is encountered, if the cycle head has `cycle_fn` and `cycle_initial`
 //! set, it will call the `cycle_initial` function to generate an "empty" or "initial" value for
 //! fixed-point iteration, which will be returned to its caller. Then each query in the cycle will
-//! compute a value normally, but every computed value will track the head(s) of the cycles it is
-//! part of. Every query's "cycle heads" are the union of all the cycle heads of all the queries it
-//! depends on. A memoized query result with cycle heads is called a "provisional value".
+//! compute a value normally, but every computed value records the active cycle head(s) it observed
+//! while executing. A memoized query result that still depends on an active cycle is called a
+//! "provisional value".
 //!
 //! For example, if `qa` calls `qb`, and `qb` calls `qc`, and `qc` calls `qa`, then `qa` will call
 //! its `cycle_initial` function to get an initial value, and return that as its result to `qc`,
@@ -32,10 +32,10 @@
 //! mark that value as final (by removing itself as cycle head) and return it.
 //!
 //! Other queries in the cycle will still have provisional values recorded, but those values should
-//! now also be considered final! We don't eagerly walk the entire cycle to mark them final.
-//! Instead, we wait until the next time that provisional value is read, and then we check if all
-//! of its cycle heads have a final result, in which case it, too, can be marked final. (This is
-//! implemented in `shallow_verify_memo` and `validate_provisional`.)
+//! now also be considered final. Salsa tracks the current cycle participants in central active-cycle
+//! state, so cycle completion can eagerly mark the current participants final and remove the active
+//! cycle state. If a cycle aborts instead, removing the central state makes those provisional memos
+//! stale and they re-execute on the next read.
 //!
 //! In nested cycle cases, the inner cycles are iterated as part of the outer cycle iteration. This helps
 //! to significantly reduce the number of iterations needed to reach a fixpoint. For nested cycles,
@@ -45,12 +45,10 @@
 //! hangs (but not deadlocks).
 
 use std::iter::FusedIterator;
-use thin_vec::{ThinVec, thin_vec};
+use thin_vec::ThinVec;
 
+use crate::Id;
 use crate::key::DatabaseKeyIndex;
-use crate::sync::OnceLock;
-use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use crate::{Id, Revision};
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
 ///
@@ -83,43 +81,15 @@ pub enum CycleRecoveryStrategy {
 /// would be the cycle head. It returns an "initial value" when the cycle is encountered (if
 /// fixpoint iteration is enabled for that query), and then is responsible for re-iterating the
 /// cycle until it converges.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct CycleHead {
     pub(crate) database_key_index: DatabaseKeyIndex,
-    pub(crate) iteration_count: AtomicIterationCount,
-
-    /// Marks a cycle head as removed within its `CycleHeads` container.
-    ///
-    /// Cycle heads are marked as removed when the memo from the last iteration (a provisional memo)
-    /// is used as the initial value for the next iteration. It's necessary to remove all but its own
-    /// head from the `CycleHeads` container, because the query might now depend on fewer cycles
-    /// (in case of conditional dependencies). However, we can't actually remove the cycle head
-    /// within `fetch_cold_cycle` because we only have a readonly memo. That's what `removed` is used for.
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    removed: AtomicBool,
 }
 
 impl CycleHead {
-    pub const fn new(
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: IterationCount,
-    ) -> Self {
-        Self {
-            database_key_index,
-            iteration_count: AtomicIterationCount(AtomicU8::new(iteration_count.0)),
-            removed: AtomicBool::new(false),
-        }
-    }
-}
-
-impl Clone for CycleHead {
-    fn clone(&self) -> Self {
-        Self {
-            database_key_index: self.database_key_index,
-            iteration_count: self.iteration_count.load().into(),
-            removed: self.removed.load(Ordering::Relaxed).into(),
-        }
+    pub const fn new(database_key_index: DatabaseKeyIndex) -> Self {
+        Self { database_key_index }
     }
 }
 
@@ -157,79 +127,14 @@ impl std::fmt::Display for IterationCount {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct AtomicIterationCount(AtomicU8);
-
-impl AtomicIterationCount {
-    pub(crate) fn load(&self) -> IterationCount {
-        IterationCount(self.0.load(Ordering::Relaxed))
-    }
-
-    pub(crate) fn load_mut(&mut self) -> IterationCount {
-        IterationCount(*self.0.get_mut())
-    }
-
-    pub(crate) fn store(&self, value: IterationCount) {
-        self.0.store(value.0, Ordering::Release);
-    }
-
-    pub(crate) fn set(&mut self, value: IterationCount) {
-        *self.0.get_mut() = value.0;
-    }
-}
-
-impl std::fmt::Display for AtomicIterationCount {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.load().fmt(f)
-    }
-}
-
-impl From<IterationCount> for AtomicIterationCount {
-    fn from(iteration_count: IterationCount) -> Self {
-        AtomicIterationCount(iteration_count.0.into())
-    }
-}
-
-#[cfg(feature = "persistence")]
-impl serde::Serialize for AtomicIterationCount {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.load().serialize(serializer)
-    }
-}
-
-#[cfg(feature = "persistence")]
-impl<'de> serde::Deserialize<'de> for AtomicIterationCount {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        IterationCount::deserialize(deserializer).map(Into::into)
-    }
-}
-
 /// Any provisional value generated by any query in a cycle will track the cycle head(s) (can be
-/// plural in case of nested cycles) representing the cycles it is part of, and the current
-/// iteration count for each cycle head. This struct tracks these cycle heads.
+/// plural in case of nested cycles) representing the cycles it is part of.
 #[derive(Clone, Debug, Default)]
 pub struct CycleHeads(ThinVec<CycleHead>);
 
 impl CycleHeads {
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-
-    pub(crate) fn initial(
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: IterationCount,
-    ) -> Self {
-        Self(thin_vec![CycleHead {
-            database_key_index,
-            iteration_count: iteration_count.into(),
-            removed: false.into()
-        }])
     }
 
     pub(crate) fn iter(&self) -> CycleHeadsIterator<'_> {
@@ -256,103 +161,26 @@ impl CycleHeads {
             .any(|head| head.database_key_index == *value)
     }
 
-    /// Removes all cycle heads except `except` by marking them as removed.
-    ///
-    /// Note that the heads aren't actually removed. They're only marked as removed and will be
-    /// skipped when iterating. This is because we might not have a mutable reference.
-    pub(crate) fn remove_all_except(&self, except: DatabaseKeyIndex) {
-        for head in self.0.iter() {
-            if head.database_key_index == except {
-                continue;
-            }
-
-            head.removed.store(true, Ordering::Release);
-        }
-    }
-
-    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
-    ///
-    /// Unlike [`update_iteration_count`], this method takes a `&mut self` reference. It should
-    /// be preferred if possible, as it avoids atomic operations.
-    pub(crate) fn update_iteration_count_mut(
-        &mut self,
-        cycle_head_index: DatabaseKeyIndex,
-        new_iteration_count: IterationCount,
-    ) {
-        if let Some(cycle_head) = self
-            .0
-            .iter_mut()
-            .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
-        {
-            cycle_head.iteration_count.set(new_iteration_count);
-        }
-    }
-
-    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
-    ///
-    /// Unlike [`update_iteration_count_mut`], this method takes a `&self` reference.
-    pub(crate) fn update_iteration_count(
-        &self,
-        cycle_head_index: DatabaseKeyIndex,
-        new_iteration_count: IterationCount,
-    ) {
-        if let Some(cycle_head) = self
-            .0
-            .iter()
-            .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
-        {
-            cycle_head.iteration_count.store(new_iteration_count);
-        }
-    }
-
     #[inline]
     pub(crate) fn extend(&mut self, other: &Self) {
         self.0.reserve(other.0.len());
 
         for head in other {
-            debug_assert!(!head.removed.load(Ordering::Relaxed));
-            self.insert(head.database_key_index, head.iteration_count.load());
+            self.insert(head.database_key_index);
         }
     }
 
-    pub(crate) fn insert(
-        &mut self,
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: IterationCount,
-    ) -> bool {
-        if let Some(existing) = self
+    pub(crate) fn insert(&mut self, database_key_index: DatabaseKeyIndex) -> bool {
+        if self
             .0
-            .iter_mut()
-            .find(|candidate| candidate.database_key_index == database_key_index)
+            .iter()
+            .any(|candidate| candidate.database_key_index == database_key_index)
         {
-            let removed = existing.removed.get_mut();
-
-            if *removed {
-                *removed = false;
-                existing.iteration_count.set(iteration_count);
-
-                true
-            } else {
-                let existing_count = existing.iteration_count.load_mut();
-
-                assert_eq!(
-                    existing_count, iteration_count,
-                    "Can't merge cycle heads {:?} with different iteration counts ({existing_count:?}, {iteration_count:?})",
-                    existing.database_key_index
-                );
-
-                false
-            }
+            false
         } else {
-            self.0
-                .push(CycleHead::new(database_key_index, iteration_count));
+            self.0.push(CycleHead::new(database_key_index));
             true
         }
-    }
-
-    #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn allocation_size(&self) -> usize {
-        std::mem::size_of_val(self.0.as_slice())
     }
 }
 
@@ -366,10 +194,6 @@ impl serde::Serialize for CycleHeads {
 
         let mut seq = serializer.serialize_seq(None)?;
         for e in self {
-            if e.removed.load(Ordering::Relaxed) {
-                continue;
-            }
-
             seq.serialize_element(e)?;
         }
         seq.end()
@@ -405,30 +229,14 @@ impl<'a> Iterator for CycleHeadsIterator<'a> {
     type Item = &'a CycleHead;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let next = self.inner.next()?;
-
-            if next.removed.load(Ordering::Relaxed) {
-                continue;
-            }
-
-            return Some(next);
-        }
+        self.inner.next()
     }
 }
 
 impl FusedIterator for CycleHeadsIterator<'_> {}
 impl DoubleEndedIterator for CycleHeadsIterator<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        loop {
-            let next = self.inner.next_back()?;
-
-            if next.removed.load(Ordering::Relaxed) {
-                continue;
-            }
-
-            return Some(next);
-        }
+        self.inner.next_back()
     }
 }
 
@@ -439,18 +247,6 @@ impl<'a> std::iter::IntoIterator for &'a CycleHeads {
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
-}
-
-impl From<CycleHead> for CycleHeads {
-    fn from(value: CycleHead) -> Self {
-        Self(thin_vec![value])
-    }
-}
-
-#[inline]
-pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
-    static EMPTY_CYCLE_HEADS: OnceLock<CycleHeads> = OnceLock::new();
-    EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
 }
 
 #[derive(Clone)]
@@ -491,31 +287,5 @@ impl Cycle<'_> {
     /// The counter of the current fixed point iteration.
     pub fn iteration(&self) -> u32 {
         self.iteration
-    }
-}
-
-#[derive(Debug)]
-pub enum ProvisionalStatus {
-    Provisional {
-        iteration: IterationCount,
-        verified_at: Revision,
-        cycle_heads: CycleHeads,
-    },
-    Final {
-        iteration: IterationCount,
-        verified_at: Revision,
-    },
-}
-
-impl ProvisionalStatus {
-    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
-        match self {
-            ProvisionalStatus::Provisional { cycle_heads, .. } => cycle_heads,
-            ProvisionalStatus::Final { .. } => empty_cycle_heads(),
-        }
-    }
-
-    pub(crate) const fn is_provisional(&self) -> bool {
-        matches!(self, ProvisionalStatus::Provisional { .. })
     }
 }

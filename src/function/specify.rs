@@ -75,6 +75,7 @@ where
                 extra: QueryRevisionsExtra::default(),
             },
             active_cycle: None,
+            cycle_heads: Default::default(),
             stale_tracked_structs: Vec::new(),
         };
 

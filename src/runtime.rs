@@ -277,7 +277,6 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
-        self.active_cycles.clear_completed();
         crate::tracing::info!("new_revision: {r_old:?} -> {r_new:?}");
         r_new
     }

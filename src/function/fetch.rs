@@ -1,4 +1,4 @@
-use crate::cycle::{CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
@@ -33,14 +33,24 @@ where
 
         self.eviction.record_use(id);
 
-        let cycle_state = memo.cycle_state(zalsa, database_key_index);
+        // Provisional reads depend on the active cycle heads for this iteration.
+        let mut cycle_heads = CycleHeads::default();
+        let mut active_cycle = None;
+        if memo.may_be_provisional()
+            && let Some(memo_active_cycle) = memo.revisions.active_cycle()
+            && let Some(current_heads) = zalsa
+                .active_cycles()
+                .current_heads_for_memo(memo_active_cycle, database_key_index)
+        {
+            cycle_heads = current_heads;
+            active_cycle = Some(memo_active_cycle);
+        }
 
         zalsa_local.report_tracked_read(
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            cycle_state.cycle_heads(),
-            cycle_state.active_cycle(),
+            (&cycle_heads, active_cycle),
             #[cfg(feature = "accumulator")]
             memo.revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
@@ -135,18 +145,17 @@ where
                 let can_shallow_update =
                     self.shallow_verify_memo(zalsa, database_key_index, old_memo);
                 if can_shallow_update.yes()
-                    && self.validate_may_be_provisional(
-                        zalsa,
-                        zalsa_local,
-                        database_key_index,
-                        old_memo,
-                    )
+                    && self.may_reuse_after_shallow_verify(zalsa, database_key_index, old_memo)
                 {
                     self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
 
                     // SAFETY: memo is present in memo_map and we have verified that it is
                     // still valid for the current revision.
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+                }
+
+                if old_memo.was_cycle_participant() && zalsa_local.active_query().is_some() {
+                    return self.execute(db, claim_guard, opt_old_memo);
                 }
 
                 let verify_result = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
@@ -187,33 +196,34 @@ where
             },
             CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
                 // check if there's a provisional value for this query
-                // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
+                // Note we don't check whether the memo is reusable here as we want to reuse an
                 // existing provisional memo if it exists
                 let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
                 if let Some(memo) = &memo_guard {
-                    let cycle_state = memo.cycle_state(zalsa, database_key_index);
-
-                    // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
-                    // but that would require inserting itself as a cycle head, which either requires clone
-                    // on the value OR a concurrent `Vec` for cycle heads.
+                    let active_cycle = memo.revisions.active_cycle().and_then(|active_cycle| {
+                        zalsa
+                            .active_cycles()
+                            .contains_participant(active_cycle, database_key_index)
+                            .then_some(active_cycle)
+                    });
+                    let active_cycle = match (zalsa_local.active_cycle(), active_cycle) {
+                        (Some(current), Some(active_cycle)) => {
+                            zalsa.active_cycles().merge(current, active_cycle);
+                            Some(current)
+                        }
+                        (None, Some(active_cycle)) => Some(active_cycle),
+                        (_, None) => None,
+                    };
                     if memo.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
-                        && cycle_state.cycle_heads().contains(&database_key_index)
+                        && let Some(active_cycle) = active_cycle
                     {
-                        if let Some(active_cycle) = cycle_state.active_cycle() {
-                            zalsa.active_cycles().with_memo_state_mut(
-                                active_cycle,
-                                database_key_index,
-                                |state| {
-                                    state.cycle_heads.remove_all_except(database_key_index);
-                                },
-                            );
-                        } else {
-                            memo.revisions
-                                .cycle_heads()
-                                .remove_all_except(database_key_index);
-                        }
-
+                        zalsa
+                            .active_cycles()
+                            .add_head(active_cycle, database_key_index);
+                        zalsa
+                            .active_cycles()
+                            .add_participant(active_cycle, database_key_index);
                         crate::tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
                                 returning last provisional value: {:#?}",
@@ -230,20 +240,17 @@ where
                     inserting and returning fixpoint initial value"
                 );
 
-                let iteration = memo_guard
-                    .and_then(|old_memo| {
-                        if old_memo.verified_at.load() == zalsa.current_revision()
-                            && old_memo.value.is_some()
-                        {
-                            Some(old_memo.cycle_state(zalsa, database_key_index).iteration())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(IterationCount::initial());
-                let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
+                let iteration = IterationCount::initial();
+                let revisions = QueryRevisions::fixpoint_initial();
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                let active_cycle = zalsa.active_cycles().insert(database_key_index, iteration);
+                let active_cycle = if let Some(active_cycle) = zalsa_local.active_cycle() {
+                    zalsa
+                        .active_cycles()
+                        .add_head(active_cycle, database_key_index);
+                    active_cycle
+                } else {
+                    zalsa.active_cycles().insert(database_key_index, iteration)
+                };
                 self.insert_memo(
                     zalsa,
                     id,

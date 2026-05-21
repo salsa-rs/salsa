@@ -35,7 +35,7 @@ pub(crate) mod sync {
     pub use shuttle::thread;
 
     pub fn check(f: impl Fn() + Send + Sync + 'static) {
-        shuttle::check_pct(f, 2500, 50);
+        shuttle::check_pct(f, 10_000, 100);
     }
 }
 

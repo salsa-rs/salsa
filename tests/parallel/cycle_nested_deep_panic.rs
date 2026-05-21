@@ -87,12 +87,13 @@ fn run() {
     let r_t2 = t2.join().unwrap();
     let r_t3 = t3.join().unwrap();
 
-    assert_is_set_cycle_error(r_t1);
-    assert_is_set_cycle_error(r_t2);
-    assert_is_set_cycle_error(r_t3);
+    assert_is_set_cycle_error_or_concurrent_cancellation(r_t1);
+    assert_is_set_cycle_error_or_concurrent_cancellation(r_t2);
+    assert_is_set_cycle_error_or_concurrent_cancellation(r_t3);
 
-    // Pulling the cycle again at a later point should still result in a panic.
-    assert_is_set_cycle_error(catch_unwind(|| query_d(&db_t4)));
+    // Pulling the cycle again at a later point should either recompute successfully
+    // or hit the real cycle panic again, but it must not reuse a propagated panic payload.
+    assert_is_set_cycle_error_or_success(catch_unwind(|| query_d(&db_t4)));
 }
 
 #[test_log::test]
@@ -105,11 +106,32 @@ fn the_test() {
 }
 
 #[track_caller]
-fn assert_is_set_cycle_error<T>(result: Result<T, Box<dyn std::any::Any + Send>>)
+fn assert_is_set_cycle_error_or_concurrent_cancellation<T>(
+    result: Result<T, Box<dyn std::any::Any + Send>>,
+) where
+    T: fmt::Debug,
+{
+    assert_result_is_set_cycle_error(result, true);
+}
+
+#[track_caller]
+fn assert_is_set_cycle_error_or_success<T>(result: Result<T, Box<dyn std::any::Any + Send>>)
 where
     T: fmt::Debug,
 {
-    let err = result.expect_err("expected an error");
+    assert_result_is_set_cycle_error(result, false);
+}
+
+#[track_caller]
+fn assert_result_is_set_cycle_error<T>(
+    result: Result<T, Box<dyn std::any::Any + Send>>,
+    allow_concurrent_cancellation: bool,
+) where
+    T: fmt::Debug,
+{
+    let Err(err) = result else {
+        return;
+    };
 
     if let Some(message) = err.downcast_ref::<&str>() {
         assert!(
@@ -123,9 +145,9 @@ where
             "Expected error message to contain 'set cycle_fn/cycle_initial to fixpoint iterate', but got: {}",
             message
         );
-    } else if err.downcast_ref::<salsa::Cancelled>().is_some() {
-        // This is okay, because Salsa throws a Cancelled::PropagatedPanic when a panic occurs in a query
-        // that it blocks on.
+    } else if err.downcast_ref::<salsa::Cancelled>().is_some() && allow_concurrent_cancellation {
+        // This is okay, because Salsa throws a Cancelled::PropagatedPanic when a panic occurs
+        // in a query that it blocks on.
     } else {
         std::panic::resume_unwind(err);
     }

@@ -1,7 +1,6 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{IterationCount, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -67,17 +66,6 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         visited_edges: &mut FxHashSet<QueryEdge>,
     );
-
-    /// Returns information about the current provisional status of `input`.
-    ///
-    /// Is it a provisional value or has it been finalized and in which iteration.
-    ///
-    /// Returns `None` if `input` doesn't exist.
-    fn provisional_status(&self, _zalsa: &Zalsa, _input: Id) -> Option<ProvisionalStatus> {
-        unreachable!(
-            "provisional_status should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
     /// This call doesn't block the current thread. Instead, it's up to the caller to block
@@ -156,29 +144,6 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         fmt_index(self.debug_name(), index, fmt)
     }
     // Function ingredient methods
-
-    /// Tests if the (nested) cycle head `_input` has converged in the most recent iteration.
-    ///
-    /// Returns `false` if the Memo doesn't exist or if called on a non-cycle head.
-    fn cycle_converged(&self, _zalsa: &Zalsa, _input: Id) -> bool {
-        unreachable!(
-            "cycle_converged should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
-
-    /// Updates the iteration count for the (nested) cycle head `_input` to `iteration_count`.
-    ///
-    /// This is a no-op if the memo doesn't exist or if called on a Memo without cycle heads.
-    fn set_cycle_iteration_count(
-        &self,
-        _zalsa: &Zalsa,
-        _input: Id,
-        _iteration_count: IterationCount,
-    ) {
-        unreachable!(
-            "increment_iteration_count should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
 
     fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
         unreachable!(

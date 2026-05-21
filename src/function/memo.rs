@@ -3,12 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
-use crate::active_cycle::{ActiveCycleKey, ActiveCycleMemoState};
-use crate::cycle::{
-    CycleHeads, CycleHeadsIterator, IterationCount, ProvisionalStatus, empty_cycle_heads,
-};
 use crate::function::{Configuration, IngredientImpl};
-use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
@@ -96,57 +91,12 @@ pub struct Memo<'db, C: Configuration> {
     pub(super) revisions: QueryRevisions,
 }
 
-pub(super) enum MemoCycleState<'a> {
-    Active {
-        active_cycle: ActiveCycleKey,
-        state: ActiveCycleMemoState,
-    },
-    StaleActive,
-    Memo {
-        cycle_heads: &'a CycleHeads,
-        iteration: IterationCount,
-    },
-}
-
-impl MemoCycleState<'_> {
-    pub(super) fn active_cycle(&self) -> Option<ActiveCycleKey> {
-        match self {
-            MemoCycleState::Active { active_cycle, .. } => Some(*active_cycle),
-            MemoCycleState::StaleActive | MemoCycleState::Memo { .. } => None,
-        }
-    }
-
-    pub(super) fn cycle_heads(&self) -> &CycleHeads {
-        match self {
-            MemoCycleState::Active { state, .. } => &state.cycle_heads,
-            MemoCycleState::StaleActive => empty_cycle_heads(),
-            MemoCycleState::Memo { cycle_heads, .. } => cycle_heads,
-        }
-    }
-
-    pub(super) fn iteration(&self) -> IterationCount {
-        match self {
-            MemoCycleState::Active { state, .. } => state.iteration,
-            MemoCycleState::StaleActive => IterationCount::initial(),
-            MemoCycleState::Memo { iteration, .. } => *iteration,
-        }
-    }
-
-    pub(super) fn is_stale_active(&self) -> bool {
-        matches!(self, MemoCycleState::StaleActive)
-    }
-}
-
 impl<'db, C: Configuration> Memo<'db, C> {
     pub(super) fn new(
         value: Option<C::Output<'db>>,
         revision_now: Revision,
         revisions: QueryRevisions,
     ) -> Self {
-        debug_assert!(
-            !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_empty(),
-            "Memo must be finalized if it has no cycle heads"
-        );
         Memo {
             value,
             verified_at: AtomicRevision::from(revision_now),
@@ -157,43 +107,14 @@ impl<'db, C: Configuration> Memo<'db, C> {
     pub(super) fn with_active_cycle(
         mut self,
         zalsa: &crate::zalsa::Zalsa,
-        database_key_index: crate::key::DatabaseKeyIndex,
+        database_key_index: DatabaseKeyIndex,
         active_cycle: crate::active_cycle::ActiveCycleKey,
     ) -> Self {
-        zalsa.active_cycles().set_memo_state(
-            active_cycle,
-            database_key_index,
-            self.revisions.cycle_heads().clone(),
-            self.revisions.iteration(),
-        );
-        self.revisions.clear_cycle_state();
+        self.revisions.set_active_cycle(active_cycle);
+        zalsa
+            .active_cycles()
+            .add_participant(active_cycle, database_key_index);
         self
-    }
-
-    pub(super) fn cycle_state(
-        &self,
-        zalsa: &Zalsa,
-        database_key_index: DatabaseKeyIndex,
-    ) -> MemoCycleState<'_> {
-        if self.may_be_provisional() {
-            match zalsa.active_cycles().memo_state_for(database_key_index) {
-                Some((active_cycle, state)) => {
-                    return MemoCycleState::Active {
-                        active_cycle,
-                        state,
-                    };
-                }
-                None if self.revisions.cycle_heads().is_empty() => {
-                    return MemoCycleState::StaleActive;
-                }
-                None => {}
-            };
-        }
-
-        MemoCycleState::Memo {
-            cycle_heads: self.cycle_heads(),
-            iteration: self.revisions.iteration(),
-        }
     }
 
     /// Returns `true` if this memo should be serialized.
@@ -213,20 +134,10 @@ impl<'db, C: Configuration> Memo<'db, C> {
         !self.revisions.verified_final.load(Ordering::Relaxed)
     }
 
-    /// Cycle heads that should be propagated to dependent queries.
-    #[inline(always)]
-    pub(super) fn cycle_heads(&self) -> &CycleHeads {
-        if self.may_be_provisional() {
-            self.revisions.cycle_heads()
-        } else {
-            empty_cycle_heads()
-        }
-    }
-
     /// Returns `true` if this memo was part of a cycle in it's last iteration.
     #[inline(always)]
     pub(super) fn was_cycle_participant(&self) -> bool {
-        !self.revisions.cycle_heads().is_empty()
+        self.revisions.active_cycle().is_some()
     }
 
     /// Mark memo as having been verified in the `revision_now`, which should
@@ -431,87 +342,6 @@ mod persistence {
                 verified_at: memo.verified_at,
                 revisions: memo.revisions,
             })
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) enum TryClaimHeadsResult {
-    /// Claiming the cycle head results in a cycle.
-    Cycle {
-        head_iteration_count: IterationCount,
-        memo_iteration_count: IterationCount,
-        verified_at: Revision,
-    },
-
-    /// The cycle head is not finalized, but it can be claimed.
-    Available,
-
-    /// The cycle head is currently executed on another thread.
-    Running,
-}
-
-/// Iterator to try claiming the transitive cycle heads of a memo.
-pub(super) struct TryClaimCycleHeadsIter<'a> {
-    zalsa: &'a Zalsa,
-
-    cycle_heads: CycleHeadsIterator<'a>,
-}
-
-impl<'a> TryClaimCycleHeadsIter<'a> {
-    pub(super) fn new(zalsa: &'a Zalsa, cycle_heads: &'a CycleHeads) -> Self {
-        Self {
-            zalsa,
-
-            cycle_heads: cycle_heads.iter(),
-        }
-    }
-}
-
-impl Iterator for TryClaimCycleHeadsIter<'_> {
-    type Item = TryClaimHeadsResult;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let head = self.cycle_heads.next()?;
-        let head_database_key = head.database_key_index;
-        let head_key_index = head_database_key.key_index();
-        let ingredient = self
-            .zalsa
-            .lookup_ingredient(head_database_key.ingredient_index());
-
-        match ingredient.wait_for(self.zalsa, head_key_index) {
-            WaitForResult::Cycle { .. } => {
-                // We hit a cycle blocking on the cycle head; this means this query actively
-                // participates in the cycle and some other query is blocked on this thread.
-                crate::tracing::trace!("Waiting for {head_database_key:?} results in a cycle");
-
-                let provisional_status = ingredient
-                    .provisional_status(self.zalsa, head_key_index)
-                    .expect("cycle head memo to exist");
-                let (current_iteration_count, verified_at) = match provisional_status {
-                    ProvisionalStatus::Provisional {
-                        iteration,
-                        verified_at,
-                        cycle_heads: _,
-                    } => (iteration, verified_at),
-                    ProvisionalStatus::Final {
-                        iteration,
-                        verified_at,
-                    } => (iteration, verified_at),
-                };
-
-                Some(TryClaimHeadsResult::Cycle {
-                    memo_iteration_count: current_iteration_count,
-                    head_iteration_count: head.iteration_count.load(),
-                    verified_at,
-                })
-            }
-            WaitForResult::Running(running) => {
-                crate::tracing::trace!("Ingredient {head_database_key:?} is running: {running:?}");
-
-                Some(TryClaimHeadsResult::Running)
-            }
-            WaitForResult::Available => Some(TryClaimHeadsResult::Available),
         }
     }
 }

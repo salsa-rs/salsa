@@ -112,16 +112,20 @@ impl ActiveQuery {
         std::mem::take(&mut self.cycle_heads)
     }
 
+    pub(super) fn active_cycle(&self) -> Option<ActiveCycleKey> {
+        self.active_cycle
+    }
+
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        cycle_heads: &CycleHeads,
-        active_cycle: Option<ActiveCycleKey>,
+        cycle: (&CycleHeads, Option<ActiveCycleKey>),
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
+        let (cycle_heads, active_cycle) = cycle;
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.input_outputs.insert(QueryEdge::input(input));
@@ -219,7 +223,7 @@ impl ActiveQuery {
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
             active_cycle,
-            iteration_count,
+            iteration_count: _,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
             #[cfg(feature = "accumulator")]
@@ -242,9 +246,8 @@ impl ActiveQuery {
             #[cfg(feature = "accumulator")]
             mem::take(accumulated),
             active_tracked_structs,
-            mem::take(cycle_heads),
-            iteration_count,
         );
+        let cycle_heads = mem::take(cycle_heads);
 
         let revisions = QueryRevisions {
             changed_at,
@@ -259,6 +262,7 @@ impl ActiveQuery {
         CompletedQuery {
             revisions,
             active_cycle,
+            cycle_heads,
             stale_tracked_structs,
         }
     }
@@ -438,6 +442,9 @@ pub(crate) struct CompletedQuery {
     /// Active fixpoint cycle this result remains provisional in.
     pub(crate) active_cycle: Option<ActiveCycleKey>,
 
+    /// Provisional cycle results that this query depends on.
+    pub(crate) cycle_heads: CycleHeads,
+
     /// The keys of any tracked structs that were created in a previous execution of the
     /// query but not the current one, and should be marked as stale.
     pub(crate) stale_tracked_structs: Vec<(Identity, Id)>,
@@ -542,11 +549,7 @@ impl fmt::Display for Backtrace {
                         if idx != 0 {
                             write!(fmt, ", ")?;
                         }
-                        write!(
-                            fmt,
-                            "{:?} -> iteration = {}",
-                            head.database_key_index, head.iteration_count
-                        )?;
+                        write!(fmt, "{:?}", head.database_key_index)?;
                     }
                     writeln!(fmt)?;
                 }
