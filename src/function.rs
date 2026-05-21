@@ -373,27 +373,30 @@ where
     ///
     /// Otherwise, the value is still provisional. For both final and provisional, it also
     /// returns the iteration in which this memo was created (always 0 except for cycle heads).
-    fn provisional_status<'db>(
-        &self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
+    fn provisional_status(&self, zalsa: &Zalsa, input: Id) -> Option<ProvisionalStatus> {
         let memo =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
 
-        let iteration = memo.revisions.iteration();
         let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
 
         Some(if verified_final {
+            let database_key_index = Self::database_key_index(self, input);
             ProvisionalStatus::Final {
-                iteration,
+                iteration: zalsa
+                    .active_cycles()
+                    .memo_state_for(database_key_index)
+                    .map(|(_, state)| state.iteration)
+                    .unwrap_or_else(|| memo.revisions.iteration()),
                 verified_at: memo.verified_at.load(),
             }
         } else {
+            let database_key_index = Self::database_key_index(self, input);
+            let cycle_state = memo.cycle_state(zalsa, database_key_index);
+
             ProvisionalStatus::Provisional {
-                iteration,
+                iteration: cycle_state.iteration(),
                 verified_at: memo.verified_at.load(),
-                cycle_heads: memo.cycle_heads(),
+                cycle_heads: cycle_state.cycle_heads().clone(),
             }
         })
     }
@@ -405,8 +408,24 @@ where
             return;
         };
 
-        memo.revisions
-            .set_iteration_count(Self::database_key_index(self, input), iteration_count);
+        let database_key_index = Self::database_key_index(self, input);
+        if let Some(active_cycle) = zalsa.active_cycles().key_for(database_key_index) {
+            let cycle_heads = memo
+                .cycle_state(zalsa, database_key_index)
+                .cycle_heads()
+                .clone();
+            cycle_heads.update_iteration_count(database_key_index, iteration_count);
+
+            zalsa.active_cycles().set_memo_state(
+                active_cycle,
+                database_key_index,
+                cycle_heads,
+                iteration_count,
+            );
+        } else {
+            memo.revisions
+                .set_iteration_count(database_key_index, iteration_count);
+        }
     }
 
     fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
@@ -469,13 +488,20 @@ where
     }
 
     fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
-        let Some(memo) =
+        let Some(_memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
             return true;
         };
 
-        memo.revisions.cycle_converged()
+        let database_key_index = Self::database_key_index(self, input);
+        if let Some(active_cycle) = zalsa.active_cycles().key_for(database_key_index) {
+            if let Some(converged) = zalsa.active_cycles().converged(active_cycle) {
+                return converged;
+            }
+        }
+
+        false
     }
 
     fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {

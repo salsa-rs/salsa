@@ -6,6 +6,7 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
 };
+use crate::active_cycle::ActiveCycleKey;
 use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -68,6 +69,9 @@ pub(crate) struct ActiveQuery {
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
 
+    /// Active fixpoint cycle this query participates in.
+    active_cycle: Option<ActiveCycleKey>,
+
     /// If this query is a cycle head, iteration count of that cycle.
     iteration_count: IterationCount,
 }
@@ -114,6 +118,7 @@ impl ActiveQuery {
         durability: Durability,
         changed_at: Revision,
         cycle_heads: &CycleHeads,
+        active_cycle: Option<ActiveCycleKey>,
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
@@ -121,6 +126,11 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(changed_at);
         self.input_outputs.insert(QueryEdge::input(input));
         self.cycle_heads.extend(cycle_heads);
+        if let Some(active_cycle) = active_cycle {
+            if self.active_cycle.is_none() {
+                self.active_cycle = Some(active_cycle);
+            }
+        }
         #[cfg(feature = "accumulator")]
         {
             self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
@@ -189,6 +199,7 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
+            active_cycle: None,
             iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
@@ -207,6 +218,7 @@ impl ActiveQuery {
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
+            active_cycle,
             iteration_count,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
@@ -246,6 +258,7 @@ impl ActiveQuery {
 
         CompletedQuery {
             revisions,
+            active_cycle,
             stale_tracked_structs,
         }
     }
@@ -260,6 +273,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            active_cycle,
             iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated,
@@ -270,6 +284,7 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
+        *active_cycle = None;
         *iteration_count = IterationCount::initial();
         #[cfg(feature = "accumulator")]
         accumulated.clear();
@@ -289,6 +304,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            active_cycle,
             iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated,
@@ -299,6 +315,7 @@ impl ActiveQuery {
         *durability = Durability::MAX;
         *changed_at = Revision::start();
         *untracked_read = false;
+        *active_cycle = None;
         *iteration_count = new_iteration_count;
         debug_assert!(
             input_outputs.is_empty(),
@@ -417,6 +434,9 @@ impl QueryStack {
 pub(crate) struct CompletedQuery {
     /// Inputs and outputs accumulated during query execution.
     pub(crate) revisions: QueryRevisions,
+
+    /// Active fixpoint cycle this result remains provisional in.
+    pub(crate) active_cycle: Option<ActiveCycleKey>,
 
     /// The keys of any tracked structs that were created in a previous execution of the
     /// query but not the current one, and should be marked as stale.

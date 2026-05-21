@@ -225,6 +225,10 @@ impl Zalsa {
         &self.runtime
     }
 
+    pub(crate) fn active_cycles(&self) -> &crate::active_cycle::ActiveCycleTable {
+        self.runtime.active_cycles()
+    }
+
     pub(crate) fn runtime_mut(&mut self) -> &mut Runtime {
         &mut self.runtime
     }

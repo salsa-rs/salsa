@@ -14,6 +14,7 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
 };
+use crate::active_cycle::ActiveCycleKey;
 use crate::active_query::{CompletedQuery, QueryStack};
 use crate::cycle::{AtomicIterationCount, CycleHeads, IterationCount, empty_cycle_heads};
 use crate::durability::Durability;
@@ -307,6 +308,7 @@ impl ZalsaLocal {
         durability: Durability,
         changed_at: Revision,
         cycle_heads: &CycleHeads,
+        active_cycle: Option<ActiveCycleKey>,
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
@@ -326,6 +328,7 @@ impl ZalsaLocal {
                         durability,
                         changed_at,
                         cycle_heads,
+                        active_cycle,
                         #[cfg(feature = "accumulator")]
                         has_accumulated,
                         #[cfg(feature = "accumulator")]
@@ -566,7 +569,6 @@ impl QueryRevisionsExtra {
                 cycle_heads,
                 tracked_struct_ids,
                 iteration: iteration.into(),
-                cycle_converged: false,
             }))
         };
 
@@ -614,11 +616,6 @@ struct QueryRevisionsExtraInner {
     cycle_heads: CycleHeads,
 
     iteration: AtomicIterationCount,
-
-    /// Stores for nested cycle heads whether they've converged in the last iteration.
-    /// This value is always `false` for other queries.
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    cycle_converged: bool,
 }
 
 impl QueryRevisionsExtraInner {
@@ -630,7 +627,6 @@ impl QueryRevisionsExtraInner {
             tracked_struct_ids,
             cycle_heads,
             iteration: _,
-            cycle_converged: _,
         } = self;
 
         #[cfg(feature = "accumulator")]
@@ -662,8 +658,7 @@ impl fmt::Debug for QueryRevisionsExtraInner {
         let mut f = f.debug_struct("QueryRevisionsExtraInner");
 
         f.field("cycle_heads", &self.cycle_heads)
-            .field("iteration", &self.iteration)
-            .field("cycle_converged", &self.cycle_converged);
+            .field("iteration", &self.iteration);
 
         #[cfg(feature = "accumulator")]
         {
@@ -741,19 +736,6 @@ impl QueryRevisions {
         };
     }
 
-    pub(crate) fn cycle_converged(&self) -> bool {
-        match &self.extra.0 {
-            Some(extra) => extra.cycle_converged,
-            None => false,
-        }
-    }
-
-    pub(crate) fn set_cycle_converged(&mut self, cycle_converged: bool) {
-        if let Some(extra) = &mut self.extra.0 {
-            extra.cycle_converged = cycle_converged
-        }
-    }
-
     pub(crate) fn iteration(&self) -> IterationCount {
         match &self.extra.0 {
             Some(extra) => extra.iteration.load(),
@@ -786,7 +768,6 @@ impl QueryRevisions {
                 tracked_struct_ids: ThinVec::default(),
                 cycle_heads: empty_cycle_heads().clone(),
                 iteration: IterationCount::default().into(),
-                cycle_converged: false,
             })
         })
     }
@@ -818,6 +799,15 @@ impl QueryRevisions {
         extra
             .cycle_heads
             .update_iteration_count_mut(cycle_head_index, iteration_count);
+    }
+
+    pub(crate) fn clear_cycle_state(&mut self) {
+        let Some(extra) = &mut self.extra.0 else {
+            return;
+        };
+
+        extra.cycle_heads = empty_cycle_heads().clone();
+        extra.iteration.set(IterationCount::initial());
     }
 
     /// Returns the ids of the tracked structs created when running this query.
