@@ -72,6 +72,9 @@ where
                 #[cfg(feature = "accumulator")]
                 accumulated_inputs: Default::default(),
                 verified_final: AtomicBool::new(true),
+                cancellation_count: zalsa_local
+                    .active_query_cancellation_count()
+                    .expect("specify should be called from an active query"),
                 extra: QueryRevisionsExtra::default(),
             },
             stale_tracked_structs: Vec::new(),

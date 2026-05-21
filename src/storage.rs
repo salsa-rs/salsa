@@ -22,6 +22,12 @@ pub struct StorageHandle<Db> {
     phantom: PhantomData<fn() -> Db>,
 }
 
+impl<Db> StorageHandle<Db> {
+    fn new_zalsa_local(&self) -> ZalsaLocal {
+        ZalsaLocal::new(self.zalsa_impl.runtime().cancellation_counter())
+    }
+}
+
 impl<Db> Clone for StorageHandle<Db> {
     fn clone(&self) -> Self {
         *self.coordinate.clones.lock() += 1;
@@ -60,9 +66,10 @@ impl<Db: Database> StorageHandle<Db> {
     }
 
     pub fn into_storage(self) -> Storage<Db> {
+        let zalsa_local = self.new_zalsa_local();
         Storage {
             handle: self,
-            zalsa_local: ZalsaLocal::new(),
+            zalsa_local,
         }
     }
 }
@@ -116,9 +123,11 @@ impl<Db: Database> Storage<Db> {
     ///
     /// The `event_callback` function is invoked by the salsa runtime at various points during execution.
     pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
+        let handle = StorageHandle::new(event_callback);
+        let zalsa_local = handle.new_zalsa_local();
         Self {
-            handle: StorageHandle::new(event_callback),
-            zalsa_local: ZalsaLocal::new(),
+            handle,
+            zalsa_local,
         }
     }
 
@@ -224,9 +233,11 @@ impl<Db: Database> StorageBuilder<Db> {
 
     /// Construct the [`Storage`] using the provided builder options.
     pub fn build(self) -> Storage<Db> {
+        let handle = StorageHandle::with_jars(self.event_callback, self.jars);
+        let zalsa_local = handle.new_zalsa_local();
         Storage {
-            handle: StorageHandle::with_jars(self.event_callback, self.jars),
-            zalsa_local: ZalsaLocal::new(),
+            handle,
+            zalsa_local,
         }
     }
 }
@@ -252,7 +263,7 @@ impl<Db: Database> Clone for Storage<Db> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            zalsa_local: ZalsaLocal::new(),
+            zalsa_local: self.handle.new_zalsa_local(),
         }
     }
 }

@@ -18,7 +18,7 @@ use crate::active_query::{CompletedQuery, QueryStack};
 use crate::cycle::{AtomicIterationCount, CycleHeads, IterationCount, empty_cycle_heads};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::Stamp;
+use crate::runtime::{AtomicCancellationCount, CancellationCount, Stamp};
 use crate::sync::atomic::AtomicBool;
 use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
@@ -47,7 +47,10 @@ pub struct ZalsaLocal {
 
 /// A cancellation token that can be used to cancel a query computation for a specific local `Database`.
 #[derive(Default, Clone, Debug)]
-pub struct CancellationToken(Arc<AtomicU8>);
+pub struct CancellationToken {
+    state: Arc<AtomicU8>,
+    cancellation_count: Arc<AtomicCancellationCount>,
+}
 
 impl CancellationToken {
     const CANCELLED_MASK: u8 = 0b01;
@@ -55,39 +58,52 @@ impl CancellationToken {
 
     /// Inform the database to cancel the current query computation.
     pub fn cancel(&self) {
-        self.0.fetch_or(Self::CANCELLED_MASK, Ordering::Relaxed);
+        self.cancellation_count.increment();
+        self.state.fetch_or(Self::CANCELLED_MASK, Ordering::Relaxed);
     }
 
     /// Check if the query computation has been requested to be cancelled.
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::Relaxed) & Self::CANCELLED_MASK != 0
+        self.state.load(Ordering::Relaxed) & Self::CANCELLED_MASK != 0
     }
 
     #[inline]
     fn set_cancellation_disabled(&self, disabled: bool) -> bool {
         let previous_disabled_bit = if disabled {
-            self.0.fetch_or(Self::DISABLED_MASK, Ordering::Relaxed)
+            self.state.fetch_or(Self::DISABLED_MASK, Ordering::Relaxed)
         } else {
-            self.0.fetch_and(!Self::DISABLED_MASK, Ordering::Relaxed)
+            self.state
+                .fetch_and(!Self::DISABLED_MASK, Ordering::Relaxed)
         };
         previous_disabled_bit & Self::DISABLED_MASK != 0
     }
 
     fn should_trigger_local_cancellation(&self) -> bool {
-        self.0.load(Ordering::Relaxed) == Self::CANCELLED_MASK
+        self.state.load(Ordering::Relaxed) == Self::CANCELLED_MASK
     }
 
     fn reset(&self) {
-        self.0.store(0, Ordering::Relaxed);
+        self.state.store(0, Ordering::Relaxed);
+    }
+
+    fn new(cancellation_count: Arc<AtomicCancellationCount>) -> Self {
+        Self {
+            state: Default::default(),
+            cancellation_count,
+        }
+    }
+
+    fn cancellation_count(&self) -> CancellationCount {
+        self.cancellation_count.load()
     }
 }
 
 impl ZalsaLocal {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(cancellation_count: Arc<AtomicCancellationCount>) -> Self {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: UnsafeCell::new(FxHashMap::default()),
-            cancelled: CancellationToken::default(),
+            cancelled: CancellationToken::new(cancellation_count),
         }
     }
 
@@ -184,7 +200,11 @@ impl ZalsaLocal {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
-                stack.push_new_query(database_key_index, iteration_count);
+                stack.push_new_query(
+                    database_key_index,
+                    iteration_count,
+                    self.cancellation_count(),
+                );
 
                 ActiveQueryGuard {
                     local_state: self,
@@ -249,6 +269,21 @@ impl ZalsaLocal {
                 stack
                     .last()
                     .map(|active_query| (active_query.database_key_index, active_query.stamp()))
+            })
+        }
+    }
+
+    pub(crate) fn cancellation_count(&self) -> CancellationCount {
+        self.cancelled.cancellation_count()
+    }
+
+    pub(crate) fn active_query_cancellation_count(&self) -> Option<CancellationCount> {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.with_query_stack_unchecked(|stack| {
+                stack
+                    .last()
+                    .map(|active_query| active_query.cancellation_count)
             })
         }
     }
@@ -496,6 +531,10 @@ pub(crate) struct QueryRevisions {
     #[cfg_attr(feature = "persistence", serde(with = "persistence::verified_final"))]
     pub(super) verified_final: AtomicBool,
 
+    /// Cancellation count captured when this query run started.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    pub(super) cancellation_count: CancellationCount,
+
     /// Lazily allocated state.
     pub(super) extra: QueryRevisionsExtra,
 }
@@ -507,6 +546,7 @@ impl QueryRevisions {
             changed_at: _,
             durability: _,
             verified_final: _,
+            cancellation_count: _,
             origin,
             extra,
             #[cfg(feature = "accumulator")]
@@ -681,7 +721,7 @@ impl fmt::Debug for QueryRevisionsExtraInner {
 
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
-const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 4]>()];
+const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<[usize; 5]>()];
 
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
@@ -689,7 +729,11 @@ const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
     [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, iteration: IterationCount) -> Self {
+    pub(crate) fn fixpoint_initial(
+        query: DatabaseKeyIndex,
+        iteration: IterationCount,
+        cancellation_count: CancellationCount,
+    ) -> Self {
         Self {
             changed_at: Revision::start(),
             durability: Durability::MAX,
@@ -697,6 +741,7 @@ impl QueryRevisions {
             #[cfg(feature = "accumulator")]
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
+            cancellation_count,
             extra: QueryRevisionsExtra::new(
                 #[cfg(feature = "accumulator")]
                 AccumulatedMap::default(),
@@ -1250,6 +1295,17 @@ pub(crate) struct ActiveQueryGuard<'me> {
 }
 
 impl ActiveQueryGuard<'_> {
+    pub(crate) fn cancellation_count(&self) -> CancellationCount {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.local_state.with_query_stack_unchecked(|stack| {
+                #[cfg(debug_assertions)]
+                assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
+                stack.last().unwrap().cancellation_count
+            })
+        }
+    }
+
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &[(Identity, Id)]) {
         // SAFETY: We do not access the query stack reentrantly.
@@ -1361,6 +1417,7 @@ pub(crate) mod persistence {
                 changed_at,
                 durability,
                 ref verified_final,
+                cancellation_count: _,
                 ref extra,
                 #[cfg(feature = "accumulator")]
                     accumulated_inputs: _, // TODO: Support serializing accumulators

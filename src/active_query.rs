@@ -8,7 +8,7 @@ use crate::accumulator::{
 };
 use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::Stamp;
+use crate::runtime::{CancellationCount, Stamp};
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::{
@@ -70,6 +70,9 @@ pub(crate) struct ActiveQuery {
 
     /// If this query is a cycle head, iteration count of that cycle.
     iteration_count: IterationCount,
+
+    /// Cancellation count captured when this query run started.
+    pub(crate) cancellation_count: CancellationCount,
 }
 
 impl ActiveQuery {
@@ -179,7 +182,11 @@ impl ActiveQuery {
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, iteration_count: IterationCount) -> Self {
+    fn new(
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: IterationCount,
+        cancellation_count: CancellationCount,
+    ) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -190,6 +197,7 @@ impl ActiveQuery {
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
             iteration_count,
+            cancellation_count,
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
             #[cfg(feature = "accumulator")]
@@ -208,6 +216,7 @@ impl ActiveQuery {
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
             iteration_count,
+            cancellation_count,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
             #[cfg(feature = "accumulator")]
@@ -241,6 +250,7 @@ impl ActiveQuery {
             #[cfg(feature = "accumulator")]
             accumulated_inputs,
             verified_final: AtomicBool::new(verified_final),
+            cancellation_count,
             extra,
         };
 
@@ -261,6 +271,7 @@ impl ActiveQuery {
             tracked_struct_ids,
             cycle_heads,
             iteration_count,
+            cancellation_count: _,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -279,6 +290,7 @@ impl ActiveQuery {
         &mut self,
         new_database_key_index: DatabaseKeyIndex,
         new_iteration_count: IterationCount,
+        new_cancellation_count: CancellationCount,
     ) {
         let Self {
             database_key_index,
@@ -290,6 +302,7 @@ impl ActiveQuery {
             tracked_struct_ids,
             cycle_heads,
             iteration_count,
+            cancellation_count,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -300,6 +313,7 @@ impl ActiveQuery {
         *changed_at = Revision::start();
         *untracked_read = false;
         *iteration_count = new_iteration_count;
+        *cancellation_count = new_cancellation_count;
         debug_assert!(
             input_outputs.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
@@ -369,12 +383,16 @@ impl QueryStack {
         &mut self,
         database_key_index: DatabaseKeyIndex,
         iteration_count: IterationCount,
+        cancellation_count: CancellationCount,
     ) {
         if self.len < self.stack.len() {
-            self.stack[self.len].reset_for(database_key_index, iteration_count);
+            self.stack[self.len].reset_for(database_key_index, iteration_count, cancellation_count);
         } else {
-            self.stack
-                .push(ActiveQuery::new(database_key_index, iteration_count));
+            self.stack.push(ActiveQuery::new(
+                database_key_index,
+                iteration_count,
+                cancellation_count,
+            ));
         }
         self.len += 1;
     }

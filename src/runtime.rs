@@ -8,8 +8,28 @@ use crate::sync::thread::{self, ThreadId};
 use crate::table::Table;
 use crate::zalsa::Zalsa;
 use crate::{Cancelled, Event, EventKind, Revision};
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 mod dependency_graph;
+
+/// Counts cancellation requests issued while a database revision is active.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct CancellationCount(usize);
+
+/// Shared cancellation counter for every local handle of a database.
+#[derive(Debug, Default)]
+pub(crate) struct AtomicCancellationCount(AtomicUsize);
+
+impl AtomicCancellationCount {
+    pub(crate) fn load(&self) -> CancellationCount {
+        CancellationCount(self.0.load(Ordering::Acquire))
+    }
+
+    pub(crate) fn increment(&self) {
+        self.0.fetch_add(1, Ordering::AcqRel);
+    }
+}
 
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Runtime {
@@ -18,6 +38,10 @@ pub struct Runtime {
     /// is set back to false once the input has been changed.
     #[cfg_attr(feature = "persistence", serde(skip))]
     revision_cancelled: AtomicBool,
+
+    /// Increments whenever a query run is cancelled in the current revision.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    cancellation_count: Arc<AtomicCancellationCount>,
 
     /// Stores the "last change" revision for values of each duration.
     /// This vector is always of length at least 1 (for Durability 0)
@@ -193,6 +217,7 @@ impl Default for Runtime {
         Runtime {
             revisions: [Revision::start(); Durability::LEN],
             revision_cancelled: Default::default(),
+            cancellation_count: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
         }
@@ -204,6 +229,7 @@ impl std::fmt::Debug for Runtime {
         fmt.debug_struct("Runtime")
             .field("revisions", &self.revisions)
             .field("revision_cancelled", &self.revision_cancelled)
+            .field("cancellation_count", &self.cancellation_count)
             .field("dependency_graph", &self.dependency_graph)
             .finish()
     }
@@ -239,8 +265,17 @@ impl Runtime {
         self.revision_cancelled.load(Ordering::Acquire)
     }
 
+    pub(crate) fn cancellation_count(&self) -> CancellationCount {
+        self.cancellation_count.load()
+    }
+
+    pub(crate) fn cancellation_counter(&self) -> Arc<AtomicCancellationCount> {
+        Arc::clone(&self.cancellation_count)
+    }
+
     pub(crate) fn set_cancellation_flag(&self) {
         crate::tracing::trace!("set_cancellation_flag");
+        self.cancellation_count.increment();
         self.revision_cancelled.store(true, Ordering::Release);
     }
 

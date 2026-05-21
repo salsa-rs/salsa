@@ -10,6 +10,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
+use crate::runtime::CancellationCount;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
@@ -358,6 +359,7 @@ pub(super) enum TryClaimHeadsResult {
         head_iteration_count: IterationCount,
         memo_iteration_count: IterationCount,
         verified_at: Revision,
+        cancellation_count: CancellationCount,
     },
 
     /// The cycle head is not finalized, but it can be claimed.
@@ -404,22 +406,26 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                 let provisional_status = ingredient
                     .provisional_status(self.zalsa, head_key_index)
                     .expect("cycle head memo to exist");
-                let (current_iteration_count, verified_at) = match provisional_status {
-                    ProvisionalStatus::Provisional {
-                        iteration,
-                        verified_at,
-                        cycle_heads: _,
-                    } => (iteration, verified_at),
-                    ProvisionalStatus::Final {
-                        iteration,
-                        verified_at,
-                    } => (iteration, verified_at),
-                };
+                let (current_iteration_count, verified_at, cancellation_count) =
+                    match provisional_status {
+                        ProvisionalStatus::Provisional {
+                            iteration,
+                            verified_at,
+                            cancellation_count,
+                            cycle_heads: _,
+                        } => (iteration, verified_at, cancellation_count),
+                        ProvisionalStatus::Final {
+                            iteration,
+                            verified_at,
+                            cancellation_count,
+                        } => (iteration, verified_at, cancellation_count),
+                    };
 
                 Some(TryClaimHeadsResult::Cycle {
                     memo_iteration_count: current_iteration_count,
                     head_iteration_count: head.iteration_count.load(),
                     verified_at,
+                    cancellation_count,
                 })
             }
             WaitForResult::Running(running) => {
@@ -446,7 +452,7 @@ mod _memory_usage {
 
     // Memo's are stored a lot, make sure their size doesn't randomly increase.
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
-        [(); std::mem::size_of::<[usize; 6]>()];
+        [(); std::mem::size_of::<[usize; 7]>()];
 
     struct DummyStruct;
 

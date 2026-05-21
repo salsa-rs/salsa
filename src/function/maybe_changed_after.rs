@@ -7,6 +7,7 @@ use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
+use crate::runtime::CancellationCount;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Id, Revision};
@@ -308,18 +309,21 @@ where
         );
 
         let verified_at = memo.verified_at.load();
+        let cancellation_count = memo.revisions.cancellation_count;
 
         validate_provisional(
             zalsa,
             database_key_index,
             &memo.revisions,
             verified_at,
+            cancellation_count,
             cycle_heads,
         ) || validate_same_iteration(
             zalsa,
             zalsa_local,
             database_key_index,
             verified_at,
+            cancellation_count,
             cycle_heads,
         )
     }
@@ -519,6 +523,7 @@ fn validate_provisional(
     database_key_index: DatabaseKeyIndex,
     memo_revisions: &QueryRevisions,
     memo_verified_at: Revision,
+    memo_cancellation_count: CancellationCount,
     cycle_heads: &CycleHeads,
 ) -> bool {
     crate::tracing::trace!("{database_key_index:?}: validate_provisional({database_key_index:?})",);
@@ -537,10 +542,12 @@ fn validate_provisional(
             ProvisionalStatus::Final {
                 iteration,
                 verified_at,
+                cancellation_count,
                 ..
             } => {
                 // Only consider the cycle head if it is from the same revision as the memo
-                if verified_at != memo_verified_at {
+                if verified_at != memo_verified_at || cancellation_count != memo_cancellation_count
+                {
                     return false;
                 }
 
@@ -571,6 +578,7 @@ fn validate_same_iteration(
     zalsa_local: &ZalsaLocal,
     memo_database_key_index: DatabaseKeyIndex,
     memo_verified_at: Revision,
+    memo_cancellation_count: CancellationCount,
     cycle_heads: &CycleHeads,
 ) -> bool {
     crate::tracing::trace!("validate_same_iteration({memo_database_key_index:?})",);
@@ -579,6 +587,10 @@ fn validate_same_iteration(
     // Don't apply it when verifying memos from past revisions. We want them to re-execute
     // to verify their cycle heads and all participating queries.
     if memo_verified_at != zalsa.current_revision() {
+        return false;
+    }
+
+    if zalsa_local.active_query_cancellation_count() != Some(memo_cancellation_count) {
         return false;
     }
 
@@ -591,10 +603,10 @@ fn validate_same_iteration(
         // SAFETY: We do not access the query stack reentrantly.
         let on_stack = unsafe {
             zalsa_local.with_query_stack_unchecked(|stack| {
-                stack
-                    .iter()
-                    .rev()
-                    .any(|query| query.database_key_index == memo_database_key_index)
+                stack.iter().rev().any(|query| {
+                    query.database_key_index == memo_database_key_index
+                        && query.cancellation_count == memo_cancellation_count
+                })
             })
         };
 
@@ -609,8 +621,11 @@ fn validate_same_iteration(
                 head_iteration_count,
                 memo_iteration_count: current_iteration_count,
                 verified_at: head_verified_at,
+                cancellation_count: head_cancellation_count,
             } => {
-                if head_verified_at != memo_verified_at {
+                if head_verified_at != memo_verified_at
+                    || head_cancellation_count != memo_cancellation_count
+                {
                     return false;
                 }
 

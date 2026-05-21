@@ -388,11 +388,13 @@ where
             ProvisionalStatus::Final {
                 iteration,
                 verified_at: memo.verified_at.load(),
+                cancellation_count: memo.revisions.cancellation_count,
             }
         } else {
             ProvisionalStatus::Provisional {
                 iteration,
                 verified_at: memo.verified_at.load(),
+                cancellation_count: memo.revisions.cancellation_count,
                 cycle_heads: memo.cycle_heads(),
             }
         })
