@@ -74,6 +74,7 @@ where
                 verified_final: AtomicBool::new(true),
                 extra: QueryRevisionsExtra::default(),
             },
+            active_cycle: None,
             stale_tracked_structs: Vec::new(),
         };
 

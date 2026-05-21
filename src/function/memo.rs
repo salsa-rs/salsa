@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
+use crate::active_cycle::{ActiveCycleKey, ActiveCycleMemoState};
 use crate::cycle::{
     CycleHeads, CycleHeadsIterator, IterationCount, ProvisionalStatus, empty_cycle_heads,
 };
@@ -95,6 +96,47 @@ pub struct Memo<'db, C: Configuration> {
     pub(super) revisions: QueryRevisions,
 }
 
+pub(super) enum MemoCycleState<'a> {
+    Active {
+        active_cycle: ActiveCycleKey,
+        state: ActiveCycleMemoState,
+    },
+    StaleActive,
+    Memo {
+        cycle_heads: &'a CycleHeads,
+        iteration: IterationCount,
+    },
+}
+
+impl MemoCycleState<'_> {
+    pub(super) fn active_cycle(&self) -> Option<ActiveCycleKey> {
+        match self {
+            MemoCycleState::Active { active_cycle, .. } => Some(*active_cycle),
+            MemoCycleState::StaleActive | MemoCycleState::Memo { .. } => None,
+        }
+    }
+
+    pub(super) fn cycle_heads(&self) -> &CycleHeads {
+        match self {
+            MemoCycleState::Active { state, .. } => &state.cycle_heads,
+            MemoCycleState::StaleActive => empty_cycle_heads(),
+            MemoCycleState::Memo { cycle_heads, .. } => cycle_heads,
+        }
+    }
+
+    pub(super) fn iteration(&self) -> IterationCount {
+        match self {
+            MemoCycleState::Active { state, .. } => state.iteration,
+            MemoCycleState::StaleActive => IterationCount::initial(),
+            MemoCycleState::Memo { iteration, .. } => *iteration,
+        }
+    }
+
+    pub(super) fn is_stale_active(&self) -> bool {
+        matches!(self, MemoCycleState::StaleActive)
+    }
+}
+
 impl<'db, C: Configuration> Memo<'db, C> {
     pub(super) fn new(
         value: Option<C::Output<'db>>,
@@ -109,6 +151,48 @@ impl<'db, C: Configuration> Memo<'db, C> {
             value,
             verified_at: AtomicRevision::from(revision_now),
             revisions,
+        }
+    }
+
+    pub(super) fn with_active_cycle(
+        mut self,
+        zalsa: &crate::zalsa::Zalsa,
+        database_key_index: crate::key::DatabaseKeyIndex,
+        active_cycle: crate::active_cycle::ActiveCycleKey,
+    ) -> Self {
+        zalsa.active_cycles().set_memo_state(
+            active_cycle,
+            database_key_index,
+            self.revisions.cycle_heads().clone(),
+            self.revisions.iteration(),
+        );
+        self.revisions.clear_cycle_state();
+        self
+    }
+
+    pub(super) fn cycle_state(
+        &self,
+        zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
+    ) -> MemoCycleState<'_> {
+        if self.may_be_provisional() {
+            match zalsa.active_cycles().memo_state_for(database_key_index) {
+                Some((active_cycle, state)) => {
+                    return MemoCycleState::Active {
+                        active_cycle,
+                        state,
+                    };
+                }
+                None if self.revisions.cycle_heads().is_empty() => {
+                    return MemoCycleState::StaleActive;
+                }
+                None => {}
+            };
+        }
+
+        MemoCycleState::Memo {
+            cycle_heads: self.cycle_heads(),
+            iteration: self.revisions.iteration(),
         }
     }
 

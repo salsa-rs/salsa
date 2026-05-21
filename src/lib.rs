@@ -3,6 +3,7 @@
 
 #[cfg(feature = "accumulator")]
 mod accumulator;
+mod active_cycle;
 mod active_query;
 mod attach;
 mod cancelled;

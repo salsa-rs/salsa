@@ -73,11 +73,7 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     /// Is it a provisional value or has it been finalized and in which iteration.
     ///
     /// Returns `None` if `input` doesn't exist.
-    fn provisional_status<'db>(
-        &self,
-        _zalsa: &'db Zalsa,
-        _input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
+    fn provisional_status(&self, _zalsa: &Zalsa, _input: Id) -> Option<ProvisionalStatus> {
         unreachable!(
             "provisional_status should only be called on cycle heads and only functions can be cycle heads"
         );

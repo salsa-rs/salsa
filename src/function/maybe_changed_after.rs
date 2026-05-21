@@ -296,7 +296,11 @@ where
             return true;
         }
 
-        let cycle_heads = memo.cycle_heads();
+        let cycle_state = memo.cycle_state(zalsa, database_key_index);
+        if cycle_state.is_stale_active() {
+            return false;
+        }
+        let cycle_heads = cycle_state.cycle_heads();
 
         if cycle_heads.is_empty() {
             return true;

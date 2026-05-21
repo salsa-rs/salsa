@@ -1,4 +1,5 @@
 use self::dependency_graph::DependencyGraph;
+use crate::active_cycle::ActiveCycleTable;
 use crate::durability::Durability;
 use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
@@ -38,6 +39,10 @@ pub struct Runtime {
     /// Data for instances
     #[cfg_attr(feature = "persistence", serde(skip))]
     table: Table,
+
+    /// Transient state for currently executing fixpoint cycles.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    active_cycles: ActiveCycleTable,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -195,6 +200,7 @@ impl Default for Runtime {
             revision_cancelled: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
+            active_cycles: Default::default(),
         }
     }
 }
@@ -205,6 +211,7 @@ impl std::fmt::Debug for Runtime {
             .field("revisions", &self.revisions)
             .field("revision_cancelled", &self.revision_cancelled)
             .field("dependency_graph", &self.dependency_graph)
+            .field("active_cycles", &self.active_cycles)
             .finish()
     }
 }
@@ -258,6 +265,10 @@ impl Runtime {
         &mut self.table
     }
 
+    pub(crate) fn active_cycles(&self) -> &ActiveCycleTable {
+        &self.active_cycles
+    }
+
     /// Increments the "current revision" counter and clears
     /// the cancellation flag.
     ///
@@ -266,6 +277,7 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
+        self.active_cycles.clear_completed();
         crate::tracing::info!("new_revision: {r_old:?} -> {r_new:?}");
         r_new
     }

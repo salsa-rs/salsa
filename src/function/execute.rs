@@ -100,16 +100,18 @@ where
             self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
         }
 
-        let memo = self.insert_memo(
-            zalsa,
-            id,
-            Memo::new(
-                Some(new_value),
-                zalsa.current_revision(),
-                completed_query.revisions,
-            ),
-            memo_ingredient_index,
+        let mut memo = Memo::new(
+            Some(new_value),
+            zalsa.current_revision(),
+            completed_query.revisions,
         );
+        if memo.may_be_provisional()
+            && let Some(active_cycle) = completed_query.active_cycle
+        {
+            memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+        }
+
+        let memo = self.insert_memo(zalsa, id, memo, memo_ingredient_index);
 
         if claim_guard.drop() { None } else { Some(memo) }
     }
@@ -152,13 +154,15 @@ where
                     Cancelled::PropagatedPanic.throw();
                 }
 
+                let cycle_state = old_memo.cycle_state(zalsa, database_key_index);
+
                 // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
                 // force at least two executions.
-                if old_memo.cycle_heads().contains(&database_key_index) {
+                if cycle_state.cycle_heads().contains(&database_key_index) {
                     last_provisional_memo_opt = Some(old_memo);
                 }
 
-                iteration_count = old_memo.revisions.iteration();
+                iteration_count = cycle_state.iteration();
             }
         }
 
@@ -271,7 +275,6 @@ where
             });
 
             let last_provisional_value = last_provisional_memo.value.as_ref();
-
             let last_provisional_value = last_provisional_value.expect(
                 "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
             );
@@ -341,16 +344,17 @@ where
                 }
             };
 
-            let new_memo = self.insert_memo(
-                zalsa,
-                id,
-                Memo::new(
-                    Some(new_value),
-                    zalsa.current_revision(),
-                    completed_query.revisions,
-                ),
-                memo_ingredient_index,
+            let mut memo = Memo::new(
+                Some(new_value),
+                zalsa.current_revision(),
+                completed_query.revisions,
             );
+            if memo.may_be_provisional()
+                && let Some(active_cycle) = completed_query.active_cycle
+            {
+                memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+            }
+            let new_memo = self.insert_memo(zalsa, id, memo, memo_ingredient_index);
 
             last_provisional_memo_opt = Some(new_memo);
 
@@ -444,6 +448,18 @@ impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
 impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
     fn drop(&mut self) {
         if thread::panicking() {
+            let active_cycle = self
+                .ingredient
+                .get_memo_from_table_for(self.zalsa, self.id, self.memo_ingredient_index)
+                .and_then(|_| {
+                    self.zalsa
+                        .active_cycles()
+                        .key_for(self.ingredient.database_key_index(self.id))
+                });
+            if let Some(active_cycle) = active_cycle {
+                self.zalsa.active_cycles().remove(active_cycle);
+            }
+
             let revisions = QueryRevisions::fixpoint_initial(
                 self.ingredient.database_key_index(self.id),
                 IterationCount::initial(),
@@ -659,6 +675,7 @@ fn try_complete_cycle_head(
 ) -> Result<CompletedQuery, (CompletedQuery, IterationCount)> {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
+    let active_cycle = zalsa.active_cycles().key_for(me);
 
     let mut completed_query = active_query.pop();
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
@@ -679,11 +696,13 @@ fn try_complete_cycle_head(
         );
 
         completed_query.revisions.set_cycle_heads(cycle_heads);
-        // Store whether this cycle has converged, so that the outer cycle can check it.
-        completed_query
-            .revisions
-            .set_cycle_converged(this_converged);
         *completed_query.revisions.verified_final.get_mut() = false;
+        completed_query.active_cycle = active_cycle;
+        if let Some(active_cycle) = active_cycle {
+            zalsa
+                .active_cycles()
+                .set_converged(active_cycle, this_converged);
+        }
 
         // Transfer ownership of this query to the outer cycle, so that it can claim it
         // and other threads don't compete for the same lock.
@@ -694,19 +713,20 @@ fn try_complete_cycle_head(
 
     // This is the outermost cycle, drive the cycle forward:
     // ..test if all inner cycles have converged as well.
-    let converged = this_converged
-        && cycle_heads.iter_not_eq(me).all(|head| {
-            let database_key_index = head.database_key_index;
-            let ingredient = zalsa.lookup_ingredient(database_key_index.ingredient_index());
+    let inner_cycles_converged = cycle_heads.iter_not_eq(me).all(|head| {
+        let database_key_index = head.database_key_index;
+        let ingredient = zalsa.lookup_ingredient(database_key_index.ingredient_index());
 
-            let converged = ingredient.cycle_converged(zalsa, database_key_index.key_index());
+        let converged = ingredient.cycle_converged(zalsa, database_key_index.key_index());
 
-            if !converged {
-                tracing::debug!("inner cycle {database_key_index:?} has not converged",);
-            }
+        if !converged {
+            tracing::debug!("inner cycle {database_key_index:?} has not converged",);
+        }
 
-            converged
-        });
+        converged
+    });
+
+    let converged = this_converged && inner_cycles_converged;
 
     if converged {
         tracing::debug!(
@@ -719,6 +739,11 @@ fn try_complete_cycle_head(
             let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
             ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
         }
+
+        if let Some(active_cycle) = active_cycle {
+            zalsa.active_cycles().finish(active_cycle);
+        }
+        completed_query.active_cycle = None;
 
         *completed_query.revisions.verified_final.get_mut() = true;
 
@@ -769,6 +794,7 @@ fn try_complete_cycle_head(
     completed_query
         .revisions
         .update_iteration_count_mut(me, iteration_count);
+    completed_query.active_cycle = active_cycle;
 
     Err((completed_query, iteration_count))
 }

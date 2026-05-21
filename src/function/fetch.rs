@@ -33,11 +33,14 @@ where
 
         self.eviction.record_use(id);
 
+        let cycle_state = memo.cycle_state(zalsa, database_key_index);
+
         zalsa_local.report_tracked_read(
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            memo.cycle_heads(),
+            cycle_state.cycle_heads(),
+            cycle_state.active_cycle(),
             #[cfg(feature = "accumulator")]
             memo.revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
@@ -188,16 +191,28 @@ where
                 // existing provisional memo if it exists
                 let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
                 if let Some(memo) = &memo_guard {
+                    let cycle_state = memo.cycle_state(zalsa, database_key_index);
+
                     // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
                     // but that would require inserting itself as a cycle head, which either requires clone
                     // on the value OR a concurrent `Vec` for cycle heads.
                     if memo.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
-                        && memo.revisions.cycle_heads().contains(&database_key_index)
+                        && cycle_state.cycle_heads().contains(&database_key_index)
                     {
-                        memo.revisions
-                            .cycle_heads()
-                            .remove_all_except(database_key_index);
+                        if let Some(active_cycle) = cycle_state.active_cycle() {
+                            zalsa.active_cycles().with_memo_state_mut(
+                                active_cycle,
+                                database_key_index,
+                                |state| {
+                                    state.cycle_heads.remove_all_except(database_key_index);
+                                },
+                            );
+                        } else {
+                            memo.revisions
+                                .cycle_heads()
+                                .remove_all_except(database_key_index);
+                        }
 
                         crate::tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
@@ -220,19 +235,20 @@ where
                         if old_memo.verified_at.load() == zalsa.current_revision()
                             && old_memo.value.is_some()
                         {
-                            Some(old_memo.revisions.iteration())
+                            Some(old_memo.cycle_state(zalsa, database_key_index).iteration())
                         } else {
                             None
                         }
                     })
                     .unwrap_or(IterationCount::initial());
                 let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
-
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+                let active_cycle = zalsa.active_cycles().insert(database_key_index, iteration);
                 self.insert_memo(
                     zalsa,
                     id,
-                    Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
+                    Memo::new(Some(initial_value), zalsa.current_revision(), revisions)
+                        .with_active_cycle(zalsa, database_key_index, active_cycle),
                     memo_ingredient_index,
                 )
             }
