@@ -685,7 +685,7 @@ const _: [(); std::mem::size_of::<QueryRevisions>()] = [(); std::mem::size_of::<
 #[cfg(not(feature = "shuttle"))]
 #[cfg(target_pointer_width = "64")]
 const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
-    [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 6 } else { 3 }]>()];
+    [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 6 } else { 2 }]>()];
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial() -> Self {
