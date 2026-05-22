@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use crate::cycle::{CycleHeads, IterationCount};
 use crate::key::DatabaseKeyIndex;
-use crate::sync::Mutex;
+use crate::sync::{Arc, Mutex};
 use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
 
 const INDEX_BITS: u32 = usize::BITS / 2;
@@ -48,6 +48,7 @@ pub(crate) struct ActiveCycle {
     current_memos: Vec<ActiveCycleCurrentMemo>,
     // External inputs observed by provisional memos across every cycle iteration.
     input_dependencies: Vec<DatabaseKeyIndex>,
+    input_edges: Option<Arc<[QueryEdge]>>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -88,6 +89,7 @@ impl ActiveCycle {
                 is_head: true,
             }],
             input_dependencies: Vec::new(),
+            input_edges: None,
         }
     }
 
@@ -167,6 +169,7 @@ impl ActiveCycle {
     fn insert_input_dependency(&mut self, input: DatabaseKeyIndex) {
         if !self.input_dependencies.contains(&input) {
             self.input_dependencies.push(input);
+            self.input_edges = None;
         }
     }
 
@@ -181,6 +184,7 @@ impl ActiveCycle {
             .position(|dependency| *dependency == input)
         {
             self.input_dependencies.remove(index);
+            self.input_edges = None;
         }
     }
 }
@@ -383,19 +387,30 @@ impl ActiveCycles {
         Some(())
     }
 
-    fn flatten_edges(
+    fn input_edges(&mut self, active_cycle: ActiveCycleKey) -> Option<Arc<[QueryEdge]>> {
+        let cycle = self.get_mut(active_cycle)?;
+        Some(
+            cycle
+                .input_edges
+                .get_or_insert_with(|| {
+                    cycle
+                        .input_dependencies
+                        .iter()
+                        .copied()
+                        .map(QueryEdge::input)
+                        .collect()
+                })
+                .clone(),
+        )
+    }
+
+    fn record_input_edges(
         &mut self,
         active_cycle: ActiveCycleKey,
-        edges: &mut Vec<QueryEdge>,
-    ) -> Option<()> {
+        edges: &[QueryEdge],
+    ) -> Option<Arc<[QueryEdge]>> {
         self.add_input_edges(active_cycle, edges)?;
-
-        let input_dependencies = &self.get(active_cycle)?.input_dependencies;
-        edges.retain(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)));
-        edges.reserve(input_dependencies.len());
-        edges.extend(input_dependencies.iter().copied().map(QueryEdge::input));
-        edges.rotate_right(input_dependencies.len());
-        Some(())
+        self.input_edges(active_cycle)
     }
 
     fn add_head(&mut self, active_cycle: ActiveCycleKey, head: DatabaseKeyIndex) -> Option<()> {
@@ -448,14 +463,9 @@ impl ActiveCycles {
                 (self.state_for(input_cycle.active_cycle) == Some(state)).then_some(*input)
             })
             .collect();
-        let input_dependencies = &mut self.get_mut(active_cycle)?.input_dependencies;
+        let cycle = self.get_mut(active_cycle)?;
         for input in internal_inputs {
-            if let Some(index) = input_dependencies
-                .iter()
-                .position(|dependency| *dependency == input)
-            {
-                input_dependencies.remove(index);
-            }
+            cycle.remove_input_dependency(input);
         }
         Some(())
     }
@@ -606,12 +616,12 @@ impl ActiveCycleTable {
         self.0.lock().add_input_edges(key, edges)
     }
 
-    pub(crate) fn flatten_edges(
+    pub(crate) fn record_input_edges(
         &self,
         key: ActiveCycleKey,
-        edges: &mut Vec<QueryEdge>,
-    ) -> Option<()> {
-        self.0.lock().flatten_edges(key, edges)
+        edges: &[QueryEdge],
+    ) -> Option<Arc<[QueryEdge]>> {
+        self.0.lock().record_input_edges(key, edges)
     }
 
     pub(crate) fn contains_current_iteration(

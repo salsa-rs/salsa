@@ -491,7 +491,7 @@ fn complete_cycle_participant(
     let mut completed_query = active_query.pop_provisional();
 
     let active_cycle = completed_query.active_cycle.or(active_cycle);
-    flatten_cycle_dependencies(zalsa, active_cycle, &mut completed_query);
+    record_cycle_dependencies(zalsa, active_cycle, &mut completed_query);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.cycle_heads = cycle_heads;
@@ -533,7 +533,7 @@ fn try_complete_cycle_head(
     let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop_provisional();
-    flatten_cycle_dependencies(
+    record_cycle_dependencies(
         zalsa,
         completed_query.active_cycle.or(active_cycle),
         &mut completed_query,
@@ -663,9 +663,8 @@ fn assert_no_new_cycle_heads(
     }
 }
 
-/// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
-/// or salsa structs (input, tracked, interned).
-fn flatten_cycle_dependencies(
+/// Records cycle inputs centrally and shares them with outputless cycle memos.
+fn record_cycle_dependencies(
     zalsa: &Zalsa,
     active_cycle: Option<ActiveCycleKey>,
     completed_query: &mut CompletedQuery,
@@ -684,12 +683,22 @@ fn flatten_cycle_dependencies(
         .take()
         .expect("cycle dependencies require provisional query edges");
     let active_cycle = active_cycle.expect("cycle dependencies require active cycle state");
-    zalsa
+    let cycle_inputs = zalsa
         .active_cycles()
-        .flatten_edges(active_cycle, &mut flattened)
-        .expect("active cycle state was removed while flattening cycle dependencies");
+        .record_input_edges(active_cycle, &flattened)
+        .expect("active cycle state was removed while recording cycle dependencies");
+    flattened.retain(|edge| matches!(edge.kind(), crate::zalsa_local::QueryEdgeKind::Output(_)));
 
-    head.origin
-        .set_edges(flattened.into_boxed_slice())
-        .expect("Executing query to always be derived or derived untracked.");
+    if flattened.is_empty() {
+        head.origin
+            .set_shared_edges(cycle_inputs)
+            .expect("Executing query to always be derived or derived untracked.");
+    } else {
+        let mut edges = Vec::with_capacity(cycle_inputs.len() + flattened.len());
+        edges.extend_from_slice(&cycle_inputs);
+        edges.extend(flattened);
+        head.origin
+            .set_edges(edges.into_boxed_slice())
+            .expect("Executing query to always be derived or derived untracked.");
+    }
 }

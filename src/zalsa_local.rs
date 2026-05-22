@@ -3,7 +3,6 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use rustc_hash::FxHashMap;
@@ -20,6 +19,7 @@ use crate::cycle::{CycleHeads, IterationCount};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
+use crate::sync::Arc;
 use crate::sync::atomic::AtomicBool;
 use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
@@ -834,9 +834,15 @@ enum QueryOriginKind {
     /// _and_ Salsa was able to track all of said function's inputs.
     Derived = 0b11,
 
+    /// Same as `Derived`, but the edge allocation is shared.
+    DerivedShared = 0b111,
+
     /// The value was derived by executing a function
     /// but that function also reported that it read untracked inputs.
     DerivedUntracked = 0b10,
+
+    /// Same as `DerivedUntracked`, but the edge allocation is shared.
+    DerivedUntrackedShared = 0b110,
 }
 
 /// Tracks how a memoized value for a given query was created.
@@ -846,8 +852,8 @@ enum QueryOriginKind {
 pub struct QueryOrigin {
     /// The tag of this enum.
     ///
-    /// Note that this tag only requires two bits and could likely be packed into
-    /// some other field. However, we get this byte for free thanks to alignment.
+    /// Note that this tag could likely be packed into another field. However, we
+    /// get this byte for free thanks to alignment.
     kind: QueryOriginKind,
 
     /// The data portion of this enum.
@@ -865,7 +871,7 @@ pub struct QueryOrigin {
 
 /// The data portion of `PackedQueryOrigin`.
 union QueryOriginData {
-    /// Query edges for `QueryOriginKind::Derived` or `QueryOriginKind::DerivedUntracked`.
+    /// Query edges for the derived origin kinds.
     ///
     /// The query edges are between a memoized value and other queries in the dependency graph,
     /// including both dependency edges (e.g., when creating the memoized value for Q0
@@ -887,14 +893,18 @@ union QueryOriginData {
     index: Id,
 }
 
-/// SAFETY: The `input_outputs` pointer is owned and not accessed or shared concurrently.
+/// SAFETY: The owned query-edge allocations are not accessed concurrently. Shared
+/// query-edge allocations are immutable `Arc<[QueryEdge]>` slices.
 unsafe impl Send for QueryOriginData {}
 /// SAFETY: Same as above.
 unsafe impl Sync for QueryOriginData {}
 
 impl QueryOrigin {
     pub fn is_derived_untracked(&self) -> bool {
-        matches!(self.kind, QueryOriginKind::DerivedUntracked)
+        matches!(
+            self.kind,
+            QueryOriginKind::DerivedUntracked | QueryOriginKind::DerivedUntrackedShared
+        )
     }
 
     /// Create a query origin of type `QueryOriginKind::Derived`, with the given edges.
@@ -921,6 +931,38 @@ impl QueryOrigin {
         origin
     }
 
+    /// Replaces the query edges with a shared allocation.
+    pub(crate) fn set_shared_edges(
+        &mut self,
+        input_outputs: Arc<[QueryEdge]>,
+    ) -> Result<(), Arc<[QueryEdge]>> {
+        let shared_kind = match self.kind {
+            QueryOriginKind::Assigned => return Err(input_outputs),
+            QueryOriginKind::Derived | QueryOriginKind::DerivedShared => {
+                QueryOriginKind::DerivedShared
+            }
+            QueryOriginKind::DerivedUntracked | QueryOriginKind::DerivedUntrackedShared => {
+                QueryOriginKind::DerivedUntrackedShared
+            }
+        };
+
+        self.drop_edges();
+
+        let length = u32::try_from(input_outputs.len())
+            .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
+        let input_outputs = Arc::into_raw(input_outputs);
+
+        // SAFETY: `Arc::into_raw` returns a non-null pointer.
+        let input_outputs =
+            unsafe { NonNull::new_unchecked(input_outputs.cast_mut().cast::<QueryEdge>()) };
+
+        self.kind = shared_kind;
+        self.data = QueryOriginData { input_outputs };
+        self.metadata = length;
+
+        Ok(())
+    }
+
     /// Sets the `input_outputs` of this query's origin if it's derived or derived untracked.
     /// Returns `Err` if the query origin isn't derived.
     pub fn set_edges(
@@ -929,7 +971,10 @@ impl QueryOrigin {
     ) -> Result<Box<[QueryEdge]>, Box<[QueryEdge]>> {
         match self.kind {
             QueryOriginKind::Assigned => Err(input_outputs),
-            QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
+            QueryOriginKind::Derived
+            | QueryOriginKind::DerivedShared
+            | QueryOriginKind::DerivedUntracked
+            | QueryOriginKind::DerivedUntrackedShared => {
                 // Exceeding `u32::MAX` query edges should never happen in real-world usage.
                 let length = u32::try_from(input_outputs.len())
                     .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
@@ -942,11 +987,27 @@ impl QueryOrigin {
                 // SAFETY: `input_outputs` and `self.metadata` form a valid slice when the tag is
                 // `QueryOriginKind::DerivedUntracked` or `QueryOriginKind::DerivedUntracked`, and
                 // we have `&mut self`.
-                let prev_input_outputs: Box<[QueryEdge]> = unsafe {
-                    Box::from_raw(ptr::slice_from_raw_parts_mut(
-                        prev_input_outputs.as_ptr(),
-                        prev_length,
-                    ))
+                let prev_input_outputs = match self.kind {
+                    QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
+                        // SAFETY: Owned derived origins store a `Box<[QueryEdge]>`.
+                        unsafe {
+                            Box::from_raw(ptr::slice_from_raw_parts_mut(
+                                prev_input_outputs.as_ptr(),
+                                prev_length,
+                            ))
+                        }
+                    }
+                    QueryOriginKind::DerivedShared | QueryOriginKind::DerivedUntrackedShared => {
+                        // SAFETY: `data.input_outputs` was created from an `Arc<[QueryEdge]>`.
+                        let prev_input_outputs: Arc<[QueryEdge]> = unsafe {
+                            Arc::from_raw(ptr::slice_from_raw_parts(
+                                prev_input_outputs.as_ptr(),
+                                prev_length,
+                            ))
+                        };
+                        prev_input_outputs.iter().copied().collect()
+                    }
+                    QueryOriginKind::Assigned => unreachable!(),
                 };
 
                 // SAFETY: `Box::into_raw` returns a non-null pointer.
@@ -987,7 +1048,7 @@ impl QueryOrigin {
                 QueryOriginRef::Assigned(DatabaseKeyIndex::new(ingredient_index, index))
             }
 
-            QueryOriginKind::Derived => {
+            QueryOriginKind::Derived | QueryOriginKind::DerivedShared => {
                 // SAFETY: `data.input_outputs` is initialized when the tag is `QueryOriginKind::Derived`.
                 let input_outputs = unsafe { self.data.input_outputs };
                 let length = self.metadata as usize;
@@ -1000,7 +1061,7 @@ impl QueryOrigin {
                 QueryOriginRef::Derived(input_outputs)
             }
 
-            QueryOriginKind::DerivedUntracked => {
+            QueryOriginKind::DerivedUntracked | QueryOriginKind::DerivedUntrackedShared => {
                 // SAFETY: `data.input_outputs` is initialized when the tag is `QueryOriginKind::DerivedUntracked`.
                 let input_outputs = unsafe { self.data.input_outputs };
                 let length = self.metadata as usize;
@@ -1052,6 +1113,12 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
 
 impl Drop for QueryOrigin {
     fn drop(&mut self) {
+        self.drop_edges();
+    }
+}
+
+impl QueryOrigin {
+    fn drop_edges(&mut self) {
         match self.kind {
             QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
                 // SAFETY: `data.input_outputs` is initialized when the tag is `QueryOriginKind::Derived`
@@ -1067,6 +1134,19 @@ impl Drop for QueryOrigin {
                         input_outputs.as_ptr(),
                         length,
                     ))
+                };
+            }
+
+            QueryOriginKind::DerivedShared | QueryOriginKind::DerivedUntrackedShared => {
+                // SAFETY: `data.input_outputs` is initialized from an `Arc<[QueryEdge]>`
+                // for the shared derived origin kinds.
+                let input_outputs = unsafe { self.data.input_outputs };
+                let length = self.metadata as usize;
+
+                // SAFETY: `input_outputs` and `self.metadata` form the shared slice
+                // that was passed to `Arc::into_raw`.
+                let _input_outputs: Arc<[QueryEdge]> = unsafe {
+                    Arc::from_raw(ptr::slice_from_raw_parts(input_outputs.as_ptr(), length))
                 };
             }
 
