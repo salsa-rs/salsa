@@ -151,25 +151,6 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         );
     }
 
-    /// Flattens the dependencies of a query with cycle handling that participates in a cycle.
-    ///
-    /// This query recursively walks the dependency graph of `id` and flattens input dependencies
-    /// on provisional queries into `flattened_input_outputs`. Outputs aren't flattened because
-    /// outputs are owned by the creating query and not the cycle head.
-    ///
-    /// Flattening the dependencies is necessary because the memo's dependency graph only captures
-    /// the dependencies from the last iteration. It also ensures that the dependency graph doesn't
-    /// contain any cycles.
-    ///
-    /// See `cycle_dependency_order_different_entry_queries` and `cycle_left_recursive_query`.
-    fn flatten_cycle_head_dependencies(
-        &self,
-        zalsa: &Zalsa,
-        id: Id,
-        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
-        seen: &mut FxHashSet<DatabaseKeyIndex>,
-    );
-
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>> {
         let _ = (zalsa, key_index);

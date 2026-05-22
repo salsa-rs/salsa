@@ -55,10 +55,10 @@ fn the_test() {
     // What this test captures is that the interned values **must** be validated before validating their corresponding `query_x` call.
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(400)), revision: R2 })",
             "salsa_event(DidValidateInternedValue { key: query_a::interned_arguments(Id(0)), revision: R2 })",
             "salsa_event(DidValidateInternedValue { key: Interned(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(800)) })",
+            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(400)), revision: R2 })",
             "salsa_event(DidValidateInternedValue { key: Interned(Id(801)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(801)) })",
             "salsa_event(DidValidateInternedValue { key: Interned(Id(802)), revision: R2 })",

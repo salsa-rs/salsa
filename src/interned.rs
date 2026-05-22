@@ -948,16 +948,6 @@ where
         // Otherwise, the dependency is covered by the base inputs.
     }
 
-    fn flatten_cycle_head_dependencies(
-        &self,
-        _zalsa: &Zalsa,
-        id: Id,
-        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
-        _seen: &mut FxHashSet<DatabaseKeyIndex>,
-    ) {
-        flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
-    }
-
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }

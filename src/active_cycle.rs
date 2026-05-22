@@ -3,8 +3,10 @@ use std::num::NonZeroUsize;
 use rustc_hash::FxHashMap;
 
 use crate::cycle::{CycleHeads, IterationCount};
+use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::Mutex;
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
 
 const INDEX_BITS: u32 = usize::BITS / 2;
 const INDEX_MASK: usize = (1usize << INDEX_BITS) - 1;
@@ -45,6 +47,8 @@ pub(crate) struct ActiveCycle {
     converged: bool,
     pub(crate) iteration: IterationCount,
     current_heads: CycleHeads,
+    // External inputs observed by provisional memos across every cycle iteration.
+    input_dependencies: FxIndexSet<DatabaseKeyIndex>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -84,6 +88,7 @@ impl ActiveCycle {
             converged: true,
             iteration,
             current_heads,
+            input_dependencies: FxIndexSet::default(),
         }
     }
 
@@ -110,6 +115,7 @@ impl ActiveCycle {
         self.converged &= other.converged;
         self.iteration = iteration;
         self.current_heads.extend(&other.current_heads);
+        self.input_dependencies.extend(other.input_dependencies);
     }
 }
 
@@ -273,6 +279,19 @@ impl ActiveCycles {
             }
         }
 
+        let participants: Vec<_> = self
+            .memo_cycles
+            .iter()
+            .filter_map(|(memo, cycle)| {
+                (self.state_for(cycle.active_cycle) == Some(into_state)).then_some(*memo)
+            })
+            .collect();
+        if let Some(cycle) = self.get_mut(into) {
+            for participant in participants {
+                cycle.input_dependencies.shift_remove(&participant);
+            }
+        }
+
         Some(())
     }
 
@@ -295,6 +314,9 @@ impl ActiveCycles {
                 if previous.is_head {
                     self.get_mut(active_cycle)?.current_heads.insert(memo);
                 }
+                self.get_mut(active_cycle)?
+                    .input_dependencies
+                    .shift_remove(&memo);
                 return Some(());
             }
 
@@ -304,7 +326,44 @@ impl ActiveCycles {
 
         self.memo_cycles
             .insert(memo, ActiveCycleMemo::participant(active_cycle, iteration));
+        self.get_mut(active_cycle)?
+            .input_dependencies
+            .shift_remove(&memo);
         Some(())
+    }
+
+    fn add_input_edges(&mut self, active_cycle: ActiveCycleKey, edges: &[QueryEdge]) -> Option<()> {
+        let state = self.state_for(active_cycle)?;
+        for edge in edges {
+            let QueryEdgeKind::Input(input) = edge.kind() else {
+                continue;
+            };
+
+            let internal = self
+                .memo_cycles
+                .get(&input)
+                .is_some_and(|cycle| self.state_for(cycle.active_cycle) == Some(state));
+            if !internal {
+                self.get_mut(active_cycle)?.input_dependencies.insert(input);
+            }
+        }
+        Some(())
+    }
+
+    fn flattened_inputs(
+        &mut self,
+        active_cycle: ActiveCycleKey,
+        edges: &[QueryEdge],
+    ) -> Option<Vec<DatabaseKeyIndex>> {
+        self.add_input_edges(active_cycle, edges)?;
+
+        Some(
+            self.get(active_cycle)?
+                .input_dependencies
+                .iter()
+                .copied()
+                .collect(),
+        )
     }
 
     fn add_head(&mut self, active_cycle: ActiveCycleKey, head: DatabaseKeyIndex) -> Option<()> {
@@ -318,6 +377,9 @@ impl ActiveCycles {
                 if previous.is_current(iteration) {
                     self.get_mut(active_cycle)?.current_heads.insert(head);
                 }
+                self.get_mut(active_cycle)?
+                    .input_dependencies
+                    .shift_remove(&head);
                 return Some(());
             }
 
@@ -333,6 +395,9 @@ impl ActiveCycles {
                 last_iteration: None,
             },
         );
+        self.get_mut(active_cycle)?
+            .input_dependencies
+            .shift_remove(&head);
         Some(())
     }
 
@@ -478,6 +543,18 @@ impl ActiveCycleTable {
         memo: DatabaseKeyIndex,
     ) -> Option<()> {
         self.0.lock().add_participant(key, memo)
+    }
+
+    pub(crate) fn add_input_edges(&self, key: ActiveCycleKey, edges: &[QueryEdge]) -> Option<()> {
+        self.0.lock().add_input_edges(key, edges)
+    }
+
+    pub(crate) fn flattened_inputs(
+        &self,
+        key: ActiveCycleKey,
+        edges: &[QueryEdge],
+    ) -> Option<Vec<DatabaseKeyIndex>> {
+        self.0.lock().flattened_inputs(key, edges)
     }
 
     pub(crate) fn contains_current_iteration(

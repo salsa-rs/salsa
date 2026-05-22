@@ -4,7 +4,6 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
-use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
@@ -81,6 +80,15 @@ where
                 res
             }
         };
+
+        if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic {
+            if let Some(active_cycle) = completed_query.active_cycle {
+                zalsa.active_cycles().add_input_edges(
+                    active_cycle,
+                    completed_query.revisions.origin.as_ref().edges(),
+                );
+            }
+        }
 
         if let Some(old_memo) = opt_old_memo {
             // If the new value is equal to the old one, then it didn't
@@ -480,11 +488,12 @@ fn complete_cycle_participant(
 
     let mut completed_query = active_query.pop();
 
-    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
+    let active_cycle = completed_query.active_cycle.or(active_cycle);
+    flatten_cycle_dependencies(zalsa, active_cycle, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.cycle_heads = cycle_heads;
-    completed_query.active_cycle = completed_query.active_cycle.or(active_cycle);
+    completed_query.active_cycle = active_cycle;
 
     completed_query
 }
@@ -509,7 +518,11 @@ fn try_complete_cycle_head(
     let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop();
-    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
+    flatten_cycle_dependencies(
+        zalsa,
+        completed_query.active_cycle.or(active_cycle),
+        &mut completed_query.revisions,
+    );
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -635,21 +648,13 @@ fn assert_no_new_cycle_heads(
     }
 }
 
-thread_local! {
-    /// Pool the `seen` and `flattened` sets for reuse on the same thread.
-    ///
-    /// Benchmarks showed that repeatedly allocating and regrowing those sets is expensive.
-    static FLATTEN_MAPS: std::cell::Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>> = const { std::cell::Cell::new(None) };
-}
-
 /// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
 /// or salsa structs (input, tracked, interned).
-fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
-    let (mut flattened, mut seen) = FLATTEN_MAPS.take().unwrap_or_default();
-
-    debug_assert!(flattened.is_empty());
-    debug_assert!(seen.is_empty());
-
+fn flatten_cycle_dependencies(
+    zalsa: &Zalsa,
+    active_cycle: Option<ActiveCycleKey>,
+    head: &mut QueryRevisions,
+) {
     #[cfg(feature = "accumulator")]
     {
         assert!(
@@ -658,37 +663,22 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
         )
     }
 
-    // Don't insert the key of `head` here. This is important to ensure that we copy over the
-    // dependencies from this memo in the previous iteration.
-    // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
     let edges = head.origin.as_ref().edges();
-    flattened.reserve(edges.len());
+    let active_cycle = active_cycle.expect("cycle dependencies require active cycle state");
+    let flattened_inputs = zalsa
+        .active_cycles()
+        .flattened_inputs(active_cycle, edges)
+        .expect("active cycle state was removed while flattening cycle dependencies");
 
-    for edge in head.origin.as_ref().edges() {
-        match edge.kind() {
-            QueryEdgeKind::Input(input) => {
-                let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                ingredient.flatten_cycle_head_dependencies(
-                    zalsa,
-                    input.key_index(),
-                    &mut flattened,
-                    &mut seen,
-                );
-            }
-
-            QueryEdgeKind::Output(_) => {
-                // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
-                // created by the query head because those are owned by this query.
-                flattened.insert(*edge);
-            }
-        }
-    }
+    let mut flattened = Vec::with_capacity(flattened_inputs.len() + edges.len());
+    flattened.extend(flattened_inputs.into_iter().map(QueryEdge::input));
+    flattened.extend(edges.iter().filter_map(|edge| match edge.kind() {
+        QueryEdgeKind::Input(_) => None,
+        // Outputs are owned by this query, not the cycle.
+        QueryEdgeKind::Output(_) => Some(*edge),
+    }));
 
     head.origin
-        .set_edges(flattened.drain(..).collect())
+        .set_edges(flattened.into_boxed_slice())
         .expect("Executing query to always be derived or derived untracked.");
-
-    seen.clear();
-
-    FLATTEN_MAPS.set(Some((flattened, seen)));
 }

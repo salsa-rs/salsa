@@ -379,55 +379,6 @@ where
         memo.revisions.verified_final.store(true, Ordering::Release);
     }
 
-    fn flatten_cycle_head_dependencies(
-        &self,
-        zalsa: &Zalsa,
-        id: Id,
-        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
-        seen: &mut FxHashSet<DatabaseKeyIndex>,
-    ) {
-        let memo_index = self.memo_ingredient_index(zalsa, id);
-        let Some(memo) = self.get_memo_from_table_for(zalsa, id, memo_index) else {
-            return;
-        };
-
-        let database_key_index = self.database_key_index(id);
-
-        // Only flatten dependencies of provisional queries, because only those
-        // contain cyclic dependencies.
-        if !memo.may_be_provisional() {
-            flattened_input_outputs.insert(QueryEdge::input(database_key_index));
-            return;
-        }
-
-        // There's nothing to do if we've visited this query before.
-        if !seen.insert(database_key_index) {
-            return;
-        }
-
-        let inputs = memo.revisions.origin.as_ref().inputs();
-
-        match C::CYCLE_STRATEGY {
-            // For queries with cycle handling, simply extend the input/outputs, because
-            // they already flattened their own dependencies when completing the query.
-            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                flattened_input_outputs.extend(inputs.map(QueryEdge::input));
-            }
-            // For regular queries, recurse
-            CycleRecoveryStrategy::Panic => {
-                for input in inputs {
-                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                    ingredient.flatten_cycle_head_dependencies(
-                        zalsa,
-                        input.key_index(),
-                        flattened_input_outputs,
-                        seen,
-                    );
-                }
-            }
-        }
-    }
-
     fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
         self.sync_table.mark_as_transfer_target(key_index)
     }

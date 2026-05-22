@@ -9,7 +9,7 @@ use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
-use crate::{DatabaseKeyIndex, Id, Revision};
+use crate::{Id, Revision};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///
@@ -36,10 +36,6 @@ where
             field_index,
             phantom: PhantomData,
         }
-    }
-
-    fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.index, id)
     }
 }
 
@@ -81,16 +77,6 @@ where
 
         // Input dependencies are the leaves of the minimum dependency tree.
         serialized_edges.insert(edge);
-    }
-
-    fn flatten_cycle_head_dependencies(
-        &self,
-        _zalsa: &Zalsa,
-        id: Id,
-        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
-        _seen: &mut FxHashSet<crate::DatabaseKeyIndex>,
-    ) {
-        flattened_input_outputs.insert(QueryEdge::input(self.database_key_index(id)));
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
