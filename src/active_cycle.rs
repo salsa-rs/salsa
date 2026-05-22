@@ -3,7 +3,6 @@ use std::num::NonZeroUsize;
 use rustc_hash::FxHashMap;
 
 use crate::cycle::{CycleHeads, IterationCount};
-use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::Mutex;
 use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
@@ -46,58 +45,60 @@ impl ActiveCycleKey {
 pub(crate) struct ActiveCycle {
     converged: bool,
     pub(crate) iteration: IterationCount,
-    current_heads: CycleHeads,
+    current_memos: Vec<ActiveCycleCurrentMemo>,
     // External inputs observed by provisional memos across every cycle iteration.
-    input_dependencies: FxIndexSet<DatabaseKeyIndex>,
+    input_dependencies: Vec<DatabaseKeyIndex>,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ActiveCycleCurrentMemo {
+    database_key_index: DatabaseKeyIndex,
+    is_head: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
 struct ActiveCycleMemo {
     active_cycle: ActiveCycleKey,
     is_head: bool,
-    last_iteration: Option<IterationCount>,
 }
 
 impl ActiveCycleMemo {
-    fn head(active_cycle: ActiveCycleKey, iteration: IterationCount) -> Self {
+    fn head(active_cycle: ActiveCycleKey) -> Self {
         Self {
             active_cycle,
             is_head: true,
-            last_iteration: Some(iteration),
         }
     }
 
-    fn participant(active_cycle: ActiveCycleKey, iteration: IterationCount) -> Self {
+    fn participant(active_cycle: ActiveCycleKey) -> Self {
         Self {
             active_cycle,
             is_head: false,
-            last_iteration: Some(iteration),
         }
-    }
-
-    fn is_current(self, iteration: IterationCount) -> bool {
-        self.last_iteration == Some(iteration)
     }
 }
 
 impl ActiveCycle {
     fn new(head: DatabaseKeyIndex, iteration: IterationCount) -> Self {
-        let mut current_heads = CycleHeads::default();
-        current_heads.insert(head);
         Self {
             converged: true,
             iteration,
-            current_heads,
-            input_dependencies: FxIndexSet::default(),
+            current_memos: vec![ActiveCycleCurrentMemo {
+                database_key_index: head,
+                is_head: true,
+            }],
+            input_dependencies: Vec::new(),
         }
     }
 
-    fn remove_current_head(&mut self, memo: DatabaseKeyIndex) {
-        self.current_heads.remove(memo);
-    }
-
     fn current_heads(&self) -> CycleHeads {
-        self.current_heads.clone()
+        let mut heads = CycleHeads::default();
+        for memo in &self.current_memos {
+            if memo.is_head {
+                heads.insert(memo.database_key_index);
+            }
+        }
+        heads
     }
 
     fn set_converged(&mut self, converged: bool) {
@@ -107,15 +108,80 @@ impl ActiveCycle {
     fn start_next_iteration(&mut self, iteration: IterationCount) {
         self.iteration = iteration;
         self.converged = true;
-        self.current_heads = CycleHeads::default();
+        self.current_memos.clear();
     }
 
     fn merge_from(&mut self, other: ActiveCycle) {
         let iteration = self.iteration.max(other.iteration);
         self.converged &= other.converged;
         self.iteration = iteration;
-        self.current_heads.extend(&other.current_heads);
-        self.input_dependencies.extend(other.input_dependencies);
+        for memo in other.current_memos {
+            self.insert_current_memo(memo.database_key_index, memo.is_head);
+        }
+        for input in other.input_dependencies {
+            self.insert_input_dependency(input);
+        }
+    }
+
+    fn contains_current_memo(&self, memo: DatabaseKeyIndex) -> bool {
+        self.current_memos
+            .iter()
+            .any(|current| current.database_key_index == memo)
+    }
+
+    fn insert_current_memo(&mut self, memo: DatabaseKeyIndex, is_head: bool) {
+        if let Some(current) = self
+            .current_memos
+            .iter_mut()
+            .find(|current| current.database_key_index == memo)
+        {
+            current.is_head |= is_head;
+        } else {
+            self.current_memos.push(ActiveCycleCurrentMemo {
+                database_key_index: memo,
+                is_head,
+            });
+        }
+    }
+
+    fn mark_current_head(&mut self, memo: DatabaseKeyIndex) {
+        if let Some(current) = self
+            .current_memos
+            .iter_mut()
+            .find(|current| current.database_key_index == memo)
+        {
+            current.is_head = true;
+        }
+    }
+
+    fn remove_current_memo(&mut self, memo: DatabaseKeyIndex) {
+        if let Some(index) = self
+            .current_memos
+            .iter()
+            .position(|current| current.database_key_index == memo)
+        {
+            self.current_memos.remove(index);
+        }
+    }
+
+    fn insert_input_dependency(&mut self, input: DatabaseKeyIndex) {
+        if !self.input_dependencies.contains(&input) {
+            self.input_dependencies.push(input);
+        }
+    }
+
+    fn contains_input_dependency(&self, input: DatabaseKeyIndex) -> bool {
+        self.input_dependencies.contains(&input)
+    }
+
+    fn remove_input_dependency(&mut self, input: DatabaseKeyIndex) {
+        if let Some(index) = self
+            .input_dependencies
+            .iter()
+            .position(|dependency| *dependency == input)
+        {
+            self.input_dependencies.remove(index);
+        }
     }
 }
 
@@ -164,8 +230,7 @@ impl ActiveCycles {
             ActiveCycleKey::new(index, generation)
         };
 
-        self.memo_cycles
-            .insert(head, ActiveCycleMemo::head(key, iteration));
+        self.memo_cycles.insert(head, ActiveCycleMemo::head(key));
         key
     }
 
@@ -237,18 +302,6 @@ impl ActiveCycles {
             return Some(());
         }
 
-        let into_iteration = self.get(into)?.iteration;
-        let from_iteration = self.get(from)?.iteration;
-        let iteration = into_iteration.max(from_iteration);
-        let updated_memos: Vec<_> = self
-            .memo_cycles
-            .iter()
-            .filter_map(|(memo, cycle)| {
-                (self.state_for(cycle.active_cycle) == Some(into_state)
-                    && cycle.is_current(into_iteration))
-                .then_some(*memo)
-            })
-            .collect();
         let remapped_memos: Vec<_> = self
             .memo_cycles
             .iter()
@@ -265,32 +318,13 @@ impl ActiveCycles {
                 slot.state = Some(into_state);
             }
         }
-        for memo in updated_memos {
-            if let Some(cycle) = self.memo_cycles.get_mut(&memo) {
-                cycle.last_iteration = Some(iteration);
-            }
-        }
         for memo in remapped_memos {
             if let Some(cycle) = self.memo_cycles.get_mut(&memo) {
                 cycle.active_cycle = into;
-                if cycle.is_current(from_iteration) {
-                    cycle.last_iteration = Some(iteration);
-                }
             }
         }
 
-        let participants: Vec<_> = self
-            .memo_cycles
-            .iter()
-            .filter_map(|(memo, cycle)| {
-                (self.state_for(cycle.active_cycle) == Some(into_state)).then_some(*memo)
-            })
-            .collect();
-        if let Some(cycle) = self.get_mut(into) {
-            for participant in participants {
-                cycle.input_dependencies.shift_remove(&participant);
-            }
-        }
+        self.remove_internal_input_dependencies(into, into_state)?;
 
         Some(())
     }
@@ -301,34 +335,29 @@ impl ActiveCycles {
         memo: DatabaseKeyIndex,
     ) -> Option<()> {
         let state = self.state_for(active_cycle)?;
-        let iteration = self.get(active_cycle)?.iteration;
         if let Some(previous) = self.memo_cycles.get(&memo).copied() {
             if self.state_for(previous.active_cycle) == Some(state) {
-                if previous.is_current(iteration) {
+                if self.get(active_cycle)?.contains_current_memo(memo) {
                     return Some(());
                 }
 
                 let cycle = self.memo_cycles.get_mut(&memo)?;
                 cycle.active_cycle = active_cycle;
-                cycle.last_iteration = Some(iteration);
-                if previous.is_head {
-                    self.get_mut(active_cycle)?.current_heads.insert(memo);
-                }
                 self.get_mut(active_cycle)?
-                    .input_dependencies
-                    .shift_remove(&memo);
+                    .insert_current_memo(memo, previous.is_head);
+                self.get_mut(active_cycle)?.remove_input_dependency(memo);
                 return Some(());
             }
 
-            self.get_mut(previous.active_cycle)?
-                .remove_current_head(memo);
+            if let Some(previous_cycle) = self.get_mut(previous.active_cycle) {
+                previous_cycle.remove_current_memo(memo);
+            }
         }
 
         self.memo_cycles
-            .insert(memo, ActiveCycleMemo::participant(active_cycle, iteration));
-        self.get_mut(active_cycle)?
-            .input_dependencies
-            .shift_remove(&memo);
+            .insert(memo, ActiveCycleMemo::participant(active_cycle));
+        self.get_mut(active_cycle)?.insert_current_memo(memo, false);
+        self.get_mut(active_cycle)?.remove_input_dependency(memo);
         Some(())
     }
 
@@ -339,52 +368,59 @@ impl ActiveCycles {
                 continue;
             };
 
+            if self.get(active_cycle)?.contains_input_dependency(input) {
+                continue;
+            }
+
             let internal = self
                 .memo_cycles
                 .get(&input)
                 .is_some_and(|cycle| self.state_for(cycle.active_cycle) == Some(state));
             if !internal {
-                self.get_mut(active_cycle)?.input_dependencies.insert(input);
+                self.get_mut(active_cycle)?.insert_input_dependency(input);
             }
         }
         Some(())
     }
 
-    fn flattened_inputs(
+    fn flatten_edges(
         &mut self,
         active_cycle: ActiveCycleKey,
-        edges: &[QueryEdge],
-    ) -> Option<Vec<DatabaseKeyIndex>> {
+        edges: &mut Vec<QueryEdge>,
+    ) -> Option<()> {
         self.add_input_edges(active_cycle, edges)?;
 
-        Some(
-            self.get(active_cycle)?
-                .input_dependencies
-                .iter()
-                .copied()
-                .collect(),
-        )
+        let input_dependencies = &self.get(active_cycle)?.input_dependencies;
+        edges.retain(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)));
+        edges.reserve(input_dependencies.len());
+        edges.extend(input_dependencies.iter().copied().map(QueryEdge::input));
+        edges.rotate_right(input_dependencies.len());
+        Some(())
     }
 
     fn add_head(&mut self, active_cycle: ActiveCycleKey, head: DatabaseKeyIndex) -> Option<()> {
         let state = self.state_for(active_cycle)?;
-        let iteration = self.get(active_cycle)?.iteration;
         if let Some(previous) = self.memo_cycles.get(&head).copied() {
             if self.state_for(previous.active_cycle) == Some(state) {
+                if previous.is_head && previous.active_cycle == active_cycle {
+                    return Some(());
+                }
+
                 let cycle = self.memo_cycles.get_mut(&head)?;
                 cycle.active_cycle = active_cycle;
-                cycle.is_head = true;
-                if previous.is_current(iteration) {
-                    self.get_mut(active_cycle)?.current_heads.insert(head);
+                if !previous.is_head {
+                    cycle.is_head = true;
+                    if self.get(active_cycle)?.contains_current_memo(head) {
+                        self.get_mut(active_cycle)?.mark_current_head(head);
+                    }
+                    self.get_mut(active_cycle)?.remove_input_dependency(head);
                 }
-                self.get_mut(active_cycle)?
-                    .input_dependencies
-                    .shift_remove(&head);
                 return Some(());
             }
 
-            self.get_mut(previous.active_cycle)?
-                .remove_current_head(head);
+            if let Some(previous_cycle) = self.get_mut(previous.active_cycle) {
+                previous_cycle.remove_current_memo(head);
+            }
         }
 
         self.memo_cycles.insert(
@@ -392,12 +428,35 @@ impl ActiveCycles {
             ActiveCycleMemo {
                 active_cycle,
                 is_head: true,
-                last_iteration: None,
             },
         );
-        self.get_mut(active_cycle)?
+        self.get_mut(active_cycle)?.remove_input_dependency(head);
+        Some(())
+    }
+
+    fn remove_internal_input_dependencies(
+        &mut self,
+        active_cycle: ActiveCycleKey,
+        state: usize,
+    ) -> Option<()> {
+        let internal_inputs: Vec<_> = self
+            .get(active_cycle)?
             .input_dependencies
-            .shift_remove(&head);
+            .iter()
+            .filter_map(|input| {
+                let input_cycle = self.memo_cycles.get(input)?;
+                (self.state_for(input_cycle.active_cycle) == Some(state)).then_some(*input)
+            })
+            .collect();
+        let input_dependencies = &mut self.get_mut(active_cycle)?.input_dependencies;
+        for input in internal_inputs {
+            if let Some(index) = input_dependencies
+                .iter()
+                .position(|dependency| *dependency == input)
+            {
+                input_dependencies.remove(index);
+            }
+        }
         Some(())
     }
 
@@ -409,24 +468,22 @@ impl ActiveCycles {
         let Some(state) = self.state_for(active_cycle) else {
             return false;
         };
-        let Some(iteration) = self.get(active_cycle).map(|cycle| cycle.iteration) else {
+        let Some(cycle) = self.get(active_cycle) else {
             return false;
         };
-        self.memo_cycles.get(&memo).is_some_and(|cycle| {
-            self.state_for(cycle.active_cycle) == Some(state) && cycle.is_current(iteration)
-        })
+        cycle.contains_current_memo(memo)
+            && self
+                .memo_cycles
+                .get(&memo)
+                .is_some_and(|cycle| self.state_for(cycle.active_cycle) == Some(state))
     }
 
     fn current_memo_keys(&self, active_cycle: ActiveCycleKey) -> Option<Vec<DatabaseKeyIndex>> {
-        let state = self.state_for(active_cycle)?;
-        let iteration = self.get(active_cycle)?.iteration;
         let mut keys: Vec<_> = self
-            .memo_cycles
+            .get(active_cycle)?
+            .current_memos
             .iter()
-            .filter_map(|(memo, cycle)| {
-                (self.state_for(cycle.active_cycle) == Some(state) && cycle.is_current(iteration))
-                    .then_some(*memo)
-            })
+            .map(|memo| memo.database_key_index)
             .collect();
         keys.sort_by_key(|key| (key.ingredient_index(), key.key_index()));
         Some(keys)
@@ -464,7 +521,7 @@ impl ActiveCycles {
     fn remove_memo(&mut self, memo: DatabaseKeyIndex) -> Option<ActiveCycleMemo> {
         let cycle = self.memo_cycles.remove(&memo)?;
         if let Some(active_cycle) = self.get_mut(cycle.active_cycle) {
-            active_cycle.remove_current_head(memo);
+            active_cycle.remove_current_memo(memo);
         }
         Some(cycle)
     }
@@ -549,12 +606,12 @@ impl ActiveCycleTable {
         self.0.lock().add_input_edges(key, edges)
     }
 
-    pub(crate) fn flattened_inputs(
+    pub(crate) fn flatten_edges(
         &self,
         key: ActiveCycleKey,
-        edges: &[QueryEdge],
-    ) -> Option<Vec<DatabaseKeyIndex>> {
-        self.0.lock().flattened_inputs(key, edges)
+        edges: &mut Vec<QueryEdge>,
+    ) -> Option<()> {
+        self.0.lock().flatten_edges(key, edges)
     }
 
     pub(crate) fn contains_current_iteration(

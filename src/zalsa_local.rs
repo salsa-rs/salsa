@@ -1238,12 +1238,13 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Invoked when the query has successfully completed execution.
-    fn complete(self) -> CompletedQuery {
+    fn complete(self, provisional: bool) -> CompletedQuery {
         // SAFETY: We do not access the query stack reentrantly.
         let query = unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
                 stack.pop_into_revisions(
                     self.database_key_index,
+                    provisional,
                     #[cfg(debug_assertions)]
                     self.push_len,
                 )
@@ -1258,7 +1259,13 @@ impl ActiveQueryGuard<'_> {
     /// query's execution.
     #[inline]
     pub(crate) fn pop(self) -> CompletedQuery {
-        self.complete()
+        self.complete(false)
+    }
+
+    /// Pops an active query whose memo will remain provisional until cycle finalization.
+    #[inline]
+    pub(crate) fn pop_provisional(self) -> CompletedQuery {
+        self.complete(true)
     }
 }
 

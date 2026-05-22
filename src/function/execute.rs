@@ -9,7 +9,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions};
 use crate::{Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -300,12 +300,14 @@ where
             let completed_query = match try_complete_cycle_head(
                 active_query,
                 claim_guard,
-                cycle_heads,
-                active_cycle,
-                &last_provisional_memo.revisions,
-                local_outer_cycle,
-                iteration_count,
-                value_converged,
+                CycleHeadInputs {
+                    cycle_heads,
+                    active_cycle,
+                    last_provisional_revisions: &last_provisional_memo.revisions,
+                    outer_cycle: local_outer_cycle,
+                    iteration_count,
+                    value_converged,
+                },
             ) {
                 CycleHeadCompletion::Complete(completed_query) => {
                     break (new_value, completed_query);
@@ -486,10 +488,10 @@ fn complete_cycle_participant(
     }
     let zalsa = claim_guard.zalsa();
 
-    let mut completed_query = active_query.pop();
+    let mut completed_query = active_query.pop_provisional();
 
     let active_cycle = completed_query.active_cycle.or(active_cycle);
-    flatten_cycle_dependencies(zalsa, active_cycle, &mut completed_query.revisions);
+    flatten_cycle_dependencies(zalsa, active_cycle, &mut completed_query);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.cycle_heads = cycle_heads;
@@ -503,25 +505,38 @@ enum CycleHeadCompletion {
     Iterate(CompletedQuery, IterationCount),
 }
 
+struct CycleHeadInputs<'a> {
+    cycle_heads: CycleHeads,
+    active_cycle: Option<ActiveCycleKey>,
+    last_provisional_revisions: &'a QueryRevisions,
+    outer_cycle: Option<DatabaseKeyIndex>,
+    iteration_count: IterationCount,
+    value_converged: bool,
+}
+
 /// Tries to complete the cycle head if it has converged.
 fn try_complete_cycle_head(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
-    cycle_heads: CycleHeads,
-    active_cycle: Option<ActiveCycleKey>,
-    last_provisional_revisions: &QueryRevisions,
-    outer_cycle: Option<DatabaseKeyIndex>,
-    iteration_count: IterationCount,
-    value_converged: bool,
+    inputs: CycleHeadInputs<'_>,
 ) -> CycleHeadCompletion {
+    let CycleHeadInputs {
+        cycle_heads,
+        active_cycle,
+        last_provisional_revisions,
+        outer_cycle,
+        iteration_count,
+        value_converged,
+    } = inputs;
+
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
 
-    let mut completed_query = active_query.pop();
+    let mut completed_query = active_query.pop_provisional();
     flatten_cycle_dependencies(
         zalsa,
         completed_query.active_cycle.or(active_cycle),
-        &mut completed_query.revisions,
+        &mut completed_query,
     );
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
@@ -653,8 +668,9 @@ fn assert_no_new_cycle_heads(
 fn flatten_cycle_dependencies(
     zalsa: &Zalsa,
     active_cycle: Option<ActiveCycleKey>,
-    head: &mut QueryRevisions,
+    completed_query: &mut CompletedQuery,
 ) {
+    let head = &mut completed_query.revisions;
     #[cfg(feature = "accumulator")]
     {
         assert!(
@@ -663,20 +679,15 @@ fn flatten_cycle_dependencies(
         )
     }
 
-    let edges = head.origin.as_ref().edges();
+    let mut flattened = completed_query
+        .provisional_edges
+        .take()
+        .expect("cycle dependencies require provisional query edges");
     let active_cycle = active_cycle.expect("cycle dependencies require active cycle state");
-    let flattened_inputs = zalsa
+    zalsa
         .active_cycles()
-        .flattened_inputs(active_cycle, edges)
+        .flatten_edges(active_cycle, &mut flattened)
         .expect("active cycle state was removed while flattening cycle dependencies");
-
-    let mut flattened = Vec::with_capacity(flattened_inputs.len() + edges.len());
-    flattened.extend(flattened_inputs.into_iter().map(QueryEdge::input));
-    flattened.extend(edges.iter().filter_map(|edge| match edge.kind() {
-        QueryEdgeKind::Input(_) => None,
-        // Outputs are owned by this query, not the cycle.
-        QueryEdgeKind::Output(_) => Some(*edge),
-    }));
 
     head.origin
         .set_edges(flattened.into_boxed_slice())

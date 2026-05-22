@@ -212,7 +212,7 @@ impl ActiveQuery {
         }
     }
 
-    fn top_into_revisions(&mut self) -> CompletedQuery {
+    fn top_into_revisions(&mut self, provisional: bool) -> CompletedQuery {
         let &mut Self {
             database_key_index: _,
             durability,
@@ -230,16 +230,30 @@ impl ActiveQuery {
             accumulated_inputs,
         } = self;
 
-        let origin = if untracked_read {
-            QueryOrigin::derived_untracked(input_outputs.drain(..).collect())
+        let (origin, provisional_edges) = if provisional {
+            let edges = Some(input_outputs.drain(..).collect());
+            let origin = if untracked_read {
+                QueryOrigin::derived_untracked(Box::default())
+            } else {
+                QueryOrigin::derived(Box::default())
+            };
+            (origin, edges)
+        } else if untracked_read {
+            (
+                QueryOrigin::derived_untracked(input_outputs.drain(..).collect()),
+                None,
+            )
         } else {
-            QueryOrigin::derived(input_outputs.drain(..).collect())
+            (
+                QueryOrigin::derived(input_outputs.drain(..).collect()),
+                None,
+            )
         };
         disambiguator_map.clear();
 
         #[cfg(feature = "accumulator")]
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
-        let verified_final = cycle_heads.is_empty();
+        let verified_final = !provisional && cycle_heads.is_empty();
         let (active_tracked_structs, stale_tracked_structs) = tracked_struct_ids.drain();
 
         let extra = QueryRevisionsExtra::new(
@@ -264,6 +278,7 @@ impl ActiveQuery {
             active_cycle,
             cycle_heads,
             stale_tracked_structs,
+            provisional_edges,
         }
     }
 
@@ -287,7 +302,7 @@ impl ActiveQuery {
         input_outputs.clear();
         disambiguator_map.clear();
         tracked_struct_ids.clear();
-        *cycle_heads = Default::default();
+        cycle_heads.clear();
         *active_cycle = None;
         *iteration_count = IterationCount::initial();
         #[cfg(feature = "accumulator")]
@@ -408,6 +423,7 @@ impl QueryStack {
     pub(crate) fn pop_into_revisions(
         &mut self,
         key: DatabaseKeyIndex,
+        provisional: bool,
         #[cfg(debug_assertions)] push_len: usize,
     ) -> CompletedQuery {
         #[cfg(debug_assertions)]
@@ -418,7 +434,7 @@ impl QueryStack {
             self.stack[self.len].database_key_index, key,
             "unbalanced push/pop"
         );
-        self.stack[self.len].top_into_revisions()
+        self.stack[self.len].top_into_revisions(provisional)
     }
 
     pub(crate) fn pop(&mut self, key: DatabaseKeyIndex, #[cfg(debug_assertions)] push_len: usize) {
@@ -448,6 +464,9 @@ pub(crate) struct CompletedQuery {
     /// The keys of any tracked structs that were created in a previous execution of the
     /// query but not the current one, and should be marked as stale.
     pub(crate) stale_tracked_structs: Vec<(Identity, Id)>,
+
+    /// Edges collected for a provisional memo before they are flattened for storage.
+    pub(crate) provisional_edges: Option<Vec<QueryEdge>>,
 }
 
 struct CapturedQuery {

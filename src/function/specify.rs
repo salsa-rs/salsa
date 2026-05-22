@@ -77,6 +77,7 @@ where
             active_cycle: None,
             cycle_heads: Default::default(),
             stale_tracked_structs: Vec::new(),
+            provisional_edges: None,
         };
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
