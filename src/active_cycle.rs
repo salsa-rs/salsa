@@ -46,6 +46,7 @@ pub(crate) struct ActiveCycle {
     converged: bool,
     pub(crate) iteration: IterationCount,
     current_memos: Vec<ActiveCycleCurrentMemo>,
+    current_heads: Option<Arc<CycleHeads>>,
     // External inputs observed by provisional memos across every cycle iteration.
     input_dependencies: Vec<DatabaseKeyIndex>,
     input_edges: Option<Arc<[QueryEdge]>>,
@@ -88,18 +89,25 @@ impl ActiveCycle {
                 database_key_index: head,
                 is_head: true,
             }],
+            current_heads: None,
             input_dependencies: Vec::new(),
             input_edges: None,
         }
     }
 
-    fn current_heads(&self) -> CycleHeads {
+    fn current_heads(&mut self) -> Arc<CycleHeads> {
+        if let Some(heads) = &self.current_heads {
+            return heads.clone();
+        }
+
         let mut heads = CycleHeads::default();
         for memo in &self.current_memos {
             if memo.is_head {
                 heads.insert(memo.database_key_index);
             }
         }
+        let heads = Arc::new(heads);
+        self.current_heads = Some(heads.clone());
         heads
     }
 
@@ -111,6 +119,7 @@ impl ActiveCycle {
         self.iteration = iteration;
         self.converged = true;
         self.current_memos.clear();
+        self.current_heads = None;
     }
 
     fn merge_from(&mut self, other: ActiveCycle) {
@@ -137,8 +146,14 @@ impl ActiveCycle {
             .iter_mut()
             .find(|current| current.database_key_index == memo)
         {
+            if is_head && !current.is_head {
+                self.current_heads = None;
+            }
             current.is_head |= is_head;
         } else {
+            if is_head {
+                self.current_heads = None;
+            }
             self.current_memos.push(ActiveCycleCurrentMemo {
                 database_key_index: memo,
                 is_head,
@@ -152,7 +167,10 @@ impl ActiveCycle {
             .iter_mut()
             .find(|current| current.database_key_index == memo)
         {
-            current.is_head = true;
+            if !current.is_head {
+                current.is_head = true;
+                self.current_heads = None;
+            }
         }
     }
 
@@ -162,6 +180,9 @@ impl ActiveCycle {
             .iter()
             .position(|current| current.database_key_index == memo)
         {
+            if self.current_memos[index].is_head {
+                self.current_heads = None;
+            }
             self.current_memos.remove(index);
         }
     }
@@ -660,18 +681,18 @@ impl ActiveCycleTable {
         self.0.lock().take_memo_keys(key, cycle_heads)
     }
 
-    pub(crate) fn current_heads(&self, key: ActiveCycleKey) -> Option<CycleHeads> {
-        self.0.lock().get(key).map(ActiveCycle::current_heads)
+    pub(crate) fn current_heads(&self, key: ActiveCycleKey) -> Option<Arc<CycleHeads>> {
+        self.0.lock().get_mut(key).map(ActiveCycle::current_heads)
     }
 
     pub(crate) fn current_heads_for_memo(
         &self,
         key: ActiveCycleKey,
         memo: DatabaseKeyIndex,
-    ) -> Option<CycleHeads> {
-        let cycles = self.0.lock();
+    ) -> Option<Arc<CycleHeads>> {
+        let mut cycles = self.0.lock();
         cycles.contains_current_iteration(key, memo).then_some(())?;
-        let cycle = cycles.get(key)?;
+        let cycle = cycles.get_mut(key)?;
         Some(cycle.current_heads())
     }
 

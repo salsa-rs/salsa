@@ -48,7 +48,7 @@ where
             }
         }
         let empty_cycle_heads = CycleHeads::default();
-        let cycle_heads = cycle_heads.as_ref().unwrap_or(&empty_cycle_heads);
+        let cycle_heads = cycle_heads.as_deref().unwrap_or(&empty_cycle_heads);
 
         zalsa_local.report_tracked_read(
             database_key_index,
