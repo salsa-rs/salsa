@@ -122,9 +122,13 @@ impl ActiveCycle {
             .map(|head| head.database_key_index)
             .collect();
         for key in &keys {
-            self.participants.swap_remove(key);
+            self.remove_memo(*key);
         }
         keys
+    }
+
+    fn remove_memo(&mut self, memo: DatabaseKeyIndex) {
+        self.participants.swap_remove(&memo);
     }
 
     fn current_heads(&self) -> CycleHeads {
@@ -285,15 +289,6 @@ impl ActiveCycles {
         }
     }
 
-    fn cycle_for_memo(&self, key: ActiveCycleKey, memo: DatabaseKeyIndex) -> Option<&ActiveCycle> {
-        let state = self.state_for(key)?;
-        let memo_key = self.memo_cycles.get(&memo)?;
-        if self.state_for(*memo_key) != Some(state) {
-            return None;
-        }
-        self.states.get(state)?.as_ref()
-    }
-
     pub(crate) fn merge(&mut self, into: ActiveCycleKey, from: ActiveCycleKey) -> Option<()> {
         let into_state = self.state_for(into)?;
         let from_state = self.state_for(from)?;
@@ -321,6 +316,56 @@ impl ActiveCycles {
         }
 
         Some(())
+    }
+
+    fn add_heads(
+        &mut self,
+        active_cycle: ActiveCycleKey,
+        cycle_heads: &CycleHeads,
+    ) -> Option<IterationCount> {
+        for head in cycle_heads {
+            if let Some(head_cycle) = self.memo_cycles.get(&head.database_key_index).copied() {
+                if head_cycle != active_cycle {
+                    self.merge(active_cycle, head_cycle);
+                }
+            }
+
+            self.get_mut(active_cycle)?
+                .add_head(head.database_key_index);
+        }
+
+        self.get(active_cycle).map(|cycle| cycle.iteration)
+    }
+
+    fn reuse_participant(
+        &mut self,
+        current: Option<ActiveCycleKey>,
+        memo_cycle: ActiveCycleKey,
+        memo: DatabaseKeyIndex,
+    ) -> Option<ActiveCycleKey> {
+        let memo_state = self.state_for(memo_cycle)?;
+        let memo_key = self.memo_cycles.get(&memo)?;
+        if self.state_for(*memo_key) != Some(memo_state) {
+            return None;
+        }
+
+        let active_cycle = if let Some(current) = current {
+            self.merge(current, memo_cycle)?;
+            current
+        } else if self.get(memo_cycle)?.contains_current_iteration(memo) {
+            memo_cycle
+        } else {
+            let iteration = self.get(memo_cycle)?.iteration;
+            self.get_mut(memo_cycle)?.remove_memo(memo);
+            self.insert(memo, iteration)
+        };
+
+        let cycle = self.get_mut(active_cycle)?;
+        cycle.add_head(memo);
+        cycle.add_participant(memo);
+        self.memo_cycles.insert(memo, active_cycle);
+
+        Some(active_cycle)
     }
 }
 
@@ -350,32 +395,26 @@ impl ActiveCycleTable {
         memo: DatabaseKeyIndex,
     ) -> Option<()> {
         let mut cycles = self.0.lock();
+        let state = cycles.state_for(key)?;
+        if let Some(previous) = cycles.memo_cycles.get(&memo).copied() {
+            if cycles.state_for(previous) != Some(state) {
+                cycles.get_mut(previous)?.remove_memo(memo);
+            }
+        }
         let cycle = cycles.get_mut(key)?;
         cycle.add_participant(memo);
         cycles.memo_cycles.insert(memo, key);
         Some(())
     }
 
-    pub(crate) fn contains_current_iteration(
-        &self,
-        key: ActiveCycleKey,
-        memo: DatabaseKeyIndex,
-    ) -> bool {
+    pub(crate) fn contains_current_iteration(&self, memo: DatabaseKeyIndex) -> bool {
         let cycles = self.0.lock();
+        let Some(key) = cycles.memo_cycles.get(&memo).copied() else {
+            return false;
+        };
         cycles
-            .cycle_for_memo(key, memo)
+            .get(key)
             .is_some_and(|cycle| cycle.contains_current_iteration(memo))
-    }
-
-    pub(crate) fn contains_participant(&self, key: ActiveCycleKey, memo: DatabaseKeyIndex) -> bool {
-        let cycles = self.0.lock();
-        let Some(state) = cycles.state_for(key) else {
-            return false;
-        };
-        let Some(memo_key) = cycles.memo_cycles.get(&memo) else {
-            return false;
-        };
-        cycles.state_for(*memo_key) == Some(state)
     }
 
     pub(crate) fn key_for(&self, memo: DatabaseKeyIndex) -> Option<ActiveCycleKey> {
@@ -421,13 +460,13 @@ impl ActiveCycleTable {
 
     pub(crate) fn current_heads_for_memo(
         &self,
-        key: ActiveCycleKey,
         memo: DatabaseKeyIndex,
-    ) -> Option<CycleHeads> {
+    ) -> Option<(ActiveCycleKey, CycleHeads)> {
         let cycles = self.0.lock();
-        let cycle = cycles.cycle_for_memo(key, memo)?;
+        let key = cycles.memo_cycles.get(&memo).copied()?;
+        let cycle = cycles.get(key)?;
         cycle.contains_current_iteration(memo).then_some(())?;
-        Some(cycle.current_heads())
+        Some((key, cycle.current_heads()))
     }
 
     pub(crate) fn iteration(&self, key: ActiveCycleKey) -> Option<IterationCount> {
@@ -440,6 +479,31 @@ impl ActiveCycleTable {
         })
     }
 
+    pub(crate) fn add_heads(
+        &self,
+        active_cycle: Option<ActiveCycleKey>,
+        cycle_heads: &CycleHeads,
+    ) -> (Option<ActiveCycleKey>, Option<IterationCount>) {
+        let mut cycles = self.0.lock();
+        let active_cycle = active_cycle.or_else(|| {
+            cycle_heads
+                .iter()
+                .find_map(|head| cycles.memo_cycles.get(&head.database_key_index).copied())
+        });
+        let iteration =
+            active_cycle.and_then(|active_cycle| cycles.add_heads(active_cycle, cycle_heads));
+        (active_cycle, iteration)
+    }
+
+    pub(crate) fn reuse_participant(
+        &self,
+        current: Option<ActiveCycleKey>,
+        memo_cycle: ActiveCycleKey,
+        memo: DatabaseKeyIndex,
+    ) -> Option<ActiveCycleKey> {
+        self.0.lock().reuse_participant(current, memo_cycle, memo)
+    }
+
     pub(crate) fn start_next_iteration(
         &self,
         key: ActiveCycleKey,
@@ -448,10 +512,6 @@ impl ActiveCycleTable {
         self.with_mut(key, |cycle| {
             cycle.start_next_iteration(iteration);
         })
-    }
-
-    pub(crate) fn merge(&self, into: ActiveCycleKey, from: ActiveCycleKey) -> Option<()> {
-        self.0.lock().merge(into, from)
     }
 
     pub(crate) fn set_converged(&self, key: ActiveCycleKey, converged: bool) -> Option<()> {

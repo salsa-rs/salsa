@@ -103,10 +103,10 @@ where
             zalsa.current_revision(),
             completed_query.revisions,
         );
-        if memo.may_be_provisional()
-            && let Some(active_cycle) = completed_query.active_cycle
-        {
-            memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+        if memo.may_be_provisional() {
+            if let Some(active_cycle) = completed_query.active_cycle {
+                memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+            }
         }
 
         let memo = self.insert_memo(zalsa, id, memo, memo_ingredient_index);
@@ -138,13 +138,12 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
-                current_active_cycle = old_memo.revisions.active_cycle();
+                current_active_cycle = old_memo
+                    .revisions
+                    .active_cycle()
+                    .and_then(|_| zalsa.active_cycles().key_for(database_key_index));
 
-                if current_active_cycle.is_some_and(|active_cycle| {
-                    zalsa
-                        .active_cycles()
-                        .contains_participant(active_cycle, database_key_index)
-                }) {
+                if current_active_cycle.is_some() {
                     last_provisional_memo_opt = Some(old_memo);
                 }
 
@@ -185,29 +184,13 @@ where
                 break (new_value, active_query.pop());
             }
 
-            let active_cycle = active_query
-                .active_cycle()
-                .or(current_active_cycle)
-                .or_else(|| {
-                    cycle_heads
-                        .iter()
-                        .find_map(|head| zalsa.active_cycles().key_for(head.database_key_index))
-                });
+            let (active_cycle, active_iteration) = zalsa.active_cycles().add_heads(
+                active_query.active_cycle().or(current_active_cycle),
+                &cycle_heads,
+            );
             current_active_cycle = active_cycle;
-            if let Some(active_cycle) = active_cycle {
-                for head in &cycle_heads {
-                    if let Some(head_cycle) = zalsa.active_cycles().key_for(head.database_key_index)
-                        && head_cycle != active_cycle
-                    {
-                        zalsa.active_cycles().merge(active_cycle, head_cycle);
-                    }
-                    zalsa
-                        .active_cycles()
-                        .add_head(active_cycle, head.database_key_index);
-                }
-                if let Some(active_iteration) = zalsa.active_cycles().iteration(active_cycle) {
-                    iteration_count = active_iteration;
-                }
+            if let Some(active_iteration) = active_iteration {
+                iteration_count = active_iteration;
             }
 
             let depends_on_self = cycle_heads.contains(&database_key_index);
@@ -326,10 +309,10 @@ where
                 zalsa.current_revision(),
                 completed_query.revisions,
             );
-            if memo.may_be_provisional()
-                && let Some(active_cycle) = completed_query.active_cycle
-            {
-                memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+            if memo.may_be_provisional() {
+                if let Some(active_cycle) = completed_query.active_cycle {
+                    memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+                }
             }
             let new_memo = self.insert_memo(zalsa, id, memo, memo_ingredient_index);
 
@@ -497,12 +480,16 @@ fn complete_cycle_participant(
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.cycle_heads = cycle_heads;
-    completed_query.active_cycle = completed_query
-        .cycle_heads
-        .iter()
-        .find_map(|head| zalsa.active_cycles().key_for(head.database_key_index))
-        .or_else(|| zalsa.active_cycles().key_for(database_key_index))
-        .or_else(|| outer_cycle.and_then(|outer_cycle| zalsa.active_cycles().key_for(outer_cycle)));
+    if completed_query.active_cycle.is_none() {
+        completed_query.active_cycle = completed_query
+            .cycle_heads
+            .iter()
+            .find_map(|head| zalsa.active_cycles().key_for(head.database_key_index))
+            .or_else(|| zalsa.active_cycles().key_for(database_key_index))
+            .or_else(|| {
+                outer_cycle.and_then(|outer_cycle| zalsa.active_cycles().key_for(outer_cycle))
+            });
+    }
 
     completed_query
 }

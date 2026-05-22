@@ -284,10 +284,10 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<'_, C>,
     ) -> bool {
-        let Some(active_cycle) = memo.revisions.active_cycle() else {
+        if memo.revisions.active_cycle().is_none() {
             debug_assert!(!memo.may_be_provisional());
             return true;
-        };
+        }
 
         if !memo.may_be_provisional() {
             return true;
@@ -301,7 +301,7 @@ where
         memo.verified_at.load() == zalsa.current_revision()
             && zalsa
                 .active_cycles()
-                .contains_current_iteration(active_cycle, database_key_index)
+                .contains_current_iteration(database_key_index)
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
