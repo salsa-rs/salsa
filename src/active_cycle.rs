@@ -45,25 +45,27 @@ pub(crate) struct ActiveCycle {
     converged: bool,
     pub(crate) iteration: IterationCount,
     current_heads: CycleHeads,
-    participants: FxHashMap<DatabaseKeyIndex, ActiveCycleParticipant>,
 }
 
 #[derive(Copy, Clone, Debug)]
-struct ActiveCycleParticipant {
+struct ActiveCycleMemo {
+    active_cycle: ActiveCycleKey,
     is_head: bool,
     last_iteration: Option<IterationCount>,
 }
 
-impl ActiveCycleParticipant {
-    fn head(iteration: IterationCount) -> Self {
+impl ActiveCycleMemo {
+    fn head(active_cycle: ActiveCycleKey, iteration: IterationCount) -> Self {
         Self {
+            active_cycle,
             is_head: true,
             last_iteration: Some(iteration),
         }
     }
 
-    fn participant(iteration: IterationCount) -> Self {
+    fn participant(active_cycle: ActiveCycleKey, iteration: IterationCount) -> Self {
         Self {
+            active_cycle,
             is_head: false,
             last_iteration: Some(iteration),
         }
@@ -78,86 +80,15 @@ impl ActiveCycle {
     fn new(head: DatabaseKeyIndex, iteration: IterationCount) -> Self {
         let mut current_heads = CycleHeads::default();
         current_heads.insert(head);
-        let mut participants = FxHashMap::default();
-        participants.insert(head, ActiveCycleParticipant::head(iteration));
         Self {
             converged: true,
             iteration,
             current_heads,
-            participants,
         }
     }
 
-    fn add_participant(&mut self, memo: DatabaseKeyIndex) {
-        let is_head = if let Some(participant) = self.participants.get_mut(&memo) {
-            participant.last_iteration = Some(self.iteration);
-            participant.is_head
-        } else {
-            self.participants
-                .insert(memo, ActiveCycleParticipant::participant(self.iteration));
-            false
-        };
-        if is_head {
-            self.current_heads.insert(memo);
-        }
-    }
-
-    fn add_head(&mut self, head: DatabaseKeyIndex) {
-        let is_current = if let Some(participant) = self.participants.get_mut(&head) {
-            participant.is_head = true;
-            participant.is_current(self.iteration)
-        } else {
-            self.participants.insert(
-                head,
-                ActiveCycleParticipant {
-                    is_head: true,
-                    last_iteration: None,
-                },
-            );
-            false
-        };
-        if is_current {
-            self.current_heads.insert(head);
-        }
-    }
-
-    fn contains_current_iteration(&self, memo: DatabaseKeyIndex) -> bool {
-        self.participants
-            .get(&memo)
-            .is_some_and(|participant| participant.is_current(self.iteration))
-    }
-
-    fn current_memo_keys(&self) -> Vec<DatabaseKeyIndex> {
-        let mut keys: Vec<_> = self
-            .participants
-            .iter()
-            .filter_map(|(key, participant)| participant.is_current(self.iteration).then_some(*key))
-            .collect();
-        keys.sort_by_key(|key| (key.ingredient_index(), key.key_index()));
-        keys
-    }
-
-    fn heads_are_covered_by(&self, cycle_heads: &CycleHeads) -> bool {
-        self.participants
-            .iter()
-            .filter_map(|(key, participant)| participant.is_head.then_some(key))
-            .all(|head| cycle_heads.contains(head))
-    }
-
-    fn take_memo_keys(&mut self, cycle_heads: &CycleHeads) -> Vec<DatabaseKeyIndex> {
-        let keys: Vec<_> = cycle_heads
-            .iter()
-            .map(|head| head.database_key_index)
-            .collect();
-        for key in &keys {
-            self.remove_memo(*key);
-        }
-        keys
-    }
-
-    fn remove_memo(&mut self, memo: DatabaseKeyIndex) {
+    fn remove_current_head(&mut self, memo: DatabaseKeyIndex) {
         self.current_heads.remove(memo);
-        self.participants.remove(&memo);
     }
 
     fn current_heads(&self) -> CycleHeads {
@@ -175,35 +106,10 @@ impl ActiveCycle {
     }
 
     fn merge_from(&mut self, other: ActiveCycle) {
-        let previous_iteration = self.iteration;
-        let other_iteration = other.iteration;
-        let iteration = previous_iteration.max(other_iteration);
-
-        if iteration != previous_iteration {
-            for participant in self.participants.values_mut() {
-                if participant.is_current(previous_iteration) {
-                    participant.last_iteration = Some(iteration);
-                }
-            }
-        }
-
+        let iteration = self.iteration.max(other.iteration);
         self.converged &= other.converged;
         self.iteration = iteration;
         self.current_heads.extend(&other.current_heads);
-
-        for (key, mut participant) in other.participants {
-            if participant.is_current(other_iteration) {
-                participant.last_iteration = Some(iteration);
-            }
-
-            self.participants
-                .entry(key)
-                .and_modify(|current| {
-                    current.is_head |= participant.is_head;
-                    current.last_iteration = current.last_iteration.max(participant.last_iteration);
-                })
-                .or_insert(participant);
-        }
     }
 }
 
@@ -219,7 +125,7 @@ pub(crate) struct ActiveCycles {
     free_slots: Vec<usize>,
     states: Vec<Option<ActiveCycle>>,
     free_states: Vec<usize>,
-    memo_cycles: FxHashMap<DatabaseKeyIndex, ActiveCycleKey>,
+    memo_cycles: FxHashMap<DatabaseKeyIndex, ActiveCycleMemo>,
 }
 
 impl ActiveCycles {
@@ -252,7 +158,8 @@ impl ActiveCycles {
             ActiveCycleKey::new(index, generation)
         };
 
-        self.memo_cycles.insert(head, key);
+        self.memo_cycles
+            .insert(head, ActiveCycleMemo::head(key, iteration));
         key
     }
 
@@ -273,7 +180,9 @@ impl ActiveCycles {
         let stale_memos: Vec<_> = self
             .memo_cycles
             .iter()
-            .filter_map(|(memo, key)| (self.state_for(*key) == Some(state)).then_some(*memo))
+            .filter_map(|(memo, cycle)| {
+                (self.state_for(cycle.active_cycle) == Some(state)).then_some(*memo)
+            })
             .collect();
         for memo in stale_memos {
             self.memo_cycles.remove(&memo);
@@ -322,10 +231,24 @@ impl ActiveCycles {
             return Some(());
         }
 
+        let into_iteration = self.get(into)?.iteration;
+        let from_iteration = self.get(from)?.iteration;
+        let iteration = into_iteration.max(from_iteration);
+        let updated_memos: Vec<_> = self
+            .memo_cycles
+            .iter()
+            .filter_map(|(memo, cycle)| {
+                (self.state_for(cycle.active_cycle) == Some(into_state)
+                    && cycle.is_current(into_iteration))
+                .then_some(*memo)
+            })
+            .collect();
         let remapped_memos: Vec<_> = self
             .memo_cycles
             .iter()
-            .filter_map(|(memo, key)| (self.state_for(*key) == Some(from_state)).then_some(*memo))
+            .filter_map(|(memo, cycle)| {
+                (self.state_for(cycle.active_cycle) == Some(from_state)).then_some(*memo)
+            })
             .collect();
 
         let from_cycle = self.take_state(from_state)?;
@@ -336,11 +259,149 @@ impl ActiveCycles {
                 slot.state = Some(into_state);
             }
         }
+        for memo in updated_memos {
+            if let Some(cycle) = self.memo_cycles.get_mut(&memo) {
+                cycle.last_iteration = Some(iteration);
+            }
+        }
         for memo in remapped_memos {
-            self.memo_cycles.insert(memo, into);
+            if let Some(cycle) = self.memo_cycles.get_mut(&memo) {
+                cycle.active_cycle = into;
+                if cycle.is_current(from_iteration) {
+                    cycle.last_iteration = Some(iteration);
+                }
+            }
         }
 
         Some(())
+    }
+
+    fn add_participant(
+        &mut self,
+        active_cycle: ActiveCycleKey,
+        memo: DatabaseKeyIndex,
+    ) -> Option<()> {
+        let state = self.state_for(active_cycle)?;
+        let iteration = self.get(active_cycle)?.iteration;
+        if let Some(previous) = self.memo_cycles.get(&memo).copied() {
+            if self.state_for(previous.active_cycle) == Some(state) {
+                if previous.is_current(iteration) {
+                    return Some(());
+                }
+
+                let cycle = self.memo_cycles.get_mut(&memo)?;
+                cycle.active_cycle = active_cycle;
+                cycle.last_iteration = Some(iteration);
+                if previous.is_head {
+                    self.get_mut(active_cycle)?.current_heads.insert(memo);
+                }
+                return Some(());
+            }
+
+            self.get_mut(previous.active_cycle)?
+                .remove_current_head(memo);
+        }
+
+        self.memo_cycles
+            .insert(memo, ActiveCycleMemo::participant(active_cycle, iteration));
+        Some(())
+    }
+
+    fn add_head(&mut self, active_cycle: ActiveCycleKey, head: DatabaseKeyIndex) -> Option<()> {
+        let state = self.state_for(active_cycle)?;
+        let iteration = self.get(active_cycle)?.iteration;
+        if let Some(previous) = self.memo_cycles.get(&head).copied() {
+            if self.state_for(previous.active_cycle) == Some(state) {
+                let cycle = self.memo_cycles.get_mut(&head)?;
+                cycle.active_cycle = active_cycle;
+                cycle.is_head = true;
+                if previous.is_current(iteration) {
+                    self.get_mut(active_cycle)?.current_heads.insert(head);
+                }
+                return Some(());
+            }
+
+            self.get_mut(previous.active_cycle)?
+                .remove_current_head(head);
+        }
+
+        self.memo_cycles.insert(
+            head,
+            ActiveCycleMemo {
+                active_cycle,
+                is_head: true,
+                last_iteration: None,
+            },
+        );
+        Some(())
+    }
+
+    fn contains_current_iteration(
+        &self,
+        active_cycle: ActiveCycleKey,
+        memo: DatabaseKeyIndex,
+    ) -> bool {
+        let Some(state) = self.state_for(active_cycle) else {
+            return false;
+        };
+        let Some(iteration) = self.get(active_cycle).map(|cycle| cycle.iteration) else {
+            return false;
+        };
+        self.memo_cycles.get(&memo).is_some_and(|cycle| {
+            self.state_for(cycle.active_cycle) == Some(state) && cycle.is_current(iteration)
+        })
+    }
+
+    fn current_memo_keys(&self, active_cycle: ActiveCycleKey) -> Option<Vec<DatabaseKeyIndex>> {
+        let state = self.state_for(active_cycle)?;
+        let iteration = self.get(active_cycle)?.iteration;
+        let mut keys: Vec<_> = self
+            .memo_cycles
+            .iter()
+            .filter_map(|(memo, cycle)| {
+                (self.state_for(cycle.active_cycle) == Some(state) && cycle.is_current(iteration))
+                    .then_some(*memo)
+            })
+            .collect();
+        keys.sort_by_key(|key| (key.ingredient_index(), key.key_index()));
+        Some(keys)
+    }
+
+    fn heads_are_covered_by(
+        &self,
+        active_cycle: ActiveCycleKey,
+        cycle_heads: &CycleHeads,
+    ) -> Option<bool> {
+        let state = self.state_for(active_cycle)?;
+        Some(self.memo_cycles.iter().all(|(memo, cycle)| {
+            self.state_for(cycle.active_cycle) != Some(state)
+                || !cycle.is_head
+                || cycle_heads.contains(memo)
+        }))
+    }
+
+    fn take_memo_keys(
+        &mut self,
+        active_cycle: ActiveCycleKey,
+        cycle_heads: &CycleHeads,
+    ) -> Option<Vec<DatabaseKeyIndex>> {
+        self.state_for(active_cycle)?;
+        let keys: Vec<_> = cycle_heads
+            .iter()
+            .map(|head| head.database_key_index)
+            .collect();
+        for key in &keys {
+            self.remove_memo(*key);
+        }
+        Some(keys)
+    }
+
+    fn remove_memo(&mut self, memo: DatabaseKeyIndex) -> Option<ActiveCycleMemo> {
+        let cycle = self.memo_cycles.remove(&memo)?;
+        if let Some(active_cycle) = self.get_mut(cycle.active_cycle) {
+            active_cycle.remove_current_head(memo);
+        }
+        Some(cycle)
     }
 
     fn add_heads(
@@ -350,13 +411,12 @@ impl ActiveCycles {
     ) -> Option<IterationCount> {
         for head in cycle_heads {
             if let Some(head_cycle) = self.memo_cycles.get(&head.database_key_index).copied() {
-                if head_cycle != active_cycle {
-                    self.merge(active_cycle, head_cycle);
+                if head_cycle.active_cycle != active_cycle {
+                    self.merge(active_cycle, head_cycle.active_cycle);
                 }
             }
 
-            self.get_mut(active_cycle)?
-                .add_head(head.database_key_index);
+            self.add_head(active_cycle, head.database_key_index)?;
         }
 
         self.get(active_cycle).map(|cycle| cycle.iteration)
@@ -370,25 +430,23 @@ impl ActiveCycles {
     ) -> Option<ActiveCycleKey> {
         let memo_state = self.state_for(memo_cycle)?;
         let memo_key = self.memo_cycles.get(&memo)?;
-        if self.state_for(*memo_key) != Some(memo_state) {
+        if self.state_for(memo_key.active_cycle) != Some(memo_state) {
             return None;
         }
 
         let active_cycle = if let Some(current) = current {
             self.merge(current, memo_cycle)?;
             current
-        } else if self.get(memo_cycle)?.contains_current_iteration(memo) {
+        } else if self.contains_current_iteration(memo_cycle, memo) {
             memo_cycle
         } else {
             let iteration = self.get(memo_cycle)?.iteration;
-            self.get_mut(memo_cycle)?.remove_memo(memo);
+            self.remove_memo(memo)?;
             self.insert(memo, iteration)
         };
 
-        let cycle = self.get_mut(active_cycle)?;
-        cycle.add_head(memo);
-        cycle.add_participant(memo);
-        self.memo_cycles.insert(memo, active_cycle);
+        self.add_head(active_cycle, memo)?;
+        self.add_participant(active_cycle, memo)?;
 
         Some(active_cycle)
     }
@@ -419,28 +477,7 @@ impl ActiveCycleTable {
         key: ActiveCycleKey,
         memo: DatabaseKeyIndex,
     ) -> Option<()> {
-        let mut cycles = self.0.lock();
-        let state = cycles.state_for(key)?;
-        let mut already_mapped = false;
-        if let Some(previous) = cycles.memo_cycles.get(&memo).copied() {
-            if cycles.state_for(previous) == Some(state) {
-                if cycles
-                    .get(previous)
-                    .is_some_and(|cycle| cycle.contains_current_iteration(memo))
-                {
-                    return Some(());
-                }
-                already_mapped = true;
-            } else {
-                cycles.get_mut(previous)?.remove_memo(memo);
-            }
-        }
-        let cycle = cycles.get_mut(key)?;
-        cycle.add_participant(memo);
-        if !already_mapped {
-            cycles.memo_cycles.insert(memo, key);
-        }
-        Some(())
+        self.0.lock().add_participant(key, memo)
     }
 
     pub(crate) fn contains_current_iteration(
@@ -448,18 +485,19 @@ impl ActiveCycleTable {
         key: ActiveCycleKey,
         memo: DatabaseKeyIndex,
     ) -> bool {
-        let cycles = self.0.lock();
-        cycles
-            .get(key)
-            .is_some_and(|cycle| cycle.contains_current_iteration(memo))
+        self.0.lock().contains_current_iteration(key, memo)
     }
 
     pub(crate) fn key_for(&self, memo: DatabaseKeyIndex) -> Option<ActiveCycleKey> {
-        self.0.lock().memo_cycles.get(&memo).copied()
+        self.0
+            .lock()
+            .memo_cycles
+            .get(&memo)
+            .map(|cycle| cycle.active_cycle)
     }
 
     pub(crate) fn current_memo_keys(&self, key: ActiveCycleKey) -> Option<Vec<DatabaseKeyIndex>> {
-        self.0.lock().get(key).map(ActiveCycle::current_memo_keys)
+        self.0.lock().current_memo_keys(key)
     }
 
     pub(crate) fn heads_are_covered_by(
@@ -467,10 +505,7 @@ impl ActiveCycleTable {
         key: ActiveCycleKey,
         cycle_heads: &CycleHeads,
     ) -> Option<bool> {
-        self.0
-            .lock()
-            .get(key)
-            .map(|active_cycle| active_cycle.heads_are_covered_by(cycle_heads))
+        self.0.lock().heads_are_covered_by(key, cycle_heads)
     }
 
     pub(crate) fn take_memo_keys(
@@ -478,17 +513,7 @@ impl ActiveCycleTable {
         key: ActiveCycleKey,
         cycle_heads: &CycleHeads,
     ) -> Option<Vec<DatabaseKeyIndex>> {
-        let mut cycles = self.0.lock();
-        let state = cycles.state_for(key)?;
-        let keys = cycles
-            .states
-            .get_mut(state)?
-            .as_mut()?
-            .take_memo_keys(cycle_heads);
-        for key in &keys {
-            cycles.memo_cycles.remove(key);
-        }
-        Some(keys)
+        self.0.lock().take_memo_keys(key, cycle_heads)
     }
 
     pub(crate) fn current_heads(&self, key: ActiveCycleKey) -> Option<CycleHeads> {
@@ -501,8 +526,8 @@ impl ActiveCycleTable {
         memo: DatabaseKeyIndex,
     ) -> Option<CycleHeads> {
         let cycles = self.0.lock();
+        cycles.contains_current_iteration(key, memo).then_some(())?;
         let cycle = cycles.get(key)?;
-        cycle.contains_current_iteration(memo).then_some(())?;
         Some(cycle.current_heads())
     }
 
@@ -511,9 +536,7 @@ impl ActiveCycleTable {
     }
 
     pub(crate) fn add_head(&self, key: ActiveCycleKey, head: DatabaseKeyIndex) -> Option<()> {
-        self.with_mut(key, |cycle| {
-            cycle.add_head(head);
-        })
+        self.0.lock().add_head(key, head)
     }
 
     pub(crate) fn add_heads(
@@ -523,9 +546,12 @@ impl ActiveCycleTable {
     ) -> (Option<ActiveCycleKey>, Option<IterationCount>) {
         let mut cycles = self.0.lock();
         let active_cycle = active_cycle.or_else(|| {
-            cycle_heads
-                .iter()
-                .find_map(|head| cycles.memo_cycles.get(&head.database_key_index).copied())
+            cycle_heads.iter().find_map(|head| {
+                cycles
+                    .memo_cycles
+                    .get(&head.database_key_index)
+                    .map(|cycle| cycle.active_cycle)
+            })
         });
         let iteration =
             active_cycle.and_then(|active_cycle| cycles.add_heads(active_cycle, cycle_heads));
@@ -583,17 +609,25 @@ mod tests {
 
         let cycle_a = cycles.insert(head_a, IterationCount::initial());
         let cycle_b = cycles.insert(head_b, IterationCount::initial());
-        cycles
-            .get_mut(cycle_b)
-            .unwrap()
-            .add_participant(participant);
-        cycles.memo_cycles.insert(participant, cycle_b);
+        cycles.add_participant(cycle_b, participant).unwrap();
 
         cycles.merge(cycle_a, cycle_b).unwrap();
 
         assert_eq!(cycles.state_for(cycle_a), cycles.state_for(cycle_b));
-        assert_eq!(cycles.memo_cycles.get(&head_b), Some(&cycle_a));
-        assert_eq!(cycles.memo_cycles.get(&participant), Some(&cycle_a));
+        assert_eq!(
+            cycles
+                .memo_cycles
+                .get(&head_b)
+                .map(|cycle| cycle.active_cycle),
+            Some(cycle_a)
+        );
+        assert_eq!(
+            cycles
+                .memo_cycles
+                .get(&participant)
+                .map(|cycle| cycle.active_cycle),
+            Some(cycle_a)
+        );
 
         cycles.remove(cycle_b).unwrap();
 
@@ -606,19 +640,22 @@ mod tests {
 
     #[test]
     fn merge_keeps_participants_current_at_the_merged_iteration() {
-        let mut cycle_a = ActiveCycle::new(database_key(0), IterationCount::initial());
-        cycle_a.add_participant(database_key(1));
-
-        let mut cycle_b = ActiveCycle::new(database_key(2), IterationCount::initial());
+        let mut cycles = ActiveCycles::default();
+        let cycle_a = cycles.insert(database_key(0), IterationCount::initial());
+        cycles.add_participant(cycle_a, database_key(1)).unwrap();
+        let cycle_b = cycles.insert(database_key(2), IterationCount::initial());
         let next_iteration = IterationCount::initial().increment().unwrap();
-        cycle_b.start_next_iteration(next_iteration);
-        cycle_b.add_participant(database_key(3));
+        cycles
+            .get_mut(cycle_b)
+            .unwrap()
+            .start_next_iteration(next_iteration);
+        cycles.add_participant(cycle_b, database_key(3)).unwrap();
 
-        cycle_a.merge_from(cycle_b);
+        cycles.merge(cycle_a, cycle_b).unwrap();
 
-        assert_eq!(cycle_a.iteration, next_iteration);
+        assert_eq!(cycles.get(cycle_a).unwrap().iteration, next_iteration);
         assert_eq!(
-            cycle_a.current_memo_keys(),
+            cycles.current_memo_keys(cycle_a).unwrap(),
             vec![database_key(0), database_key(1), database_key(3)]
         );
     }
