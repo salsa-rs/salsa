@@ -114,7 +114,12 @@ where
         );
         if memo.may_be_provisional() {
             if let Some(active_cycle) = completed_query.active_cycle {
-                memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+                memo = memo.with_active_cycle(
+                    zalsa,
+                    database_key_index,
+                    active_cycle,
+                    &completed_query.transfer_cycle_heads,
+                );
             }
         }
 
@@ -184,6 +189,7 @@ where
 
             // Take the cycle heads to not-fight-rust's-borrow-checker.
             let cycle_heads = active_query.take_cycle_heads();
+            let transfer_cycle_heads = active_query.take_transfer_cycle_heads();
 
             // If there are no cycle heads, break out of the loop.
             if cycle_heads.is_empty() {
@@ -204,7 +210,7 @@ where
             let local_outer_cycle = outer_cycle(
                 zalsa,
                 claim_guard.zalsa_local(),
-                &cycle_heads,
+                &transfer_cycle_heads,
                 database_key_index,
             );
 
@@ -233,6 +239,7 @@ where
                     active_query,
                     claim_guard,
                     cycle_heads,
+                    transfer_cycle_heads,
                     active_cycle,
                     outer_cycle,
                 );
@@ -295,6 +302,7 @@ where
             };
 
             let new_cycle_heads = active_query.take_cycle_heads();
+            let _new_transfer_cycle_heads = active_query.take_transfer_cycle_heads();
             assert_no_new_cycle_heads(&cycle_heads, new_cycle_heads, database_key_index);
 
             let completed_query = match try_complete_cycle_head(
@@ -302,6 +310,7 @@ where
                 claim_guard,
                 CycleHeadInputs {
                     cycle_heads,
+                    transfer_cycle_heads,
                     active_cycle,
                     last_provisional_revisions: &last_provisional_memo.revisions,
                     outer_cycle: local_outer_cycle,
@@ -325,7 +334,12 @@ where
             );
             if memo.may_be_provisional() {
                 if let Some(active_cycle) = completed_query.active_cycle {
-                    memo = memo.with_active_cycle(zalsa, database_key_index, active_cycle);
+                    memo = memo.with_active_cycle(
+                        zalsa,
+                        database_key_index,
+                        active_cycle,
+                        &completed_query.transfer_cycle_heads,
+                    );
                 }
             }
             let new_memo = self.insert_memo(zalsa, id, memo, memo_ingredient_index);
@@ -477,6 +491,7 @@ fn complete_cycle_participant(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
+    transfer_cycle_heads: CycleHeads,
     active_cycle: Option<ActiveCycleKey>,
     outer_cycle: Option<DatabaseKeyIndex>,
 ) -> CompletedQuery {
@@ -495,6 +510,7 @@ fn complete_cycle_participant(
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.cycle_heads = cycle_heads;
+    completed_query.transfer_cycle_heads = transfer_cycle_heads;
     completed_query.active_cycle = active_cycle;
 
     completed_query
@@ -507,6 +523,7 @@ enum CycleHeadCompletion {
 
 struct CycleHeadInputs<'a> {
     cycle_heads: CycleHeads,
+    transfer_cycle_heads: CycleHeads,
     active_cycle: Option<ActiveCycleKey>,
     last_provisional_revisions: &'a QueryRevisions,
     outer_cycle: Option<DatabaseKeyIndex>,
@@ -522,6 +539,7 @@ fn try_complete_cycle_head(
 ) -> CycleHeadCompletion {
     let CycleHeadInputs {
         cycle_heads,
+        transfer_cycle_heads,
         active_cycle,
         last_provisional_revisions,
         outer_cycle,
@@ -533,6 +551,7 @@ fn try_complete_cycle_head(
     let zalsa = claim_guard.zalsa();
 
     let mut completed_query = active_query.pop_provisional();
+    completed_query.transfer_cycle_heads = transfer_cycle_heads;
     record_cycle_dependencies(
         zalsa,
         completed_query.active_cycle.or(active_cycle),

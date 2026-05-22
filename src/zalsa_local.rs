@@ -316,7 +316,7 @@ impl ZalsaLocal {
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        cycle: (&CycleHeads, Option<ActiveCycleKey>),
+        cycle: (&CycleHeads, &CycleHeads, Option<ActiveCycleKey>),
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
@@ -1301,6 +1301,18 @@ impl ActiveQueryGuard<'_> {
                 assert_eq!(stack.len(), self.push_len);
                 let frame = stack.last_mut().unwrap();
                 frame.take_cycle_heads()
+            })
+        }
+    }
+
+    pub(crate) fn take_transfer_cycle_heads(&mut self) -> CycleHeads {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.local_state.with_query_stack_unchecked_mut(|stack| {
+                #[cfg(debug_assertions)]
+                assert_eq!(stack.len(), self.push_len);
+                let frame = stack.last_mut().unwrap();
+                frame.take_transfer_cycle_heads()
             })
         }
     }

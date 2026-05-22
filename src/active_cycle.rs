@@ -52,10 +52,11 @@ pub(crate) struct ActiveCycle {
     input_edges: Option<Arc<[QueryEdge]>>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct ActiveCycleCurrentMemo {
     database_key_index: DatabaseKeyIndex,
     is_head: bool,
+    transfer_heads: Arc<CycleHeads>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -88,6 +89,7 @@ impl ActiveCycle {
             current_memos: vec![ActiveCycleCurrentMemo {
                 database_key_index: head,
                 is_head: true,
+                transfer_heads: cycle_head_set(head),
             }],
             current_heads: None,
             input_dependencies: Vec::new(),
@@ -127,7 +129,7 @@ impl ActiveCycle {
         self.converged &= other.converged;
         self.iteration = iteration;
         for memo in other.current_memos {
-            self.insert_current_memo(memo.database_key_index, memo.is_head);
+            self.insert_current_memo(memo.database_key_index, memo.is_head, memo.transfer_heads);
         }
         for input in other.input_dependencies {
             self.insert_input_dependency(input);
@@ -140,7 +142,12 @@ impl ActiveCycle {
             .any(|current| current.database_key_index == memo)
     }
 
-    fn insert_current_memo(&mut self, memo: DatabaseKeyIndex, is_head: bool) {
+    fn insert_current_memo(
+        &mut self,
+        memo: DatabaseKeyIndex,
+        is_head: bool,
+        transfer_heads: Arc<CycleHeads>,
+    ) {
         if let Some(current) = self
             .current_memos
             .iter_mut()
@@ -150,6 +157,7 @@ impl ActiveCycle {
                 self.current_heads = None;
             }
             current.is_head |= is_head;
+            current.transfer_heads = transfer_heads;
         } else {
             if is_head {
                 self.current_heads = None;
@@ -157,6 +165,7 @@ impl ActiveCycle {
             self.current_memos.push(ActiveCycleCurrentMemo {
                 database_key_index: memo,
                 is_head,
+                transfer_heads,
             });
         }
     }
@@ -208,6 +217,12 @@ impl ActiveCycle {
             self.input_edges = None;
         }
     }
+}
+
+fn cycle_head_set(head: DatabaseKeyIndex) -> Arc<CycleHeads> {
+    let mut heads = CycleHeads::default();
+    heads.insert(head);
+    Arc::new(heads)
 }
 
 #[derive(Debug)]
@@ -358,18 +373,18 @@ impl ActiveCycles {
         &mut self,
         active_cycle: ActiveCycleKey,
         memo: DatabaseKeyIndex,
+        transfer_heads: Arc<CycleHeads>,
     ) -> Option<()> {
         let state = self.state_for(active_cycle)?;
         if let Some(previous) = self.memo_cycles.get(&memo).copied() {
             if self.state_for(previous.active_cycle) == Some(state) {
-                if self.get(active_cycle)?.contains_current_memo(memo) {
-                    return Some(());
-                }
-
                 let cycle = self.memo_cycles.get_mut(&memo)?;
                 cycle.active_cycle = active_cycle;
-                self.get_mut(active_cycle)?
-                    .insert_current_memo(memo, previous.is_head);
+                self.get_mut(active_cycle)?.insert_current_memo(
+                    memo,
+                    previous.is_head,
+                    transfer_heads,
+                );
                 self.get_mut(active_cycle)?.remove_input_dependency(memo);
                 return Some(());
             }
@@ -381,7 +396,8 @@ impl ActiveCycles {
 
         self.memo_cycles
             .insert(memo, ActiveCycleMemo::participant(active_cycle));
-        self.get_mut(active_cycle)?.insert_current_memo(memo, false);
+        self.get_mut(active_cycle)?
+            .insert_current_memo(memo, false, transfer_heads);
         self.get_mut(active_cycle)?.remove_input_dependency(memo);
         Some(())
     }
@@ -599,7 +615,7 @@ impl ActiveCycles {
         };
 
         self.add_head(active_cycle, memo)?;
-        self.add_participant(active_cycle, memo)?;
+        self.add_participant(active_cycle, memo, cycle_head_set(memo))?;
 
         Some(active_cycle)
     }
@@ -629,8 +645,11 @@ impl ActiveCycleTable {
         &self,
         key: ActiveCycleKey,
         memo: DatabaseKeyIndex,
+        transfer_heads: &CycleHeads,
     ) -> Option<()> {
-        self.0.lock().add_participant(key, memo)
+        self.0
+            .lock()
+            .add_participant(key, memo, Arc::new(transfer_heads.clone()))
     }
 
     pub(crate) fn add_input_edges(&self, key: ActiveCycleKey, edges: &[QueryEdge]) -> Option<()> {
@@ -685,15 +704,32 @@ impl ActiveCycleTable {
         self.0.lock().get_mut(key).map(ActiveCycle::current_heads)
     }
 
-    pub(crate) fn current_heads_for_memo(
+    pub(crate) fn current_state_for_memo(
         &self,
         key: ActiveCycleKey,
         memo: DatabaseKeyIndex,
-    ) -> Option<Arc<CycleHeads>> {
+    ) -> Option<(Arc<CycleHeads>, Arc<CycleHeads>)> {
         let mut cycles = self.0.lock();
         cycles.contains_current_iteration(key, memo).then_some(())?;
-        let cycle = cycles.get_mut(key)?;
-        Some(cycle.current_heads())
+        let current_heads = cycles.get_mut(key)?.current_heads();
+        let cycle = cycles.get(key)?;
+        let current = cycle
+            .current_memos
+            .iter()
+            .find(|current| current.database_key_index == memo)?;
+        let memo_transfer_heads = current.transfer_heads.clone();
+
+        let mut transfer_heads = CycleHeads::default();
+        for transfer_head in memo_transfer_heads.iter() {
+            let key = transfer_head.database_key_index;
+            if cycles.memo_cycles.get(&key).is_some_and(|memo| {
+                memo.is_head && cycles.contains_current_iteration(memo.active_cycle, key)
+            }) {
+                transfer_heads.insert(key);
+            }
+        }
+
+        Some((current_heads, Arc::new(transfer_heads)))
     }
 
     pub(crate) fn iteration(&self, key: ActiveCycleKey) -> Option<IterationCount> {
@@ -774,7 +810,9 @@ mod tests {
 
         let cycle_a = cycles.insert(head_a, IterationCount::initial());
         let cycle_b = cycles.insert(head_b, IterationCount::initial());
-        cycles.add_participant(cycle_b, participant).unwrap();
+        cycles
+            .add_participant(cycle_b, participant, Arc::new(CycleHeads::default()))
+            .unwrap();
 
         cycles.merge(cycle_a, cycle_b).unwrap();
 
@@ -807,14 +845,18 @@ mod tests {
     fn merge_keeps_participants_current_at_the_merged_iteration() {
         let mut cycles = ActiveCycles::default();
         let cycle_a = cycles.insert(database_key(0), IterationCount::initial());
-        cycles.add_participant(cycle_a, database_key(1)).unwrap();
+        cycles
+            .add_participant(cycle_a, database_key(1), Arc::new(CycleHeads::default()))
+            .unwrap();
         let cycle_b = cycles.insert(database_key(2), IterationCount::initial());
         let next_iteration = IterationCount::initial().increment().unwrap();
         cycles
             .get_mut(cycle_b)
             .unwrap()
             .start_next_iteration(next_iteration);
-        cycles.add_participant(cycle_b, database_key(3)).unwrap();
+        cycles
+            .add_participant(cycle_b, database_key(3), Arc::new(CycleHeads::default()))
+            .unwrap();
 
         cycles.merge(cycle_a, cycle_b).unwrap();
 

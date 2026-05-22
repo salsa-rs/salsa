@@ -69,6 +69,9 @@ pub(crate) struct ActiveQuery {
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
 
+    /// Provisional cycle heads that this query observed through its memo-local dependencies.
+    transfer_cycle_heads: CycleHeads,
+
     /// Active fixpoint cycle this query participates in.
     active_cycle: Option<ActiveCycleKey>,
 
@@ -112,6 +115,10 @@ impl ActiveQuery {
         std::mem::take(&mut self.cycle_heads)
     }
 
+    pub(super) fn take_transfer_cycle_heads(&mut self) -> CycleHeads {
+        std::mem::take(&mut self.transfer_cycle_heads)
+    }
+
     pub(super) fn active_cycle(&self) -> Option<ActiveCycleKey> {
         self.active_cycle
     }
@@ -121,15 +128,16 @@ impl ActiveQuery {
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        cycle: (&CycleHeads, Option<ActiveCycleKey>),
+        cycle: (&CycleHeads, &CycleHeads, Option<ActiveCycleKey>),
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
-        let (cycle_heads, active_cycle) = cycle;
+        let (cycle_heads, transfer_cycle_heads, active_cycle) = cycle;
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.input_outputs.insert(QueryEdge::input(input));
         self.cycle_heads.extend(cycle_heads);
+        self.transfer_cycle_heads.extend(transfer_cycle_heads);
         if let Some(active_cycle) = active_cycle {
             if self.active_cycle.is_none() {
                 self.active_cycle = Some(active_cycle);
@@ -203,6 +211,7 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
+            transfer_cycle_heads: Default::default(),
             active_cycle: None,
             iteration_count,
             #[cfg(feature = "accumulator")]
@@ -222,6 +231,7 @@ impl ActiveQuery {
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
+            ref mut transfer_cycle_heads,
             active_cycle,
             iteration_count: _,
             #[cfg(feature = "accumulator")]
@@ -262,6 +272,7 @@ impl ActiveQuery {
             active_tracked_structs,
         );
         let cycle_heads = mem::take(cycle_heads);
+        let transfer_cycle_heads = mem::take(transfer_cycle_heads);
 
         let revisions = QueryRevisions {
             changed_at,
@@ -277,6 +288,7 @@ impl ActiveQuery {
             revisions,
             active_cycle,
             cycle_heads,
+            transfer_cycle_heads,
             stale_tracked_structs,
             provisional_edges,
         }
@@ -292,6 +304,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            transfer_cycle_heads,
             active_cycle,
             iteration_count,
             #[cfg(feature = "accumulator")]
@@ -303,6 +316,7 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         cycle_heads.clear();
+        transfer_cycle_heads.clear();
         *active_cycle = None;
         *iteration_count = IterationCount::initial();
         #[cfg(feature = "accumulator")]
@@ -323,6 +337,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            transfer_cycle_heads,
             active_cycle,
             iteration_count,
             #[cfg(feature = "accumulator")]
@@ -350,6 +365,10 @@ impl ActiveQuery {
         );
         debug_assert!(
             cycle_heads.is_empty(),
+            "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
+        );
+        debug_assert!(
+            transfer_cycle_heads.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
         );
         #[cfg(feature = "accumulator")]
@@ -460,6 +479,9 @@ pub(crate) struct CompletedQuery {
 
     /// Provisional cycle results that this query depends on.
     pub(crate) cycle_heads: CycleHeads,
+
+    /// Provisional cycle heads that can prove nested ownership transfer for this result.
+    pub(crate) transfer_cycle_heads: CycleHeads,
 
     /// The keys of any tracked structs that were created in a previous execution of the
     /// query but not the current one, and should be marked as stale.

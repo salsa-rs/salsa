@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::mem::transmute;
 use std::ptr::NonNull;
 
+use crate::cycle::CycleHeads;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
@@ -109,11 +110,14 @@ impl<'db, C: Configuration> Memo<'db, C> {
         zalsa: &crate::zalsa::Zalsa,
         database_key_index: DatabaseKeyIndex,
         active_cycle: crate::active_cycle::ActiveCycleKey,
+        transfer_cycle_heads: &CycleHeads,
     ) -> Self {
         self.revisions.set_active_cycle(active_cycle);
-        zalsa
-            .active_cycles()
-            .add_participant(active_cycle, database_key_index);
+        zalsa.active_cycles().add_participant(
+            active_cycle,
+            database_key_index,
+            transfer_cycle_heads,
+        );
         self
     }
 

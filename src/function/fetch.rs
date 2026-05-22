@@ -35,26 +35,31 @@ where
 
         // Provisional reads depend on the active cycle heads for this iteration.
         let mut cycle_heads = None;
+        let mut transfer_cycle_heads = None;
         let mut active_cycle = None;
         if memo.may_be_provisional() {
             if let Some(memo_active_cycle) = memo.revisions.active_cycle() {
-                if let Some(current_heads) = zalsa
+                if let Some((current_heads, current_transfer_heads)) = zalsa
                     .active_cycles()
-                    .current_heads_for_memo(memo_active_cycle, database_key_index)
+                    .current_state_for_memo(memo_active_cycle, database_key_index)
                 {
                     cycle_heads = Some(current_heads);
+                    transfer_cycle_heads = Some(current_transfer_heads);
                     active_cycle = Some(memo_active_cycle);
                 }
             }
         }
         let empty_cycle_heads = CycleHeads::default();
         let cycle_heads = cycle_heads.as_deref().unwrap_or(&empty_cycle_heads);
+        let transfer_cycle_heads = transfer_cycle_heads
+            .as_deref()
+            .unwrap_or(&empty_cycle_heads);
 
         zalsa_local.report_tracked_read(
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            (cycle_heads, active_cycle),
+            (cycle_heads, transfer_cycle_heads, active_cycle),
             #[cfg(feature = "accumulator")]
             memo.revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
@@ -258,6 +263,8 @@ where
         let iteration = IterationCount::initial();
         let revisions = QueryRevisions::fixpoint_initial();
         let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+        let mut transfer_cycle_heads = CycleHeads::default();
+        transfer_cycle_heads.insert(database_key_index);
         let active_cycle = if let Some(active_cycle) = zalsa_local.active_cycle() {
             zalsa
                 .active_cycles()
@@ -273,6 +280,7 @@ where
                 zalsa,
                 database_key_index,
                 active_cycle,
+                &transfer_cycle_heads,
             ),
             memo_ingredient_index,
         )

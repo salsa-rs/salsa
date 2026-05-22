@@ -76,6 +76,7 @@ where
             },
             active_cycle: None,
             cycle_heads: Default::default(),
+            transfer_cycle_heads: Default::default(),
             stale_tracked_structs: Vec::new(),
             provisional_edges: None,
         };
