@@ -182,6 +182,13 @@ impl CycleHeads {
             true
         }
     }
+
+    pub(crate) fn remove(&mut self, database_key_index: DatabaseKeyIndex) -> bool {
+        let old_len = self.0.len();
+        self.0
+            .retain(|head| head.database_key_index != database_key_index);
+        old_len != self.0.len()
+    }
 }
 
 #[cfg(feature = "persistence")]

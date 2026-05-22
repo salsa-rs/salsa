@@ -4,7 +4,7 @@ use std::fmt::Formatter;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use rustc_hash::FxHashMap;
 use thin_vec::ThinVec;
@@ -567,7 +567,7 @@ impl QueryRevisionsExtra {
             Some(Box::new(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
                 accumulated,
-                active_cycle: None,
+                active_cycle: AtomicUsize::new(0),
                 tracked_struct_ids,
             }))
         };
@@ -576,7 +576,9 @@ impl QueryRevisionsExtra {
     }
 
     fn active_cycle(&self) -> Option<ActiveCycleKey> {
-        self.0.as_ref().and_then(|extra| extra.active_cycle)
+        self.0
+            .as_ref()
+            .and_then(|extra| ActiveCycleKey::from_raw(extra.active_cycle.load(Ordering::Relaxed)))
     }
 
     fn set_active_cycle(&mut self, active_cycle: ActiveCycleKey) {
@@ -584,11 +586,23 @@ impl QueryRevisionsExtra {
             Box::new(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
                 accumulated: AccumulatedMap::default(),
-                active_cycle: None,
+                active_cycle: AtomicUsize::new(0),
                 tracked_struct_ids: ThinVec::default(),
             })
         });
-        extra.active_cycle = Some(active_cycle);
+        extra
+            .active_cycle
+            .store(active_cycle.raw(), Ordering::Relaxed);
+    }
+
+    fn update_active_cycle(&self, active_cycle: ActiveCycleKey) {
+        let extra = self
+            .0
+            .as_ref()
+            .expect("active cycle updates require allocated revision extras");
+        extra
+            .active_cycle
+            .store(active_cycle.raw(), Ordering::Relaxed);
     }
 }
 
@@ -599,7 +613,7 @@ struct QueryRevisionsExtraInner {
     accumulated: AccumulatedMap,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
-    active_cycle: Option<ActiveCycleKey>,
+    active_cycle: AtomicUsize,
 
     /// The ids of tracked structs created by this query.
     ///
@@ -672,7 +686,10 @@ impl fmt::Debug for QueryRevisionsExtraInner {
             "tracked_struct_ids",
             &FmtTrackedStructIds(&self.tracked_struct_ids),
         );
-        f.field("active_cycle", &self.active_cycle);
+        f.field(
+            "active_cycle",
+            &ActiveCycleKey::from_raw(self.active_cycle.load(Ordering::Relaxed)),
+        );
 
         f.finish()
     }
@@ -720,6 +737,10 @@ impl QueryRevisions {
 
     pub(crate) fn set_active_cycle(&mut self, active_cycle: ActiveCycleKey) {
         self.extra.set_active_cycle(active_cycle);
+    }
+
+    pub(crate) fn update_active_cycle(&self, active_cycle: ActiveCycleKey) {
+        self.extra.update_active_cycle(active_cycle);
     }
 
     fn extra(&self) -> Option<&QueryRevisionsExtraInner> {

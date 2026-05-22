@@ -34,23 +34,27 @@ where
         self.eviction.record_use(id);
 
         // Provisional reads depend on the active cycle heads for this iteration.
-        let mut cycle_heads = CycleHeads::default();
+        let mut cycle_heads = None;
         let mut active_cycle = None;
-        if memo.may_be_provisional() && memo.revisions.active_cycle().is_some() {
-            if let Some((memo_active_cycle, current_heads)) = zalsa
-                .active_cycles()
-                .current_heads_for_memo(database_key_index)
-            {
-                cycle_heads = current_heads;
-                active_cycle = Some(memo_active_cycle);
+        if memo.may_be_provisional() {
+            if let Some(memo_active_cycle) = memo.revisions.active_cycle() {
+                if let Some(current_heads) = zalsa
+                    .active_cycles()
+                    .current_heads_for_memo(memo_active_cycle, database_key_index)
+                {
+                    cycle_heads = Some(current_heads);
+                    active_cycle = Some(memo_active_cycle);
+                }
             }
         }
+        let empty_cycle_heads = CycleHeads::default();
+        let cycle_heads = cycle_heads.as_ref().unwrap_or(&empty_cycle_heads);
 
         zalsa_local.report_tracked_read(
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            (&cycle_heads, active_cycle),
+            (cycle_heads, active_cycle),
             #[cfg(feature = "accumulator")]
             memo.revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
@@ -204,14 +208,14 @@ where
                         && memo.value.is_some()
                         && memo.revisions.active_cycle().is_some()
                     {
-                        if let Some(memo_cycle) = zalsa.active_cycles().key_for(database_key_index)
-                        {
+                        if let Some(memo_cycle) = memo.revisions.active_cycle() {
                             let active_cycle = zalsa.active_cycles().reuse_participant(
                                 zalsa_local.active_cycle(),
                                 memo_cycle,
                                 database_key_index,
                             );
-                            if active_cycle.is_some() {
+                            if let Some(active_cycle) = active_cycle {
+                                memo.revisions.update_active_cycle(active_cycle);
                                 crate::tracing::debug!(
                                     "hit cycle at {database_key_index:#?}, \
                                         returning last provisional value: {:#?}",

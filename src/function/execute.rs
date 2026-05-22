@@ -1,3 +1,4 @@
+use crate::active_cycle::ActiveCycleKey;
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationCount};
 use crate::function::memo::Memo;
@@ -138,18 +139,15 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.verified_at.load() == zalsa.current_revision() {
-                current_active_cycle = old_memo
-                    .revisions
-                    .active_cycle()
-                    .and_then(|_| zalsa.active_cycles().key_for(database_key_index));
-
-                if current_active_cycle.is_some() {
-                    last_provisional_memo_opt = Some(old_memo);
+                current_active_cycle = old_memo.revisions.active_cycle();
+                if let Some(active_cycle) = current_active_cycle {
+                    if let Some(active_iteration) = zalsa.active_cycles().iteration(active_cycle) {
+                        last_provisional_memo_opt = Some(old_memo);
+                        iteration_count = active_iteration;
+                    } else {
+                        current_active_cycle = None;
+                    }
                 }
-
-                iteration_count = current_active_cycle
-                    .and_then(|active_cycle| zalsa.active_cycles().iteration(active_cycle))
-                    .unwrap_or_else(IterationCount::initial);
             }
         }
 
@@ -223,8 +221,13 @@ where
                     new_value
                 };
 
-                let completed_query =
-                    complete_cycle_participant(active_query, claim_guard, cycle_heads, outer_cycle);
+                let completed_query = complete_cycle_participant(
+                    active_query,
+                    claim_guard,
+                    cycle_heads,
+                    active_cycle,
+                    outer_cycle,
+                );
 
                 break (new_value, completed_query);
             }
@@ -290,6 +293,7 @@ where
                 active_query,
                 claim_guard,
                 cycle_heads,
+                active_cycle,
                 &last_provisional_memo.revisions,
                 local_outer_cycle,
                 iteration_count,
@@ -463,6 +467,7 @@ fn complete_cycle_participant(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
+    active_cycle: Option<ActiveCycleKey>,
     outer_cycle: Option<DatabaseKeyIndex>,
 ) -> CompletedQuery {
     // Keep the participant locked by a proven outer owner when one exists. If the
@@ -473,23 +478,13 @@ fn complete_cycle_participant(
     }
     let zalsa = claim_guard.zalsa();
 
-    let database_key_index = active_query.database_key_index;
     let mut completed_query = active_query.pop();
 
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query.cycle_heads = cycle_heads;
-    if completed_query.active_cycle.is_none() {
-        completed_query.active_cycle = completed_query
-            .cycle_heads
-            .iter()
-            .find_map(|head| zalsa.active_cycles().key_for(head.database_key_index))
-            .or_else(|| zalsa.active_cycles().key_for(database_key_index))
-            .or_else(|| {
-                outer_cycle.and_then(|outer_cycle| zalsa.active_cycles().key_for(outer_cycle))
-            });
-    }
+    completed_query.active_cycle = completed_query.active_cycle.or(active_cycle);
 
     completed_query
 }
@@ -504,6 +499,7 @@ fn try_complete_cycle_head(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
     cycle_heads: CycleHeads,
+    active_cycle: Option<ActiveCycleKey>,
     last_provisional_revisions: &QueryRevisions,
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration_count: IterationCount,
@@ -511,7 +507,6 @@ fn try_complete_cycle_head(
 ) -> CycleHeadCompletion {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
-    let active_cycle = zalsa.active_cycles().key_for(me);
 
     let mut completed_query = active_query.pop();
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);

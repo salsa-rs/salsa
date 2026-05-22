@@ -299,9 +299,12 @@ where
         );
 
         memo.verified_at.load() == zalsa.current_revision()
-            && zalsa
-                .active_cycles()
-                .contains_current_iteration(database_key_index)
+            && zalsa.active_cycles().contains_current_iteration(
+                memo.revisions
+                    .active_cycle()
+                    .expect("provisional memo must store its active cycle"),
+                database_key_index,
+            )
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
