@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crate::cycle::{CycleHeads, IterationCount};
-use crate::hash::FxIndexSet;
+use crate::hash::FxIndexMap;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::Mutex;
 use rustc_hash::FxHashMap;
@@ -36,44 +36,84 @@ impl ActiveCycleKey {
 pub(crate) struct ActiveCycle {
     converged: bool,
     pub(crate) iteration: IterationCount,
-    heads: FxIndexSet<DatabaseKeyIndex>,
-    current_iteration: FxIndexSet<DatabaseKeyIndex>,
+    participants: FxIndexMap<DatabaseKeyIndex, ActiveCycleParticipant>,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ActiveCycleParticipant {
+    is_head: bool,
+    last_iteration: Option<IterationCount>,
+}
+
+impl ActiveCycleParticipant {
+    fn head(iteration: IterationCount) -> Self {
+        Self {
+            is_head: true,
+            last_iteration: Some(iteration),
+        }
+    }
+
+    fn participant(iteration: IterationCount) -> Self {
+        Self {
+            is_head: false,
+            last_iteration: Some(iteration),
+        }
+    }
+
+    fn is_current(self, iteration: IterationCount) -> bool {
+        self.last_iteration == Some(iteration)
+    }
 }
 
 impl ActiveCycle {
     fn new(head: DatabaseKeyIndex, iteration: IterationCount) -> Self {
-        let mut heads = FxIndexSet::default();
-        heads.insert(head);
-        let mut current_iteration = FxIndexSet::default();
-        current_iteration.insert(head);
+        let mut participants = FxIndexMap::default();
+        participants.insert(head, ActiveCycleParticipant::head(iteration));
         Self {
             converged: true,
             iteration,
-            heads,
-            current_iteration,
+            participants,
         }
     }
 
     fn add_participant(&mut self, memo: DatabaseKeyIndex) {
-        self.current_iteration.insert(memo);
+        self.participants
+            .entry(memo)
+            .and_modify(|participant| participant.last_iteration = Some(self.iteration))
+            .or_insert_with(|| ActiveCycleParticipant::participant(self.iteration));
     }
 
     fn add_head(&mut self, head: DatabaseKeyIndex) {
-        self.heads.insert(head);
+        self.participants
+            .entry(head)
+            .and_modify(|participant| participant.is_head = true)
+            .or_insert(ActiveCycleParticipant {
+                is_head: true,
+                last_iteration: None,
+            });
     }
 
     fn contains_current_iteration(&self, memo: DatabaseKeyIndex) -> bool {
-        self.current_iteration.contains(&memo)
+        self.participants
+            .get(&memo)
+            .is_some_and(|participant| participant.is_current(self.iteration))
     }
 
     fn current_memo_keys(&self) -> Vec<DatabaseKeyIndex> {
-        let mut keys: Vec<_> = self.current_iteration.iter().copied().collect();
+        let mut keys: Vec<_> = self
+            .participants
+            .iter()
+            .filter_map(|(key, participant)| participant.is_current(self.iteration).then_some(*key))
+            .collect();
         keys.sort_by_key(|key| (key.ingredient_index(), key.key_index()));
         keys
     }
 
     fn heads_are_covered_by(&self, cycle_heads: &CycleHeads) -> bool {
-        self.heads.iter().all(|head| cycle_heads.contains(head))
+        self.participants
+            .iter()
+            .filter_map(|(key, participant)| participant.is_head.then_some(key))
+            .all(|head| cycle_heads.contains(head))
     }
 
     fn take_memo_keys(&mut self, cycle_heads: &CycleHeads) -> Vec<DatabaseKeyIndex> {
@@ -82,17 +122,16 @@ impl ActiveCycle {
             .map(|head| head.database_key_index)
             .collect();
         for key in &keys {
-            self.heads.swap_remove(key);
-            self.current_iteration.swap_remove(key);
+            self.participants.swap_remove(key);
         }
         keys
     }
 
     fn current_heads(&self) -> CycleHeads {
         let mut cycle_heads = CycleHeads::default();
-        for head in &self.heads {
-            if self.current_iteration.contains(head) {
-                cycle_heads.insert(*head);
+        for (key, participant) in &self.participants {
+            if participant.is_head && participant.is_current(self.iteration) {
+                cycle_heads.insert(*key);
             }
         }
         cycle_heads
@@ -104,15 +143,38 @@ impl ActiveCycle {
 
     fn start_next_iteration(&mut self, iteration: IterationCount) {
         self.iteration = iteration;
-        self.current_iteration.clear();
         self.converged = true;
     }
 
     fn merge_from(&mut self, other: ActiveCycle) {
+        let previous_iteration = self.iteration;
+        let other_iteration = other.iteration;
+        let iteration = previous_iteration.max(other_iteration);
+
+        if iteration != previous_iteration {
+            for participant in self.participants.values_mut() {
+                if participant.is_current(previous_iteration) {
+                    participant.last_iteration = Some(iteration);
+                }
+            }
+        }
+
         self.converged &= other.converged;
-        self.iteration = self.iteration.max(other.iteration);
-        self.heads.extend(other.heads);
-        self.current_iteration.extend(other.current_iteration);
+        self.iteration = iteration;
+
+        for (key, mut participant) in other.participants {
+            if participant.is_current(other_iteration) {
+                participant.last_iteration = Some(iteration);
+            }
+
+            self.participants
+                .entry(key)
+                .and_modify(|current| {
+                    current.is_head |= participant.is_head;
+                    current.last_iteration = current.last_iteration.max(participant.last_iteration);
+                })
+                .or_insert(participant);
+        }
     }
 }
 
@@ -443,5 +505,24 @@ mod tests {
         assert!(!cycles.memo_cycles.contains_key(&head_a));
         assert!(!cycles.memo_cycles.contains_key(&head_b));
         assert!(!cycles.memo_cycles.contains_key(&participant));
+    }
+
+    #[test]
+    fn merge_keeps_participants_current_at_the_merged_iteration() {
+        let mut cycle_a = ActiveCycle::new(database_key(0), IterationCount::initial());
+        cycle_a.add_participant(database_key(1));
+
+        let mut cycle_b = ActiveCycle::new(database_key(2), IterationCount::initial());
+        let next_iteration = IterationCount::initial().increment().unwrap();
+        cycle_b.start_next_iteration(next_iteration);
+        cycle_b.add_participant(database_key(3));
+
+        cycle_a.merge_from(cycle_b);
+
+        assert_eq!(cycle_a.iteration, next_iteration);
+        assert_eq!(
+            cycle_a.current_memo_keys(),
+            vec![database_key(0), database_key(1), database_key(3)]
+        );
     }
 }

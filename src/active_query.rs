@@ -549,7 +549,11 @@ impl fmt::Display for Backtrace {
                         if idx != 0 {
                             write!(fmt, ", ")?;
                         }
-                        write!(fmt, "{:?}", head.database_key_index)?;
+                        write!(
+                            fmt,
+                            "{:?} -> iteration = {iteration_count}",
+                            head.database_key_index
+                        )?;
                     }
                     writeln!(fmt)?;
                 }
