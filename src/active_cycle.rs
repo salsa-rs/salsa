@@ -56,7 +56,7 @@ pub(crate) struct ActiveCycle {
 struct ActiveCycleCurrentMemo {
     database_key_index: DatabaseKeyIndex,
     is_head: bool,
-    transfer_heads: Arc<CycleHeads>,
+    transfer_heads: CycleHeads,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -97,20 +97,21 @@ impl ActiveCycle {
         }
     }
 
-    fn current_heads(&mut self) -> Arc<CycleHeads> {
-        if let Some(heads) = &self.current_heads {
-            return heads.clone();
-        }
-
-        let mut heads = CycleHeads::default();
-        for memo in &self.current_memos {
-            if memo.is_head {
-                heads.insert(memo.database_key_index);
+    fn ensure_current_heads(&mut self) {
+        if self.current_heads.is_none() {
+            let mut heads = CycleHeads::default();
+            for memo in &self.current_memos {
+                if memo.is_head {
+                    heads.insert(memo.database_key_index);
+                }
             }
+            self.current_heads = Some(Arc::new(heads));
         }
-        let heads = Arc::new(heads);
-        self.current_heads = Some(heads.clone());
-        heads
+    }
+
+    fn current_heads(&mut self) -> Arc<CycleHeads> {
+        self.ensure_current_heads();
+        self.current_heads.as_ref().unwrap().clone()
     }
 
     fn set_converged(&mut self, converged: bool) {
@@ -146,7 +147,7 @@ impl ActiveCycle {
         &mut self,
         memo: DatabaseKeyIndex,
         is_head: bool,
-        transfer_heads: Arc<CycleHeads>,
+        transfer_heads: CycleHeads,
     ) {
         if let Some(current) = self
             .current_memos
@@ -219,10 +220,10 @@ impl ActiveCycle {
     }
 }
 
-fn cycle_head_set(head: DatabaseKeyIndex) -> Arc<CycleHeads> {
+fn cycle_head_set(head: DatabaseKeyIndex) -> CycleHeads {
     let mut heads = CycleHeads::default();
     heads.insert(head);
-    Arc::new(heads)
+    heads
 }
 
 #[derive(Debug)]
@@ -373,7 +374,7 @@ impl ActiveCycles {
         &mut self,
         active_cycle: ActiveCycleKey,
         memo: DatabaseKeyIndex,
-        transfer_heads: Arc<CycleHeads>,
+        transfer_heads: CycleHeads,
     ) -> Option<()> {
         let state = self.state_for(active_cycle)?;
         if let Some(previous) = self.memo_cycles.get(&memo).copied() {
@@ -649,7 +650,7 @@ impl ActiveCycleTable {
     ) -> Option<()> {
         self.0
             .lock()
-            .add_participant(key, memo, Arc::new(transfer_heads.clone()))
+            .add_participant(key, memo, transfer_heads.clone())
     }
 
     pub(crate) fn add_input_edges(&self, key: ActiveCycleKey, edges: &[QueryEdge]) -> Option<()> {
@@ -704,32 +705,27 @@ impl ActiveCycleTable {
         self.0.lock().get_mut(key).map(ActiveCycle::current_heads)
     }
 
-    pub(crate) fn current_state_for_memo(
+    /// Invokes `f` while the active-cycle lock is held so the borrowed proof remains current.
+    ///
+    /// `f` must not call back into [`ActiveCycleTable`].
+    pub(crate) fn with_current_state_for_memo<R>(
         &self,
         key: ActiveCycleKey,
         memo: DatabaseKeyIndex,
-    ) -> Option<(Arc<CycleHeads>, Arc<CycleHeads>)> {
+        f: impl FnOnce(&CycleHeads, &CycleHeads) -> R,
+    ) -> Option<R> {
         let mut cycles = self.0.lock();
         cycles.contains_current_iteration(key, memo).then_some(())?;
-        let current_heads = cycles.get_mut(key)?.current_heads();
-        let cycle = cycles.get(key)?;
+        let cycle = cycles.get_mut(key)?;
+        cycle.ensure_current_heads();
+        let current_heads = cycle.current_heads.as_deref()?;
         let current = cycle
             .current_memos
             .iter()
             .find(|current| current.database_key_index == memo)?;
-        let memo_transfer_heads = current.transfer_heads.clone();
-
-        let mut transfer_heads = CycleHeads::default();
-        for transfer_head in memo_transfer_heads.iter() {
-            let key = transfer_head.database_key_index;
-            if cycles.memo_cycles.get(&key).is_some_and(|memo| {
-                memo.is_head && cycles.contains_current_iteration(memo.active_cycle, key)
-            }) {
-                transfer_heads.insert(key);
-            }
-        }
-
-        Some((current_heads, Arc::new(transfer_heads)))
+        // The transfer heads record dependency provenance. `outer_cycle` checks
+        // that a selected owner is still actively blocking before transferring.
+        Some(f(current_heads, &current.transfer_heads))
     }
 
     pub(crate) fn iteration(&self, key: ActiveCycleKey) -> Option<IterationCount> {
@@ -811,7 +807,7 @@ mod tests {
         let cycle_a = cycles.insert(head_a, IterationCount::initial());
         let cycle_b = cycles.insert(head_b, IterationCount::initial());
         cycles
-            .add_participant(cycle_b, participant, Arc::new(CycleHeads::default()))
+            .add_participant(cycle_b, participant, CycleHeads::default())
             .unwrap();
 
         cycles.merge(cycle_a, cycle_b).unwrap();
@@ -846,7 +842,7 @@ mod tests {
         let mut cycles = ActiveCycles::default();
         let cycle_a = cycles.insert(database_key(0), IterationCount::initial());
         cycles
-            .add_participant(cycle_a, database_key(1), Arc::new(CycleHeads::default()))
+            .add_participant(cycle_a, database_key(1), CycleHeads::default())
             .unwrap();
         let cycle_b = cycles.insert(database_key(2), IterationCount::initial());
         let next_iteration = IterationCount::initial().increment().unwrap();
@@ -855,7 +851,7 @@ mod tests {
             .unwrap()
             .start_next_iteration(next_iteration);
         cycles
-            .add_participant(cycle_b, database_key(3), Arc::new(CycleHeads::default()))
+            .add_participant(cycle_b, database_key(3), CycleHeads::default())
             .unwrap();
 
         cycles.merge(cycle_a, cycle_b).unwrap();
