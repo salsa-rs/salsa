@@ -34,39 +34,32 @@ where
         self.eviction.record_use(id);
 
         // Provisional reads depend on the active cycle heads for this iteration.
+        let mut cycle_heads = None;
+        let mut transfer_cycle_heads = None;
+        let mut active_cycle = None;
         if memo.may_be_provisional() {
             if let Some(memo_active_cycle) = memo.revisions.active_cycle() {
-                if zalsa
+                if let Some((current_heads, current_transfer_heads)) = zalsa
                     .active_cycles()
-                    .with_current_state_for_memo(
-                        memo_active_cycle,
-                        database_key_index,
-                        |cycle_heads, transfer_cycle_heads| {
-                            zalsa_local.report_tracked_read(
-                                database_key_index,
-                                memo.revisions.durability,
-                                memo.revisions.changed_at,
-                                (cycle_heads, transfer_cycle_heads, Some(memo_active_cycle)),
-                                #[cfg(feature = "accumulator")]
-                                memo.revisions.accumulated().is_some(),
-                                #[cfg(feature = "accumulator")]
-                                &memo.revisions.accumulated_inputs,
-                            );
-                        },
-                    )
-                    .is_some()
+                    .current_state_for_memo(memo_active_cycle, database_key_index)
                 {
-                    return memo_value;
+                    cycle_heads = Some(current_heads);
+                    transfer_cycle_heads = Some(current_transfer_heads);
+                    active_cycle = Some(memo_active_cycle);
                 }
             }
         }
         let empty_cycle_heads = CycleHeads::default();
+        let cycle_heads = cycle_heads.as_deref().unwrap_or(&empty_cycle_heads);
+        let transfer_cycle_heads = transfer_cycle_heads
+            .as_deref()
+            .unwrap_or(&empty_cycle_heads);
 
         zalsa_local.report_tracked_read(
             database_key_index,
             memo.revisions.durability,
             memo.revisions.changed_at,
-            (&empty_cycle_heads, &empty_cycle_heads, None),
+            (cycle_heads, transfer_cycle_heads, active_cycle),
             #[cfg(feature = "accumulator")]
             memo.revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
