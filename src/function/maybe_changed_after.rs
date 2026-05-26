@@ -190,8 +190,23 @@ where
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
-                // Returns unchanged but propagates the accumulated values
-                deep_verify
+                // Propagate accumulated values from inputs *and* from this memo itself.
+                // Without the own-accumulated check, a caller querying accumulated values
+                // would see `Empty` and skip traversing into this subtree even though
+                // this memo directly pushed accumulated values.
+                VerifyResult::unchanged_with_accumulated(
+                    #[cfg(feature = "accumulator")]
+                    {
+                        let VerifyResult::Unchanged { accumulated } = deep_verify else {
+                            unreachable!()
+                        };
+                        if old_memo.revisions.accumulated().is_some() {
+                            InputAccumulatedValues::Any
+                        } else {
+                            accumulated
+                        }
+                    },
+                )
             });
         }
 
