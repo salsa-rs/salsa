@@ -56,12 +56,13 @@ where
 
         let (new_value, mut completed_query) = match C::CYCLE_STRATEGY {
             CycleRecoveryStrategy::Panic => {
+                let iteration_count = IterationCount::initial(zalsa.runtime().cancellation_count());
                 let (new_value, active_query) = Self::execute_query(
                     db,
                     zalsa,
                     claim_guard
                         .zalsa_local()
-                        .push_query(database_key_index, IterationCount::initial()),
+                        .push_query(database_key_index, iteration_count),
                     opt_old_memo,
                 );
                 (new_value, active_query.pop())
@@ -133,10 +134,13 @@ where
         let mut last_provisional_memo_opt: Option<&Memo<'db, C>> = None;
 
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
-        let mut iteration_count = IterationCount::initial();
+        let cancellation_count = zalsa.runtime().cancellation_count();
+        let mut iteration_count = IterationCount::initial(cancellation_count);
 
         if let Some(old_memo) = opt_old_memo {
-            if old_memo.verified_at.load() == zalsa.current_revision() {
+            if old_memo.verified_at.load() == zalsa.current_revision()
+                && old_memo.revisions.iteration().cancellation_count() == cancellation_count
+            {
                 // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
                 // However, the locking doesn't handle the case where a thread fetches the result of a panicking
                 // cycle head query **after** all locks were released. That's what we do here.
@@ -162,8 +166,13 @@ where
             }
         }
 
-        let _poison_guard =
-            PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
+        let _poison_guard = PoisonProvisionalIfPanicking::new(
+            self,
+            zalsa,
+            id,
+            memo_ingredient_index,
+            cancellation_count,
+        );
 
         let (new_value, completed_query) = loop {
             let active_query = claim_guard
@@ -423,6 +432,7 @@ struct PoisonProvisionalIfPanicking<'a, C: Configuration> {
     zalsa: &'a Zalsa,
     id: Id,
     memo_ingredient_index: MemoIngredientIndex,
+    cancellation_count: u8,
 }
 
 impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
@@ -431,12 +441,14 @@ impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
         zalsa: &'a Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
+        cancellation_count: u8,
     ) -> Self {
         Self {
             ingredient,
             zalsa,
             id,
             memo_ingredient_index,
+            cancellation_count,
         }
     }
 }
@@ -446,7 +458,7 @@ impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
         if thread::panicking() {
             let revisions = QueryRevisions::fixpoint_initial(
                 self.ingredient.database_key_index(self.id),
-                IterationCount::initial(),
+                IterationCount::initial(self.cancellation_count),
             );
 
             let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
@@ -532,10 +544,10 @@ fn collect_all_cycle_heads(
         missing_heads: &mut SmallVec<[(DatabaseKeyIndex, IterationCount); 4]>,
     ) -> (IterationCount, bool) {
         if current_head == me {
-            return (IterationCount::initial(), true);
+            return (IterationCount::default(), true);
         }
 
-        let mut max_iteration_count = IterationCount::initial();
+        let mut max_iteration_count = IterationCount::default();
         let mut depends_on_self = false;
 
         let ingredient = zalsa.lookup_ingredient(current_head.ingredient_index());
@@ -583,7 +595,6 @@ fn collect_all_cycle_heads(
     let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationCount); 4]> = SmallVec::new();
     let mut max_iteration_count = iteration_count;
     let mut depends_on_self = false;
-
     for head in &*cycle_heads {
         let (recursive_max_iteration, recursive_depends_on_self) = collect_recursive(
             zalsa,
@@ -626,7 +637,9 @@ fn complete_cycle_participant(
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
-    completed_query.revisions.set_cycle_heads(cycle_heads);
+    completed_query
+        .revisions
+        .set_cycle_heads(cycle_heads, iteration_count);
 
     let iteration_count = iteration_count.increment().unwrap_or_else(|| {
         tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
@@ -678,7 +691,9 @@ fn try_complete_cycle_head(
             "Detected nested cycle {me:?}, iterate it as part of the outer cycle {outer_cycle:?}"
         );
 
-        completed_query.revisions.set_cycle_heads(cycle_heads);
+        completed_query
+            .revisions
+            .set_cycle_heads(cycle_heads, iteration_count);
         // Store whether this cycle has converged, so that the outer cycle can check it.
         completed_query
             .revisions
@@ -765,7 +780,9 @@ fn try_complete_cycle_head(
     // We don't call the same method on `cycle_heads` because that one doens't update
     // the `memo.iteration_count`
     *completed_query.revisions.verified_final.get_mut() = false;
-    completed_query.revisions.set_cycle_heads(cycle_heads);
+    completed_query
+        .revisions
+        .set_cycle_heads(cycle_heads, iteration_count);
     completed_query
         .revisions
         .update_iteration_count_mut(me, iteration_count);

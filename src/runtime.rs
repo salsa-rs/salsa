@@ -3,7 +3,7 @@ use crate::durability::Durability;
 use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
 use crate::sync::Mutex;
-use crate::sync::atomic::{AtomicBool, Ordering};
+use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::sync::thread::{self, ThreadId};
 use crate::table::Table;
 use crate::zalsa::Zalsa;
@@ -18,6 +18,10 @@ pub struct Runtime {
     /// is set back to false once the input has been changed.
     #[cfg_attr(feature = "persistence", serde(skip))]
     revision_cancelled: AtomicBool,
+
+    /// Increments whenever all handles are cancelled without advancing the revision.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    cancellation_count: AtomicU8,
 
     /// Stores the "last change" revision for values of each duration.
     /// This vector is always of length at least 1 (for Durability 0)
@@ -193,6 +197,7 @@ impl Default for Runtime {
         Runtime {
             revisions: [Revision::start(); Durability::LEN],
             revision_cancelled: Default::default(),
+            cancellation_count: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
         }
@@ -239,9 +244,20 @@ impl Runtime {
         self.revision_cancelled.load(Ordering::Acquire)
     }
 
-    pub(crate) fn set_cancellation_flag(&self) {
+    pub(crate) fn cancellation_count(&self) -> u8 {
+        self.cancellation_count.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn set_cancellation_flag(&self) -> bool {
         crate::tracing::trace!("set_cancellation_flag");
+        let overflow = self
+            .cancellation_count
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                count.checked_add(1)
+            })
+            .is_err();
         self.revision_cancelled.store(true, Ordering::Release);
+        overflow
     }
 
     pub(crate) fn reset_cancellation_flag(&mut self) {
@@ -266,6 +282,7 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
+        *self.cancellation_count.get_mut() = 0;
         crate::tracing::info!("new_revision: {r_old:?} -> {r_new:?}");
         r_new
     }
@@ -411,5 +428,26 @@ impl Runtime {
     pub(crate) fn deserialize_from(&mut self, other: &mut Runtime) {
         // The only field that is serialized is `revisions`.
         self.revisions = other.revisions;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Runtime;
+    use crate::Revision;
+
+    #[test]
+    fn cancellation_count_overflow_requires_revision_bump() {
+        let mut runtime = Runtime::default();
+
+        for _ in 0..u8::MAX {
+            assert!(!runtime.set_cancellation_flag());
+        }
+
+        assert!(runtime.set_cancellation_flag());
+        runtime.new_revision();
+
+        assert_eq!(runtime.current_revision(), Revision::start().next());
+        assert_eq!(runtime.cancellation_count(), 0);
     }
 }

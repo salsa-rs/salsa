@@ -49,7 +49,7 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::key::DatabaseKeyIndex;
 use crate::sync::OnceLock;
-use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use crate::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use crate::{Id, Revision};
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
@@ -107,7 +107,7 @@ impl CycleHead {
     ) -> Self {
         Self {
             database_key_index,
-            iteration_count: AtomicIterationCount(AtomicU8::new(iteration_count.0)),
+            iteration_count: AtomicIterationCount(AtomicU16::new(iteration_count.0)),
             removed: AtomicBool::new(false),
         }
     }
@@ -123,23 +123,21 @@ impl Clone for CycleHead {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "persistence", serde(transparent))]
-pub struct IterationCount(u8);
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
+pub struct IterationCount(u16);
 
 impl IterationCount {
-    pub(crate) const fn initial() -> Self {
-        Self(0)
+    pub(crate) const fn initial(cancellation_count: u8) -> Self {
+        Self((cancellation_count as u16) << u8::BITS)
     }
 
     pub(crate) const fn is_initial(self) -> bool {
-        self.0 == 0
+        self.iteration() == 0
     }
 
     pub(crate) const fn increment(self) -> Option<Self> {
         let next = Self(self.0 + 1);
-        if next.0 <= MAX_ITERATIONS.0 {
+        if next.iteration() <= MAX_ITERATIONS.iteration() {
             Some(next)
         } else {
             None
@@ -147,18 +145,32 @@ impl IterationCount {
     }
 
     pub(crate) const fn as_u32(self) -> u32 {
-        self.0 as u32
+        self.iteration() as u32
+    }
+
+    pub(crate) const fn cancellation_count(self) -> u8 {
+        (self.0 >> u8::BITS) as u8
+    }
+
+    pub(crate) const fn iteration(self) -> u8 {
+        self.0 as u8
+    }
+}
+
+impl std::fmt::Debug for IterationCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "IterationCount({})", self.iteration())
     }
 }
 
 impl std::fmt::Display for IterationCount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        self.iteration().fmt(f)
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct AtomicIterationCount(AtomicU8);
+pub(crate) struct AtomicIterationCount(AtomicU16);
 
 impl AtomicIterationCount {
     pub(crate) fn load(&self) -> IterationCount {
@@ -175,6 +187,26 @@ impl AtomicIterationCount {
 
     pub(crate) fn set(&mut self, value: IterationCount) {
         *self.0.get_mut() = value.0;
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for IterationCount {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.iteration().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for IterationCount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        u8::deserialize(deserializer).map(|iteration| Self(iteration as u16))
     }
 }
 

@@ -69,7 +69,7 @@ pub(crate) struct ActiveQuery {
     cycle_heads: CycleHeads,
 
     /// If this query is a cycle head, iteration count of that cycle.
-    iteration_count: IterationCount,
+    pub(crate) iteration_count: IterationCount,
 }
 
 impl ActiveQuery {
@@ -270,7 +270,7 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
-        *iteration_count = IterationCount::initial();
+        *iteration_count = IterationCount::default();
         #[cfg(feature = "accumulator")]
         accumulated.clear();
     }

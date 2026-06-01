@@ -164,7 +164,7 @@ impl<Db: Database> Storage<Db> {
                 == Some(true),
             "attempted to cancel within query computation, this is a deadlock"
         );
-        self.handle.zalsa_impl.runtime().set_cancellation_flag();
+        let overflow = self.handle.zalsa_impl.runtime().set_cancellation_flag();
 
         self.handle
             .zalsa_impl
@@ -178,6 +178,9 @@ impl<Db: Database> Storage<Db> {
         let zalsa = Arc::get_mut(&mut self.handle.zalsa_impl).unwrap();
         // cancellation is done, so reset the flag
         zalsa.runtime_mut().reset_cancellation_flag();
+        if overflow {
+            zalsa.new_revision();
+        }
         zalsa
     }
     // ANCHOR_END: cancel_other_workers

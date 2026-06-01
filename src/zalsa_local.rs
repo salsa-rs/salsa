@@ -253,6 +253,17 @@ impl ZalsaLocal {
         }
     }
 
+    pub(crate) fn active_query_cancellation_count(&self) -> Option<u8> {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.with_query_stack_unchecked(|stack| {
+                stack
+                    .last()
+                    .map(|active| active.iteration_count.cancellation_count())
+            })
+        }
+    }
+
     /// Add an output to the current query's list of dependencies
     ///
     /// Returns `Err` if not in a query.
@@ -726,7 +737,7 @@ impl QueryRevisions {
     }
 
     /// Sets the `CycleHeads` for this query.
-    pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads) {
+    pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads, iteration: IterationCount) {
         match &mut self.extra.0 {
             Some(extra) => extra.cycle_heads = cycle_heads,
             None => {
@@ -735,7 +746,7 @@ impl QueryRevisions {
                     AccumulatedMap::default(),
                     ThinVec::default(),
                     cycle_heads,
-                    IterationCount::default(),
+                    iteration,
                 );
             }
         };
@@ -757,7 +768,7 @@ impl QueryRevisions {
     pub(crate) fn iteration(&self) -> IterationCount {
         match &self.extra.0 {
             Some(extra) => extra.iteration.load(),
-            None => IterationCount::initial(),
+            None => IterationCount::default(),
         }
     }
 
