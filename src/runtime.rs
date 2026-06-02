@@ -19,7 +19,8 @@ pub struct Runtime {
     #[cfg_attr(feature = "persistence", serde(skip))]
     revision_cancelled: AtomicBool,
 
-    /// Increments whenever all handles are cancelled without advancing the revision.
+    /// Distinguishes provisional cycle results created before and after cancelling other handles
+    /// within the same revision. Reset when the revision advances.
     #[cfg_attr(feature = "persistence", serde(skip))]
     cancellation_count: AtomicU8,
 

@@ -1071,9 +1071,9 @@ fn cycle_sibling_interference() {
             "salsa_event(WillExecute { database_key: min_panic(Id(3)) })",
             "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
             "salsa_event(WillExecute { database_key: min_iterate(Id(1)) })",
-            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration: 1 })",
             "salsa_event(WillExecute { database_key: min_iterate(Id(1)) })",
-            "salsa_event(DidFinalizeCycle { database_key: min_iterate(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(DidFinalizeCycle { database_key: min_iterate(Id(0)), iteration: 1 })",
         ]"#]]);
 }
 
@@ -1103,10 +1103,10 @@ fn repeat_provisional_query() {
             "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
-            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration: 1 })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
-            "salsa_event(DidFinalizeCycle { database_key: min_iterate(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(DidFinalizeCycle { database_key: min_iterate(Id(0)), iteration: 1 })",
         ]"#]]);
 }
 
@@ -1143,10 +1143,10 @@ fn repeat_provisional_query_incremental() {
             "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
-            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration: 1 })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
-            "salsa_event(DidFinalizeCycle { database_key: min_iterate(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(DidFinalizeCycle { database_key: min_iterate(Id(0)), iteration: 1 })",
         ]"#]]);
 }
 
@@ -1251,19 +1251,19 @@ fn repeat_query_participating_in_cycle() {
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
-            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: 1 })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
-            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: IterationStamp { iteration: 2, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: 2 })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
-            "salsa_event(DidFinalizeCycle { database_key: head(Id(0)), iteration: IterationStamp { iteration: 2, cancellation: 0 } })",
+            "salsa_event(DidFinalizeCycle { database_key: head(Id(0)), iteration: 2 })",
         ]"#]]);
 }
 
@@ -1355,18 +1355,18 @@ fn repeat_query_participating_in_cycle2() {
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
-            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: 1 })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
-            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: IterationStamp { iteration: 2, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: 2 })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
-            "salsa_event(DidFinalizeCycle { database_key: head(Id(0)), iteration: IterationStamp { iteration: 2, cancellation: 0 } })",
+            "salsa_event(DidFinalizeCycle { database_key: head(Id(0)), iteration: 2 })",
         ]"#]]);
 }

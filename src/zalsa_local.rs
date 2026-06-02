@@ -761,11 +761,15 @@ impl QueryRevisions {
         }
     }
 
-    pub(crate) fn set_iteration_count(&self, database_key_index: DatabaseKeyIndex, iteration: u8) {
+    pub(crate) fn set_iteration_count(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration: IterationStamp,
+    ) {
         let Some(extra) = &self.extra.0 else {
             return;
         };
-        debug_assert!(extra.iteration.load().iteration() <= iteration);
+        debug_assert!(extra.iteration.load() <= iteration);
 
         extra.iteration.store_iteration(iteration);
 
@@ -774,30 +778,8 @@ impl QueryRevisions {
             .update_iteration_count(database_key_index, iteration);
     }
 
-    fn get_or_insert_extra(&mut self) -> &mut QueryRevisionsExtraInner {
-        self.extra.0.get_or_insert_with(|| {
-            Box::new(QueryRevisionsExtraInner {
-                #[cfg(feature = "accumulator")]
-                accumulated: AccumulatedMap::default(),
-                tracked_struct_ids: ThinVec::default(),
-                cycle_heads: empty_cycle_heads().clone(),
-                iteration: IterationStamp::default().into(),
-                cycle_converged: false,
-            })
-        })
-    }
-
     fn extra(&self) -> Option<&QueryRevisionsExtraInner> {
         self.extra.0.as_deref()
-    }
-
-    /// Updates the iteration count of the memo without updating the iteration in `cycle_heads`.
-    ///
-    /// Don't call this method on a cycle head, as it results in diverging iteration counts
-    /// between what's in cycle heads and stored on the memo.
-    pub(crate) fn update_cycle_participant_iteration_count(&mut self, iteration: u8) {
-        let extra = self.get_or_insert_extra();
-        extra.iteration.set_iteration(iteration);
     }
 
     /// Returns the ids of the tracked structs created when running this query.

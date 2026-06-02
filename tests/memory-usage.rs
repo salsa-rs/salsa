@@ -2,6 +2,8 @@
 // Expected sizes assume a 64-bit target.
 #![cfg(target_pointer_width = "64")]
 
+use salsa::Database as _;
+
 #[salsa::input(heap_size = string_tuple_size_of)]
 struct MyInput {
     field: String,
@@ -35,6 +37,11 @@ fn input_to_string(_db: &dyn salsa::Database) -> String {
 #[salsa::tracked(heap_size = string_size_of)]
 fn input_to_string_get_size(_db: &dyn salsa::Database) -> String {
     "a".repeat(1000)
+}
+
+#[salsa::tracked]
+fn input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
+    input.field(db).len()
 }
 
 fn string_size_of(x: &String) -> usize {
@@ -188,4 +195,24 @@ fn test() {
         ]"#]];
 
     expected.assert_eq(&format!("{queries_info:#?}"));
+}
+
+#[test]
+fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
+    let mut db = salsa::DatabaseImpl::new();
+    let input1 = MyInput::new(&db, "a".repeat(50));
+    let input2 = MyInput::new(&db, "a".repeat(150));
+
+    assert_eq!(input_to_length(&db, input1), 50);
+    let before = <dyn salsa::Database>::memory_usage(&db);
+    let before = &before.queries["input_to_length"];
+    assert_eq!(before.count(), 1);
+
+    db.trigger_lru_eviction();
+
+    assert_eq!(input_to_length(&db, input2), 150);
+    let after = <dyn salsa::Database>::memory_usage(&db);
+    let after = &after.queries["input_to_length"];
+    assert_eq!(after.count(), 2);
+    assert_eq!(after.size_of_metadata(), before.size_of_metadata() * 2);
 }

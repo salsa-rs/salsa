@@ -169,10 +169,6 @@ impl IterationStamp {
     pub(crate) const fn iteration(self) -> u8 {
         self.0.to_le_bytes()[0]
     }
-
-    const fn with_iteration(self, iteration: u8) -> Self {
-        Self::new(iteration, self.cancellation_count())
-    }
 }
 
 impl std::fmt::Debug for IterationStamp {
@@ -196,14 +192,20 @@ impl AtomicIterationStamp {
         IterationStamp(*self.0.get_mut())
     }
 
-    pub(crate) fn store_iteration(&self, iteration: u8) {
-        self.0
-            .store(self.load().with_iteration(iteration).0, Ordering::Release);
+    pub(crate) fn store_iteration(&self, iteration: IterationStamp) {
+        debug_assert_eq!(
+            self.load().cancellation_count(),
+            iteration.cancellation_count()
+        );
+        self.0.store(iteration.0, Ordering::Release);
     }
 
-    pub(crate) fn set_iteration(&mut self, iteration: u8) {
-        let value = self.0.get_mut();
-        *value = IterationStamp(*value).with_iteration(iteration).0;
+    pub(crate) fn set_iteration(&mut self, iteration: IterationStamp) {
+        debug_assert_eq!(
+            self.load_mut().cancellation_count(),
+            iteration.cancellation_count()
+        );
+        *self.0.get_mut() = iteration.0;
     }
 }
 
@@ -270,14 +272,14 @@ impl CycleHeads {
         }
     }
 
-    /// Updates the iteration for the head `cycle_head_index` to `new_iteration`.
+    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration`.
     ///
-    /// Unlike [`update_iteration`], this method takes a `&mut self` reference. It should
+    /// Unlike [`update_iteration_count`], this method takes a `&mut self` reference. It should
     /// be preferred if possible, as it avoids atomic operations.
     pub(crate) fn update_iteration_count_mut(
         &mut self,
         cycle_head_index: DatabaseKeyIndex,
-        new_iteration: u8,
+        new_iteration: IterationStamp,
     ) {
         if let Some(cycle_head) = self
             .0
@@ -290,11 +292,11 @@ impl CycleHeads {
 
     /// Updates the iteration for the head `cycle_head_index` to `new_iteration`.
     ///
-    /// Unlike [`update_iteration_mut`], this method takes a `&self` reference.
+    /// Unlike [`update_iteration_count_mut`], this method takes a `&self` reference.
     pub(crate) fn update_iteration_count(
         &self,
         cycle_head_index: DatabaseKeyIndex,
-        new_iteration: u8,
+        new_iteration: IterationStamp,
     ) {
         if let Some(cycle_head) = self
             .0

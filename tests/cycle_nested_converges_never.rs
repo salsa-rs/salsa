@@ -63,8 +63,8 @@ fn the_test() {
             "salsa_event(WillExecute { database_key: query_b(Id(400)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(800)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(c00)) })",
-            "salsa_event(WillIterateCycle { database_key: query_a(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(WillIterateCycle { database_key: query_a(Id(0)), iteration: 1 })",
             "salsa_event(WillExecute { database_key: query_b(Id(400)) })",
-            "salsa_event(DidFinalizeCycle { database_key: query_a(Id(0)), iteration: IterationStamp { iteration: 1, cancellation: 0 } })",
+            "salsa_event(DidFinalizeCycle { database_key: query_a(Id(0)), iteration: 1 })",
         ]"#]]);
 }
