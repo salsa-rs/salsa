@@ -852,13 +852,13 @@ pub enum QueryOriginRef<'a> {
     /// The value was derived by executing a function
     /// and we were able to track ALL of that function's inputs.
     /// Those inputs are described in [`QueryEdges`].
-    Derived(QueryEdges<'a>) = QueryOriginKind::DerivedPacked as u8,
+    Derived(QueryEdges<'a>) = QueryOriginKind::Derived as u8,
 
     /// The value was derived by executing a function
     /// but that function also reported that it read untracked inputs.
     /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
     /// (but we know there were more).
-    DerivedUntracked(QueryEdges<'a>) = QueryOriginKind::DerivedUntrackedPacked as u8,
+    DerivedUntracked(QueryEdges<'a>) = QueryOriginKind::DerivedUntracked as u8,
 }
 
 impl<'a> QueryOriginRef<'a> {
@@ -901,21 +901,52 @@ enum QueryOriginKind {
     /// The value was assigned as the output of another query.
     ///
     /// This can, for example, can occur when `specify` is used.
-    Assigned = 0b001,
+    Assigned = 0b01,
 
     /// The value was derived by executing a function
     /// _and_ Salsa was able to track all of said function's inputs.
-    DerivedPacked = 0b011,
+    Derived = 0b11,
 
     /// The value was derived by executing a function
     /// but that function also reported that it read untracked inputs.
-    DerivedUntrackedPacked = 0b010,
+    DerivedUntracked = 0b10,
+}
 
-    /// Like [`QueryOriginKind::DerivedPacked`], but using full-width query edges.
-    DerivedWide = 0b111,
+#[derive(Clone, Copy)]
+#[repr(u8)]
+enum QueryEdgeLayout {
+    Packed = 0b000,
+    Wide = 0b100,
+}
 
-    /// Like [`QueryOriginKind::DerivedUntrackedPacked`], but using full-width query edges.
-    DerivedUntrackedWide = 0b110,
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+struct QueryOriginTag(u8);
+
+impl QueryOriginTag {
+    const KIND_MASK: u8 = 0b011;
+    const LAYOUT_MASK: u8 = 0b100;
+
+    fn new(kind: QueryOriginKind, layout: QueryEdgeLayout) -> Self {
+        QueryOriginTag(kind as u8 | layout as u8)
+    }
+
+    fn kind(self) -> QueryOriginKind {
+        match self.0 & Self::KIND_MASK {
+            0b01 => QueryOriginKind::Assigned,
+            0b11 => QueryOriginKind::Derived,
+            0b10 => QueryOriginKind::DerivedUntracked,
+            _ => unreachable!("invalid query origin kind"),
+        }
+    }
+
+    fn layout(self) -> QueryEdgeLayout {
+        if self.0 & Self::LAYOUT_MASK == 0 {
+            QueryEdgeLayout::Packed
+        } else {
+            QueryEdgeLayout::Wide
+        }
+    }
 }
 
 /// Tracks how a memoized value for a given query was created.
@@ -927,7 +958,7 @@ pub struct QueryOrigin {
     ///
     /// Note that this tag only requires three bits and could likely be packed into
     /// some other field. However, we get this byte for free thanks to alignment.
-    kind: QueryOriginKind,
+    tag: QueryOriginTag,
 
     /// The data portion of this enum.
     data: QueryOriginData,
@@ -972,31 +1003,20 @@ unsafe impl Sync for QueryOriginData {}
 
 impl QueryOrigin {
     pub fn is_derived_untracked(&self) -> bool {
-        matches!(
-            self.kind,
-            QueryOriginKind::DerivedUntrackedPacked | QueryOriginKind::DerivedUntrackedWide
-        )
+        matches!(self.tag.kind(), QueryOriginKind::DerivedUntracked)
     }
 
     /// Create a query origin of type `QueryOriginKind::Derived`, with the given edges.
     pub fn derived(input_outputs: Box<[QueryEdge]>) -> QueryOrigin {
-        Self::derived_with_kinds(
-            input_outputs,
-            QueryOriginKind::DerivedPacked,
-            QueryOriginKind::DerivedWide,
-        )
+        Self::derived_with_kind(input_outputs, QueryOriginKind::Derived)
     }
 
-    fn derived_with_kinds(
-        input_outputs: Box<[QueryEdge]>,
-        packed_kind: QueryOriginKind,
-        wide_kind: QueryOriginKind,
-    ) -> QueryOrigin {
+    fn derived_with_kind(input_outputs: Box<[QueryEdge]>, kind: QueryOriginKind) -> QueryOrigin {
         // Exceeding `u32::MAX` query edges should never happen in real-world usage.
         let length = u32::try_from(input_outputs.len())
             .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
 
-        let (kind, input_outputs) = if input_outputs.iter().copied().all(PackedQueryEdge::fits) {
+        let (layout, input_outputs) = if input_outputs.iter().copied().all(PackedQueryEdge::fits) {
             let input_outputs: Box<[PackedQueryEdge]> = input_outputs
                 .iter()
                 .copied()
@@ -1009,7 +1029,7 @@ impl QueryOrigin {
                     .cast::<()>()
             };
 
-            (packed_kind, input_outputs)
+            (QueryEdgeLayout::Packed, input_outputs)
         } else {
             // SAFETY: `Box::into_raw` returns a non-null pointer.
             let input_outputs = unsafe {
@@ -1017,11 +1037,11 @@ impl QueryOrigin {
                     .cast::<()>()
             };
 
-            (wide_kind, input_outputs)
+            (QueryEdgeLayout::Wide, input_outputs)
         };
 
         QueryOrigin {
-            kind,
+            tag: QueryOriginTag::new(kind, layout),
             metadata: length,
             data: QueryOriginData { input_outputs },
         }
@@ -1029,11 +1049,7 @@ impl QueryOrigin {
 
     /// Create a query origin of type `QueryOriginKind::DerivedUntracked`, with the given edges.
     pub fn derived_untracked(input_outputs: Box<[QueryEdge]>) -> QueryOrigin {
-        Self::derived_with_kinds(
-            input_outputs,
-            QueryOriginKind::DerivedUntrackedPacked,
-            QueryOriginKind::DerivedUntrackedWide,
-        )
+        Self::derived_with_kind(input_outputs, QueryOriginKind::DerivedUntracked)
     }
 
     /// Sets the `input_outputs` of this query's origin if it's derived or derived untracked.
@@ -1042,13 +1058,13 @@ impl QueryOrigin {
         &mut self,
         input_outputs: Box<[QueryEdge]>,
     ) -> Result<(), Box<[QueryEdge]>> {
-        match self.kind {
+        match self.tag.kind() {
             QueryOriginKind::Assigned => Err(input_outputs),
-            QueryOriginKind::DerivedPacked | QueryOriginKind::DerivedWide => {
+            QueryOriginKind::Derived => {
                 *self = QueryOrigin::derived(input_outputs);
                 Ok(())
             }
-            QueryOriginKind::DerivedUntrackedPacked | QueryOriginKind::DerivedUntrackedWide => {
+            QueryOriginKind::DerivedUntracked => {
                 *self = QueryOrigin::derived_untracked(input_outputs);
                 Ok(())
             }
@@ -1058,7 +1074,7 @@ impl QueryOrigin {
     /// Create a query origin of type `QueryOriginKind::Assigned`, with the given key.
     pub fn assigned(key: DatabaseKeyIndex) -> QueryOrigin {
         QueryOrigin {
-            kind: QueryOriginKind::Assigned,
+            tag: QueryOriginTag::new(QueryOriginKind::Assigned, QueryEdgeLayout::Packed),
             metadata: key.ingredient_index().as_u32(),
             data: QueryOriginData {
                 index: key.key_index(),
@@ -1068,7 +1084,7 @@ impl QueryOrigin {
 
     /// Return a read-only reference to this query origin.
     pub fn as_ref(&self) -> QueryOriginRef<'_> {
-        match self.kind {
+        match self.tag.kind() {
             QueryOriginKind::Assigned => {
                 // SAFETY: `data.index` is initialized when the tag is `QueryOriginKind::Assigned`.
                 let index = unsafe { self.data.index };
@@ -1080,21 +1096,25 @@ impl QueryOrigin {
                 QueryOriginRef::Assigned(DatabaseKeyIndex::new(ingredient_index, index))
             }
 
-            QueryOriginKind::DerivedPacked | QueryOriginKind::DerivedWide => {
-                // SAFETY: `data.input_outputs` is initialized for both derived origin kinds.
+            QueryOriginKind::Derived => {
+                // SAFETY: `data.input_outputs` is initialized for derived origins.
                 let input_outputs = unsafe { self.data.input_outputs };
                 let length = self.metadata as usize;
 
-                QueryOriginRef::Derived(QueryEdges::from_raw(self.kind, input_outputs, length))
+                QueryOriginRef::Derived(QueryEdges::from_raw(
+                    self.tag.layout(),
+                    input_outputs,
+                    length,
+                ))
             }
 
-            QueryOriginKind::DerivedUntrackedPacked | QueryOriginKind::DerivedUntrackedWide => {
-                // SAFETY: `data.input_outputs` is initialized for both untracked origin kinds.
+            QueryOriginKind::DerivedUntracked => {
+                // SAFETY: `data.input_outputs` is initialized for untracked derived origins.
                 let input_outputs = unsafe { self.data.input_outputs };
                 let length = self.metadata as usize;
 
                 QueryOriginRef::DerivedUntracked(QueryEdges::from_raw(
-                    self.kind,
+                    self.tag.layout(),
                     input_outputs,
                     length,
                 ))
@@ -1125,8 +1145,8 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
         #[serde(rename = "QueryOrigin")]
         pub enum QueryOriginOwned {
             Assigned(DatabaseKeyIndex) = QueryOriginKind::Assigned as u8,
-            Derived(Box<[QueryEdge]>) = QueryOriginKind::DerivedPacked as u8,
-            DerivedUntracked(Box<[QueryEdge]>) = QueryOriginKind::DerivedUntrackedPacked as u8,
+            Derived(Box<[QueryEdge]>) = QueryOriginKind::Derived as u8,
+            DerivedUntracked(Box<[QueryEdge]>) = QueryOriginKind::DerivedUntracked as u8,
         }
 
         Ok(match QueryOriginOwned::deserialize(deserializer)? {
@@ -1139,18 +1159,15 @@ impl<'de> serde::Deserialize<'de> for QueryOrigin {
 
 impl Drop for QueryOrigin {
     fn drop(&mut self) {
-        match self.kind {
-            QueryOriginKind::DerivedPacked
-            | QueryOriginKind::DerivedUntrackedPacked
-            | QueryOriginKind::DerivedWide
-            | QueryOriginKind::DerivedUntrackedWide => {
+        match self.tag.kind() {
+            QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
                 // SAFETY: Derived origin kinds initialize `data.input_outputs`.
                 let input_outputs = unsafe { self.data.input_outputs };
                 let length = self.metadata as usize;
 
-                match self.kind {
-                    QueryOriginKind::DerivedPacked | QueryOriginKind::DerivedUntrackedPacked => {
-                        // SAFETY: Packed origin kinds store a boxed slice of `PackedQueryEdge`.
+                match self.tag.layout() {
+                    QueryEdgeLayout::Packed => {
+                        // SAFETY: Packed layouts store a boxed slice of `PackedQueryEdge`.
                         drop(unsafe {
                             Box::from_raw(ptr::slice_from_raw_parts_mut(
                                 input_outputs.cast::<PackedQueryEdge>().as_ptr(),
@@ -1158,8 +1175,8 @@ impl Drop for QueryOrigin {
                             ))
                         });
                     }
-                    QueryOriginKind::DerivedWide | QueryOriginKind::DerivedUntrackedWide => {
-                        // SAFETY: Wide origin kinds store a boxed slice of `QueryEdge`.
+                    QueryEdgeLayout::Wide => {
+                        // SAFETY: Wide layouts store a boxed slice of `QueryEdge`.
                         drop(unsafe {
                             Box::from_raw(ptr::slice_from_raw_parts_mut(
                                 input_outputs.cast::<QueryEdge>().as_ptr(),
@@ -1167,7 +1184,6 @@ impl Drop for QueryOrigin {
                             ))
                         });
                     }
-                    QueryOriginKind::Assigned => unreachable!(),
                 }
             }
 
@@ -1316,10 +1332,10 @@ impl<'a> QueryEdges<'a> {
         }
     }
 
-    fn from_raw(kind: QueryOriginKind, input_outputs: NonNull<()>, length: usize) -> Self {
-        match kind {
-            QueryOriginKind::DerivedPacked | QueryOriginKind::DerivedUntrackedPacked => {
-                // SAFETY: Packed origin kinds store a boxed slice of `PackedQueryEdge`.
+    fn from_raw(layout: QueryEdgeLayout, input_outputs: NonNull<()>, length: usize) -> Self {
+        match layout {
+            QueryEdgeLayout::Packed => {
+                // SAFETY: Packed layouts store a boxed slice of `PackedQueryEdge`.
                 QueryEdges::packed(unsafe {
                     std::slice::from_raw_parts(
                         input_outputs.cast::<PackedQueryEdge>().as_ptr(),
@@ -1327,13 +1343,12 @@ impl<'a> QueryEdges<'a> {
                     )
                 })
             }
-            QueryOriginKind::DerivedWide | QueryOriginKind::DerivedUntrackedWide => {
-                // SAFETY: Wide origin kinds store a boxed slice of `QueryEdge`.
+            QueryEdgeLayout::Wide => {
+                // SAFETY: Wide layouts store a boxed slice of `QueryEdge`.
                 QueryEdges::wide(unsafe {
                     std::slice::from_raw_parts(input_outputs.cast::<QueryEdge>().as_ptr(), length)
                 })
             }
-            QueryOriginKind::Assigned => unreachable!("assigned queries do not store query edges"),
         }
     }
 
@@ -1477,6 +1492,7 @@ mod tests {
     fn packed_query_edges_use_eight_bytes() {
         assert_eq!(size_of::<PackedQueryEdge>(), 8);
         assert_eq!(size_of::<QueryEdge>(), 12);
+        assert_eq!(size_of::<QueryOrigin>(), 13);
     }
 
     #[test]
