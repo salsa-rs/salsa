@@ -108,11 +108,11 @@ fn main() {
             "WillExecute { database_key: infer_type_param(Id(400)) }",
             "WillCheckCancellation",
             "DidInternValue { key: Class(Id(c00)), revision: R2 }",
-            "WillIterateCycle { database_key: infer_class(Id(0)), iteration_count: IterationCount(1) }",
+            "WillIterateCycle { database_key: infer_class(Id(0)), iteration_count: IterationStamp(1, 0) }",
             "WillCheckCancellation",
             "WillExecute { database_key: infer_type_param(Id(400)) }",
             "WillCheckCancellation",
-            "DidFinalizeCycle { database_key: infer_class(Id(0)), iteration_count: IterationCount(1) }",
+            "DidFinalizeCycle { database_key: infer_class(Id(0)), iteration_count: IterationStamp(1, 0) }",
         ]"#]]);
 
     let class = ty.class().unwrap();

@@ -1,5 +1,5 @@
 use crate::Revision;
-use crate::cycle::IterationCount;
+use crate::cycle::IterationStamp;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::thread::{self, ThreadId};
 
@@ -64,14 +64,14 @@ pub enum EventKind {
     WillIterateCycle {
         /// The database-key for the cycle head. Implements `Debug`.
         database_key: DatabaseKeyIndex,
-        iteration_count: IterationCount,
+        iteration_count: IterationStamp,
     },
 
     /// Salsa completed a fixpoint iteration for the cycle with `database_key` as its
     /// outermost cycle.
     DidFinalizeCycle {
         database_key: DatabaseKeyIndex,
-        iteration_count: IterationCount,
+        iteration_count: IterationStamp,
     },
 
     /// Indicates that `unwind_if_cancelled` was called and salsa will check if

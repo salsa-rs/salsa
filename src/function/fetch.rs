@@ -1,4 +1,4 @@
-use crate::cycle::{CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
 use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
@@ -229,7 +229,7 @@ where
                             None
                         }
                     })
-                    .unwrap_or_else(|| IterationCount::initial(cancellation_count));
+                    .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
                 let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
 
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));

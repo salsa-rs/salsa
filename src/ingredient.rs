@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{IterationCount, ProvisionalStatus};
+use crate::cycle::{IterationStamp, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -177,7 +177,7 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         &self,
         _zalsa: &Zalsa,
         _input: Id,
-        _iteration_count: IterationCount,
+        _iteration_count: IterationStamp,
     ) {
         unreachable!(
             "increment_iteration_count should only be called on cycle heads and only functions can be cycle heads"

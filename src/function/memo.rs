@@ -4,7 +4,7 @@ use std::mem::transmute;
 use std::ptr::NonNull;
 
 use crate::cycle::{
-    CycleHeads, CycleHeadsIterator, IterationCount, ProvisionalStatus, empty_cycle_heads,
+    CycleHeads, CycleHeadsIterator, IterationStamp, ProvisionalStatus, empty_cycle_heads,
 };
 use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
@@ -355,8 +355,8 @@ mod persistence {
 pub(super) enum TryClaimHeadsResult {
     /// Claiming the cycle head results in a cycle.
     Cycle {
-        head_iteration_count: IterationCount,
-        memo_iteration_count: IterationCount,
+        head_iteration_count: IterationStamp,
+        memo_iteration_count: IterationStamp,
         verified_at: Revision,
     },
 
@@ -418,7 +418,7 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
 
                 Some(TryClaimHeadsResult::Cycle {
                     memo_iteration_count: current_iteration_count,
-                    head_iteration_count: head.iteration_count.load(),
+                    head_iteration_count: head.iteration_stamp.load(),
                     verified_at,
                 })
             }

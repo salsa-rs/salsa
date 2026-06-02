@@ -550,7 +550,7 @@ fn validate_provisional(
                 //
                 // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
                 // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
-                if iteration != cycle_head.iteration_count.load() {
+                if iteration != cycle_head.iteration_stamp.load() {
                     return false;
                 }
             }
