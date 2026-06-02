@@ -1,8 +1,8 @@
-error[E0599]: the function or associated item `maybe_update` exists for struct `salsa::plumbing::UpdateDispatch<NotUpdate>`, but its trait bounds were not satisfied
+error[E0599]: the associated function or constant `maybe_update` exists for struct `salsa::plumbing::UpdateDispatch<NotUpdate>`, but its trait bounds were not satisfied
  --> tests/compile-fail/tracked_struct_not_update.rs:1:1
   |
 1 | #[salsa::tracked]
-  | ^^^^^^^^^^^^^^^^^ function or associated item cannot be called on `salsa::plumbing::UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
+  | ^^^^^^^^^^^^^^^^^ associated function or constant cannot be called on `salsa::plumbing::UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
 ...
 7 | struct NotUpdate;
   | ---------------- doesn't satisfy `NotUpdate: PartialEq` or `NotUpdate: Update`
