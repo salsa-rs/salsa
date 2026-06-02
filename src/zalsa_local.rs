@@ -1245,49 +1245,87 @@ impl std::fmt::Debug for QueryOrigin {
 /// the size of the type. Notably, this type is 12 bytes as opposed to the 16 byte
 /// `QueryEdgeKind`, which is meaningful as inputs and outputs are stored contiguously.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "persistence", serde(transparent))]
 pub struct QueryEdge {
-    key: DatabaseKeyIndex,
+    // Store the key parts directly rather than as a `DatabaseKeyIndex`. Packed origins
+    // unpack many transient `QueryEdge`s while flattening cycles; keeping the fields
+    // split lets `kind`, `Hash`, and `Eq` operate on the decoded words directly.
+    index: u32,
+    generation: u32,
+    ingredient: IngredientIndex,
 }
 
 impl QueryEdge {
     /// Create an input query edge with the given index.
     pub const fn input(key: DatabaseKeyIndex) -> QueryEdge {
-        Self { key }
+        Self::from_key(key)
     }
 
     /// Create an output query edge with the given index.
     pub const fn output(key: DatabaseKeyIndex) -> QueryEdge {
         let ingredient_index = key.ingredient_index().with_tag(true);
 
-        Self {
-            key: DatabaseKeyIndex::new(ingredient_index, key.key_index()),
-        }
+        Self::from_key(DatabaseKeyIndex::new(ingredient_index, key.key_index()))
     }
 
     /// Return the key of this query edge.
     pub const fn key(self) -> DatabaseKeyIndex {
         // Clear the tag to restore the original index.
-        DatabaseKeyIndex::new(
-            self.key.ingredient_index().with_tag(false),
-            self.key.key_index(),
-        )
+        DatabaseKeyIndex::new(self.ingredient.with_tag(false), self.id())
     }
 
     /// Returns the kind of this query edge.
     pub const fn kind(self) -> QueryEdgeKind {
-        if self.key.ingredient_index().tag() {
+        if self.ingredient.tag() {
             QueryEdgeKind::Output(self.key())
         } else {
             QueryEdgeKind::Input(self.key())
         }
+    }
+
+    const fn from_key(key: DatabaseKeyIndex) -> QueryEdge {
+        let id = key.key_index();
+
+        QueryEdge {
+            index: id.index(),
+            generation: id.generation(),
+            ingredient: key.ingredient_index(),
+        }
+    }
+
+    #[cfg(feature = "persistence")]
+    const fn raw_key(self) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(self.ingredient, self.id())
+    }
+
+    const fn id(self) -> Id {
+        // SAFETY: `index` came from a valid `Id` in `QueryEdge::from_key`.
+        unsafe { Id::from_index(self.index) }.with_generation(self.generation)
     }
 }
 
 impl std::fmt::Debug for QueryEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.kind().fmt(f)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for QueryEdge {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.raw_key().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for QueryEdge {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        DatabaseKeyIndex::deserialize(deserializer).map(QueryEdge::from_key)
     }
 }
 
@@ -1318,8 +1356,8 @@ impl PackedQueryEdge {
     const INGREDIENT_MASK: u32 = 0xFFF;
 
     const fn new(edge: QueryEdge) -> Option<Self> {
-        let ingredient = edge.key.ingredient_index().as_u32();
-        let id = edge.key.key_index();
+        let ingredient = edge.ingredient.as_u32();
+        let id = edge.id();
 
         if ingredient > Self::INGREDIENT_MASK || id.generation() > Self::GENERATION_MASK {
             return None;
@@ -1344,7 +1382,7 @@ impl PackedQueryEdge {
     }
 
     const fn edge(self) -> QueryEdge {
-        QueryEdge { key: self.key() }
+        QueryEdge::input(self.key())
     }
 }
 
