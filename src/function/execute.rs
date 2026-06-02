@@ -60,12 +60,10 @@ where
                 let (new_value, active_query) = Self::execute_query(
                     db,
                     zalsa,
-                    claim_guard
-                        .zalsa_local()
-                        .push_query(database_key_index, iteration),
+                    claim_guard.zalsa_local().push_query(database_key_index),
                     opt_old_memo,
                 );
-                (new_value, active_query.pop())
+                (new_value, active_query.pop(iteration))
             }
             CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
                 let zalsa_local = claim_guard.zalsa_local();
@@ -170,9 +168,7 @@ where
             PoisonProvisionalIfPanicking::new(self, zalsa, id, memo_ingredient_index);
 
         let (new_value, completed_query) = loop {
-            let active_query = claim_guard
-                .zalsa_local()
-                .push_query(database_key_index, iteration);
+            let active_query = claim_guard.zalsa_local().push_query(database_key_index);
 
             // Tracked struct ids that existed in the previous revision
             // but weren't recreated in the last iteration. It's important that we seed the next
@@ -194,7 +190,7 @@ where
 
             // If there are no cycle heads, break out of the loop.
             if cycle_heads.is_empty() {
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(iteration);
 
                 if !iteration.is_initial_iteration() {
                     iteration = iteration.increment_iteration().unwrap_or_else(|| {
@@ -285,7 +281,7 @@ where
             // become the outermost cycle). We want to ensure that the iteration count keeps increasing
             // for all queries or they won't be re-executed because `validate_same_iteration` would
             // pass when we go from 1 -> 0 and then increment by 1 to 1).
-            iteration = if outer_cycle.is_none() {
+            let max_iteration = if outer_cycle.is_none() {
                 max_iteration
             } else {
                 // Otherwise keep the iteration count because outer cycles
@@ -305,7 +301,7 @@ where
                 let cycle = Cycle {
                     head_ids: cycle_heads.ids(),
                     id,
-                    iteration: iteration.iteration_as_u32(),
+                    iteration: max_iteration.iteration_as_u32(),
                 };
                 // We are in a cycle that hasn't converged; ask the user's
                 // cycle-recovery function what to do (it may return the same value or a different one):
@@ -330,6 +326,7 @@ where
                 &last_provisional_memo.revisions,
                 outer_cycle,
                 iteration,
+                max_iteration,
                 value_converged,
             ) {
                 Ok(completed_query) => {
@@ -620,7 +617,7 @@ fn complete_cycle_participant(
     let zalsa = claim_guard.zalsa();
 
     let database_key_index = active_query.database_key_index;
-    let mut completed_query = active_query.pop();
+    let mut completed_query = active_query.pop(iteration);
 
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
@@ -648,12 +645,13 @@ fn try_complete_cycle_head(
     last_provisional_revisions: &QueryRevisions,
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration: IterationStamp,
+    max_iteration: IterationStamp,
     value_converged: bool,
 ) -> Result<CompletedQuery, (CompletedQuery, IterationStamp)> {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
 
-    let mut completed_query = active_query.pop();
+    let mut completed_query = active_query.pop(iteration);
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
@@ -673,7 +671,7 @@ fn try_complete_cycle_head(
 
         completed_query
             .revisions
-            .set_cycle_heads(cycle_heads, iteration);
+            .set_cycle_heads(cycle_heads, max_iteration);
         // Store whether this cycle has converged, so that the outer cycle can check it.
         completed_query
             .revisions
@@ -705,7 +703,7 @@ fn try_complete_cycle_head(
 
     if converged {
         tracing::debug!(
-            "{me:?}: execute: fixpoint iteration has a final value after {iteration:?} iterations"
+            "{me:?}: execute: fixpoint iteration has a final value after {max_iteration:?} iterations"
         );
 
         // Set the nested cycles as verified. This is necessary because
@@ -720,7 +718,7 @@ fn try_complete_cycle_head(
         zalsa.event(&|| {
             Event::new(EventKind::DidFinalizeCycle {
                 database_key: me,
-                iteration,
+                iteration: max_iteration,
             })
         });
 
@@ -728,7 +726,7 @@ fn try_complete_cycle_head(
     }
 
     // The fixpoint iteration hasn't converged. Iterate again...
-    let iteration = iteration.increment_iteration().unwrap_or_else(|| {
+    let iteration = max_iteration.increment_iteration().unwrap_or_else(|| {
         tracing::warn!("{me:?}: execute: too many cycle iterations");
         panic!("{me:?}: execute: too many cycle iterations")
     });

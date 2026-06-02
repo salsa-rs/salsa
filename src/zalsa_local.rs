@@ -176,15 +176,11 @@ impl ZalsaLocal {
     }
 
     #[inline]
-    pub(crate) fn push_query(
-        &self,
-        database_key_index: DatabaseKeyIndex,
-        iteration: IterationStamp,
-    ) -> ActiveQueryGuard<'_> {
+    pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
-                stack.push_new_query(database_key_index, iteration);
+                stack.push_new_query(database_key_index);
 
                 ActiveQueryGuard {
                     local_state: self,
@@ -1283,12 +1279,13 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Invoked when the query has successfully completed execution.
-    fn complete(self) -> CompletedQuery {
+    fn complete(self, iteration: IterationStamp) -> CompletedQuery {
         // SAFETY: We do not access the query stack reentrantly.
         let query = unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
                 stack.pop_into_revisions(
                     self.database_key_index,
+                    iteration,
                     #[cfg(debug_assertions)]
                     self.push_len,
                 )
@@ -1302,8 +1299,8 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self) -> CompletedQuery {
-        self.complete()
+    pub(crate) fn pop(self, iteration: IterationStamp) -> CompletedQuery {
+        self.complete(iteration)
     }
 }
 
