@@ -185,13 +185,29 @@ where
 
         let deep_verify = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
 
-        if deep_verify.is_unchanged() {
+        if let VerifyResult::Unchanged {
+            #[cfg(feature = "accumulator")]
+            accumulated,
+        } = deep_verify
+        {
             // Check if the inputs are still valid. We can just compare `changed_at`.
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
-                // Returns unchanged but propagates the accumulated values
-                deep_verify
+                // Propagate accumulated values from inputs *and* from this memo itself.
+                // Without the own-accumulated check, a caller querying accumulated values
+                // would see `Empty` and skip traversing into this subtree even though
+                // this memo directly pushed accumulated values.
+                VerifyResult::unchanged_with_accumulated(
+                    #[cfg(feature = "accumulator")]
+                    {
+                        if old_memo.revisions.accumulated().is_some() {
+                            InputAccumulatedValues::Any
+                        } else {
+                            accumulated
+                        }
+                    },
+                )
             });
         }
 
