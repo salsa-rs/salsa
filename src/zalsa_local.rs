@@ -17,6 +17,7 @@ use crate::accumulator::{
 use crate::active_query::{CompletedQuery, QueryStack};
 use crate::cycle::{AtomicIterationCount, CycleHeads, IterationCount, empty_cycle_heads};
 use crate::durability::Durability;
+use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
@@ -1037,43 +1038,51 @@ impl QueryOrigin {
         mut input_outputs: impl ExactSizeIterator<Item = QueryEdge>,
         kind: QueryOriginKind,
     ) -> QueryOrigin {
-        // Exceeding `u32::MAX` query edges should never happen in real-world usage.
-        let length = u32::try_from(input_outputs.len())
-            .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
+        let mut packed_input_outputs = Vec::with_capacity(input_outputs.len());
 
-        let mut packed_input_outputs = Vec::with_capacity(length as usize);
-
-        let (layout, input_outputs) = 'edges: {
+        let input_outputs = 'edges: {
             for edge in input_outputs.by_ref() {
                 let Some(edge) = PackedQueryEdge::new(edge) else {
-                    let input_outputs = packed_input_outputs
-                        .into_iter()
-                        .map(PackedQueryEdge::edge)
-                        .chain(std::iter::once(edge))
-                        .chain(input_outputs)
-                        .collect::<Box<[QueryEdge]>>();
-
-                    // SAFETY: `Box::into_raw` returns a non-null pointer.
-                    let input_outputs = unsafe {
-                        NonNull::new_unchecked(Box::into_raw(input_outputs).cast::<QueryEdge>())
-                            .cast::<()>()
-                    };
-
-                    break 'edges (QueryEdgeLayout::Wide, input_outputs);
+                    break 'edges OwnedQueryEdges::Wide(
+                        packed_input_outputs
+                            .into_iter()
+                            .map(PackedQueryEdge::edge)
+                            .chain(std::iter::once(edge))
+                            .chain(input_outputs)
+                            .collect(),
+                    );
                 };
 
                 packed_input_outputs.push(edge);
             }
 
-            let input_outputs = packed_input_outputs.into_boxed_slice();
+            OwnedQueryEdges::Packed(packed_input_outputs.into_boxed_slice())
+        };
 
-            // SAFETY: `Box::into_raw` returns a non-null pointer.
-            let input_outputs = unsafe {
-                NonNull::new_unchecked(Box::into_raw(input_outputs).cast::<PackedQueryEdge>())
-                    .cast::<()>()
-            };
+        QueryOrigin::from_owned_edges(kind, input_outputs)
+    }
 
-            (QueryEdgeLayout::Packed, input_outputs)
+    fn from_owned_edges(kind: QueryOriginKind, input_outputs: OwnedQueryEdges) -> QueryOrigin {
+        let length = u32::try_from(input_outputs.len())
+            .expect("exceeded more than `u32::MAX` query edges; this should never happen.");
+
+        let (layout, input_outputs) = match input_outputs {
+            OwnedQueryEdges::Packed(input_outputs) => {
+                // SAFETY: `Box::into_raw` returns a non-null pointer.
+                let input_outputs = unsafe {
+                    NonNull::new_unchecked(Box::into_raw(input_outputs).cast::<PackedQueryEdge>())
+                        .cast::<()>()
+                };
+                (QueryEdgeLayout::Packed, input_outputs)
+            }
+            OwnedQueryEdges::Wide(input_outputs) => {
+                // SAFETY: `Box::into_raw` returns a non-null pointer.
+                let input_outputs = unsafe {
+                    NonNull::new_unchecked(Box::into_raw(input_outputs).cast::<QueryEdge>())
+                        .cast::<()>()
+                };
+                (QueryEdgeLayout::Wide, input_outputs)
+            }
         };
 
         QueryOrigin {
@@ -1158,6 +1167,20 @@ impl QueryOrigin {
                     length,
                 ))
             }
+        }
+    }
+}
+
+enum OwnedQueryEdges {
+    Packed(Box<[PackedQueryEdge]>),
+    Wide(Box<[QueryEdge]>),
+}
+
+impl OwnedQueryEdges {
+    fn len(&self) -> usize {
+        match self {
+            OwnedQueryEdges::Packed(edges) => edges.len(),
+            OwnedQueryEdges::Wide(edges) => edges.len(),
         }
     }
 }
@@ -1307,10 +1330,104 @@ impl std::fmt::Debug for QueryEdge {
 /// tag on the [`IngredientIndex`]. The ingredient index and generation must fit in
 /// their respective fields; if either does not, [`QueryOrigin`] uses the wide
 /// layout.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct PackedQueryEdge {
     index: u32,
     metadata: u32,
+}
+
+#[derive(Debug)]
+pub(crate) struct ActiveQueryEdges {
+    data: ActiveQueryEdgesData,
+}
+
+#[derive(Debug)]
+enum ActiveQueryEdgesData {
+    Packed(FxIndexSet<PackedQueryEdge>),
+    Wide(FxIndexSet<QueryEdge>),
+}
+
+impl Default for ActiveQueryEdges {
+    fn default() -> Self {
+        ActiveQueryEdges {
+            data: ActiveQueryEdgesData::Packed(FxIndexSet::default()),
+        }
+    }
+}
+
+impl ActiveQueryEdges {
+    pub(crate) fn is_empty(&self) -> bool {
+        match &self.data {
+            ActiveQueryEdgesData::Packed(edges) => edges.is_empty(),
+            ActiveQueryEdgesData::Wide(edges) => edges.is_empty(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn insert(&mut self, edge: QueryEdge) -> bool {
+        match &mut self.data {
+            ActiveQueryEdgesData::Packed(edges) => {
+                let Some(packed_edge) = PackedQueryEdge::new(edge) else {
+                    let (wide_edges, inserted) = Self::spill(edges, edge);
+                    self.data = wide_edges;
+                    return inserted;
+                };
+
+                edges.insert(packed_edge)
+            }
+            ActiveQueryEdgesData::Wide(edges) => edges.insert(edge),
+        }
+    }
+
+    #[cold]
+    fn spill(
+        packed_edges: &mut FxIndexSet<PackedQueryEdge>,
+        edge: QueryEdge,
+    ) -> (ActiveQueryEdgesData, bool) {
+        let mut wide_edges =
+            FxIndexSet::with_capacity_and_hasher(packed_edges.len() + 1, Default::default());
+        wide_edges.extend(packed_edges.drain(..).map(PackedQueryEdge::edge));
+        let inserted = wide_edges.insert(edge);
+        (ActiveQueryEdgesData::Wide(wide_edges), inserted)
+    }
+
+    pub(crate) fn extend(&mut self, input_outputs: impl IntoIterator<Item = QueryEdge>) {
+        for edge in input_outputs {
+            self.insert(edge);
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        match &mut self.data {
+            ActiveQueryEdgesData::Packed(edges) => edges.clear(),
+            ActiveQueryEdgesData::Wide(_) => *self = ActiveQueryEdges::default(),
+        }
+    }
+
+    pub(crate) fn take_origin(&mut self, untracked_read: bool) -> QueryOrigin {
+        let kind = if untracked_read {
+            QueryOriginKind::DerivedUntracked
+        } else {
+            QueryOriginKind::Derived
+        };
+
+        let edges = match &mut self.data {
+            ActiveQueryEdgesData::Packed(edges) => {
+                OwnedQueryEdges::Packed(edges.drain(..).collect())
+            }
+            ActiveQueryEdgesData::Wide(_) => {
+                let ActiveQueryEdgesData::Wide(mut edges) = std::mem::replace(
+                    &mut self.data,
+                    ActiveQueryEdgesData::Packed(FxIndexSet::default()),
+                ) else {
+                    unreachable!()
+                };
+                OwnedQueryEdges::Wide(edges.drain(..).collect())
+            }
+        };
+
+        QueryOrigin::from_owned_edges(kind, edges)
+    }
 }
 
 impl PackedQueryEdge {
@@ -1419,6 +1536,27 @@ impl<'a> QueryEdges<'a> {
         };
 
         QueryEdgeIter { data }
+    }
+
+    #[inline]
+    pub(crate) fn try_for_each<B>(
+        self,
+        mut f: impl FnMut(QueryEdge) -> std::ops::ControlFlow<B>,
+    ) -> std::ops::ControlFlow<B> {
+        match self.data {
+            QueryEdgesData::Packed(edges) => {
+                for edge in edges {
+                    f(edge.edge())?;
+                }
+            }
+            QueryEdgesData::Wide(edges) => {
+                for &edge in edges {
+                    f(edge)?;
+                }
+            }
+        }
+
+        std::ops::ControlFlow::Continue(())
     }
 
     #[cfg(test)]
@@ -1690,7 +1828,7 @@ pub(crate) mod persistence {
 mod tests {
     use std::mem::size_of;
 
-    use super::{PackedQueryEdge, QueryEdge, QueryOrigin, QueryOriginRef};
+    use super::{ActiveQueryEdges, PackedQueryEdge, QueryEdge, QueryOrigin, QueryOriginRef};
     use crate::{DatabaseKeyIndex, Id, IngredientIndex};
 
     #[test]
@@ -1739,6 +1877,34 @@ mod tests {
 
         assert!(!edges.is_packed());
         assert_eq!(edges.iter().collect::<Vec<_>>(), vec![wide]);
+    }
+
+    #[test]
+    fn active_query_edges_spill_once_and_reset_after_completion() {
+        let packed = QueryEdge::input(key(231, 10_842_122, 41));
+        let wide = QueryEdge::output(key(PackedQueryEdge::INGREDIENT_MASK + 1, 10_842_123, 42));
+        let mut input_outputs = ActiveQueryEdges::default();
+
+        assert!(input_outputs.insert(packed));
+        assert!(!input_outputs.insert(packed));
+        assert!(input_outputs.insert(wide));
+
+        let origin = input_outputs.take_origin(false);
+        let QueryOriginRef::Derived(edges) = origin.as_ref() else {
+            panic!("expected derived origin");
+        };
+        assert!(!edges.is_packed());
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![packed, wide]);
+
+        assert!(input_outputs.is_empty());
+        assert!(input_outputs.insert(packed));
+
+        let origin = input_outputs.take_origin(true);
+        let QueryOriginRef::DerivedUntracked(edges) = origin.as_ref() else {
+            panic!("expected untracked derived origin");
+        };
+        assert!(edges.is_packed());
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![packed]);
     }
 
     #[test]

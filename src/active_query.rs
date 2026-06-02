@@ -6,13 +6,12 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
 };
-use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::{
-    QueryEdge, QueryEdgeKind, QueryOrigin, QueryRevisions, QueryRevisionsExtra,
+    ActiveQueryEdges, QueryEdge, QueryEdgeKind, QueryRevisions, QueryRevisionsExtra,
 };
 use crate::{
     Id,
@@ -37,7 +36,7 @@ pub(crate) struct ActiveQuery {
     ///
     /// * invocations of `specify`
     /// * accumulators pushed to
-    input_outputs: FxIndexSet<QueryEdge>,
+    input_outputs: ActiveQueryEdges,
 
     /// True if there was an untracked read.
     untracked_read: bool,
@@ -183,7 +182,7 @@ impl ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
             changed_at: Revision::start(),
-            input_outputs: FxIndexSet::default(),
+            input_outputs: ActiveQueryEdges::default(),
             untracked_read: false,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
@@ -213,11 +212,7 @@ impl ActiveQuery {
             accumulated_inputs,
         } = self;
 
-        let origin = if untracked_read {
-            QueryOrigin::derived_untracked(input_outputs.drain(..))
-        } else {
-            QueryOrigin::derived(input_outputs.drain(..))
-        };
+        let origin = input_outputs.take_origin(untracked_read);
         disambiguator_map.clear();
 
         #[cfg(feature = "accumulator")]
