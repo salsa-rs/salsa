@@ -141,6 +141,10 @@ impl IterationStamp {
         Self::new(0, cancellation_count)
     }
 
+    pub(crate) const fn is_default(self) -> bool {
+        self.0 == 0
+    }
+
     pub(crate) const fn is_initial_iteration(self) -> bool {
         self.iteration() == 0
     }

@@ -554,7 +554,7 @@ impl QueryRevisionsExtra {
         let inner = if acc
             && tracked_struct_ids.is_empty()
             && cycle_heads.is_empty()
-            && iteration.is_initial_iteration()
+            && iteration.is_default()
         {
             None
         } else {
