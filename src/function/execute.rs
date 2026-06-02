@@ -832,7 +832,7 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
             QueryEdgeKind::Output(_) => {
                 // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
                 // created by the query head because those are owned by this query.
-                flattened.insert(*edge);
+                flattened.insert(edge);
             }
         }
     }

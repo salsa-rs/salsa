@@ -77,7 +77,7 @@ impl ActiveQuery {
         &mut self,
         durability: Durability,
         changed_at: Revision,
-        edges: &[QueryEdge],
+        edges: crate::zalsa_local::QueryEdges<'_>,
         untracked_read: bool,
         active_tracked_ids: &[(Identity, Id)],
     ) {
@@ -88,8 +88,7 @@ impl ActiveQuery {
         self.input_outputs.extend(
             edges
                 .iter()
-                .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)))
-                .copied(),
+                .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_))),
         );
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
