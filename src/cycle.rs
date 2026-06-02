@@ -87,6 +87,7 @@ pub enum CycleRecoveryStrategy {
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct CycleHead {
     pub(crate) database_key_index: DatabaseKeyIndex,
+    #[cfg_attr(feature = "persistence", serde(skip))]
     pub(crate) iteration_stamp: AtomicIterationStamp,
 
     /// Marks a cycle head as removed within its `CycleHeads` container.
@@ -128,6 +129,9 @@ impl Clone for CycleHead {
 /// The lower byte stores the fixpoint iteration and the upper byte stores the number of global
 /// cancellations in the current revision. Including both ensures that provisional memos created
 /// before a cancellation aren't reused afterwards. The cancellation count resets on a new revision.
+///
+/// Within a revision, stamps are ordered first by cancellation count and then by fixpoint
+/// iteration. Stamps created after a cancellation compare greater than stamps created before it.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub struct IterationStamp(u16);
 
@@ -182,7 +186,7 @@ impl std::fmt::Display for IterationStamp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct AtomicIterationStamp(AtomicU16);
 
 impl AtomicIterationStamp {
@@ -203,49 +207,9 @@ impl AtomicIterationStamp {
     }
 }
 
-#[cfg(feature = "persistence")]
-impl serde::Serialize for IterationStamp {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.iteration().serialize(serializer)
-    }
-}
-
-#[cfg(feature = "persistence")]
-impl<'de> serde::Deserialize<'de> for IterationStamp {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        u8::deserialize(deserializer).map(|iteration| Self(iteration as u16))
-    }
-}
-
 impl From<IterationStamp> for AtomicIterationStamp {
     fn from(iteration_count: IterationStamp) -> Self {
         AtomicIterationStamp(iteration_count.0.into())
-    }
-}
-
-#[cfg(feature = "persistence")]
-impl serde::Serialize for AtomicIterationStamp {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.load().serialize(serializer)
-    }
-}
-
-#[cfg(feature = "persistence")]
-impl<'de> serde::Deserialize<'de> for AtomicIterationStamp {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        IterationStamp::deserialize(deserializer).map(Into::into)
     }
 }
 

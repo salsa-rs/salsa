@@ -258,8 +258,7 @@ fn everything() {
                         4097
                       ]
                     ],
-                    "cycle_heads": [],
-                    "iteration": 0
+                    "cycle_heads": []
                   }
                 }
               }

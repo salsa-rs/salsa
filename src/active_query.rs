@@ -428,7 +428,7 @@ struct CapturedQuery {
     durability: Durability,
     changed_at: Revision,
     cycle_heads: CycleHeads,
-    iteration_count: IterationStamp,
+    iteration_count: u32,
 }
 
 impl fmt::Debug for CapturedQuery {
@@ -441,7 +441,7 @@ impl fmt::Debug for CapturedQuery {
         if !self.cycle_heads.is_empty() {
             debug_struct
                 .field("cycle_heads", &self.cycle_heads)
-                .field("iteration_count", &self.iteration_count);
+                .field("iteration_stamp", &self.iteration_count);
         }
         debug_struct.finish()
     }
@@ -462,7 +462,7 @@ impl Backtrace {
                             durability: query.durability,
                             changed_at: query.changed_at,
                             cycle_heads: query.cycle_heads.clone(),
-                            iteration_count: query.iteration_stamp,
+                            iteration_count: query.iteration_stamp.iteration_as_u32(),
                         })
                         .collect(),
                 )
@@ -504,7 +504,7 @@ impl fmt::Display for Backtrace {
             write!(fmt, "{idx:>4}: {database_key_index:?}")?;
             if full {
                 write!(fmt, " -> ({changed_at:?}, {durability:#?}")?;
-                if !cycle_heads.is_empty() || !iteration_count.is_initial_iteration() {
+                if !cycle_heads.is_empty() || !iteration_count != 0 {
                     write!(fmt, ", iteration = {iteration_count}")?;
                 }
                 write!(fmt, ")")?;

@@ -613,6 +613,7 @@ struct QueryRevisionsExtraInner {
     /// iterate again.
     cycle_heads: CycleHeads,
 
+    #[cfg_attr(feature = "persistence", serde(skip))]
     iteration: AtomicIterationStamp,
 
     /// Stores for nested cycle heads whether they've converged in the last iteration.
