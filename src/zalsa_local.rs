@@ -1421,27 +1421,6 @@ impl<'a> QueryEdges<'a> {
         QueryEdgeIter { data }
     }
 
-    #[inline]
-    pub(crate) fn try_for_each<B>(
-        self,
-        mut f: impl FnMut(QueryEdge) -> std::ops::ControlFlow<B>,
-    ) -> std::ops::ControlFlow<B> {
-        match self.data {
-            QueryEdgesData::Packed(edges) => {
-                for edge in edges {
-                    f(edge.edge())?;
-                }
-            }
-            QueryEdgesData::Wide(edges) => {
-                for &edge in edges {
-                    f(edge)?;
-                }
-            }
-        }
-
-        std::ops::ControlFlow::Continue(())
-    }
-
     #[cfg(test)]
     fn is_packed(self) -> bool {
         matches!(self.data, QueryEdgesData::Packed(_))

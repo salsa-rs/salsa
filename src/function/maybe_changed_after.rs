@@ -461,14 +461,14 @@ fn deep_verify_edges(
     // they executed. It's possible that if the value of some input I0 is no longer
     // valid, then some later input I1 might never have executed at all, so verifying
     // it is still up to date is meaningless.
-    if let std::ops::ControlFlow::Break(result) = edges.try_for_each(|edge| {
+    for edge in edges {
         match edge.kind() {
             QueryEdgeKind::Input(dependency_index) => {
                 let input_result = dependency_index.maybe_changed_after(db, zalsa, old_verified_at);
 
                 match input_result {
                     VerifyResult::Changed => {
-                        return std::ops::ControlFlow::Break(VerifyResult::changed());
+                        return VerifyResult::changed();
                     }
                     #[cfg(feature = "accumulator")]
                     VerifyResult::Unchanged { accumulated } => {
@@ -498,11 +498,7 @@ fn deep_verify_edges(
                 dependency_index.mark_validated_output(zalsa, database_key_index);
             }
         }
-        std::ops::ControlFlow::Continue(())
-    }) {
-        return result;
     }
-
     let result = VerifyResult::unchanged_with_accumulated(
         #[cfg(feature = "accumulator")]
         inputs,
