@@ -1300,13 +1300,12 @@ impl std::fmt::Debug for QueryEdge {
 /// bit:
 ///
 /// ```text
-/// [output: 1][ingredient: 12][generation: 19]
+/// [ingredient: 12][generation: 20]
 /// ```
 ///
-/// `index` stores the complete 32-bit key index separately. `output` preserves the
-/// tag on the [`IngredientIndex`]. The ingredient index and generation must fit in
-/// their respective fields; if either does not, [`QueryOrigin`] uses the wide
-/// layout.
+/// `index` stores the complete 32-bit key index separately. Only input edges can use
+/// this representation. Output edges, ingredient indices, and generations that do
+/// not fit use the wide [`QueryEdge`] layout.
 #[derive(Copy, Clone)]
 struct PackedQueryEdge {
     index: u32,
@@ -1314,42 +1313,38 @@ struct PackedQueryEdge {
 }
 
 impl PackedQueryEdge {
-    const INGREDIENT_SHIFT: u32 = 19;
-    const OUTPUT_SHIFT: u32 = 31;
-    const GENERATION_MASK: u32 = 0x7FFFF;
+    const INGREDIENT_SHIFT: u32 = 20;
+    const GENERATION_MASK: u32 = 0xFFFFF;
     const INGREDIENT_MASK: u32 = 0xFFF;
 
     const fn new(edge: QueryEdge) -> Option<Self> {
-        let ingredient = edge.key.ingredient_index().with_tag(false).as_u32();
+        let ingredient = edge.key.ingredient_index().as_u32();
         let id = edge.key.key_index();
 
         if ingredient > Self::INGREDIENT_MASK || id.generation() > Self::GENERATION_MASK {
             return None;
         }
 
-        let ingredient_index = edge.key.ingredient_index();
-
         Some(PackedQueryEdge {
             index: id.index(),
-            metadata: id.generation()
-                | (ingredient << Self::INGREDIENT_SHIFT)
-                | ((ingredient_index.tag() as u32) << Self::OUTPUT_SHIFT),
+            metadata: id.generation() | (ingredient << Self::INGREDIENT_SHIFT),
         })
     }
 
-    const fn edge(self) -> QueryEdge {
+    const fn key(self) -> DatabaseKeyIndex {
         let generation = self.metadata & Self::GENERATION_MASK;
-        let ingredient = (self.metadata >> Self::INGREDIENT_SHIFT) & Self::INGREDIENT_MASK;
-        let is_output = self.metadata >> Self::OUTPUT_SHIFT != 0;
+        let ingredient = self.metadata >> Self::INGREDIENT_SHIFT;
 
         // SAFETY: The index came from a valid `Id` in `PackedQueryEdge::new`.
         let id = unsafe { Id::from_index(self.index) }.with_generation(generation);
         // SAFETY: The ingredient came from a valid `IngredientIndex` in `PackedQueryEdge::new`.
         let ingredient = unsafe { IngredientIndex::new_unchecked(ingredient) };
 
-        QueryEdge {
-            key: DatabaseKeyIndex::new(ingredient.with_tag(is_output), id),
-        }
+        DatabaseKeyIndex::new(ingredient, id)
+    }
+
+    const fn edge(self) -> QueryEdge {
+        QueryEdge { key: self.key() }
     }
 }
 
@@ -1509,10 +1504,24 @@ pub enum QueryEdgeKind {
 pub(crate) fn input_edges(
     input_outputs: QueryEdges<'_>,
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
-    input_outputs.iter().filter_map(|edge| match edge.kind() {
-        QueryEdgeKind::Input(dependency_index) => Some(dependency_index),
-        QueryEdgeKind::Output(_) => None,
-    })
+    let (packed_inputs, wide_edges) = match input_outputs.data {
+        QueryEdgesData::Packed(inputs) => (inputs, &[][..]),
+        QueryEdgesData::Wide(edges) => (&[][..], edges),
+    };
+
+    packed_inputs
+        .iter()
+        .copied()
+        .map(PackedQueryEdge::key)
+        .chain(
+            wide_edges
+                .iter()
+                .copied()
+                .filter_map(|edge| match edge.kind() {
+                    QueryEdgeKind::Input(dependency_index) => Some(dependency_index),
+                    QueryEdgeKind::Output(_) => None,
+                }),
+        )
 }
 
 /// Returns the (tracked) outputs that were executed in computing this memoized value.
@@ -1521,10 +1530,18 @@ pub(crate) fn input_edges(
 pub(crate) fn output_edges(
     input_outputs: QueryEdges<'_>,
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
-    input_outputs.iter().filter_map(|edge| match edge.kind() {
-        QueryEdgeKind::Output(dependency_index) => Some(dependency_index),
-        QueryEdgeKind::Input(_) => None,
-    })
+    let wide_edges = match input_outputs.data {
+        QueryEdgesData::Packed(_) => &[][..],
+        QueryEdgesData::Wide(edges) => edges,
+    };
+
+    wide_edges
+        .iter()
+        .copied()
+        .filter_map(|edge| match edge.kind() {
+            QueryEdgeKind::Output(dependency_index) => Some(dependency_index),
+            QueryEdgeKind::Input(_) => None,
+        })
 }
 
 /// When a query is pushed onto the `active_query` stack, this guard
@@ -1703,16 +1720,58 @@ mod tests {
     #[test]
     fn query_origin_packs_edges_that_fit() {
         let input = QueryEdge::input(key(231, 10_842_122, 41));
-        let output = QueryEdge::output(key(232, 10_842_123, 42));
-        let origin = QueryOrigin::derived([input, output]);
+        let other_input = QueryEdge::input(key(232, 10_842_123, 42));
+        let origin = QueryOrigin::derived([input, other_input]);
         let QueryOriginRef::Derived(edges) = origin.as_ref() else {
             panic!("expected derived origin");
         };
 
         assert!(edges.is_packed());
         assert_eq!(edges.allocation_size(), 2 * size_of::<PackedQueryEdge>());
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![input, other_input]);
+        assert_eq!(
+            edges.iter().rev().collect::<Vec<_>>(),
+            vec![other_input, input]
+        );
+        assert_eq!(
+            origin.as_ref().inputs().collect::<Vec<_>>(),
+            vec![input.key(), other_input.key()]
+        );
+        assert_eq!(origin.as_ref().outputs().collect::<Vec<_>>(), vec![]);
+    }
+
+    #[test]
+    fn query_origin_spills_all_edges_if_it_contains_an_output() {
+        let input = QueryEdge::input(key(231, 10_842_122, 41));
+        let output = QueryEdge::output(key(232, 10_842_123, 42));
+        let origin = QueryOrigin::derived([input, output]);
+        let QueryOriginRef::Derived(edges) = origin.as_ref() else {
+            panic!("expected derived origin");
+        };
+
+        assert!(!edges.is_packed());
+        assert_eq!(edges.allocation_size(), 2 * size_of::<QueryEdge>());
         assert_eq!(edges.iter().collect::<Vec<_>>(), vec![input, output]);
-        assert_eq!(edges.iter().rev().collect::<Vec<_>>(), vec![output, input]);
+        assert_eq!(
+            origin.as_ref().inputs().collect::<Vec<_>>(),
+            vec![input.key()]
+        );
+        assert_eq!(
+            origin.as_ref().outputs().collect::<Vec<_>>(),
+            vec![output.key()]
+        );
+    }
+
+    #[test]
+    fn query_origin_packs_largest_supported_generation() {
+        let input = QueryEdge::input(key(231, 10_842_122, PackedQueryEdge::GENERATION_MASK));
+        let origin = QueryOrigin::derived([input]);
+        let QueryOriginRef::Derived(edges) = origin.as_ref() else {
+            panic!("expected derived origin");
+        };
+
+        assert!(edges.is_packed());
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![input]);
     }
 
     #[test]
