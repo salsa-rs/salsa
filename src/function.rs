@@ -20,7 +20,7 @@ use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef};
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -331,9 +331,9 @@ where
     fn collect_minimum_serialized_edges(
         &self,
         zalsa: &Zalsa,
-        edge: QueryEdge,
+        edge: &QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
-        visited_edges: &mut FxHashSet<QueryEdge>,
+        visited_edges: &mut FxHashSet<QueryEdgeKind>,
     ) {
         let input = edge.key().key_index();
 
@@ -345,12 +345,12 @@ where
 
         let origin = memo.revisions.origin.as_ref();
 
-        visited_edges.insert(edge);
+        visited_edges.insert(edge.kind());
 
         // Collect the minimum dependency tree.
         for edge in origin.edges() {
             // Avoid forming cycles.
-            if visited_edges.contains(edge) {
+            if visited_edges.contains(&edge.kind()) {
                 continue;
             }
 
@@ -362,7 +362,7 @@ where
             let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
             dependency.collect_minimum_serialized_edges(
                 zalsa,
-                *edge,
+                edge,
                 serialized_edges,
                 visited_edges,
             )
@@ -638,7 +638,7 @@ mod persistence {
     use crate::hash::{FxHashSet, FxIndexSet};
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
     use crate::zalsa::Zalsa;
-    use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryOriginRef};
+    use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOrigin, QueryOriginRef};
     use crate::{Id, IngredientIndex};
 
     use serde::de;
@@ -754,15 +754,15 @@ mod persistence {
     fn collect_minimum_serialized_edges(
         zalsa: &Zalsa,
         edges: &[QueryEdge],
-        visited_edges: &mut FxHashSet<QueryEdge>,
+        visited_edges: &mut FxHashSet<QueryEdgeKind>,
         flattened_edges: &mut FxIndexSet<QueryEdge>,
     ) {
-        for &edge in edges {
+        for edge in edges {
             let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
 
             if dependency.is_persistable() {
                 // If the dependency will be serialized, we can serialize the edge directly.
-                flattened_edges.insert(edge);
+                flattened_edges.insert(edge.clone());
             } else {
                 // Otherwise, serialize the minimum edges necessary to cover the dependency.
                 dependency.collect_minimum_serialized_edges(

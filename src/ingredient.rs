@@ -10,7 +10,7 @@ use crate::sync::Arc;
 use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa, transmute_data_mut_ptr, transmute_data_ptr};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef};
 use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -63,9 +63,9 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     fn collect_minimum_serialized_edges(
         &self,
         zalsa: &Zalsa,
-        edge: QueryEdge,
+        edge: &QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
-        visited_edges: &mut FxHashSet<QueryEdge>,
+        visited_edges: &mut FxHashSet<QueryEdgeKind>,
     );
 
     /// Returns information about the current provisional status of `input`.

@@ -89,7 +89,7 @@ impl ActiveQuery {
             edges
                 .iter()
                 .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)))
-                .copied(),
+                .cloned(),
         );
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);

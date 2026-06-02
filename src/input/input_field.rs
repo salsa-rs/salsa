@@ -8,7 +8,7 @@ use crate::input::{Configuration, IngredientImpl, Value};
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
-use crate::zalsa_local::QueryEdge;
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
 use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
@@ -69,9 +69,9 @@ where
     fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
-        edge: QueryEdge,
+        edge: &QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
-        _visited_edges: &mut FxHashSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdgeKind>,
     ) {
         assert!(
             C::PERSIST,
@@ -80,7 +80,7 @@ where
         );
 
         // Input dependencies are the leaves of the minimum dependency tree.
-        serialized_edges.insert(edge);
+        serialized_edges.insert(edge.clone());
     }
 
     fn flatten_cycle_head_dependencies(

@@ -7,7 +7,7 @@ use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
-use crate::zalsa_local::QueryEdge;
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
 use crate::{DatabaseKeyIndex, Id};
 
 /// Created for each tracked struct.
@@ -75,9 +75,9 @@ where
     fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
-        _edge: QueryEdge,
+        _edge: &QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
-        _visited_edges: &mut FxHashSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdgeKind>,
     ) {
         // Tracked fields do not have transitive dependencies, and their dependencies are covered by
         // the base inputs.

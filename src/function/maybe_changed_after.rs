@@ -461,7 +461,7 @@ fn deep_verify_edges(
     // they executed. It's possible that if the value of some input I0 is no longer
     // valid, then some later input I1 might never have executed at all, so verifying
     // it is still up to date is meaningless.
-    for &edge in edges {
+    for edge in edges {
         match edge.kind() {
             QueryEdgeKind::Input(dependency_index) => {
                 let input_result = dependency_index.maybe_changed_after(db, zalsa, old_verified_at);

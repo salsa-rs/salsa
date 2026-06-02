@@ -814,10 +814,13 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
     // Don't insert the key of `head` here. This is important to ensure that we copy over the
     // dependencies from this memo in the previous iteration.
     // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
-    let edges = head.origin.as_ref().edges();
+    let edges = head
+        .origin
+        .set_edges(Box::default())
+        .expect("Executing query to always be derived or derived untracked.");
     flattened.reserve(edges.len());
 
-    for edge in head.origin.as_ref().edges() {
+    for edge in edges {
         match edge.kind() {
             QueryEdgeKind::Input(input) => {
                 let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
@@ -832,7 +835,7 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
             QueryEdgeKind::Output(_) => {
                 // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
                 // created by the query head because those are owned by this query.
-                flattened.insert(*edge);
+                flattened.insert(edge);
             }
         }
     }

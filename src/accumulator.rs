@@ -14,7 +14,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
-use crate::zalsa_local::QueryEdge;
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 mod accumulated;
@@ -114,9 +114,9 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
-        _edge: QueryEdge,
+        _edge: &QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
-        _visited_edges: &mut FxHashSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdgeKind>,
     ) {
         panic!("nothing should ever depend on an accumulator directly")
     }

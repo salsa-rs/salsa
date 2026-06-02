@@ -1,6 +1,8 @@
 use std::cell::{RefCell, UnsafeCell};
 use std::fmt;
 use std::fmt::Formatter;
+use std::hash::{Hash, Hasher};
+use std::num::NonZeroU64;
 use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 use std::sync::Arc;
@@ -1157,48 +1159,179 @@ impl std::fmt::Debug for QueryOrigin {
 
 /// An input or output query edge.
 ///
-/// This type is a packed version of `QueryEdgeKind`, tagging the `IngredientIndex`
-/// in `key` with a discriminator for the input and output variants without increasing
-/// the size of the type. Notably, this type is 12 bytes as opposed to the 16 byte
-/// `QueryEdgeKind`, which is meaningful as inputs and outputs are stored contiguously.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "persistence", serde(transparent))]
-pub struct QueryEdge {
+/// Most edges fit in a single word. Edges that exceed the inline ingredient or generation
+/// ranges store an aligned pointer to a boxed full-width edge instead.
+pub struct QueryEdge(NonZeroU64);
+
+#[derive(Copy, Clone)]
+struct WideQueryEdge {
     key: DatabaseKeyIndex,
 }
 
 impl QueryEdge {
+    // [output: 1][ingredient: 12][generation: 18][index: 32][inline tag: 1]
+    const INLINE_TAG: u64 = 0b1;
+    const INDEX_SHIFT: u32 = 1;
+    const GENERATION_SHIFT: u32 = 33;
+    const INGREDIENT_SHIFT: u32 = 51;
+    const OUTPUT_SHIFT: u32 = 63;
+    const GENERATION_MASK: u64 = 0x3FFFF;
+    const INGREDIENT_MASK: u64 = 0xFFF;
+
+    fn new(key: DatabaseKeyIndex) -> QueryEdge {
+        let ingredient_index = key.ingredient_index();
+        let ingredient = ingredient_index.with_tag(false).as_u32();
+        let id = key.key_index();
+
+        if u64::from(ingredient) <= Self::INGREDIENT_MASK
+            && u64::from(id.generation()) <= Self::GENERATION_MASK
+        {
+            let data = Self::INLINE_TAG
+                | (u64::from(id.index()) << Self::INDEX_SHIFT)
+                | (u64::from(id.generation()) << Self::GENERATION_SHIFT)
+                | (u64::from(ingredient) << Self::INGREDIENT_SHIFT)
+                | (u64::from(ingredient_index.tag()) << Self::OUTPUT_SHIFT);
+
+            QueryEdge(NonZeroU64::new(data).unwrap())
+        } else {
+            Self::new_wide(key)
+        }
+    }
+
+    fn new_wide(key: DatabaseKeyIndex) -> QueryEdge {
+        let pointer = Box::into_raw(Box::new(WideQueryEdge { key }));
+        let address = pointer.expose_provenance();
+
+        assert_eq!(
+            address & Self::INLINE_TAG as usize,
+            0,
+            "boxed query edge pointer is insufficiently aligned"
+        );
+
+        QueryEdge(NonZeroU64::new(u64::try_from(address).unwrap()).unwrap())
+    }
+
+    fn is_inline(&self) -> bool {
+        self.0.get() & Self::INLINE_TAG != 0
+    }
+
+    fn tagged_key(&self) -> DatabaseKeyIndex {
+        if self.is_inline() {
+            let data = self.0.get();
+            let index = (data >> Self::INDEX_SHIFT) as u32;
+            let generation = ((data >> Self::GENERATION_SHIFT) & Self::GENERATION_MASK) as u32;
+            let ingredient = ((data >> Self::INGREDIENT_SHIFT) & Self::INGREDIENT_MASK) as u32;
+            let is_output = data >> Self::OUTPUT_SHIFT != 0;
+
+            // SAFETY: The index came from a valid `Id` in `QueryEdge::new`.
+            let id = unsafe { Id::from_index(index) }.with_generation(generation);
+            // SAFETY: The ingredient came from a valid `IngredientIndex` in `QueryEdge::new`.
+            let ingredient = unsafe { IngredientIndex::new_unchecked(ingredient) };
+
+            DatabaseKeyIndex::new(ingredient.with_tag(is_output), id)
+        } else {
+            self.wide().key
+        }
+    }
+
+    fn untagged_key(key: DatabaseKeyIndex) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(key.ingredient_index().with_tag(false), key.key_index())
+    }
+
+    fn wide(&self) -> &WideQueryEdge {
+        debug_assert!(!self.is_inline());
+
+        // SAFETY: The non-inline representation stores a pointer returned by `Box::into_raw`.
+        unsafe {
+            &*ptr::with_exposed_provenance::<WideQueryEdge>(usize::try_from(self.0.get()).unwrap())
+        }
+    }
+
     /// Create an input query edge with the given index.
     pub fn input(key: DatabaseKeyIndex) -> QueryEdge {
-        Self { key }
+        Self::new(key)
     }
 
     /// Create an output query edge with the given index.
     pub fn output(key: DatabaseKeyIndex) -> QueryEdge {
         let ingredient_index = key.ingredient_index().with_tag(true);
 
-        Self {
-            key: DatabaseKeyIndex::new(ingredient_index, key.key_index()),
-        }
+        Self::new(DatabaseKeyIndex::new(ingredient_index, key.key_index()))
     }
 
     /// Return the key of this query edge.
-    pub fn key(self) -> DatabaseKeyIndex {
+    pub fn key(&self) -> DatabaseKeyIndex {
         // Clear the tag to restore the original index.
-        DatabaseKeyIndex::new(
-            self.key.ingredient_index().with_tag(false),
-            self.key.key_index(),
-        )
+        Self::untagged_key(self.tagged_key())
     }
 
     /// Returns the kind of this query edge.
-    pub fn kind(self) -> QueryEdgeKind {
-        if self.key.ingredient_index().tag() {
-            QueryEdgeKind::Output(self.key())
+    pub fn kind(&self) -> QueryEdgeKind {
+        let key = self.tagged_key();
+
+        if key.ingredient_index().tag() {
+            QueryEdgeKind::Output(Self::untagged_key(key))
         } else {
-            QueryEdgeKind::Input(self.key())
+            QueryEdgeKind::Input(key)
         }
+    }
+}
+
+impl Clone for QueryEdge {
+    fn clone(&self) -> Self {
+        if self.is_inline() {
+            QueryEdge(self.0)
+        } else {
+            Self::new_wide(self.wide().key)
+        }
+    }
+}
+
+impl Drop for QueryEdge {
+    fn drop(&mut self) {
+        if !self.is_inline() {
+            let pointer = ptr::with_exposed_provenance_mut::<WideQueryEdge>(
+                usize::try_from(self.0.get()).unwrap(),
+            );
+
+            // SAFETY: The non-inline representation uniquely owns a pointer returned by
+            // `Box::into_raw`, and `QueryEdge::clone` allocates a distinct box.
+            unsafe { drop(Box::from_raw(pointer)) };
+        }
+    }
+}
+
+impl PartialEq for QueryEdge {
+    fn eq(&self, other: &Self) -> bool {
+        self.tagged_key() == other.tagged_key()
+    }
+}
+
+impl Eq for QueryEdge {}
+
+impl Hash for QueryEdge {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.tagged_key().hash(state);
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl serde::Serialize for QueryEdge {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&self.tagged_key(), serializer)
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl<'de> serde::Deserialize<'de> for QueryEdge {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer).map(Self::new)
     }
 }
 
@@ -1220,7 +1353,7 @@ pub enum QueryEdgeKind {
 pub(crate) fn input_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
-    input_outputs.iter().filter_map(|&edge| match edge.kind() {
+    input_outputs.iter().filter_map(|edge| match edge.kind() {
         QueryEdgeKind::Input(dependency_index) => Some(dependency_index),
         QueryEdgeKind::Output(_) => None,
     })
@@ -1232,7 +1365,7 @@ pub(crate) fn input_edges(
 pub(crate) fn output_edges(
     input_outputs: &[QueryEdge],
 ) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'_> {
-    input_outputs.iter().filter_map(|&edge| match edge.kind() {
+    input_outputs.iter().filter_map(|edge| match edge.kind() {
         QueryEdgeKind::Output(dependency_index) => Some(dependency_index),
         QueryEdgeKind::Input(_) => None,
     })
@@ -1335,6 +1468,85 @@ impl Drop for ActiveQueryGuard<'_> {
                 );
             })
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::mem::size_of;
+
+    use super::{QueryEdge, QueryEdgeKind};
+    use crate::{DatabaseKeyIndex, Id, IngredientIndex};
+
+    #[test]
+    fn query_edge_is_one_word() {
+        assert_eq!(size_of::<QueryEdge>(), size_of::<u64>());
+        assert_eq!(size_of::<Option<QueryEdge>>(), size_of::<u64>());
+    }
+
+    #[test]
+    fn inline_query_edge_round_trip() {
+        let key = key(231, 10_842_122, 41);
+
+        let input = QueryEdge::input(key);
+        assert!(input.is_inline());
+        assert_eq!(input.kind(), QueryEdgeKind::Input(key));
+
+        let output = QueryEdge::output(key);
+        assert!(output.is_inline());
+        assert_eq!(output.kind(), QueryEdgeKind::Output(key));
+    }
+
+    #[test]
+    fn wide_generation_query_edge_round_trip() {
+        let key = key(231, 10_842_122, QueryEdge::GENERATION_MASK as u32 + 1);
+        let edge = QueryEdge::input(key);
+
+        assert!(!edge.is_inline());
+        assert_eq!(edge.kind(), QueryEdgeKind::Input(key));
+        assert_eq!(edge.clone(), edge);
+    }
+
+    #[test]
+    fn wide_ingredient_query_edge_round_trip() {
+        let key = key(QueryEdge::INGREDIENT_MASK as u32 + 1, 10_842_122, 41);
+        let edge = QueryEdge::output(key);
+
+        assert!(!edge.is_inline());
+        assert_eq!(edge.kind(), QueryEdgeKind::Output(key));
+        assert_eq!(edge.clone(), edge);
+    }
+
+    #[test]
+    fn equivalent_wide_query_edges_hash_equally() {
+        let key = key(231, 10_842_122, QueryEdge::GENERATION_MASK as u32 + 1);
+        let mut edges = HashSet::new();
+
+        edges.insert(QueryEdge::input(key));
+        edges.insert(QueryEdge::input(key));
+
+        assert_eq!(edges.len(), 1);
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn wide_query_edge_serde_round_trip() {
+        let key = key(231, 10_842_122, QueryEdge::GENERATION_MASK as u32 + 1);
+        let edge = QueryEdge::output(key);
+        let serialized = serde_json::to_string(&edge).unwrap();
+        let deserialized: QueryEdge = serde_json::from_str(&serialized).unwrap();
+
+        assert!(!deserialized.is_inline());
+        assert_eq!(deserialized, edge);
+        assert_eq!(deserialized.kind(), QueryEdgeKind::Output(key));
+    }
+
+    fn key(ingredient: u32, index: u32, generation: u32) -> DatabaseKeyIndex {
+        // SAFETY: Test inputs are valid `Id` indices.
+        let id = unsafe { Id::from_index(index) }.with_generation(generation);
+
+        DatabaseKeyIndex::new(IngredientIndex::new(ingredient), id)
     }
 }
 

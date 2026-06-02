@@ -22,7 +22,7 @@ use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::Slot;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
-use crate::zalsa_local::QueryEdge;
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 /// Trait that defines the key properties of an interned struct.
@@ -932,9 +932,9 @@ where
     fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
-        edge: QueryEdge,
+        edge: &QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
-        _visited_edges: &mut FxHashSet<QueryEdge>,
+        _visited_edges: &mut FxHashSet<QueryEdgeKind>,
     ) {
         if C::PERSIST && C::REVISIONS != IMMORTAL {
             // If the interned struct is being persisted, it may be reachable through transitive queries.
@@ -942,7 +942,7 @@ where
             // invalidate a dependency without a base input necessarily being updated. Thus, we must
             // preserve the transitive dependency on the interned struct, if garbage collection is
             // enabled.
-            serialized_edges.insert(edge);
+            serialized_edges.insert(edge.clone());
         }
 
         // Otherwise, the dependency is covered by the base inputs.
