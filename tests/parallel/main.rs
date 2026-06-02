@@ -35,7 +35,10 @@ pub(crate) mod sync {
     pub use shuttle::thread;
 
     pub fn check(f: impl Fn() + Send + Sync + 'static) {
-        shuttle::check_pct(f, 2500, 50);
+        let mut config = shuttle::Config::default();
+        config.stack_size = 1024 * 1024;
+        let scheduler = shuttle::scheduler::PctScheduler::new(50, 2500);
+        shuttle::Runner::new(scheduler, config).run(f);
     }
 }
 

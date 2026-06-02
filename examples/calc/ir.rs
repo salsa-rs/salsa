@@ -134,16 +134,17 @@ impl Diagnostic {
     pub fn render(&self, db: &dyn crate::Db, src: SourceProgram) -> String {
         use annotate_snippets::*;
         let line_start = src.text(db)[..self.start].lines().count() + 1;
-        Renderer::plain()
-            .render(
-                Level::Error.title(&self.message).snippet(
-                    Snippet::source(src.text(db))
-                        .line_start(line_start)
-                        .origin("input")
-                        .fold(true)
-                        .annotation(Level::Error.span(self.start..self.end).label("here")),
+        let report = [Level::ERROR.primary_title(&self.message).element(
+            Snippet::source(src.text(db))
+                .line_start(line_start)
+                .path("input")
+                .fold(true)
+                .annotation(
+                    AnnotationKind::Primary
+                        .span(self.start..self.end)
+                        .label("here"),
                 ),
-            )
-            .to_string()
+        )];
+        Renderer::plain().render(&report).to_string()
     }
 }

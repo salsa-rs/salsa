@@ -167,13 +167,11 @@ fn check_bad_variable_in_program() {
               |
             2 | print a + b
               |       ^^ here
-              |
             error: the variable `b` is not declared
              --> input:2:11
               |
             2 | print a + b
-              |           ^ here
-              |"#]],
+              |           ^ here"#]],
         &[],
     );
 }
@@ -187,8 +185,7 @@ fn check_bad_function_in_program() {
              --> input:2:7
               |
             2 | print a(22)
-              |       ^^^^^ here
-              |"#]],
+              |       ^^^^^ here"#]],
         &[],
     );
 }
@@ -207,8 +204,7 @@ fn check_bad_variable_in_function() {
             4 |               fn add_one(a) = a + b
               |  _________________________________^
             5 | |             print add_one(22)
-              | |____________^ here
-              |"#]],
+              | |____________^ here"#]],
         &[],
     );
 }
@@ -226,15 +222,13 @@ fn check_bad_function_in_function() {
               |
             4 |             fn add_one(a) = add_two(a) + b
               |                             ^^^^^^^^^^ here
-              |
             error: the variable `b` is not declared
              --> input:4:42
               |
             4 |               fn add_one(a) = add_two(a) + b
               |  __________________________________________^
             5 | |             print add_one(22)
-              | |____________^ here
-              |"#]],
+              | |____________^ here"#]],
         &[],
     );
 }
@@ -254,8 +248,7 @@ fn fix_bad_variable_in_function() {
             4 |               fn double(a) = a * b
               |  ________________________________^
             5 | |             fn quadruple(a) = double(double(a))
-              | |____________^ here
-              |"#]],
+              | |____________^ here"#]],
         &[(
             "
                 fn double(a) = a * 2
