@@ -179,12 +179,12 @@ impl ZalsaLocal {
     pub(crate) fn push_query(
         &self,
         database_key_index: DatabaseKeyIndex,
-        iteration_stamp: IterationStamp,
+        iteration: IterationStamp,
     ) -> ActiveQueryGuard<'_> {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
-                stack.push_new_query(database_key_index, iteration_stamp);
+                stack.push_new_query(database_key_index, iteration);
 
                 ActiveQueryGuard {
                     local_state: self,
@@ -762,21 +762,17 @@ impl QueryRevisions {
         }
     }
 
-    pub(crate) fn set_iteration_count(
-        &self,
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: IterationStamp,
-    ) {
+    pub(crate) fn set_iteration_count(&self, database_key_index: DatabaseKeyIndex, iteration: u8) {
         let Some(extra) = &self.extra.0 else {
             return;
         };
-        debug_assert!(extra.iteration.load() <= iteration_count);
+        debug_assert!(extra.iteration.load().iteration() <= iteration);
 
-        extra.iteration.store(iteration_count);
+        extra.iteration.store_iteration(iteration);
 
         extra
             .cycle_heads
-            .update_iteration_count(database_key_index, iteration_count);
+            .update_iteration_count(database_key_index, iteration);
     }
 
     fn get_or_insert_extra(&mut self) -> &mut QueryRevisionsExtraInner {
@@ -800,25 +796,22 @@ impl QueryRevisions {
     ///
     /// Don't call this method on a cycle head, as it results in diverging iteration counts
     /// between what's in cycle heads and stored on the memo.
-    pub(crate) fn update_cycle_participant_iteration_count(
-        &mut self,
-        iteration_count: IterationStamp,
-    ) {
+    pub(crate) fn update_cycle_participant_iteration_count(&mut self, iteration: u8) {
         let extra = self.get_or_insert_extra();
-        extra.iteration.set(iteration_count);
+        extra.iteration.set_iteration(iteration);
     }
 
     /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
     pub(crate) fn update_iteration_count_mut(
         &mut self,
         cycle_head_index: DatabaseKeyIndex,
-        iteration_count: IterationStamp,
+        iteration: u8,
     ) {
         let extra = self.get_or_insert_extra();
-        extra.iteration.set(iteration_count);
+        extra.iteration.set_iteration(iteration);
         extra
             .cycle_heads
-            .update_iteration_count_mut(cycle_head_index, iteration_count);
+            .update_iteration_count_mut(cycle_head_index, iteration);
     }
 
     /// Returns the ids of the tracked structs created when running this query.

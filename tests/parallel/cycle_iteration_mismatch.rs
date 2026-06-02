@@ -67,7 +67,7 @@ fn initial(_db: &dyn KnobsDatabase, _id: salsa::Id) -> CycleValue {
 }
 
 #[test_log::test]
-fn test_iteration_count_mismatch() {
+fn test_iteration_mismatch() {
     crate::sync::check(|| {
         tracing::debug!("Starting new run");
         let db_t1 = Knobs::default();

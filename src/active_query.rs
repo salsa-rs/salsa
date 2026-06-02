@@ -68,8 +68,8 @@ pub(crate) struct ActiveQuery {
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
 
-    /// If this query is a cycle head, iteration stamp of that cycle.
-    iteration_stamp: IterationStamp,
+    /// If this query is a cycle head, iteration of that cycle.
+    iteration: IterationStamp,
 }
 
 impl ActiveQuery {
@@ -179,7 +179,7 @@ impl ActiveQuery {
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, iteration_stamp: IterationStamp) -> Self {
+    fn new(database_key_index: DatabaseKeyIndex, iteration: IterationStamp) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -189,7 +189,7 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
-            iteration_stamp,
+            iteration,
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
             #[cfg(feature = "accumulator")]
@@ -207,7 +207,7 @@ impl ActiveQuery {
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
-            iteration_stamp,
+            iteration,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
             #[cfg(feature = "accumulator")]
@@ -231,7 +231,7 @@ impl ActiveQuery {
             mem::take(accumulated),
             active_tracked_structs,
             mem::take(cycle_heads),
-            iteration_stamp,
+            iteration,
         );
 
         let revisions = QueryRevisions {
@@ -260,7 +260,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
-            iteration_stamp,
+            iteration,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -270,7 +270,7 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
-        *iteration_stamp = IterationStamp::default();
+        *iteration = IterationStamp::default();
         #[cfg(feature = "accumulator")]
         accumulated.clear();
     }
@@ -278,7 +278,7 @@ impl ActiveQuery {
     fn reset_for(
         &mut self,
         new_database_key_index: DatabaseKeyIndex,
-        new_iteration_stamp: IterationStamp,
+        new_iteration: IterationStamp,
     ) {
         let Self {
             database_key_index,
@@ -289,7 +289,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
-            iteration_stamp,
+            iteration,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -299,7 +299,7 @@ impl ActiveQuery {
         *durability = Durability::MAX;
         *changed_at = Revision::start();
         *untracked_read = false;
-        *iteration_stamp = new_iteration_stamp;
+        *iteration = new_iteration;
         debug_assert!(
             input_outputs.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
@@ -368,13 +368,13 @@ impl QueryStack {
     pub(crate) fn push_new_query(
         &mut self,
         database_key_index: DatabaseKeyIndex,
-        iteration_stamp: IterationStamp,
+        iteration: IterationStamp,
     ) {
         if self.len < self.stack.len() {
-            self.stack[self.len].reset_for(database_key_index, iteration_stamp);
+            self.stack[self.len].reset_for(database_key_index, iteration);
         } else {
             self.stack
-                .push(ActiveQuery::new(database_key_index, iteration_stamp));
+                .push(ActiveQuery::new(database_key_index, iteration));
         }
         self.len += 1;
     }
@@ -428,7 +428,7 @@ struct CapturedQuery {
     durability: Durability,
     changed_at: Revision,
     cycle_heads: CycleHeads,
-    iteration_count: u32,
+    iteration: u32,
 }
 
 impl fmt::Debug for CapturedQuery {
@@ -441,7 +441,7 @@ impl fmt::Debug for CapturedQuery {
         if !self.cycle_heads.is_empty() {
             debug_struct
                 .field("cycle_heads", &self.cycle_heads)
-                .field("iteration_stamp", &self.iteration_count);
+                .field("iteration", &self.iteration);
         }
         debug_struct.finish()
     }
@@ -462,7 +462,7 @@ impl Backtrace {
                             durability: query.durability,
                             changed_at: query.changed_at,
                             cycle_heads: query.cycle_heads.clone(),
-                            iteration_count: query.iteration_stamp.iteration_as_u32(),
+                            iteration: query.iteration.iteration_as_u32(),
                         })
                         .collect(),
                 )
@@ -497,15 +497,15 @@ impl fmt::Display for Backtrace {
                 durability,
                 changed_at,
                 ref cycle_heads,
-                iteration_count,
+                iteration,
             },
         ) in self.0.iter().enumerate()
         {
             write!(fmt, "{idx:>4}: {database_key_index:?}")?;
             if full {
                 write!(fmt, " -> ({changed_at:?}, {durability:#?}")?;
-                if !cycle_heads.is_empty() || !iteration_count != 0 {
-                    write!(fmt, ", iteration = {iteration_count}")?;
+                if !cycle_heads.is_empty() || iteration != 0 {
+                    write!(fmt, ", iteration = {iteration}")?;
                 }
                 write!(fmt, ")")?;
             }
@@ -526,7 +526,7 @@ impl fmt::Display for Backtrace {
                             fmt,
                             "{:?} -> iteration = {}",
                             head.database_key_index,
-                            head.iteration_stamp.load().iteration()
+                            head.iteration.load().iteration()
                         )?;
                     }
                     writeln!(fmt)?;

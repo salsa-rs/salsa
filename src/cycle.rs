@@ -55,7 +55,7 @@ use crate::{Id, Revision};
 /// The maximum number of times we'll fixpoint-iterate before panicking.
 ///
 /// Should only be relevant in case of a badly configured cycle recovery.
-pub const MAX_ITERATIONS: IterationStamp = IterationStamp(200);
+pub const MAX_ITERATIONS: u8 = 200;
 
 /// Cycle recovery strategy: Is this query capable of recovering from
 /// a cycle that results from executing the function? If so, how?
@@ -88,7 +88,7 @@ pub enum CycleRecoveryStrategy {
 pub struct CycleHead {
     pub(crate) database_key_index: DatabaseKeyIndex,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    pub(crate) iteration_stamp: AtomicIterationStamp,
+    pub(crate) iteration: AtomicIterationStamp,
 
     /// Marks a cycle head as removed within its `CycleHeads` container.
     ///
@@ -102,13 +102,10 @@ pub struct CycleHead {
 }
 
 impl CycleHead {
-    pub const fn new(
-        database_key_index: DatabaseKeyIndex,
-        iteration_stamp: IterationStamp,
-    ) -> Self {
+    pub const fn new(database_key_index: DatabaseKeyIndex, iteration: IterationStamp) -> Self {
         Self {
             database_key_index,
-            iteration_stamp: AtomicIterationStamp(AtomicU16::new(iteration_stamp.0)),
+            iteration: AtomicIterationStamp(AtomicU16::new(iteration.0)),
             removed: AtomicBool::new(false),
         }
     }
@@ -118,7 +115,7 @@ impl Clone for CycleHead {
     fn clone(&self) -> Self {
         Self {
             database_key_index: self.database_key_index,
-            iteration_stamp: self.iteration_stamp.load().into(),
+            iteration: self.iteration.load().into(),
             removed: self.removed.load(Ordering::Relaxed).into(),
         }
     }
@@ -136,8 +133,12 @@ impl Clone for CycleHead {
 pub struct IterationStamp(u16);
 
 impl IterationStamp {
+    const fn new(iteration: u8, cancellation_count: u8) -> Self {
+        Self(u16::from_le_bytes([iteration, cancellation_count]))
+    }
+
     pub(crate) const fn initial(cancellation_count: u8) -> Self {
-        Self((cancellation_count as u16) << u8::BITS)
+        Self::new(0, cancellation_count)
     }
 
     pub(crate) const fn is_initial_iteration(self) -> bool {
@@ -146,7 +147,7 @@ impl IterationStamp {
 
     pub(crate) const fn increment_iteration(self) -> Option<Self> {
         let next = Self(self.0 + 1);
-        if next.iteration() <= MAX_ITERATIONS.iteration() {
+        if next.iteration() <= MAX_ITERATIONS {
             Some(next)
         } else {
             None
@@ -158,30 +159,23 @@ impl IterationStamp {
     }
 
     pub(crate) const fn cancellation_count(self) -> u8 {
-        (self.0 >> u8::BITS) as u8
+        self.0.to_le_bytes()[1]
     }
 
     pub(crate) const fn iteration(self) -> u8 {
-        self.0 as u8
+        self.0.to_le_bytes()[0]
+    }
+
+    const fn with_iteration(self, iteration: u8) -> Self {
+        Self::new(iteration, self.cancellation_count())
     }
 }
 
 impl std::fmt::Debug for IterationStamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "IterationStamp({}, {})",
-            self.iteration(),
-            self.cancellation_count()
-        )
-    }
-}
-
-impl std::fmt::Display for IterationStamp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("IterationStamp")
-            .field(&self.iteration())
-            .field(&self.cancellation_count())
+        f.debug_struct("IterationStamp")
+            .field("iteration", &self.iteration())
+            .field("cancellation", &self.cancellation_count())
             .finish()
     }
 }
@@ -198,18 +192,20 @@ impl AtomicIterationStamp {
         IterationStamp(*self.0.get_mut())
     }
 
-    pub(crate) fn store(&self, value: IterationStamp) {
-        self.0.store(value.0, Ordering::Release);
+    pub(crate) fn store_iteration(&self, iteration: u8) {
+        self.0
+            .store(self.load().with_iteration(iteration).0, Ordering::Release);
     }
 
-    pub(crate) fn set(&mut self, value: IterationStamp) {
-        *self.0.get_mut() = value.0;
+    pub(crate) fn set_iteration(&mut self, iteration: u8) {
+        let value = self.0.get_mut();
+        *value = IterationStamp(*value).with_iteration(iteration).0;
     }
 }
 
 impl From<IterationStamp> for AtomicIterationStamp {
-    fn from(iteration_count: IterationStamp) -> Self {
-        AtomicIterationStamp(iteration_count.0.into())
+    fn from(iteration: IterationStamp) -> Self {
+        AtomicIterationStamp(iteration.0.into())
     }
 }
 
@@ -224,13 +220,10 @@ impl CycleHeads {
         self.0.is_empty()
     }
 
-    pub(crate) fn initial(
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: IterationStamp,
-    ) -> Self {
+    pub(crate) fn initial(database_key_index: DatabaseKeyIndex, iteration: IterationStamp) -> Self {
         Self(thin_vec![CycleHead {
             database_key_index,
-            iteration_stamp: iteration_count.into(),
+            iteration: iteration.into(),
             removed: false.into()
         }])
     }
@@ -273,38 +266,38 @@ impl CycleHeads {
         }
     }
 
-    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
+    /// Updates the iteration for the head `cycle_head_index` to `new_iteration`.
     ///
-    /// Unlike [`update_iteration_count`], this method takes a `&mut self` reference. It should
+    /// Unlike [`update_iteration`], this method takes a `&mut self` reference. It should
     /// be preferred if possible, as it avoids atomic operations.
     pub(crate) fn update_iteration_count_mut(
         &mut self,
         cycle_head_index: DatabaseKeyIndex,
-        new_iteration_count: IterationStamp,
+        new_iteration: u8,
     ) {
         if let Some(cycle_head) = self
             .0
             .iter_mut()
             .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
         {
-            cycle_head.iteration_stamp.set(new_iteration_count);
+            cycle_head.iteration.set_iteration(new_iteration);
         }
     }
 
-    /// Updates the iteration count for the head `cycle_head_index` to `new_iteration_count`.
+    /// Updates the iteration for the head `cycle_head_index` to `new_iteration`.
     ///
-    /// Unlike [`update_iteration_count_mut`], this method takes a `&self` reference.
+    /// Unlike [`update_iteration_mut`], this method takes a `&self` reference.
     pub(crate) fn update_iteration_count(
         &self,
         cycle_head_index: DatabaseKeyIndex,
-        new_iteration_count: IterationStamp,
+        new_iteration: u8,
     ) {
         if let Some(cycle_head) = self
             .0
             .iter()
             .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
         {
-            cycle_head.iteration_stamp.store(new_iteration_count);
+            cycle_head.iteration.store_iteration(new_iteration);
         }
     }
 
@@ -314,14 +307,14 @@ impl CycleHeads {
 
         for head in other {
             debug_assert!(!head.removed.load(Ordering::Relaxed));
-            self.insert(head.database_key_index, head.iteration_stamp.load());
+            self.insert(head.database_key_index, head.iteration.load());
         }
     }
 
     pub(crate) fn insert(
         &mut self,
         database_key_index: DatabaseKeyIndex,
-        iteration_count: IterationStamp,
+        iteration: IterationStamp,
     ) -> bool {
         if let Some(existing) = self
             .0
@@ -332,23 +325,22 @@ impl CycleHeads {
 
             if *removed {
                 *removed = false;
-                existing.iteration_stamp.set(iteration_count);
+                existing.iteration = iteration.into();
 
                 true
             } else {
-                let existing_count = existing.iteration_stamp.load_mut();
+                let existing_iteration = existing.iteration.load_mut();
 
                 assert_eq!(
-                    existing_count, iteration_count,
-                    "Can't merge cycle heads {:?} with different iteration counts ({existing_count:?}, {iteration_count:?})",
+                    existing_iteration, iteration,
+                    "Can't merge cycle heads {:?} with different iterations ({existing_iteration:?}, {iteration:?})",
                     existing.database_key_index
                 );
 
                 false
             }
         } else {
-            self.0
-                .push(CycleHead::new(database_key_index, iteration_count));
+            self.0.push(CycleHead::new(database_key_index, iteration));
             true
         }
     }

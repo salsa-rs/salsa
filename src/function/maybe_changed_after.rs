@@ -550,7 +550,7 @@ fn validate_provisional(
                 //
                 // If we don't account for the iteration, then `a` (from iteration 0) will be finalized
                 // because its cycle head `b` is now finalized, but `b` never pulled `a` in the last iteration.
-                if iteration != cycle_head.iteration_stamp.load() {
+                if iteration != cycle_head.iteration.load() {
                     return false;
                 }
             }
@@ -605,15 +605,15 @@ fn validate_same_iteration(
     for cycle_head in cycle_heads_iter {
         match cycle_head {
             TryClaimHeadsResult::Cycle {
-                head_iteration_count,
-                memo_iteration_count: current_iteration_count,
+                head_iteration,
+                memo_iteration,
                 verified_at: head_verified_at,
             } => {
                 if head_verified_at != memo_verified_at {
                     return false;
                 }
 
-                if head_iteration_count != current_iteration_count {
+                if head_iteration != memo_iteration {
                     return false;
                 }
             }

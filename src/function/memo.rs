@@ -355,8 +355,8 @@ mod persistence {
 pub(super) enum TryClaimHeadsResult {
     /// Claiming the cycle head results in a cycle.
     Cycle {
-        head_iteration_count: IterationStamp,
-        memo_iteration_count: IterationStamp,
+        head_iteration: IterationStamp,
+        memo_iteration: IterationStamp,
         verified_at: Revision,
     },
 
@@ -404,7 +404,7 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                 let provisional_status = ingredient
                     .provisional_status(self.zalsa, head_key_index)
                     .expect("cycle head memo to exist");
-                let (current_iteration_count, verified_at) = match provisional_status {
+                let (current_iteration, verified_at) = match provisional_status {
                     ProvisionalStatus::Provisional {
                         iteration,
                         verified_at,
@@ -417,8 +417,8 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                 };
 
                 Some(TryClaimHeadsResult::Cycle {
-                    memo_iteration_count: current_iteration_count,
-                    head_iteration_count: head.iteration_stamp.load(),
+                    memo_iteration: current_iteration,
+                    head_iteration: head.iteration.load(),
                     verified_at,
                 })
             }

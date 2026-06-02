@@ -248,20 +248,22 @@ impl Runtime {
         self.cancellation_count.load(Ordering::Acquire)
     }
 
-    pub(crate) fn set_cancellation_flag(&self) -> bool {
+    pub(crate) fn set_cancellation_flag(&self) {
         crate::tracing::trace!("set_cancellation_flag");
-        let overflow = self
-            .cancellation_count
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
-                count.checked_add(1)
-            })
-            .is_err();
         self.revision_cancelled.store(true, Ordering::Release);
-        overflow
     }
 
     pub(crate) fn reset_cancellation_flag(&mut self) {
         *self.revision_cancelled.get_mut() = false;
+    }
+
+    pub(crate) fn bump_cancellation_count(&mut self) -> bool {
+        let count = self.cancellation_count.get_mut();
+        let Some(next) = count.checked_add(1) else {
+            return true;
+        };
+        *count = next;
+        false
     }
 
     /// Returns the [`Table`] used to store the value of salsa structs
@@ -441,10 +443,10 @@ mod tests {
         let mut runtime = Runtime::default();
 
         for _ in 0..u8::MAX {
-            assert!(!runtime.set_cancellation_flag());
+            assert!(!runtime.bump_cancellation_count());
         }
 
-        assert!(runtime.set_cancellation_flag());
+        assert!(runtime.bump_cancellation_count());
         runtime.new_revision();
 
         assert_eq!(runtime.current_revision(), Revision::start().next());
