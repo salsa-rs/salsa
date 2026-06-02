@@ -185,7 +185,11 @@ where
 
         let deep_verify = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
 
-        if deep_verify.is_unchanged() {
+        if let VerifyResult::Unchanged {
+            #[cfg(feature = "accumulator")]
+            accumulated,
+        } = deep_verify
+        {
             // Check if the inputs are still valid. We can just compare `changed_at`.
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
@@ -197,9 +201,6 @@ where
                 VerifyResult::unchanged_with_accumulated(
                     #[cfg(feature = "accumulator")]
                     {
-                        let VerifyResult::Unchanged { accumulated } = deep_verify else {
-                            unreachable!()
-                        };
                         if old_memo.revisions.accumulated().is_some() {
                             InputAccumulatedValues::Any
                         } else {
