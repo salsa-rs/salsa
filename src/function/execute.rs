@@ -837,9 +837,10 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
         }
     }
 
-    head.origin
-        .set_edges(flattened.drain(..).collect())
-        .expect("Executing query to always be derived or derived untracked.");
+    assert!(
+        head.origin.set_edges(flattened.drain(..)).is_ok(),
+        "Executing query to always be derived or derived untracked."
+    );
 
     seen.clear();
 

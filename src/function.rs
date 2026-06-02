@@ -707,7 +707,7 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            QueryOrigin::derived(flattened_edges.drain(..).collect())
+                            QueryOrigin::derived(flattened_edges.drain(..))
                         }
                         QueryOriginRef::DerivedUntracked(edges) => {
                             collect_minimum_serialized_edges(
@@ -717,7 +717,7 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            QueryOrigin::derived_untracked(flattened_edges.drain(..).collect())
+                            QueryOrigin::derived_untracked(flattened_edges.drain(..))
                         }
                         QueryOriginRef::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
