@@ -69,7 +69,7 @@ pub(crate) struct ActiveQuery {
     cycle_heads: CycleHeads,
 
     /// If this query is a cycle head, iteration count of that cycle.
-    pub(crate) iteration_count: IterationCount,
+    iteration_count: IterationCount,
 }
 
 impl ActiveQuery {

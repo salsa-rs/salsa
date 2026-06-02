@@ -183,9 +183,7 @@ where
                 })
             },
             CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
-                let cancellation_count = zalsa_local
-                    .active_query_cancellation_count()
-                    .unwrap_or_else(|| zalsa.runtime().cancellation_count());
+                let cancellation_count = zalsa.runtime().cancellation_count();
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists

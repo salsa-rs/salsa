@@ -253,17 +253,6 @@ impl ZalsaLocal {
         }
     }
 
-    pub(crate) fn active_query_cancellation_count(&self) -> Option<u8> {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked(|stack| {
-                stack
-                    .last()
-                    .map(|active| active.iteration_count.cancellation_count())
-            })
-        }
-    }
-
     /// Add an output to the current query's list of dependencies
     ///
     /// Returns `Err` if not in a query.
