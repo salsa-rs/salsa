@@ -729,7 +729,10 @@ impl QueryRevisions {
     /// Sets the `CycleHeads` for this query.
     pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads, iteration: IterationStamp) {
         match &mut self.extra.0 {
-            Some(extra) => extra.cycle_heads = cycle_heads,
+            Some(extra) => {
+                extra.cycle_heads = cycle_heads;
+                extra.iteration = iteration.into();
+            }
             None => {
                 self.extra = QueryRevisionsExtra::new(
                     #[cfg(feature = "accumulator")]
@@ -799,19 +802,6 @@ impl QueryRevisions {
     pub(crate) fn update_cycle_participant_iteration_count(&mut self, iteration: u8) {
         let extra = self.get_or_insert_extra();
         extra.iteration.set_iteration(iteration);
-    }
-
-    /// Updates the iteration count if this query has any cycle heads. Otherwise it's a no-op.
-    pub(crate) fn update_iteration_count_mut(
-        &mut self,
-        cycle_head_index: DatabaseKeyIndex,
-        iteration: u8,
-    ) {
-        let extra = self.get_or_insert_extra();
-        extra.iteration.set_iteration(iteration);
-        extra
-            .cycle_heads
-            .update_iteration_count_mut(cycle_head_index, iteration);
     }
 
     /// Returns the ids of the tracked structs created when running this query.

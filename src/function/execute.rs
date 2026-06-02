@@ -624,23 +624,15 @@ fn complete_cycle_participant(
 
     flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
 
-    *completed_query.revisions.verified_final.get_mut() = false;
-    completed_query
-        .revisions
-        .set_cycle_heads(cycle_heads, iteration);
-
     let iteration = iteration.increment_iteration().unwrap_or_else(|| {
         tracing::warn!("{database_key_index:?}: execute: too many cycle iterations");
         panic!("{database_key_index:?}: execute: too many cycle iterations")
     });
 
-    // The outermost query only bumps the iteration count of cycle heads. It doesn't
-    // increment the iteration count for cycle participants. It's important that we bump the
-    // iteration count here or the head will re-use the same iteration count in the next
-    // iteration (which can break cache invalidation).
+    *completed_query.revisions.verified_final.get_mut() = false;
     completed_query
         .revisions
-        .update_cycle_participant_iteration_count(iteration.iteration());
+        .set_cycle_heads(cycle_heads, iteration);
 
     completed_query
 }
@@ -652,7 +644,7 @@ fn complete_cycle_participant(
 fn try_complete_cycle_head(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
-    cycle_heads: CycleHeads,
+    mut cycle_heads: CycleHeads,
     last_provisional_revisions: &QueryRevisions,
     outer_cycle: Option<DatabaseKeyIndex>,
     iteration: IterationStamp,
@@ -763,17 +755,11 @@ fn try_complete_cycle_head(
 
     debug_assert!(completed_query.revisions.cycle_heads().is_empty());
 
-    // Update the iteration count of this cycle head, but only after restoring
-    // the cycle heads array (or this becomes a no-op).
-    // We don't call the same method on `cycle_heads` because that one doens't update
-    // the `memo.iteration`
-    *completed_query.revisions.verified_final.get_mut() = false;
+    cycle_heads.update_iteration_count_mut(me, iteration.iteration());
     completed_query
         .revisions
         .set_cycle_heads(cycle_heads, iteration);
-    completed_query
-        .revisions
-        .update_iteration_count_mut(me, iteration.iteration());
+    *completed_query.revisions.verified_final.get_mut() = false;
 
     Err((completed_query, iteration))
 }
