@@ -530,7 +530,7 @@ impl fmt::Display for Backtrace {
                     }
                     writeln!(fmt)?;
                 }
-                Ok(())
+                Ok::<(), std::fmt::Error>(())
             })
             .transpose()?;
         }
