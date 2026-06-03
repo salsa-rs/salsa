@@ -29,15 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@master
         id: rust-toolchain
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
-      - uses: taiki-e/install-action@nextest
-      - uses: actions/cache@v4
+      - uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2.81.2
+        with:
+          tool: cargo-nextest
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/bin/
@@ -68,12 +70,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Install Miri
         uses: dtolnay/rust-toolchain@miri
         id: rust-toolchain
-      - uses: taiki-e/install-action@nextest
-      - uses: actions/cache@v4
+      - uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2.81.2
+        with:
+          tool: cargo-nextest
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/bin/
@@ -100,14 +104,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@master
         id: rust-toolchain
         with:
           toolchain: stable
-      - uses: taiki-e/install-action@nextest
-      - uses: actions/cache@v4
+      - uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2.81.2
+        with:
+          tool: cargo-nextest
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/bin/
@@ -129,7 +135,7 @@ jobs:
     runs-on: codspeed-macro
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -138,11 +144,11 @@ jobs:
           toolchain: stable
 
       - name: "Setup codspeed"
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2.81.2
         with:
           tool: cargo-codspeed
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/bin/
@@ -160,7 +166,7 @@ jobs:
         run: cargo codspeed build -m simulation -m memory
 
       - name: "Run benchmarks"
-        uses: CodSpeedHQ/action@v4
+        uses: CodSpeedHQ/action@9d332c4d90b43981c3e55ae8e38e68709996240f # v4.17.0
         with:
           mode: "simulation,memory"
           run: cargo codspeed run

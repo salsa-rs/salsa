@@ -125,7 +125,7 @@ impl<C: Configuration> Default for IngredientShard<C> {
 // ingredient lock, and values are only ever linked to a single list on the ingredient.
 unsafe impl<C: Configuration> Sync for Value<C> {}
 
-intrusive_adapter!(ValueAdapter<C> = UnsafeRef<Value<C>>: Value<C> { link: LinkedListLink } where C: Configuration);
+intrusive_adapter!(ValueAdapter<C> = UnsafeRef<Value<C>>: Value<C> { link => LinkedListLink } where C: Configuration);
 
 /// Struct storing the interned fields.
 pub struct Value<C>

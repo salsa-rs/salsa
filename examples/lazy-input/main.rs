@@ -101,7 +101,10 @@ impl LazyInputDatabase {
             logs,
             files: DashMap::new(),
             file_watcher: Arc::new(Mutex::new(
-                new_debouncer(Duration::from_secs(1), tx).unwrap(),
+                new_debouncer(Duration::from_secs(1), move |events| {
+                    tx.send(events).unwrap()
+                })
+                .unwrap(),
             )),
         }
     }
