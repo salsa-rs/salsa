@@ -882,12 +882,10 @@ impl<'a> QueryOriginRef<'a> {
 
     #[inline]
     pub(crate) fn edges(self) -> QueryEdges<'a> {
-        let opt_edges = match self {
-            QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) => None,
-        };
-
-        opt_edges.unwrap_or_else(|| QueryEdges::wide(&[]))
+        match self {
+            QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => edges,
+            QueryOriginRef::Assigned(_) => QueryEdges::wide(&[]),
+        }
     }
 }
 
@@ -927,9 +925,9 @@ enum QueryEdgeLayout {
     Wide = 0b100,
 }
 
+/// Encodes the semantic origin kind and retained edge layout in a single byte.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-/// Encodes the semantic origin kind and retained edge layout in a single byte.
 struct QueryOriginTag(u8);
 
 impl QueryOriginTag {
@@ -937,6 +935,7 @@ impl QueryOriginTag {
     const LAYOUT_MASK: u8 = 0b100;
 
     const fn new(kind: QueryOriginKind, layout: QueryEdgeLayout) -> Self {
+        debug_assert!(kind as u8 & layout as u8 == 0);
         QueryOriginTag(kind as u8 | layout as u8)
     }
 
@@ -1091,6 +1090,8 @@ impl QueryOrigin {
         Self::derived_with_kind(input_outputs.into_iter(), QueryOriginKind::DerivedUntracked)
     }
 
+    /// Sets the `input_outputs` of this query's origin if it's derived or derived untracked.
+    /// Returns `Err` if the query origin isn't derived.
     pub(crate) fn set_edges<I>(&mut self, input_outputs: I) -> Result<(), I>
     where
         I: IntoIterator<Item = QueryEdge>,
@@ -1256,12 +1257,18 @@ pub struct QueryEdge {
 impl QueryEdge {
     /// Create an input query edge with the given index.
     pub const fn input(key: DatabaseKeyIndex) -> QueryEdge {
-        Self::from_key(key)
+        let id = key.key_index();
+
+        QueryEdge {
+            index: id.index(),
+            generation: id.generation(),
+            ingredient: key.ingredient_index(),
+        }
     }
 
     /// Create an output query edge with the given index.
     pub const fn output(key: DatabaseKeyIndex) -> QueryEdge {
-        let mut edge = Self::from_key(key);
+        let mut edge = Self::input(key);
         edge.ingredient = edge.ingredient.with_tag(true);
         edge
     }
@@ -1281,33 +1288,24 @@ impl QueryEdge {
         }
     }
 
-    const fn from_key(key: DatabaseKeyIndex) -> QueryEdge {
-        let id = key.key_index();
-
-        QueryEdge {
-            index: id.index(),
-            generation: id.generation(),
-            ingredient: key.ingredient_index(),
-        }
-    }
-
     #[cfg(feature = "persistence")]
     const fn raw_key(self) -> DatabaseKeyIndex {
         DatabaseKeyIndex::new(self.ingredient, self.id())
     }
 
     const fn id(self) -> Id {
-        // SAFETY: `index` came from a valid `Id` in `QueryEdge::from_key`.
+        // SAFETY: `index` came from a valid `Id` in `QueryEdge::input`.
         unsafe { Id::from_index(self.index) }.with_generation(self.generation)
     }
 }
 
 impl std::fmt::Debug for QueryEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.kind() {
-            QueryEdgeKind::Input => f.debug_tuple("Input").field(&self.key()).finish(),
-            QueryEdgeKind::Output => f.debug_tuple("Output").field(&self.key()).finish(),
-        }
+        let mut tuple = match self.kind() {
+            QueryEdgeKind::Input => f.debug_tuple("Input"),
+            QueryEdgeKind::Output => f.debug_tuple("Output"),
+        };
+        tuple.field(&self.key()).finish()
     }
 }
 
@@ -1327,7 +1325,7 @@ impl<'de> serde::Deserialize<'de> for QueryEdge {
     where
         D: serde::Deserializer<'de>,
     {
-        DatabaseKeyIndex::deserialize(deserializer).map(QueryEdge::from_key)
+        DatabaseKeyIndex::deserialize(deserializer).map(QueryEdge::input)
     }
 }
 
