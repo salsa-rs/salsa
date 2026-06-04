@@ -16,7 +16,7 @@ use crate::zalsa_local::{
 };
 use crate::{
     Id,
-    cycle::{CycleHeads, IterationCount},
+    cycle::{CycleHeads, IterationStamp},
 };
 use crate::{durability::Durability, tracked_struct::Identity};
 
@@ -67,9 +67,6 @@ pub(crate) struct ActiveQuery {
 
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
-
-    /// If this query is a cycle head, iteration count of that cycle.
-    iteration_count: IterationCount,
 }
 
 impl ActiveQuery {
@@ -179,7 +176,7 @@ impl ActiveQuery {
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, iteration_count: IterationCount) -> Self {
+    fn new(database_key_index: DatabaseKeyIndex) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -189,7 +186,6 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
-            iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
             #[cfg(feature = "accumulator")]
@@ -197,7 +193,7 @@ impl ActiveQuery {
         }
     }
 
-    fn top_into_revisions(&mut self) -> CompletedQuery {
+    fn top_into_revisions(&mut self, iteration: IterationStamp) -> CompletedQuery {
         let &mut Self {
             database_key_index: _,
             durability,
@@ -207,7 +203,6 @@ impl ActiveQuery {
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
-            iteration_count,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
             #[cfg(feature = "accumulator")]
@@ -231,7 +226,7 @@ impl ActiveQuery {
             mem::take(accumulated),
             active_tracked_structs,
             mem::take(cycle_heads),
-            iteration_count,
+            iteration,
         );
 
         let revisions = QueryRevisions {
@@ -260,7 +255,6 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
-            iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -270,16 +264,11 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
-        *iteration_count = IterationCount::initial();
         #[cfg(feature = "accumulator")]
         accumulated.clear();
     }
 
-    fn reset_for(
-        &mut self,
-        new_database_key_index: DatabaseKeyIndex,
-        new_iteration_count: IterationCount,
-    ) {
+    fn reset_for(&mut self, new_database_key_index: DatabaseKeyIndex) {
         let Self {
             database_key_index,
             durability,
@@ -289,7 +278,6 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
-            iteration_count,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -299,7 +287,6 @@ impl ActiveQuery {
         *durability = Durability::MAX;
         *changed_at = Revision::start();
         *untracked_read = false;
-        *iteration_count = new_iteration_count;
         debug_assert!(
             input_outputs.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
@@ -365,16 +352,11 @@ impl ops::DerefMut for QueryStack {
 }
 
 impl QueryStack {
-    pub(crate) fn push_new_query(
-        &mut self,
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: IterationCount,
-    ) {
+    pub(crate) fn push_new_query(&mut self, database_key_index: DatabaseKeyIndex) {
         if self.len < self.stack.len() {
-            self.stack[self.len].reset_for(database_key_index, iteration_count);
+            self.stack[self.len].reset_for(database_key_index);
         } else {
-            self.stack
-                .push(ActiveQuery::new(database_key_index, iteration_count));
+            self.stack.push(ActiveQuery::new(database_key_index));
         }
         self.len += 1;
     }
@@ -387,6 +369,7 @@ impl QueryStack {
     pub(crate) fn pop_into_revisions(
         &mut self,
         key: DatabaseKeyIndex,
+        iteration: IterationStamp,
         #[cfg(debug_assertions)] push_len: usize,
     ) -> CompletedQuery {
         #[cfg(debug_assertions)]
@@ -397,7 +380,7 @@ impl QueryStack {
             self.stack[self.len].database_key_index, key,
             "unbalanced push/pop"
         );
-        self.stack[self.len].top_into_revisions()
+        self.stack[self.len].top_into_revisions(iteration)
     }
 
     pub(crate) fn pop(&mut self, key: DatabaseKeyIndex, #[cfg(debug_assertions)] push_len: usize) {
@@ -428,7 +411,6 @@ struct CapturedQuery {
     durability: Durability,
     changed_at: Revision,
     cycle_heads: CycleHeads,
-    iteration_count: IterationCount,
 }
 
 impl fmt::Debug for CapturedQuery {
@@ -439,9 +421,7 @@ impl fmt::Debug for CapturedQuery {
             .field("durability", &self.durability)
             .field("changed_at", &self.changed_at);
         if !self.cycle_heads.is_empty() {
-            debug_struct
-                .field("cycle_heads", &self.cycle_heads)
-                .field("iteration_count", &self.iteration_count);
+            debug_struct.field("cycle_heads", &self.cycle_heads);
         }
         debug_struct.finish()
     }
@@ -462,7 +442,6 @@ impl Backtrace {
                             durability: query.durability,
                             changed_at: query.changed_at,
                             cycle_heads: query.cycle_heads.clone(),
-                            iteration_count: query.iteration_count,
                         })
                         .collect(),
                 )
@@ -497,16 +476,12 @@ impl fmt::Display for Backtrace {
                 durability,
                 changed_at,
                 ref cycle_heads,
-                iteration_count,
             },
         ) in self.0.iter().enumerate()
         {
             write!(fmt, "{idx:>4}: {database_key_index:?}")?;
             if full {
                 write!(fmt, " -> ({changed_at:?}, {durability:#?}")?;
-                if !cycle_heads.is_empty() || !iteration_count.is_initial() {
-                    write!(fmt, ", iteration = {iteration_count}")?;
-                }
                 write!(fmt, ")")?;
             }
             writeln!(fmt)?;
@@ -525,7 +500,8 @@ impl fmt::Display for Backtrace {
                         write!(
                             fmt,
                             "{:?} -> iteration = {}",
-                            head.database_key_index, head.iteration_count
+                            head.database_key_index,
+                            head.iteration.load().iteration()
                         )?;
                     }
                     writeln!(fmt)?;

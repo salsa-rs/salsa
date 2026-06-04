@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{IterationCount, ProvisionalStatus};
+use crate::cycle::{IterationStamp, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -170,17 +170,12 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         );
     }
 
-    /// Updates the iteration count for the (nested) cycle head `_input` to `iteration_count`.
+    /// Updates the iteration for the (nested) cycle head `_input` to `iteration`.
     ///
     /// This is a no-op if the memo doesn't exist or if called on a Memo without cycle heads.
-    fn set_cycle_iteration_count(
-        &self,
-        _zalsa: &Zalsa,
-        _input: Id,
-        _iteration_count: IterationCount,
-    ) {
+    fn set_cycle_iteration_count(&self, _zalsa: &Zalsa, _input: Id, _iteration: IterationStamp) {
         unreachable!(
-            "increment_iteration_count should only be called on cycle heads and only functions can be cycle heads"
+            "set_cycle_iteration_count should only be called on cycle heads and only functions can be cycle heads"
         );
     }
 

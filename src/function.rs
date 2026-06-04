@@ -7,7 +7,7 @@ use std::ptr::NonNull;
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
-use crate::cycle::{CycleRecoveryStrategy, IterationCount, ProvisionalStatus};
+use crate::cycle::{CycleRecoveryStrategy, IterationStamp, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -398,7 +398,7 @@ where
         })
     }
 
-    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration_count: IterationCount) {
+    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration: IterationStamp) {
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
@@ -406,7 +406,7 @@ where
         };
 
         memo.revisions
-            .set_iteration_count(Self::database_key_index(self, input), iteration_count);
+            .set_iteration_count(Self::database_key_index(self, input), iteration);
     }
 
     fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {

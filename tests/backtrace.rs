@@ -110,7 +110,7 @@ fn backtrace_works() {
         query stacktrace:
            0: query_e(Id(3)) -> (R1, Durability::LOW)
                      at tests/backtrace.rs:32
-           1: query_cycle(Id(3)) -> (R1, Durability::HIGH, iteration = 0)
+           1: query_cycle(Id(3)) -> (R1, Durability::HIGH)
                      at tests/backtrace.rs:45
                      cycle heads: query_cycle(Id(3)) -> iteration = 0
            2: query_f(Id(3)) -> (R1, Durability::HIGH)

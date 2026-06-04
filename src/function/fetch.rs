@@ -1,4 +1,4 @@
-use crate::cycle::{CycleRecoveryStrategy, IterationCount};
+use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
 use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
@@ -183,6 +183,7 @@ where
                 })
             },
             CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
+                let cancellation_count = zalsa.runtime().cancellation_count();
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists
@@ -193,6 +194,7 @@ where
                     // on the value OR a concurrent `Vec` for cycle heads.
                     if memo.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
+                        && memo.revisions.iteration().cancellation_count() == cancellation_count
                         && memo.revisions.cycle_heads().contains(&database_key_index)
                     {
                         memo.revisions
@@ -219,13 +221,15 @@ where
                     .and_then(|old_memo| {
                         if old_memo.verified_at.load() == zalsa.current_revision()
                             && old_memo.value.is_some()
+                            && old_memo.revisions.iteration().cancellation_count()
+                                == cancellation_count
                         {
                             Some(old_memo.revisions.iteration())
                         } else {
                             None
                         }
                     })
-                    .unwrap_or(IterationCount::initial());
+                    .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
                 let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
 
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));

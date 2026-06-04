@@ -22,6 +22,7 @@ fn query_b(db: &dyn KnobsDatabase) -> u32 {
 fn query_c(_db: &dyn KnobsDatabase) -> u32 {
     1
 }
+
 #[test]
 fn execute() {
     let db = Knobs::default();
