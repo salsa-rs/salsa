@@ -192,6 +192,12 @@ impl<C: Configuration> IngredientImpl<C> {
         // Also, we don't access any other data from the table while `r` is active.
         let data = unsafe { &mut *data_raw };
 
+        assert_ne!(
+            data.durabilities[field_index],
+            Durability::NEVER_CHANGE,
+            "never-changing inputs cannot be mutated"
+        );
+
         data.revisions[field_index] = runtime.current_revision();
 
         let field_durability = &mut data.durabilities[field_index];

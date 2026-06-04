@@ -225,6 +225,11 @@ impl Runtime {
     /// This will update the 'last changed at' values for every durability
     /// less than or equal to `durability` to the current revision.
     pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
+        assert_ne!(
+            durability,
+            Durability::NEVER_CHANGE,
+            "never-changing inputs cannot be mutated"
+        );
         let new_revision = self.current_revision();
         self.revisions[1..=durability.index()].fill(new_revision);
     }

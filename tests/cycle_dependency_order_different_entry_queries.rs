@@ -19,9 +19,15 @@ struct Interned {
     value: u32,
 }
 
+#[salsa::input(singleton)]
+struct StableInput {
+    value: (),
+}
+
 #[salsa::tracked(cycle_initial=|db, _| Interned::new(db, 0))]
 fn query_b(db: &dyn Database) -> Interned<'_> {
     query_c(db);
+    StableInput::get(db).value(db);
     Interned::new(db, 2)
 }
 
@@ -31,13 +37,16 @@ fn query_c(db: &dyn Database) {
 }
 
 #[salsa::tracked]
-fn query_d<'db>(_db: &'db dyn Database, _i: Interned<'db>) {
-    // reads some input
+fn query_d<'db>(db: &'db dyn Database, _i: Interned<'db>) {
+    StableInput::get(db).value(db);
 }
 
 #[test_log::test]
 fn the_test() {
     let mut db = ExecuteValidateLoggerDatabase::default();
+    let _ = StableInput::builder(())
+        .durability(Durability::HIGH)
+        .new(&db);
 
     // We compute the result starting from query a...
     query_a(&db);
@@ -52,15 +61,15 @@ fn the_test() {
     // as we would when starting from `query_a`
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(400)), revision: R2 })",
-            "salsa_event(WillExecute { database_key: query_b(Id(400)) })",
-            "salsa_event(DidValidateInternedValue { key: query_c::interned_arguments(Id(800)), revision: R2 })",
-            "salsa_event(WillExecute { database_key: query_c(Id(800)) })",
-            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(400)), revision: R2 })",
-            "salsa_event(DidValidateInternedValue { key: query_c::interned_arguments(Id(800)), revision: R2 })",
-            "salsa_event(DidValidateInternedValue { key: query_a::interned_arguments(Id(0)), revision: R2 })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(c00)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_d(Id(c00)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(0)) })",
+            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(800)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: query_b(Id(800)) })",
+            "salsa_event(DidValidateInternedValue { key: query_c::interned_arguments(Id(c00)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: query_c(Id(c00)) })",
+            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(800)), revision: R2 })",
+            "salsa_event(DidValidateInternedValue { key: query_c::interned_arguments(Id(c00)), revision: R2 })",
+            "salsa_event(DidValidateInternedValue { key: query_a::interned_arguments(Id(400)), revision: R2 })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(1000)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_d(Id(1000)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(400)) })",
         ]"#]]);
 }

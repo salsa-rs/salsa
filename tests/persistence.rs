@@ -58,6 +58,7 @@ fn everything() {
             "revisions": [
               1,
               1,
+              1,
               1
             ]
           },
@@ -106,6 +107,7 @@ fn everything() {
         {
           "runtime": {
             "revisions": [
+              1,
               1,
               1,
               1
@@ -173,7 +175,7 @@ fn everything() {
             },
             "4": {
               "3073": {
-                "durability": 2,
+                "durability": 3,
                 "last_interned_at": 1,
                 "fields": [
                   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -192,7 +194,7 @@ fn everything() {
             },
             "7": {
               "5121": {
-                "durability": 2,
+                "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
                   3,
@@ -202,7 +204,7 @@ fn everything() {
             },
             "19": {
               "2049": {
-                "durability": 2,
+                "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": null
               }
@@ -269,14 +271,9 @@ fn everything() {
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
-                  "durability": 2,
+                  "durability": 3,
                   "origin": {
-                    "Derived": [
-                      [
-                        3073,
-                        4
-                      ]
-                    ]
+                    "Derived": []
                   },
                   "verified_final": true,
                   "extra": null
@@ -339,6 +336,7 @@ fn partial_query() {
         {
           "runtime": {
             "revisions": [
+              1,
               1,
               1,
               1
@@ -452,6 +450,7 @@ fn partial_query_interned() {
             "revisions": [
               1,
               1,
+              1,
               1
             ]
           },
@@ -480,7 +479,7 @@ fn partial_query_interned() {
             },
             "17": {
               "1025": {
-                "durability": 2,
+                "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
                   1,
@@ -597,6 +596,7 @@ fn serialize_nothing() {
         {
           "runtime": {
             "revisions": [
+              1,
               1,
               1,
               1
