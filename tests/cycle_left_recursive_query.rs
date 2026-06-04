@@ -6,15 +6,9 @@ use salsa::{Database, Durability, Id};
 
 mod common;
 
-#[salsa::input]
-struct Input {
-    stable: (),
-}
-
 #[salsa::tracked(cycle_initial=cycle_initial)]
-fn query_a(db: &dyn salsa::Database, input: Input) -> Interned<'_> {
-    let _ = input.stable(db);
-    let interned = query_b(db, input);
+fn query_a(db: &dyn salsa::Database) -> Interned<'_> {
+    let interned = query_b(db);
     let value = interned.value(db);
 
     if value < 10 {
@@ -25,9 +19,8 @@ fn query_a(db: &dyn salsa::Database, input: Input) -> Interned<'_> {
 }
 
 #[salsa::tracked]
-fn query_b(db: &dyn Database, input: Input) -> Interned<'_> {
-    let _ = input.stable(db);
-    let interned = query_a(db, input);
+fn query_b(db: &dyn Database) -> Interned<'_> {
+    let interned = query_a(db);
     query_x(db, interned);
     interned
 }
@@ -35,7 +28,9 @@ fn query_b(db: &dyn Database, input: Input) -> Interned<'_> {
 #[salsa::tracked]
 fn query_x<'db>(_db: &'db dyn Database, _i: Interned<'db>) {}
 
-fn cycle_initial(db: &dyn Database, _id: Id, _input: Input) -> Interned<'_> {
+fn cycle_initial(db: &dyn Database, _id: Id) -> Interned<'_> {
+    // Keep cycle-created values reusable so the test still covers validation ordering.
+    db.report_untracked_read();
     Interned::new(db, 0)
 }
 
@@ -47,44 +42,43 @@ struct Interned {
 #[test_log::test]
 fn the_test() {
     let mut db = ExecuteValidateLoggerDatabase::default();
-    let input = Input::new(&db, ());
 
-    let result = query_a(&db, input);
+    let result = query_a(&db);
 
     assert_eq!(result.value(&db), 10);
 
     db.clear_logs();
     db.synthetic_write(Durability::HIGH);
 
-    let result = query_a(&db, input);
+    let result = query_a(&db);
 
     assert_eq!(result.value(&db), 10);
 
     // What this test captures is that the interned values **must** be validated before validating their corresponding `query_x` call.
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(400)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(401)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(401)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(402)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(402)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(403)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(403)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(404)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(404)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(405)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(405)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(406)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(406)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(407)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(407)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(408)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(408)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(409)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(409)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(40a)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(40a)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(800)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(800)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(801)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(801)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(802)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(802)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(803)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(803)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(804)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(804)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(805)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(805)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(806)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(806)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(807)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(807)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(808)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(808)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(809)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(809)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(80a)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_x(Id(80a)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(0)) })",
         ]"#]]);
 }
