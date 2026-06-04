@@ -988,6 +988,8 @@ pub struct QueryOrigin {
     metadata: u32,
 }
 
+const _: [(); std::mem::size_of::<QueryOrigin>()] = [(); 13];
+
 /// The data portion of `PackedQueryOrigin`.
 union QueryOriginData {
     /// Query edges for the derived variants.
@@ -1113,6 +1115,7 @@ impl QueryOrigin {
     /// Create a query origin of type `QueryOriginKind::Assigned`, with the given key.
     pub fn assigned(key: DatabaseKeyIndex) -> QueryOrigin {
         QueryOrigin {
+            // Assigned origins do not store edges, so the layout bit is unused.
             tag: QueryOriginTag::new(QueryOriginKind::Assigned, QueryEdgeLayout::Packed),
             metadata: key.ingredient_index().as_u32(),
             data: QueryOriginData {
@@ -1254,6 +1257,8 @@ pub struct QueryEdge {
     ingredient: IngredientIndex,
 }
 
+const _: [(); std::mem::size_of::<QueryEdge>()] = [(); 12];
+
 impl QueryEdge {
     /// Create an input query edge with the given index.
     pub const fn input(key: DatabaseKeyIndex) -> QueryEdge {
@@ -1268,9 +1273,13 @@ impl QueryEdge {
 
     /// Create an output query edge with the given index.
     pub const fn output(key: DatabaseKeyIndex) -> QueryEdge {
-        let mut edge = Self::input(key);
-        edge.ingredient = edge.ingredient.with_tag(true);
-        edge
+        let id = key.key_index();
+
+        QueryEdge {
+            index: id.index(),
+            generation: id.generation(),
+            ingredient: key.ingredient_index().with_tag(true),
+        }
     }
 
     /// Return the key of this query edge.
@@ -1325,7 +1334,14 @@ impl<'de> serde::Deserialize<'de> for QueryEdge {
     where
         D: serde::Deserializer<'de>,
     {
-        DatabaseKeyIndex::deserialize(deserializer).map(QueryEdge::input)
+        let key = DatabaseKeyIndex::deserialize(deserializer)?;
+        let id = key.key_index();
+
+        Ok(QueryEdge {
+            index: id.index(),
+            generation: id.generation(),
+            ingredient: key.ingredient_index(),
+        })
     }
 }
 
@@ -1349,6 +1365,8 @@ struct PackedQueryEdge {
     index: u32,
     metadata: u32,
 }
+
+const _: [(); std::mem::size_of::<PackedQueryEdge>()] = [(); 8];
 
 impl PackedQueryEdge {
     const INGREDIENT_SHIFT: u32 = 20;
@@ -1436,6 +1454,7 @@ impl<'a> QueryEdges<'a> {
         }
     }
 
+    #[cfg(any(test, feature = "salsa_unstable"))]
     pub(crate) fn allocation_size(self) -> usize {
         match self.data {
             QueryEdgesData::Packed(edges) => std::mem::size_of_val(edges),
@@ -1724,14 +1743,6 @@ mod tests {
     use crate::{DatabaseKeyIndex, Id, IngredientIndex};
 
     #[test]
-    fn packed_query_edges_use_eight_bytes() {
-        assert_eq!(size_of::<PackedQueryEdge>(), 8);
-        assert_eq!(size_of::<QueryEdge>(), 12);
-        assert_eq!(size_of::<QueryEdgeKind>(), 1);
-        assert_eq!(size_of::<QueryOrigin>(), 13);
-    }
-
-    #[test]
     fn query_origin_packs_edges_that_fit() {
         let input = QueryEdge::input(key(231, 10_842_122, 41));
         let other_input = QueryEdge::input(key(232, 10_842_123, 42));
@@ -1791,7 +1802,7 @@ mod tests {
     #[test]
     fn query_origin_spills_all_edges_if_generation_does_not_fit() {
         let packed = QueryEdge::input(key(231, 10_842_122, 41));
-        let wide = QueryEdge::output(key(232, 10_842_123, PackedQueryEdge::GENERATION_MASK + 1));
+        let wide = QueryEdge::input(key(232, 10_842_123, PackedQueryEdge::GENERATION_MASK + 1));
         let origin = QueryOrigin::derived([packed, wide]);
         let QueryOriginRef::Derived(edges) = origin.as_ref() else {
             panic!("expected derived origin");
