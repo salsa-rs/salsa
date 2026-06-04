@@ -808,7 +808,8 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
 
     for edge in head.origin.as_ref().edges() {
         match edge.kind() {
-            QueryEdgeKind::Input(input) => {
+            QueryEdgeKind::Input => {
+                let input = edge.key();
                 let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
                 ingredient.flatten_cycle_head_dependencies(
                     zalsa,
@@ -818,17 +819,18 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
                 );
             }
 
-            QueryEdgeKind::Output(_) => {
+            QueryEdgeKind::Output => {
                 // Unlike `ingredient.collect_flattened_cycle_inputs`, carry over outputs
                 // created by the query head because those are owned by this query.
-                flattened.insert(*edge);
+                flattened.insert(edge);
             }
         }
     }
 
-    head.origin
-        .set_edges(flattened.drain(..).collect())
-        .expect("Executing query to always be derived or derived untracked.");
+    assert!(
+        head.origin.set_edges(flattened.drain(..)).is_ok(),
+        "Executing query to always be derived or derived untracked."
+    );
 
     seen.clear();
 

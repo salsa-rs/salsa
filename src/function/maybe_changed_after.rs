@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdge, QueryEdgeKind, QueryOriginRef, QueryRevisions, ZalsaLocal};
+use crate::zalsa_local::{QueryEdgeKind, QueryEdges, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Id, Revision};
 
 /// Result of memo validation.
@@ -464,7 +464,7 @@ fn deep_verify_edges(
     zalsa: &Zalsa,
     #[allow(unused)] old_revisions: &QueryRevisions,
     old_verified_at: Revision,
-    edges: &[QueryEdge],
+    edges: QueryEdges<'_>,
     database_key_index: DatabaseKeyIndex,
 ) -> VerifyResult {
     #[cfg(feature = "accumulator")]
@@ -476,9 +476,10 @@ fn deep_verify_edges(
     // they executed. It's possible that if the value of some input I0 is no longer
     // valid, then some later input I1 might never have executed at all, so verifying
     // it is still up to date is meaningless.
-    for &edge in edges {
+    for edge in edges {
         match edge.kind() {
-            QueryEdgeKind::Input(dependency_index) => {
+            QueryEdgeKind::Input => {
+                let dependency_index = edge.key();
                 let input_result = dependency_index.maybe_changed_after(db, zalsa, old_verified_at);
 
                 match input_result {
@@ -493,7 +494,8 @@ fn deep_verify_edges(
                     VerifyResult::Unchanged { .. } => {}
                 }
             }
-            QueryEdgeKind::Output(dependency_index) => {
+            QueryEdgeKind::Output => {
+                let dependency_index = edge.key();
                 // Subtle: Mark outputs as validated now, even though we may
                 // later find an input that requires us to re-execute the function.
                 // Even if it re-execute, the function will wind up writing the same value,

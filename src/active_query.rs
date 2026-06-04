@@ -11,9 +11,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{
-    QueryEdge, QueryEdgeKind, QueryOrigin, QueryRevisions, QueryRevisionsExtra,
-};
+use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
 use crate::{
     Id,
     cycle::{CycleHeads, IterationStamp},
@@ -74,7 +72,7 @@ impl ActiveQuery {
         &mut self,
         durability: Durability,
         changed_at: Revision,
-        edges: &[QueryEdge],
+        edges: crate::zalsa_local::QueryEdges<'_>,
         untracked_read: bool,
         active_tracked_ids: &[(Identity, Id)],
     ) {
@@ -82,12 +80,7 @@ impl ActiveQuery {
 
         // Copy over outputs for `diff_outputs`, don't copy inputs because cycle heads
         // flatten all input dependencies.
-        self.input_outputs.extend(
-            edges
-                .iter()
-                .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output(_)))
-                .copied(),
-        );
+        self.input_outputs.extend(edges.iter_outputs());
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
         self.untracked_read |= untracked_read;
@@ -210,9 +203,9 @@ impl ActiveQuery {
         } = self;
 
         let origin = if untracked_read {
-            QueryOrigin::derived_untracked(input_outputs.drain(..).collect())
+            QueryOrigin::derived_untracked(input_outputs.drain(..))
         } else {
-            QueryOrigin::derived(input_outputs.drain(..).collect())
+            QueryOrigin::derived(input_outputs.drain(..))
         };
         disambiguator_map.clear();
 

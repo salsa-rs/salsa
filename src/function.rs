@@ -350,19 +350,19 @@ where
         // Collect the minimum dependency tree.
         for edge in origin.edges() {
             // Avoid forming cycles.
-            if visited_edges.contains(edge) {
+            if visited_edges.contains(&edge) {
                 continue;
             }
 
             // Avoid flattening edges that we're going to serialize directly.
-            if serialized_edges.contains(edge) {
+            if serialized_edges.contains(&edge) {
                 continue;
             }
 
             let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
             dependency.collect_minimum_serialized_edges(
                 zalsa,
-                *edge,
+                edge,
                 serialized_edges,
                 visited_edges,
             )
@@ -707,7 +707,7 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            QueryOrigin::derived(flattened_edges.drain(..).collect())
+                            QueryOrigin::derived(flattened_edges.drain(..))
                         }
                         QueryOriginRef::DerivedUntracked(edges) => {
                             collect_minimum_serialized_edges(
@@ -717,7 +717,7 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            QueryOrigin::derived_untracked(flattened_edges.drain(..).collect())
+                            QueryOrigin::derived_untracked(flattened_edges.drain(..))
                         }
                         QueryOriginRef::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
@@ -753,11 +753,11 @@ mod persistence {
     // Flatten the dependency edges before serialization.
     fn collect_minimum_serialized_edges(
         zalsa: &Zalsa,
-        edges: &[QueryEdge],
+        edges: crate::zalsa_local::QueryEdges<'_>,
         visited_edges: &mut FxHashSet<QueryEdge>,
         flattened_edges: &mut FxIndexSet<QueryEdge>,
     ) {
-        for &edge in edges {
+        for edge in edges {
             let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
 
             if dependency.is_persistable() {
