@@ -46,6 +46,7 @@ impl std::fmt::Debug for Durability {
                 DurabilityVal::Low => f.write_str("Durability::LOW"),
                 DurabilityVal::Medium => f.write_str("Durability::MEDIUM"),
                 DurabilityVal::High => f.write_str("Durability::HIGH"),
+                DurabilityVal::NeverChange => f.write_str("Durability::NEVER_CHANGE"),
             }
         } else {
             f.debug_tuple("Durability")
@@ -61,6 +62,7 @@ enum DurabilityVal {
     Low = 0,
     Medium = 1,
     High = 2,
+    NeverChange = 3,
 }
 
 impl From<u8> for DurabilityVal {
@@ -69,6 +71,7 @@ impl From<u8> for DurabilityVal {
             0 => DurabilityVal::Low,
             1 => DurabilityVal::Medium,
             2 => DurabilityVal::High,
+            3 => DurabilityVal::NeverChange,
             _ => panic!("invalid durability"),
         }
     }
@@ -91,6 +94,9 @@ impl Durability {
     /// Example: the standard library or something from crates.io
     pub const HIGH: Durability = Durability(DurabilityVal::High);
 
+    /// Values with this durability never change in place.
+    pub const NEVER_CHANGE: Durability = Durability(DurabilityVal::NeverChange);
+
     /// The minimum possible durability; equivalent to LOW but
     /// "conceptually" distinct (i.e., if we add more durability
     /// levels, this could change).
@@ -99,10 +105,10 @@ impl Durability {
     /// The maximum possible durability; equivalent to HIGH but
     /// "conceptually" distinct (i.e., if we add more durability
     /// levels, this could change).
-    pub(crate) const MAX: Durability = Self::HIGH;
+    pub(crate) const MAX: Durability = Self::NEVER_CHANGE;
 
     /// Number of durability levels.
-    pub(crate) const LEN: usize = Self::HIGH.0 as usize + 1;
+    pub(crate) const LEN: usize = Self::NEVER_CHANGE.0 as usize + 1;
 
     pub(crate) fn index(self) -> usize {
         self.0 as usize
