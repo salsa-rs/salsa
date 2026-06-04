@@ -1168,6 +1168,7 @@ fn repeat_query_participating_in_cycle() {
     #[salsa::input]
     struct Input {
         value: u32,
+        stable: u32,
     }
 
     #[salsa::interned]
@@ -1216,6 +1217,8 @@ fn repeat_query_participating_in_cycle() {
     fn query_hot(db: &dyn Db, input: Input) -> u32 {
         let value = head(db, input);
 
+        let _ = input.stable(db);
+
         let _ = Interned::new(db, 2);
 
         let _ = input.value(db);
@@ -1225,7 +1228,7 @@ fn repeat_query_participating_in_cycle() {
 
     let mut db = ExecuteValidateLoggerDatabase::default();
 
-    let input = Input::new(&db, 1);
+    let input = Input::new(&db, 1, 0);
 
     assert_eq!(head(&db, input), 2);
 
@@ -1244,13 +1247,13 @@ fn repeat_query_participating_in_cycle() {
     // Ultimately, this can easily be more expensive than running the cycle head again.
     db.assert_logs(expect![[r#"
         [
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: head(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillIterateCycle { database_key: head(Id(0)), iteration: 1 })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
@@ -1274,6 +1277,7 @@ fn repeat_query_participating_in_cycle2() {
     #[salsa::input]
     struct Input {
         value: u32,
+        stable: u32,
     }
 
     #[salsa::interned]
@@ -1322,6 +1326,8 @@ fn repeat_query_participating_in_cycle2() {
 
     #[salsa::tracked]
     fn query_hot(db: &dyn Db, input: Input) -> u32 {
+        let _ = input.stable(db);
+
         let _ = Interned::new(db, 2);
 
         let _ = head(db, input);
@@ -1331,7 +1337,7 @@ fn repeat_query_participating_in_cycle2() {
 
     let mut db = ExecuteValidateLoggerDatabase::default();
 
-    let input = Input::new(&db, 1);
+    let input = Input::new(&db, 1, 0);
 
     assert_eq!(head(&db, input), 2);
 
@@ -1348,10 +1354,10 @@ fn repeat_query_participating_in_cycle2() {
     // Salsa would end up recusively validating the hot query over and over again.
     db.assert_logs(expect![[r#"
         [
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: head(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(400)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_c(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_d(Id(0)) })",
