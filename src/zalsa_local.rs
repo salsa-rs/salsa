@@ -1739,7 +1739,9 @@ pub(crate) mod persistence {
 mod tests {
     use std::mem::size_of;
 
-    use super::{PackedQueryEdge, QueryEdge, QueryEdgeKind, QueryOrigin, QueryOriginRef};
+    #[cfg(feature = "persistence")]
+    use super::QueryEdgeKind;
+    use super::{PackedQueryEdge, QueryEdge, QueryOrigin, QueryOriginRef};
     use crate::{DatabaseKeyIndex, Id, IngredientIndex};
 
     #[test]
