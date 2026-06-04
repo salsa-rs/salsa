@@ -134,6 +134,62 @@ fn test_durability() {
         ]"#]]);
 }
 
+#[test]
+fn test_non_reusable_new_value_does_not_record_dependency() {
+    #[salsa::tracked]
+    fn function(db: &dyn Database, input: Input) -> Interned<'_> {
+        let _ = input.field1(db);
+        Interned::new(db, BadHash(0))
+    }
+
+    for durability in [Durability::MEDIUM, Durability::HIGH] {
+        let mut db = common::EventLoggerDatabase::default();
+        let input = Input::builder(0).durability(durability).new(&db);
+
+        let _ = function(&db, input);
+        db.clear_logs();
+
+        db.synthetic_write(durability);
+
+        let _ = function(&db, input);
+        db.assert_logs(expect![[r#"
+            [
+                "DidSetCancellationFlag",
+                "WillCheckCancellation",
+                "DidValidateMemoizedValue { database_key: function(Id(0)) }",
+            ]"#]]);
+    }
+}
+
+#[test]
+fn test_non_reusable_existing_value_does_not_record_dependency() {
+    #[salsa::tracked]
+    fn function(db: &dyn Database, input: Input) -> Interned<'_> {
+        let _ = input.field1(db);
+        Interned::new(db, BadHash(0))
+    }
+
+    for durability in [Durability::MEDIUM, Durability::HIGH] {
+        let mut db = common::EventLoggerDatabase::default();
+        let input0 = Input::builder(0).durability(durability).new(&db);
+        let input1 = Input::builder(0).durability(durability).new(&db);
+
+        let _ = function(&db, input0);
+        let _ = function(&db, input1);
+        db.clear_logs();
+
+        db.synthetic_write(durability);
+
+        let _ = function(&db, input1);
+        db.assert_logs(expect![[r#"
+            [
+                "DidSetCancellationFlag",
+                "WillCheckCancellation",
+                "DidValidateMemoizedValue { database_key: function(Id(1)) }",
+            ]"#]]);
+    }
+}
+
 #[salsa::interned(revisions = usize::MAX)]
 #[derive(Debug)]
 struct Immortal<'db> {

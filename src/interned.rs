@@ -169,9 +169,9 @@ struct ValueShared {
     /// on queries that *read* from an interned value, as any memos dependent
     /// on the previous value will not match the new ID.
     ///
-    /// However, reusing a slot invalidates the previous ID, so dependency edges
-    /// on queries that *create* an interned value are still required to ensure
-    /// the value is re-interned with a new ID.
+    /// However, reusing a slot invalidates the previous ID, so queries that
+    /// *create* a reusable interned value record dependency edges to ensure the
+    /// value is re-interned with a new ID.
     id: Id,
 
     /// The revision the value was most-recently interned in.
@@ -199,6 +199,18 @@ impl ValueShared {
         // the `last_interned_at` field before validating a given value to ensure that it is not
         // reused after read in the current revision.
         self.durability == Durability::LOW
+    }
+
+    /// Record a dependency on this value if its slot can be reused.
+    fn report_tracked_read_if_reusable<C: Configuration>(
+        &self,
+        zalsa_local: &ZalsaLocal,
+        index: DatabaseKeyIndex,
+        current_revision: Revision,
+    ) {
+        if self.is_reusable::<C>() {
+            zalsa_local.report_tracked_read_simple(index, self.durability, current_revision);
+        }
     }
 }
 
@@ -424,16 +436,12 @@ where
                 }
             }
 
-            // Record a dependency on the value.
+            // Record a dependency on the value if its slot can be reused.
             //
             // See `intern_id_cold` for why we need to use `current_revision` here. Note that just
             // because this value was previously interned does not mean it was previously interned
             // by *our query*, so the same considerations apply.
-            zalsa_local.report_tracked_read_simple(
-                index,
-                value_shared.durability,
-                current_revision,
-            );
+            value_shared.report_tracked_read_if_reusable::<C>(zalsa_local, index, current_revision);
 
             return value_shared.id;
         }
@@ -503,14 +511,10 @@ where
 
             let index = self.database_key_index(value_shared.id);
 
-            // Record a dependency on the new value.
+            // Record a dependency on the new value if its slot can be reused.
             //
             // See `intern_id_cold` for why we need to use `current_revision` here.
-            zalsa_local.report_tracked_read_simple(
-                index,
-                value_shared.durability,
-                current_revision,
-            );
+            value_shared.report_tracked_read_if_reusable::<C>(zalsa_local, index, current_revision);
 
             zalsa.event(&|| {
                 Event::new(EventKind::DidReuseInternedValue {
@@ -629,7 +633,7 @@ where
 
         let index = self.database_key_index(id);
 
-        // Record a dependency on the newly interned value.
+        // Record a dependency on the newly interned value if its slot can be reused.
         //
         // Note that the ID is unique to this use of the interned slot, so it seems logical to use
         // `Revision::start()` here. However, it is possible that the ID we read is different from
@@ -637,7 +641,13 @@ where
         // the query has changed without a corresponding input changing. Using `current_revision`
         // for dependencies on interned values encodes the fact that interned IDs are not stable
         // across revisions.
-        zalsa_local.report_tracked_read_simple(index, durability, current_revision);
+        //
+        // SAFETY: We hold the lock for the shard containing the value.
+        unsafe { &*value.shared.get() }.report_tracked_read_if_reusable::<C>(
+            zalsa_local,
+            index,
+            current_revision,
+        );
 
         zalsa.event(&|| {
             Event::new(EventKind::DidInternValue {
@@ -781,16 +791,19 @@ where
                 // SAFETY: We hold the lock for the shard containing the value.
                 let value_shared = unsafe { &mut *value.shared.get() };
 
-                let last_changed_revision = zalsa.last_changed_revision(value_shared.durability);
-                ({ value_shared.last_interned_at }) >= last_changed_revision
+                !value_shared.is_reusable::<C>() || {
+                    let last_changed_revision =
+                        zalsa.last_changed_revision(value_shared.durability);
+                    ({ value_shared.last_interned_at }) >= last_changed_revision
+                }
             },
-            "Data for `{database_key:?}` was not interned in the latest revision for its durability.",
+            "Data for reusable `{database_key:?}` was not interned in the latest revision for its durability.",
             database_key = self.database_key_index(id),
         );
 
-        // SAFETY: Interned values are only exposed if they have been validated in the
-        // current revision, as checked by the assertion above, which ensures that they
-        // are not reused while being accessed.
+        // SAFETY: Reusable interned values are only exposed if they have been validated
+        // in the current revision, as checked by the assertion above, which ensures that
+        // they are not reused while being accessed. Non-reusable values are never reused.
         unsafe { Self::from_internal_data(&*value.fields.get()) }
     }
 
