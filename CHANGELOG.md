@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.2...salsa-v0.27.0) - 2026-06-04
+
+### Fixed
+
+- annotate return type in closure ([#1106](https://github.com/salsa-rs/salsa/pull/1106))
+- accumulated values lost when reused tracked fn skips re-execution ([#1099](https://github.com/salsa-rs/salsa/pull/1099))
+
+### Other
+
+- Invalidate fixpoint memos after cancellation ([#1100](https://github.com/salsa-rs/salsa/pull/1100))
+- Update dependencies ([#1105](https://github.com/salsa-rs/salsa/pull/1105))
+- Refresh trybuild snapshots for Rust 1.96 ([#1102](https://github.com/salsa-rs/salsa/pull/1102))
+- Remove outdated RELEASES.md file; exclude a few more files from published crates ([#1091](https://github.com/salsa-rs/salsa/pull/1091))
+- Skip memory usage tests on 32-bit (non-64-bit) targets ([#1094](https://github.com/salsa-rs/salsa/pull/1094))
+- Convert CRLF-terminated sources to LF-terminated ([#1092](https://github.com/salsa-rs/salsa/pull/1092))
+
 ## [0.26.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.1...salsa-v0.26.2) - 2026-05-03
 
 ### Fixed
