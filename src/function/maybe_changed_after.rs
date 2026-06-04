@@ -463,7 +463,8 @@ fn deep_verify_edges(
     // it is still up to date is meaningless.
     for edge in edges {
         match edge.kind() {
-            QueryEdgeKind::Input(dependency_index) => {
+            QueryEdgeKind::Input => {
+                let dependency_index = edge.key();
                 let input_result = dependency_index.maybe_changed_after(db, zalsa, old_verified_at);
 
                 match input_result {
@@ -478,7 +479,8 @@ fn deep_verify_edges(
                     VerifyResult::Unchanged { .. } => {}
                 }
             }
-            QueryEdgeKind::Output(dependency_index) => {
+            QueryEdgeKind::Output => {
+                let dependency_index = edge.key();
                 // Subtle: Mark outputs as validated now, even though we may
                 // later find an input that requires us to re-execute the function.
                 // Even if it re-execute, the function will wind up writing the same value,
