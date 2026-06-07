@@ -111,6 +111,7 @@ impl LazyMemoEntries {
         self.as_mut_slice()?.get_mut(index)
     }
 
+    #[cfg(feature = "salsa_unstable")]
     fn iter(&self) -> std::slice::Iter<'_, MemoEntry> {
         self.as_slice().unwrap_or_default().iter()
     }
