@@ -469,6 +469,31 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
+                /// Returns a reference to this function's memoized value from the previous
+                /// revision, or `None` if there is no usable previous value.
+                ///
+                /// This is only meaningful while the function is re-executing for the current
+                /// key: it lets the new computation build on its own prior result. Reading the
+                /// previous value replays that result's dependencies into the current execution,
+                /// so incremental validation stays correct.
+                ///
+                /// Returns `None` when the function has never completed for this key, or when the
+                /// previous result is provisional (for example, mid-cycle).
+                ///
+                /// # Panics
+                ///
+                /// Panics if called outside of this tracked function's own execution.
+                pub fn previous<$db_lt>(
+                    $db: &$db_lt dyn $Db,
+                ) -> Option<&$db_lt $output_ty> {
+                    use ::salsa::plumbing as $zalsa;
+
+                    $zalsa::attach($db, || {
+                        let (zalsa, zalsa_local) = $db.zalsas();
+                        $Configuration::fn_ingredient_($db, zalsa).previous(zalsa, zalsa_local)
+                    })
+                }
+
                 $zalsa::macro_if! { $is_specifiable =>
                     pub fn specify<$db_lt>(
                         $db: &$db_lt dyn $Db,

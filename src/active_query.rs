@@ -11,7 +11,9 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{OriginAndExtra, QueryEdge, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{
+    OriginAndExtra, QueryEdge, QueryEdges, QueryRevisions, QueryRevisionsExtra,
+};
 use crate::{
     Id,
     cycle::{CycleHeads, IterationStamp},
@@ -65,6 +67,8 @@ pub(crate) struct ActiveQuery {
 
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
+
+    previous_memo_accessed: bool,
 }
 
 impl ActiveQuery {
@@ -72,7 +76,7 @@ impl ActiveQuery {
         &mut self,
         durability: Durability,
         changed_at: Revision,
-        edges: crate::zalsa_local::QueryEdges<'_>,
+        edges: QueryEdges<'_>,
         untracked_read: bool,
         active_tracked_ids: &[(Identity, Id)],
     ) {
@@ -91,6 +95,32 @@ impl ActiveQuery {
             .mark_all_active(active_tracked_ids.iter().copied());
         self.disambiguator_map
             .seed(active_tracked_ids.iter().map(|(id, _)| id));
+    }
+
+    pub(super) fn add_previous_memo_read(
+        &mut self,
+        durability: Durability,
+        current_revision: Revision,
+        edges: QueryEdges<'_>,
+        untracked_read: bool,
+        tracked_struct_ids: &[(Identity, Id)],
+    ) {
+        if self.previous_memo_accessed {
+            return;
+        }
+        self.previous_memo_accessed = true;
+
+        self.input_outputs.extend(edges);
+        self.durability = self.durability.min(durability);
+        self.changed_at = self.changed_at.max(current_revision);
+        self.untracked_read |= untracked_read;
+
+        // Mark all tracked structs from the previous iteration as active and reserve
+        // their identities so that newly created structs receive later disambiguators.
+        self.tracked_struct_ids
+            .mark_all_active(tracked_struct_ids.iter().copied());
+        self.disambiguator_map
+            .seed(tracked_struct_ids.iter().map(|(id, _)| id));
     }
 
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
@@ -207,6 +237,7 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
+            previous_memo_accessed: false,
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
             #[cfg(feature = "accumulator")]
@@ -228,12 +259,14 @@ impl ActiveQuery {
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
+            ref mut previous_memo_accessed,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
             #[cfg(feature = "accumulator")]
             accumulated_inputs,
         } = self;
 
+        *previous_memo_accessed = false;
         disambiguator_map.clear();
 
         #[cfg(feature = "accumulator")]
@@ -271,6 +304,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            previous_memo_accessed,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -280,6 +314,7 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
+        *previous_memo_accessed = false;
         #[cfg(feature = "accumulator")]
         accumulated.clear();
     }
@@ -294,6 +329,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            previous_memo_accessed,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -303,6 +339,7 @@ impl ActiveQuery {
         *durability = Durability::MAX;
         *changed_at = Revision::start();
         *untracked_read = false;
+        *previous_memo_accessed = false;
         debug_assert!(
             input_outputs.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"

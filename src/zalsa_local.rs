@@ -392,6 +392,30 @@ impl ZalsaLocal {
         }
     }
 
+    pub(crate) fn report_previous_memo_read(
+        &self,
+        durability: Durability,
+        edges: QueryEdges<'_>,
+        untracked_read: bool,
+        tracked_struct_ids: &[(Identity, Id)],
+        current_revision: Revision,
+    ) {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.with_query_stack_unchecked_mut(|stack| {
+                if let Some(top_query) = stack.last_mut() {
+                    top_query.add_previous_memo_read(
+                        durability,
+                        current_revision,
+                        edges,
+                        untracked_read,
+                        tracked_struct_ids,
+                    );
+                }
+            })
+        }
+    }
+
     /// Register that the current query read an untracked value
     ///
     /// # Parameters
