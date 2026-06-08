@@ -497,13 +497,33 @@ pub(crate) struct QueryRevisions {
 }
 
 impl QueryRevisions {
+    /// Returns the semantic origin of this query.
+    #[inline]
+    pub(crate) fn origin(&self) -> QueryOriginRef<'_> {
+        self.origin.as_ref()
+    }
+
+    #[inline]
+    pub(crate) const fn is_derived_untracked(&self) -> bool {
+        self.origin.is_derived_untracked()
+    }
+
+    /// Replaces the edges of a derived query origin.
+    pub(crate) fn set_origin_edges<I>(&mut self, input_outputs: I) -> Result<(), I>
+    where
+        I: IntoIterator<Item = QueryEdge>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        self.origin.set_edges(input_outputs)
+    }
+
     #[cfg(feature = "salsa_unstable")]
     pub(crate) fn allocation_size(&self) -> usize {
         let QueryRevisions {
             changed_at: _,
             durability: _,
             verified_final: _,
-            origin,
+            origin: _,
             extra,
             #[cfg(feature = "accumulator")]
                 accumulated_inputs: _,
@@ -512,7 +532,7 @@ impl QueryRevisions {
         let mut memory = 0;
 
         if let QueryOriginRef::Derived(query_edges)
-        | QueryOriginRef::DerivedUntracked(query_edges) = origin.as_ref()
+        | QueryOriginRef::DerivedUntracked(query_edges) = self.origin()
         {
             memory += query_edges.allocation_size();
         }
@@ -1567,11 +1587,8 @@ impl ActiveQueryGuard<'_> {
     pub(crate) fn seed_iteration(&self, previous: &QueryRevisions) {
         let durability = previous.durability;
         let changed_at = previous.changed_at;
-        let edges = previous.origin.as_ref().edges();
-        let untracked_read = matches!(
-            previous.origin.as_ref(),
-            QueryOriginRef::DerivedUntracked(_)
-        );
+        let edges = previous.origin().edges();
+        let untracked_read = previous.is_derived_untracked();
 
         let tracked_ids = previous.tracked_struct_ids();
 

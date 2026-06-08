@@ -125,11 +125,12 @@ where
 
         // If we are marking this as validated, it must be a value that was
         // assigned by `executor`.
-        match memo.revisions.origin.as_ref() {
+        match memo.revisions.origin() {
             QueryOriginRef::Assigned(by_query) => assert_eq!(by_query, executor),
             _ => panic!(
                 "expected a query assigned by `{:?}`, not `{:?}`",
-                executor, memo.revisions.origin,
+                executor,
+                memo.revisions.origin(),
             ),
         }
 

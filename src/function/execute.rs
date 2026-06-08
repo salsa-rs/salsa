@@ -659,8 +659,8 @@ fn try_complete_cycle_head(
     let metadata_converged = last_provisional_revisions.durability
         == completed_query.revisions.durability
         && last_provisional_revisions.changed_at == completed_query.revisions.changed_at
-        && last_provisional_revisions.origin.is_derived_untracked()
-            == completed_query.revisions.origin.is_derived_untracked();
+        && last_provisional_revisions.is_derived_untracked()
+            == completed_query.revisions.is_derived_untracked();
 
     let this_converged = value_converged && metadata_converged;
 
@@ -803,10 +803,10 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
     // Don't insert the key of `head` here. This is important to ensure that we copy over the
     // dependencies from this memo in the previous iteration.
     // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
-    let edges = head.origin.as_ref().edges();
+    let edges = head.origin().edges();
     flattened.reserve(edges.len());
 
-    for edge in head.origin.as_ref().edges() {
+    for edge in head.origin().edges() {
         match edge.kind() {
             QueryEdgeKind::Input => {
                 let input = edge.key();
@@ -828,7 +828,7 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
     }
 
     assert!(
-        head.origin.set_edges(flattened.drain(..)).is_ok(),
+        head.set_origin_edges(flattened.drain(..)).is_ok(),
         "Executing query to always be derived or derived untracked."
     );
 

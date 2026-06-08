@@ -343,7 +343,7 @@ where
             return;
         };
 
-        let origin = memo.revisions.origin.as_ref();
+        let origin = memo.revisions.origin();
 
         visited_edges.insert(edge);
 
@@ -445,7 +445,7 @@ where
             return;
         }
 
-        let inputs = memo.revisions.origin.as_ref().inputs();
+        let inputs = memo.revisions.origin().inputs();
 
         match C::CYCLE_STRATEGY {
             // For queries with cycle handling, simply extend the input/outputs, because
@@ -698,7 +698,7 @@ mod persistence {
 
                 if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
                     // Flatten the dependencies of this query down to the base inputs.
-                    let flattened_origin = match memo.revisions.origin.as_ref() {
+                    let flattened_origin = match memo.revisions.origin() {
                         QueryOriginRef::Derived(edges) => {
                             collect_minimum_serialized_edges(
                                 zalsa,

@@ -64,7 +64,7 @@ impl<C: Configuration> IngredientImpl<C> {
         memo_ingredient_index: MemoIngredientIndex,
     ) {
         let map = |memo: &mut Memo<'static, C>| {
-            match memo.revisions.origin.as_ref() {
+            match memo.revisions.origin() {
                 QueryOriginRef::Assigned(_) | QueryOriginRef::DerivedUntracked(_) => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
@@ -165,7 +165,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) {
-        for output in self.revisions.origin.as_ref().outputs() {
+        for output in self.revisions.origin().outputs() {
             output.mark_validated_output(zalsa, database_key_index);
         }
     }
@@ -201,7 +201,7 @@ where
     C::Output<'static>: Send + Sync + Any,
 {
     fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
-        for stale_output in self.revisions.origin.as_ref().outputs() {
+        for stale_output in self.revisions.origin().outputs() {
             stale_output.remove_stale_output(zalsa, executor);
         }
 
