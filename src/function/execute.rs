@@ -806,7 +806,7 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
     let edges = head.origin().edges();
     flattened.reserve(edges.len());
 
-    for edge in head.origin().edges() {
+    for edge in edges {
         match edge.kind() {
             QueryEdgeKind::Input => {
                 let input = edge.key();

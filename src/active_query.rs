@@ -202,11 +202,6 @@ impl ActiveQuery {
             accumulated_inputs,
         } = self;
 
-        let origin = if untracked_read {
-            OriginAndExtra::derived_untracked(input_outputs.drain(..))
-        } else {
-            OriginAndExtra::derived(input_outputs.drain(..))
-        };
         disambiguator_map.clear();
 
         #[cfg(feature = "accumulator")]
@@ -221,11 +216,16 @@ impl ActiveQuery {
             mem::take(cycle_heads),
             iteration,
         );
+        let origin_and_extra = if untracked_read {
+            OriginAndExtra::derived_untracked(input_outputs.drain(..), extra)
+        } else {
+            OriginAndExtra::derived(input_outputs.drain(..), extra)
+        };
 
         let revisions = QueryRevisions {
             changed_at,
             durability,
-            origin_and_extra: OriginAndExtra::new(origin, extra),
+            origin_and_extra,
             #[cfg(feature = "accumulator")]
             accumulated_inputs,
             verified_final: AtomicBool::new(verified_final),

@@ -20,7 +20,7 @@ use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::{QueryEdge, QueryOrigin};
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -500,7 +500,7 @@ where
         }
     }
 
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
+    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOrigin<'db>> {
         self.origin(zalsa, key)
     }
 
@@ -638,7 +638,8 @@ mod persistence {
     use crate::hash::{FxHashSet, FxIndexSet};
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
     use crate::zalsa::Zalsa;
-    use crate::zalsa_local::{OriginAndExtra, QueryEdge, QueryOriginRef};
+    use crate::zalsa_local::persistence::PersistentQueryOrigin;
+    use crate::zalsa_local::{QueryEdge, QueryOrigin};
     use crate::{Id, IngredientIndex};
 
     use serde::de;
@@ -699,7 +700,7 @@ mod persistence {
                 if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
                     // Flatten the dependencies of this query down to the base inputs.
                     let flattened_origin = match memo.revisions.origin() {
-                        QueryOriginRef::Derived(edges) => {
+                        QueryOrigin::Derived(edges) => {
                             collect_minimum_serialized_edges(
                                 zalsa,
                                 edges,
@@ -707,9 +708,9 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            OriginAndExtra::derived(flattened_edges.drain(..))
+                            PersistentQueryOrigin::derived(flattened_edges.drain(..))
                         }
-                        QueryOriginRef::DerivedUntracked(edges) => {
+                        QueryOrigin::DerivedUntracked(edges) => {
                             collect_minimum_serialized_edges(
                                 zalsa,
                                 edges,
@@ -717,9 +718,9 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            OriginAndExtra::derived_untracked(flattened_edges.drain(..))
+                            PersistentQueryOrigin::derived_untracked(flattened_edges.drain(..))
                         }
-                        QueryOriginRef::Assigned(key) => {
+                        QueryOrigin::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
                             assert!(
                                 dependency.is_persistable(),
@@ -727,7 +728,7 @@ mod persistence {
                                 dependency.debug_name()
                             );
 
-                            OriginAndExtra::assigned(key)
+                            PersistentQueryOrigin::assigned(key)
                         }
                     };
 

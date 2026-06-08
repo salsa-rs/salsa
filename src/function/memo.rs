@@ -13,7 +13,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
+use crate::zalsa_local::{QueryOrigin, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -65,13 +65,13 @@ impl<C: Configuration> IngredientImpl<C> {
     ) {
         let map = |memo: &mut Memo<'static, C>| {
             match memo.revisions.origin() {
-                QueryOriginRef::Assigned(_) | QueryOriginRef::DerivedUntracked(_) => {
+                QueryOrigin::Assigned(_) | QueryOrigin::DerivedUntracked(_) => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
                 }
-                QueryOriginRef::Derived(_) => {
+                QueryOrigin::Derived(_) => {
                     // Set the memo value to `None`.
                     memo.value = None;
                 }
@@ -238,8 +238,8 @@ mod persistence {
     use crate::function::Configuration;
     use crate::function::memo::Memo;
     use crate::revision::AtomicRevision;
-    use crate::zalsa_local::persistence::MappedQueryRevisions;
-    use crate::zalsa_local::{OriginAndExtra, QueryRevisions};
+    use crate::zalsa_local::QueryRevisions;
+    use crate::zalsa_local::persistence::{MappedQueryRevisions, PersistentQueryOrigin};
 
     use serde::Deserialize;
     use serde::ser::SerializeStruct;
@@ -252,7 +252,10 @@ mod persistence {
     }
 
     impl<'db, C: Configuration> Memo<'db, C> {
-        pub(crate) fn with_origin(&self, origin: OriginAndExtra) -> MappedMemo<'_, 'db, C> {
+        pub(crate) fn with_origin(
+            &self,
+            serialized_origin: PersistentQueryOrigin,
+        ) -> MappedMemo<'_, 'db, C> {
             let Memo {
                 ref verified_at,
                 ref value,
@@ -262,7 +265,7 @@ mod persistence {
             MappedMemo {
                 value: value.as_ref(),
                 verified_at: AtomicRevision::from(verified_at.load()),
-                revisions: revisions.with_origin(origin),
+                revisions: revisions.with_origin(serialized_origin),
             }
         }
     }

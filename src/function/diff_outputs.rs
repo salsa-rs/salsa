@@ -3,7 +3,7 @@ use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
-use crate::zalsa_local::{QueryOriginRef, QueryRevisions, output_edges};
+use crate::zalsa_local::{QueryOrigin, QueryRevisions, output_edges};
 use crate::{DatabaseKeyIndex, Event, EventKind};
 
 impl<C> IngredientImpl<C>
@@ -29,7 +29,7 @@ fn diff_outputs_on_revision(
     old_revisions: &QueryRevisions,
     completed_query: &CompletedQuery,
 ) {
-    let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
+    let (QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges)) =
         old_revisions.origin()
     else {
         return;

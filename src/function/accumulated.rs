@@ -3,7 +3,7 @@ use crate::accumulator::{self};
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
 use crate::zalsa::ZalsaDatabase;
-use crate::zalsa_local::QueryOriginRef;
+use crate::zalsa_local::QueryOrigin;
 use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
@@ -74,8 +74,7 @@ where
                 continue;
             };
 
-            if let QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) = origin
-            {
+            if let QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) = origin {
                 stack.reserve(edges.len());
             }
 
