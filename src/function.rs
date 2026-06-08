@@ -638,7 +638,7 @@ mod persistence {
     use crate::hash::{FxHashSet, FxIndexSet};
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
     use crate::zalsa::Zalsa;
-    use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryOriginRef};
+    use crate::zalsa_local::{OriginAndExtra, QueryEdge, QueryOriginRef};
     use crate::{Id, IngredientIndex};
 
     use serde::de;
@@ -707,7 +707,7 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            QueryOrigin::derived(flattened_edges.drain(..))
+                            OriginAndExtra::derived(flattened_edges.drain(..))
                         }
                         QueryOriginRef::DerivedUntracked(edges) => {
                             collect_minimum_serialized_edges(
@@ -717,7 +717,7 @@ mod persistence {
                                 &mut flattened_edges,
                             );
 
-                            QueryOrigin::derived_untracked(flattened_edges.drain(..))
+                            OriginAndExtra::derived_untracked(flattened_edges.drain(..))
                         }
                         QueryOriginRef::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
@@ -727,7 +727,7 @@ mod persistence {
                                 dependency.debug_name()
                             );
 
-                            QueryOrigin::assigned(key)
+                            OriginAndExtra::assigned(key)
                         }
                     };
 

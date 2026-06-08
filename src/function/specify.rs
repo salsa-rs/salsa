@@ -7,7 +7,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryOrigin, QueryOriginRef, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{OriginAndExtra, QueryOriginRef, QueryRevisions};
 use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
@@ -68,11 +68,10 @@ where
             revisions: QueryRevisions {
                 changed_at: current_deps.changed_at,
                 durability: current_deps.durability,
-                origin: QueryOrigin::assigned(active_query_key),
+                origin_and_extra: OriginAndExtra::assigned(active_query_key),
                 #[cfg(feature = "accumulator")]
                 accumulated_inputs: Default::default(),
                 verified_final: AtomicBool::new(true),
-                extra: QueryRevisionsExtra::default(),
             },
             stale_tracked_structs: Vec::new(),
         };

@@ -239,7 +239,7 @@ mod persistence {
     use crate::function::memo::Memo;
     use crate::revision::AtomicRevision;
     use crate::zalsa_local::persistence::MappedQueryRevisions;
-    use crate::zalsa_local::{QueryOrigin, QueryRevisions};
+    use crate::zalsa_local::{OriginAndExtra, QueryRevisions};
 
     use serde::Deserialize;
     use serde::ser::SerializeStruct;
@@ -252,7 +252,7 @@ mod persistence {
     }
 
     impl<'db, C: Configuration> Memo<'db, C> {
-        pub(crate) fn with_origin(&self, origin: QueryOrigin) -> MappedMemo<'_, 'db, C> {
+        pub(crate) fn with_origin(&self, origin: OriginAndExtra) -> MappedMemo<'_, 'db, C> {
             let Memo {
                 ref verified_at,
                 ref value,
@@ -446,7 +446,7 @@ mod _memory_usage {
 
     // Memo's are stored a lot, make sure their size doesn't randomly increase.
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
-        [(); std::mem::size_of::<[usize; 6]>()];
+        [(); std::mem::size_of::<[usize; 5]>()];
 
     struct DummyStruct;
 
