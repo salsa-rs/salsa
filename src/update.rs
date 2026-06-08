@@ -494,6 +494,8 @@ macro_rules! fallback_impl {
 
 fallback_impl! {
     String,
+    i128,
+    u128,
     i64,
     u64,
     i32,

@@ -7,7 +7,7 @@ use syn::visit_mut::VisitMut;
 
 use crate::hygiene::Hygiene;
 use crate::tracked_fn::FnArgs;
-use crate::xform::ChangeSelfPath;
+use crate::xform::{ChangeLt, ChangeSelfPath};
 
 pub(crate) fn tracked_impl(
     args: proc_macro::TokenStream,
@@ -32,7 +32,7 @@ struct AssociatedFunctionArguments<'syn> {
     db_lt: syn::Lifetime,
     has_explicit_db_lt: bool,
     input_ids: Vec<syn::Ident>,
-    input_tys: Vec<&'syn syn::Type>,
+    input_tys: Vec<syn::Type>,
     output_ty: syn::Type,
 }
 
@@ -90,16 +90,6 @@ impl Macro {
             syn::Meta::Path(..) => Default::default(),
             _ => salsa_tracked_attr.parse_args()?,
         };
-        if args.self_ty.is_none() {
-            // If the user did not specify a self_ty, we use the impl's self_ty
-            args.self_ty = Some(self_ty.clone());
-        }
-        salsa_tracked_attr.meta = syn::Meta::List(syn::MetaList {
-            path: salsa_tracked_attr.path().clone(),
-            delimiter: syn::MacroDelimiter::Paren(syn::token::Paren::default()),
-            tokens: quote! {#args},
-        });
-
         let InnerTrait = self.hygiene.ident("InnerTrait");
         let inner_fn_name = self.hygiene.ident(fn_item.sig.ident.to_string());
 
@@ -114,11 +104,52 @@ impl Macro {
             input_tys,
             output_ty,
         } = self.validity_check(impl_item, fn_item)?;
-        let db_ty = self.with_db_lifetime(db_ty, &db_lt);
+        let body_db_lt = syn::Lifetime::new("'db", fn_item.sig.ident.span());
+        let body_self_ty = ChangeLt::db_to(&db_lt, &body_db_lt).in_type(self_ty);
+        let db_ty = ChangeLt::db_to(&db_lt, &body_db_lt)
+            .in_type(&self.with_db_lifetime(db_ty, &body_db_lt));
+        let input_tys: Vec<_> = input_tys
+            .into_iter()
+            .map(|ty| ChangeLt::db_to(&db_lt, &body_db_lt).in_type(&ty))
+            .collect();
+        let output_ty = ChangeLt::db_to(&db_lt, &body_db_lt).in_type(&output_ty);
+        let skipped_inputs = if self_token.is_some() { 2 } else { 1 };
+
+        if args.self_ty.is_none() {
+            args.self_ty = Some(body_self_ty.clone());
+        }
+        salsa_tracked_attr.meta = syn::Meta::List(syn::MetaList {
+            path: salsa_tracked_attr.path().clone(),
+            delimiter: syn::MacroDelimiter::Paren(syn::token::Paren::default()),
+            tokens: quote! {#args},
+        });
 
         let mut inner_fn = fn_item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
         inner_fn.sig.ident = inner_fn_name.clone();
+        self.normalize_signature_lifetimes(
+            &mut inner_fn.sig,
+            db_input_index,
+            skipped_inputs,
+            &db_lt,
+            &body_db_lt,
+        )?;
+
+        let tracked_fn: syn::ItemFn = if self_token.is_some() {
+            parse_quote! {
+                #salsa_tracked_attr
+                fn #inner_fn_name<#body_db_lt>(db: #db_ty, this: #body_self_ty, #(#input_ids: #input_tys),*) -> #output_ty {
+                    <#body_self_ty as #InnerTrait>::#inner_fn_name(this, db, #(#input_ids),*)
+                }
+            }
+        } else {
+            parse_quote! {
+                #salsa_tracked_attr
+                fn #inner_fn_name<#body_db_lt>(db: #db_ty, #(#input_ids: #input_tys),*) -> #output_ty {
+                    <#body_self_ty as #InnerTrait>::#inner_fn_name(db, #(#input_ids),*)
+                }
+            }
+        };
 
         // Construct the body of the method or associated function
 
@@ -127,8 +158,8 @@ impl Macro {
                 salsa::plumbing::setup_tracked_method_body! {
                     salsa_tracked_attr: #salsa_tracked_attr,
                     self: #self_token,
-                    self_ty: #self_ty,
-                    db_lt: #db_lt,
+                    self_ty: #body_self_ty,
+                    db_lt: #body_db_lt,
                     db: #db_ident,
                     db_ty: (#db_ty),
                     input_ids: [#(#input_ids),*],
@@ -136,6 +167,7 @@ impl Macro {
                     output_ty: #output_ty,
                     inner_fn_name: #inner_fn_name,
                     inner_fn: #inner_fn,
+                    tracked_fn: #tracked_fn,
 
                     // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
                     // We have the procedural macro generate names for those items that are
@@ -149,8 +181,8 @@ impl Macro {
             parse_quote!({
                 salsa::plumbing::setup_tracked_assoc_fn_body! {
                     salsa_tracked_attr: #salsa_tracked_attr,
-                    self_ty: #self_ty,
-                    db_lt: #db_lt,
+                    self_ty: #body_self_ty,
+                    db_lt: #body_db_lt,
                     db: #db_ident,
                     db_ty: (#db_ty),
                     input_ids: [#(#input_ids),*],
@@ -158,6 +190,7 @@ impl Macro {
                     output_ty: #output_ty,
                     inner_fn_name: #inner_fn_name,
                     inner_fn: #inner_fn,
+                    tracked_fn: #tracked_fn,
 
                     // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
                     // We have the procedural macro generate names for those items that are
@@ -172,7 +205,7 @@ impl Macro {
         // Update the method that will actually appear in the impl to have the new body
         // and its true return type.
         let outer_db_lt = if self.return_mode_uses_db_lifetime(&args)
-            && (has_explicit_db_lt || self.return_mode_requires_named_db_lifetime(&args))
+            || self.return_type_uses_elided_lifetime(&fn_item.sig.output)
         {
             Some(db_lt.clone())
         } else {
@@ -184,8 +217,10 @@ impl Macro {
                 fn_item.sig.generics.params.push(parse_quote!(#outer_db_lt));
             }
             self.update_db_argument_lifetime(&mut fn_item.sig, db_input_index, outer_db_lt)?;
+            self.update_input_lifetimes(&mut fn_item.sig, skipped_inputs, outer_db_lt)?;
         }
 
+        self.update_input_patterns(&mut fn_item.sig, skipped_inputs, &input_ids)?;
         self.update_return_type(&mut fn_item.sig, &args, outer_db_lt.as_ref())?;
         fn_item.block = block;
 
@@ -214,7 +249,10 @@ impl Macro {
 
         let input_ids: Vec<syn::Ident> =
             crate::fn_util::input_ids(&self.hygiene, &fn_item.sig, skipped_inputs);
-        let input_tys = crate::fn_util::input_tys(&fn_item.sig, skipped_inputs)?;
+        let input_tys = crate::fn_util::input_tys(&fn_item.sig, skipped_inputs)?
+            .into_iter()
+            .map(|ty| ChangeLt::elided_to(&db_lt).in_type(ty))
+            .collect();
         let output_ty = crate::fn_util::output_ty(Some(&db_lt), &fn_item.sig)?;
 
         Ok(AssociatedFunctionArguments {
@@ -395,6 +433,87 @@ impl Macro {
         }
     }
 
+    fn normalize_signature_lifetimes(
+        &self,
+        sig: &mut syn::Signature,
+        db_input_index: usize,
+        skipped_inputs: usize,
+        from_db_lt: &syn::Lifetime,
+        to_db_lt: &syn::Lifetime,
+    ) -> syn::Result<()> {
+        self.update_db_argument_lifetime(sig, db_input_index, to_db_lt)?;
+        if let Some(syn::FnArg::Receiver(receiver)) = sig.inputs.first_mut() {
+            *receiver.ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(&receiver.ty);
+        }
+        if let Some(input) = sig.inputs.iter_mut().nth(db_input_index) {
+            let syn::FnArg::Typed(typed) = input else {
+                return Err(syn::Error::new_spanned(
+                    input,
+                    "tracked methods must take a database parameter",
+                ));
+            };
+            *typed.ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(&typed.ty);
+        }
+        for input in sig.inputs.iter_mut().skip(skipped_inputs) {
+            let syn::FnArg::Typed(typed) = input else {
+                return Err(syn::Error::new_spanned(input, "unexpected receiver"));
+            };
+            *typed.ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(&typed.ty);
+        }
+        if let syn::ReturnType::Type(_, ty) = &mut sig.output {
+            **ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(ty);
+        }
+        Ok(())
+    }
+
+    fn update_input_lifetimes(
+        &self,
+        sig: &mut syn::Signature,
+        skipped_inputs: usize,
+        db_lt: &syn::Lifetime,
+    ) -> syn::Result<()> {
+        for input in sig.inputs.iter_mut().skip(skipped_inputs) {
+            let syn::FnArg::Typed(typed) = input else {
+                return Err(syn::Error::new_spanned(input, "unexpected receiver"));
+            };
+            *typed.ty = ChangeLt::elided_to(db_lt).in_type(&typed.ty);
+        }
+        Ok(())
+    }
+
+    fn update_input_patterns(
+        &self,
+        sig: &mut syn::Signature,
+        skipped_inputs: usize,
+        input_ids: &[syn::Ident],
+    ) -> syn::Result<()> {
+        for (input, input_id) in sig.inputs.iter_mut().skip(skipped_inputs).zip(input_ids) {
+            let syn::FnArg::Typed(typed) = input else {
+                return Err(syn::Error::new_spanned(input, "unexpected receiver"));
+            };
+
+            let syn::Pat::Ident(ident) = &*typed.pat else {
+                *typed.pat = self.ident_pat(input_id);
+                continue;
+            };
+
+            if ident.ident != *input_id {
+                *typed.pat = self.ident_pat(input_id);
+            }
+        }
+        Ok(())
+    }
+
+    fn ident_pat(&self, ident: &syn::Ident) -> syn::Pat {
+        syn::Pat::Ident(syn::PatIdent {
+            attrs: vec![],
+            by_ref: None,
+            mutability: None,
+            ident: ident.clone(),
+            subpat: None,
+        })
+    }
+
     fn return_mode_uses_db_lifetime(&self, args: &FnArgs) -> bool {
         if let Some(returns) = &args.returns {
             returns == "ref" || returns == "deref" || returns == "as_ref" || returns == "as_deref"
@@ -403,12 +522,15 @@ impl Macro {
         }
     }
 
-    fn return_mode_requires_named_db_lifetime(&self, args: &FnArgs) -> bool {
-        if let Some(returns) = &args.returns {
-            returns == "as_ref" || returns == "as_deref"
-        } else {
-            false
-        }
+    fn return_type_uses_elided_lifetime(&self, output: &syn::ReturnType) -> bool {
+        let syn::ReturnType::Type(_, ty) = output else {
+            return false;
+        };
+
+        let mut ty = syn::Type::clone(ty);
+        let mut visitor = ContainsElidedLifetime(false);
+        visitor.visit_type_mut(&mut ty);
+        visitor.0
     }
 
     fn update_return_type(
@@ -420,15 +542,26 @@ impl Macro {
         if let Some(returns) = &args.returns {
             if let syn::ReturnType::Type(_, t) = &mut sig.output {
                 if returns == "copy" || returns == "clone" {
-                    // leave as is
                 } else if returns == "ref" {
-                    **t = parse_quote!(& #db_lt #t)
+                    let ty = db_lt
+                        .map(|db_lt| ChangeLt::elided_to(db_lt).in_type(t))
+                        .unwrap_or_else(|| syn::Type::clone(t));
+                    **t = parse_quote!(& #db_lt #ty)
                 } else if returns == "deref" {
-                    **t = parse_quote!(& #db_lt <#t as ::core::ops::Deref>::Target)
+                    let ty = db_lt
+                        .map(|db_lt| ChangeLt::elided_to(db_lt).in_type(t))
+                        .unwrap_or_else(|| syn::Type::clone(t));
+                    **t = parse_quote!(& #db_lt <#ty as ::core::ops::Deref>::Target)
                 } else if returns == "as_ref" {
-                    **t = parse_quote!(<#t as ::salsa::SalsaAsRef>::AsRef<#db_lt>)
+                    let ty = db_lt
+                        .map(|db_lt| ChangeLt::elided_to(db_lt).in_type(t))
+                        .unwrap_or_else(|| syn::Type::clone(t));
+                    **t = parse_quote!(<#ty as ::salsa::SalsaAsRef>::AsRef<#db_lt>)
                 } else if returns == "as_deref" {
-                    **t = parse_quote!(<#t as ::salsa::SalsaAsDeref>::AsDeref<#db_lt>)
+                    let ty = db_lt
+                        .map(|db_lt| ChangeLt::elided_to(db_lt).in_type(t))
+                        .unwrap_or_else(|| syn::Type::clone(t));
+                    **t = parse_quote!(<#ty as ::salsa::SalsaAsDeref>::AsDeref<#db_lt>)
                 } else {
                     return Err(syn::Error::new_spanned(
                         returns,
@@ -441,7 +574,19 @@ impl Macro {
                     "returns attribute requires explicit return type",
                 ));
             };
+        } else if let (Some(db_lt), syn::ReturnType::Type(_, t)) = (db_lt, &mut sig.output) {
+            **t = ChangeLt::elided_to(db_lt).in_type(t);
         }
         Ok(())
+    }
+}
+
+struct ContainsElidedLifetime(bool);
+
+impl VisitMut for ContainsElidedLifetime {
+    fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
+        if i.ident == "_" {
+            self.0 = true;
+        }
     }
 }

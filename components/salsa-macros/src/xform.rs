@@ -5,16 +5,29 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 
-pub(crate) struct ChangeLt<'a> {
-    from: Option<&'a str>,
-    to: String,
+pub(crate) struct ChangeLt {
+    from: Option<String>,
+    include_elided: bool,
+    shadowed: Vec<syn::Ident>,
+    to: syn::Lifetime,
 }
 
-impl ChangeLt<'_> {
+impl ChangeLt {
     pub fn elided_to(db_lt: &syn::Lifetime) -> Self {
         ChangeLt {
-            from: Some("_"),
-            to: db_lt.ident.to_string(),
+            from: Some("_".to_owned()),
+            include_elided: false,
+            shadowed: vec![],
+            to: db_lt.clone(),
+        }
+    }
+
+    pub fn db_to(from: &syn::Lifetime, to: &syn::Lifetime) -> Self {
+        ChangeLt {
+            from: Some(from.ident.to_string()),
+            include_elided: true,
+            shadowed: vec![],
+            to: to.clone(),
         }
     }
 
@@ -23,13 +36,55 @@ impl ChangeLt<'_> {
         self.visit_type_mut(&mut ty);
         ty
     }
+
+    fn replaces(&self, lifetime: &syn::Lifetime) -> bool {
+        if self.shadowed.contains(&lifetime.ident) {
+            return false;
+        }
+
+        self.from
+            .as_deref()
+            .map(|from| lifetime.ident == from)
+            .unwrap_or(true)
+            || self.include_elided && lifetime.ident == "_"
+    }
 }
 
-impl syn::visit_mut::VisitMut for ChangeLt<'_> {
+impl syn::visit_mut::VisitMut for ChangeLt {
     fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        if self.from.map(|f| i.ident == f).unwrap_or(true) {
-            i.ident = syn::Ident::new(&self.to, i.ident.span());
+        if self.replaces(i) {
+            *i = self.to.clone();
         }
+    }
+
+    fn visit_type_bare_fn_mut(&mut self, i: &mut syn::TypeBareFn) {
+        let old_len = self.shadowed.len();
+        if let Some(lifetimes) = &i.lifetimes {
+            self.shadowed
+                .extend(lifetimes.lifetimes.iter().filter_map(|param| {
+                    let syn::GenericParam::Lifetime(param) = param else {
+                        return None;
+                    };
+                    Some(param.lifetime.ident.clone())
+                }));
+        }
+        syn::visit_mut::visit_type_bare_fn_mut(self, i);
+        self.shadowed.truncate(old_len);
+    }
+
+    fn visit_trait_bound_mut(&mut self, i: &mut syn::TraitBound) {
+        let old_len = self.shadowed.len();
+        if let Some(lifetimes) = &i.lifetimes {
+            self.shadowed
+                .extend(lifetimes.lifetimes.iter().filter_map(|param| {
+                    let syn::GenericParam::Lifetime(param) = param else {
+                        return None;
+                    };
+                    Some(param.lifetime.ident.clone())
+                }));
+        }
+        syn::visit_mut::visit_trait_bound_mut(self, i);
+        self.shadowed.truncate(old_len);
     }
 }
 
