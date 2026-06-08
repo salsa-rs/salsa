@@ -544,12 +544,17 @@ impl QueryRevisionsExtra {
         mut tracked_struct_ids: ThinVec<(Identity, Id)>,
         cycle_heads: CycleHeads,
         iteration: IterationStamp,
+        cycle_heads_taken: bool,
     ) -> Self {
         #[cfg(feature = "accumulator")]
         let acc = accumulated.is_empty();
         #[cfg(not(feature = "accumulator"))]
         let acc = true;
-        let inner = if acc
+        // `cycle_heads` may be empty because cycle completion moved its entries out before
+        // constructing the revisions. Preserve extra storage so those heads can be restored
+        // without rebuilding the origin allocation.
+        let inner = if !cycle_heads_taken
+            && acc
             && tracked_struct_ids.is_empty()
             && cycle_heads.is_empty()
             && iteration.is_default()
@@ -711,6 +716,7 @@ impl QueryRevisions {
                     ThinVec::default(),
                     CycleHeads::initial(query, iteration),
                     iteration,
+                    false,
                 ),
             ),
             #[cfg(feature = "accumulator")]

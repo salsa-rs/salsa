@@ -65,6 +65,16 @@ pub(crate) struct ActiveQuery {
 
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
+
+    /// True if non-empty [`Self::cycle_heads`] were moved out by [`Self::take_cycle_heads`].
+    ///
+    /// Cycle completion needs to inspect and update the heads before it pops the active query.
+    /// Without this marker, [`Self::top_into_revisions`] would see an empty collection and omit
+    /// [`QueryRevisionsExtra`], even on paths that restore the heads with
+    /// [`QueryRevisions::set_cycle_heads`]. Remembering that the heads were taken lets revision
+    /// construction reserve the extra data in the same allocation as the query edges, avoiding a
+    /// second allocation and edge copy when the heads are restored.
+    cycle_heads_taken: bool,
 }
 
 impl ActiveQuery {
@@ -95,6 +105,7 @@ impl ActiveQuery {
     }
 
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
+        self.cycle_heads_taken |= !self.cycle_heads.is_empty();
         std::mem::take(&mut self.cycle_heads)
     }
 
@@ -179,6 +190,7 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             cycle_heads: Default::default(),
+            cycle_heads_taken: false,
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
             #[cfg(feature = "accumulator")]
@@ -196,6 +208,7 @@ impl ActiveQuery {
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut cycle_heads,
+            ref mut cycle_heads_taken,
             #[cfg(feature = "accumulator")]
             ref mut accumulated,
             #[cfg(feature = "accumulator")]
@@ -206,6 +219,7 @@ impl ActiveQuery {
 
         #[cfg(feature = "accumulator")]
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
+        let cycle_heads_taken = mem::take(cycle_heads_taken);
         let verified_final = cycle_heads.is_empty();
         let (active_tracked_structs, stale_tracked_structs) = tracked_struct_ids.drain();
 
@@ -215,6 +229,7 @@ impl ActiveQuery {
             active_tracked_structs,
             mem::take(cycle_heads),
             iteration,
+            cycle_heads_taken,
         );
         let origin_and_extra = if untracked_read {
             OriginAndExtra::derived_untracked(input_outputs.drain(..), extra)
@@ -247,6 +262,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            cycle_heads_taken,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -256,6 +272,7 @@ impl ActiveQuery {
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
+        *cycle_heads_taken = false;
         #[cfg(feature = "accumulator")]
         accumulated.clear();
     }
@@ -270,6 +287,7 @@ impl ActiveQuery {
             disambiguator_map,
             tracked_struct_ids,
             cycle_heads,
+            cycle_heads_taken,
             #[cfg(feature = "accumulator")]
             accumulated,
             #[cfg(feature = "accumulator")]
@@ -295,6 +313,7 @@ impl ActiveQuery {
             cycle_heads.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
         );
+        debug_assert!(!*cycle_heads_taken);
         #[cfg(feature = "accumulator")]
         {
             *accumulated_inputs = Default::default();
