@@ -114,52 +114,20 @@ impl ActiveQuery {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
 
-        if durability == Durability::NEVER_CHANGE {
-            self.add_never_change_read(
-                input,
-                cycle_heads,
-                #[cfg(feature = "accumulator")]
-                has_accumulated,
-                #[cfg(feature = "accumulator")]
-                accumulated_inputs,
-            );
-            return;
-        }
-
-        self.input_outputs.insert(QueryEdge::input(input));
-        self.cycle_heads.extend(cycle_heads);
-        #[cfg(feature = "accumulator")]
-        {
-            self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
-                true => InputAccumulatedValues::Any,
-                false => accumulated_inputs.load(),
-            });
-        }
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn add_never_change_read(
-        &mut self,
-        input: DatabaseKeyIndex,
-        cycle_heads: &CycleHeads,
-        #[cfg(feature = "accumulator")] has_accumulated: bool,
-        #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
-    ) {
         #[cfg(feature = "accumulator")]
         let accumulated_inputs = match has_accumulated {
             true => InputAccumulatedValues::Any,
             false => accumulated_inputs.load(),
         };
 
-        #[cfg(not(feature = "accumulator"))]
-        let record_input = !cycle_heads.is_empty();
+        let record_input = durability != Durability::NEVER_CHANGE || !cycle_heads.is_empty();
         #[cfg(feature = "accumulator")]
-        let record_input = !cycle_heads.is_empty() || accumulated_inputs.is_any();
+        let record_input = record_input || accumulated_inputs.is_any();
 
         if record_input {
             self.input_outputs.insert(QueryEdge::input(input));
         }
+
         self.cycle_heads.extend(cycle_heads);
         #[cfg(feature = "accumulator")]
         {
