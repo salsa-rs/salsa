@@ -109,6 +109,10 @@ impl ActiveQuery {
         std::mem::take(&mut self.cycle_heads)
     }
 
+    pub(crate) fn detach_input_outputs(&mut self) -> FxIndexSet<QueryEdge> {
+        std::mem::take(&mut self.input_outputs)
+    }
+
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
@@ -198,12 +202,12 @@ impl ActiveQuery {
         }
     }
 
-    fn top_into_revisions(&mut self, iteration: IterationStamp) -> CompletedQuery {
+    fn prepare_completion(&mut self, iteration: IterationStamp) -> QueryCompletion {
         let &mut Self {
             database_key_index: _,
             durability,
             changed_at,
-            ref mut input_outputs,
+            input_outputs: _,
             untracked_read,
             ref mut disambiguator_map,
             ref mut tracked_struct_ids,
@@ -231,23 +235,14 @@ impl ActiveQuery {
             iteration,
             cycle_heads_taken,
         );
-        let origin_and_extra = if untracked_read {
-            OriginAndExtra::derived_untracked(input_outputs.drain(..), extra)
-        } else {
-            OriginAndExtra::derived(input_outputs.drain(..), extra)
-        };
-
-        let revisions = QueryRevisions {
+        QueryCompletion {
             changed_at,
             durability,
-            origin_and_extra,
+            untracked_read,
+            extra,
             #[cfg(feature = "accumulator")]
             accumulated_inputs,
-            verified_final: AtomicBool::new(verified_final),
-        };
-
-        CompletedQuery {
-            revisions,
+            verified_final,
             stale_tracked_structs,
         }
     }
@@ -383,27 +378,90 @@ impl QueryStack {
         iteration: IterationStamp,
         #[cfg(debug_assertions)] push_len: usize,
     ) -> CompletedQuery {
-        #[cfg(debug_assertions)]
-        assert_eq!(push_len, self.len(), "unbalanced push/pop");
-        debug_assert_ne!(self.len, 0, "too many pops");
-        self.len -= 1;
-        debug_assert_eq!(
-            self.stack[self.len].database_key_index, key,
-            "unbalanced push/pop"
+        let active_query = self.pop_active_query(
+            key,
+            #[cfg(debug_assertions)]
+            push_len,
         );
-        self.stack[self.len].top_into_revisions(iteration)
+        let completion = active_query.prepare_completion(iteration);
+        completion.finish(active_query.input_outputs.drain(..))
+    }
+
+    pub(crate) fn pop_completion(
+        &mut self,
+        key: DatabaseKeyIndex,
+        iteration: IterationStamp,
+        mut reusable_frame_input_outputs: FxIndexSet<QueryEdge>,
+        #[cfg(debug_assertions)] push_len: usize,
+    ) -> QueryCompletion {
+        let active_query = self.pop_active_query(
+            key,
+            #[cfg(debug_assertions)]
+            push_len,
+        );
+        debug_assert!(active_query.input_outputs.is_empty());
+        let completion = active_query.prepare_completion(iteration);
+        reusable_frame_input_outputs.clear();
+        active_query.input_outputs = reusable_frame_input_outputs;
+        completion
     }
 
     pub(crate) fn pop(&mut self, key: DatabaseKeyIndex, #[cfg(debug_assertions)] push_len: usize) {
+        self.pop_active_query(
+            key,
+            #[cfg(debug_assertions)]
+            push_len,
+        )
+        .clear()
+    }
+
+    fn pop_active_query(
+        &mut self,
+        key: DatabaseKeyIndex,
+        #[cfg(debug_assertions)] push_len: usize,
+    ) -> &mut ActiveQuery {
         #[cfg(debug_assertions)]
         assert_eq!(push_len, self.len(), "unbalanced push/pop");
         debug_assert_ne!(self.len, 0, "too many pops");
         self.len -= 1;
-        debug_assert_eq!(
-            self.stack[self.len].database_key_index, key,
-            "unbalanced push/pop"
-        );
-        self.stack[self.len].clear()
+        let active_query = &mut self.stack[self.len];
+        debug_assert_eq!(active_query.database_key_index, key, "unbalanced push/pop");
+        active_query
+    }
+}
+
+pub(crate) struct QueryCompletion {
+    changed_at: Revision,
+    durability: Durability,
+    untracked_read: bool,
+    extra: QueryRevisionsExtra,
+    #[cfg(feature = "accumulator")]
+    accumulated_inputs: AtomicInputAccumulatedValues,
+    verified_final: bool,
+    stale_tracked_structs: Vec<(Identity, Id)>,
+}
+
+impl QueryCompletion {
+    pub(crate) fn finish(
+        self,
+        input_outputs: impl ExactSizeIterator<Item = QueryEdge>,
+    ) -> CompletedQuery {
+        let origin_and_extra = if self.untracked_read {
+            OriginAndExtra::derived_untracked(input_outputs, self.extra)
+        } else {
+            OriginAndExtra::derived(input_outputs, self.extra)
+        };
+        CompletedQuery {
+            revisions: QueryRevisions {
+                changed_at: self.changed_at,
+                durability: self.durability,
+                origin_and_extra,
+                #[cfg(feature = "accumulator")]
+                accumulated_inputs: self.accumulated_inputs,
+                verified_final: AtomicBool::new(self.verified_final),
+            },
+            stale_tracked_structs: self.stale_tracked_structs,
+        }
     }
 }
 

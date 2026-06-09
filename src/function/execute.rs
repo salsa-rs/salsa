@@ -621,9 +621,7 @@ fn complete_cycle_participant(
         panic!("{database_key_index:?}: execute: too many cycle iterations")
     });
 
-    let mut completed_query = active_query.pop(iteration);
-
-    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
+    let mut completed_query = complete_cycle_query(zalsa, active_query, iteration);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query
@@ -651,8 +649,7 @@ fn try_complete_cycle_head(
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
 
-    let mut completed_query = active_query.pop(iteration);
-    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
+    let mut completed_query = complete_cycle_query(zalsa, active_query, iteration);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -784,29 +781,48 @@ thread_local! {
     static FLATTEN_MAPS: std::cell::Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>> = const { std::cell::Cell::new(None) };
 }
 
-/// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
-/// or salsa structs (input, tracked, interned).
-fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
+fn complete_cycle_query(
+    zalsa: &Zalsa,
+    mut active_query: ActiveQueryGuard<'_>,
+    iteration: IterationStamp,
+) -> CompletedQuery {
     let (mut flattened, mut seen) = FLATTEN_MAPS.take().unwrap_or_default();
 
     debug_assert!(flattened.is_empty());
     debug_assert!(seen.is_empty());
 
-    #[cfg(feature = "accumulator")]
-    {
-        assert!(
-            head.accumulated_inputs.load().is_empty(),
-            "Fixpoint iteration doesn't support accumulated values because it doesn't preserve the original query dependency tree."
-        )
-    }
+    let direct_input_outputs = active_query.detach_input_outputs();
+    flattened.reserve(direct_input_outputs.len());
+    flatten_cycle_dependencies(zalsa, &direct_input_outputs, &mut flattened, &mut seen);
 
+    seen.clear();
+    let completion = active_query.pop_completion(iteration, direct_input_outputs);
+    let completed_query = completion.finish(flattened.drain(..));
+    #[cfg(feature = "accumulator")]
+    assert!(
+        completed_query
+            .revisions
+            .accumulated_inputs
+            .load()
+            .is_empty(),
+        "Fixpoint iteration doesn't support accumulated values because it doesn't preserve the original query dependency tree."
+    );
+    FLATTEN_MAPS.set(Some((flattened, seen)));
+    completed_query
+}
+
+/// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
+/// or salsa structs (input, tracked, interned).
+fn flatten_cycle_dependencies(
+    zalsa: &Zalsa,
+    direct_input_outputs: &FxIndexSet<QueryEdge>,
+    flattened: &mut FxIndexSet<QueryEdge>,
+    seen: &mut FxHashSet<DatabaseKeyIndex>,
+) {
     // Don't insert the key of `head` here. This is important to ensure that we copy over the
     // dependencies from this memo in the previous iteration.
     // e.g. if we have `a2 -> b2 -> a1`, we need to copy over `a`'s dependencies from iteration 1.
-    let edges = head.origin().edges();
-    flattened.reserve(edges.len());
-
-    for edge in edges {
+    for edge in direct_input_outputs.iter().copied() {
         match edge.kind() {
             QueryEdgeKind::Input => {
                 let input = edge.key();
@@ -814,8 +830,8 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
                 ingredient.flatten_cycle_head_dependencies(
                     zalsa,
                     input.key_index(),
-                    &mut flattened,
-                    &mut seen,
+                    flattened,
+                    seen,
                 );
             }
 
@@ -826,13 +842,4 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
             }
         }
     }
-
-    assert!(
-        head.set_origin_edges(flattened.drain(..)).is_ok(),
-        "Executing query to always be derived or derived untracked."
-    );
-
-    seen.clear();
-
-    FLATTEN_MAPS.set(Some((flattened, seen)));
 }

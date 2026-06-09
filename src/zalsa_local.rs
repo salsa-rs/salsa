@@ -17,7 +17,7 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
 };
-use crate::active_query::{CompletedQuery, QueryStack};
+use crate::active_query::{CompletedQuery, QueryCompletion, QueryStack};
 use crate::cycle::{AtomicIterationStamp, CycleHeads, IterationStamp, empty_cycle_heads};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
@@ -503,14 +503,6 @@ impl QueryRevisions {
     #[inline]
     pub(crate) const fn is_derived_untracked(&self) -> bool {
         self.origin_and_extra.is_derived_untracked()
-    }
-
-    /// Replaces the edges of a derived query origin.
-    pub(crate) fn set_origin_edges<I>(&mut self, input_outputs: I) -> Result<(), I>
-    where
-        I: ExactSizeIterator<Item = QueryEdge>,
-    {
-        self.origin_and_extra.set_edges(input_outputs)
     }
 
     #[cfg(feature = "salsa_unstable")]
@@ -1168,36 +1160,6 @@ impl OriginAndExtra {
 
     const fn is_derived_untracked(&self) -> bool {
         matches!(self.tag.origin().kind(), QueryOriginKind::DerivedUntracked)
-    }
-
-    fn set_edges<I>(&mut self, input_outputs: I) -> Result<(), I>
-    where
-        I: ExactSizeIterator<Item = QueryEdge>,
-    {
-        let kind = match self.tag.origin().kind() {
-            QueryOriginKind::Assigned => return Err(input_outputs),
-            QueryOriginKind::Derived => DerivedOriginKind::Derived,
-            QueryOriginKind::DerivedUntracked => DerivedOriginKind::DerivedUntracked,
-        };
-        match self.tag.layout() {
-            OriginAndExtraLayout::WithoutExtra => {
-                *self = OriginAndExtra::new_derived_with_kind(
-                    input_outputs,
-                    kind,
-                    QueryRevisionsExtra::default(),
-                );
-            }
-            OriginAndExtraLayout::WithExtra => {
-                let extra =
-                    std::mem::replace(self.extra_mut().unwrap(), QueryRevisionsExtraInner::empty());
-                *self = OriginAndExtra::new_derived_with_kind(
-                    input_outputs,
-                    kind,
-                    QueryRevisionsExtra(Some(extra)),
-                );
-            }
-        }
-        Ok(())
     }
 
     const fn origin(&self) -> QueryOrigin<'_> {
@@ -1911,6 +1873,17 @@ impl ActiveQueryGuard<'_> {
         }
     }
 
+    pub(crate) fn detach_input_outputs(&mut self) -> crate::hash::FxIndexSet<QueryEdge> {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.local_state.with_query_stack_unchecked_mut(|stack| {
+                #[cfg(debug_assertions)]
+                assert_eq!(stack.len(), self.push_len);
+                stack.last_mut().unwrap().detach_input_outputs()
+            })
+        }
+    }
+
     /// Invoked when the query has successfully completed execution.
     fn complete(self, iteration: IterationStamp) -> CompletedQuery {
         // SAFETY: We do not access the query stack reentrantly.
@@ -1934,6 +1907,28 @@ impl ActiveQueryGuard<'_> {
     #[inline]
     pub(crate) fn pop(self, iteration: IterationStamp) -> CompletedQuery {
         self.complete(iteration)
+    }
+
+    pub(crate) fn pop_completion(
+        self,
+        iteration: IterationStamp,
+        reusable_frame_input_outputs: crate::hash::FxIndexSet<QueryEdge>,
+    ) -> QueryCompletion {
+        // SAFETY: We do not access the query stack reentrantly.
+        let completion = unsafe {
+            self.local_state
+                .with_query_stack_unchecked_mut(move |stack| {
+                    stack.pop_completion(
+                        self.database_key_index,
+                        iteration,
+                        reusable_frame_input_outputs,
+                        #[cfg(debug_assertions)]
+                        self.push_len,
+                    )
+                })
+        };
+        std::mem::forget(self);
+        completion
     }
 }
 
@@ -2243,19 +2238,6 @@ mod tests {
         assert_eq!(edges.iter().collect::<Vec<_>>(), vec![wide]);
     }
 
-    #[test]
-    fn replacing_query_origin_edges_can_change_layout() {
-        let packed = QueryEdge::input(key(231, 10_842_122, 41));
-        let wide = QueryEdge::input(key(PackedQueryEdge::INGREDIENT_MASK + 1, 10_842_123, 42));
-        let mut origin = OriginAndExtra::derived([packed].into_iter(), Default::default());
-
-        origin.set_edges([wide].into_iter()).unwrap();
-        assert!(!origin.origin().edges().is_packed());
-
-        origin.set_edges([packed].into_iter()).unwrap();
-        assert!(origin.origin().edges().is_packed());
-    }
-
     #[cfg(not(feature = "shuttle"))]
     #[test]
     fn stored_derived_origin_inlines_extra_before_packed_edges() {
@@ -2299,31 +2281,6 @@ mod tests {
             SliceWithHeader::<QueryRevisionsExtraInner, PackedQueryEdge>::layout(1)
                 .0
                 .size()
-        );
-    }
-
-    #[cfg(not(feature = "shuttle"))]
-    #[test]
-    fn replacing_stored_edges_preserves_extra_and_can_change_layout() {
-        let packed = QueryEdge::input(key(231, 10_842_122, 41));
-        let wide = QueryEdge::input(key(PackedQueryEdge::INGREDIENT_MASK + 1, 10_842_123, 42));
-        let mut origin = OriginAndExtra::derived([packed].into_iter(), Default::default());
-        origin.get_or_insert_extra().cycle_converged = true;
-
-        origin.set_edges([wide].into_iter()).unwrap();
-        assert!(origin.extra().unwrap().cycle_converged);
-        assert!(!origin.origin().edges().is_packed());
-        assert_eq!(
-            origin.origin().edges().iter().collect::<Vec<_>>(),
-            vec![wide]
-        );
-
-        origin.set_edges([packed].into_iter()).unwrap();
-        assert!(origin.extra().unwrap().cycle_converged);
-        assert!(origin.origin().edges().is_packed());
-        assert_eq!(
-            origin.origin().edges().iter().collect::<Vec<_>>(),
-            vec![packed]
         );
     }
 
