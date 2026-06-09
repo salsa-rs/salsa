@@ -637,9 +637,7 @@ fn complete_cycle_participant(
 ///
 /// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
 /// Returns `Err` if the cycle head needs to keep iterating.
-// The `Err` variant carries the state for the next fixpoint iteration. Boxing it
-// would add an allocation to every non-converged cycle iteration.
-#[allow(clippy::too_many_arguments, clippy::result_large_err)]
+#[allow(clippy::too_many_arguments)]
 fn try_complete_cycle_head(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
