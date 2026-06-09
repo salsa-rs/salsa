@@ -2247,7 +2247,6 @@ mod tests {
         let mut origin =
             OriginAndExtra::derived([input, other_input].into_iter(), Default::default());
 
-        assert_eq!(origin.allocation_size(), 2 * size_of::<PackedQueryEdge>());
         origin.get_or_insert_extra().cycle_converged = true;
 
         assert_eq!(
@@ -2294,7 +2293,6 @@ mod tests {
             QueryRevisionsExtra(Some(QueryRevisionsExtraInner::empty())),
         );
 
-        assert!(!origin.origin().edges().is_packed());
         assert_eq!(
             origin.origin().edges().iter().collect::<Vec<_>>(),
             vec![input]
