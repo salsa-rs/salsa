@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "minimumReleaseAge": "7 days",
+  "enabledManagers": [
+    "cargo",
+    "github-actions"
+  ],
+  "packageRules": [
+    {
+      "description": "Pin GitHub Actions to immutable commit SHAs",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Do not pin rust-toolchain channel branches because only master commits are safe to pin",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "dtolnay/rust-toolchain"
+      ],
+      "pinDigests": false
+    },
+    {
+      "description": "Only raise the minimum supported version when the existing Cargo constraint blocks an update",
+      "matchManagers": [
+        "cargo"
+      ],
+      "rangeStrategy": "replace"
+    },
+    {
+      "description": "Pin dev dependencies so Renovate proposes compatible updates too",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDepTypes": [
+        "dev-dependencies"
+      ],
+      "rangeStrategy": "pin"
+    }
+  ]
+}
