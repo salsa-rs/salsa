@@ -13,7 +13,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryOrigin, QueryRevisions};
+use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -65,13 +65,13 @@ impl<C: Configuration> IngredientImpl<C> {
     ) {
         let map = |memo: &mut Memo<'static, C>| {
             match memo.revisions.origin() {
-                QueryOrigin::Assigned(_) | QueryOrigin::DerivedUntracked(_) => {
+                QueryOriginRef::Assigned(_) | QueryOriginRef::DerivedUntracked(_) => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
                 }
-                QueryOrigin::Derived(_) => {
+                QueryOriginRef::Derived(_) => {
                     // Set the memo value to `None`.
                     memo.value = None;
                 }

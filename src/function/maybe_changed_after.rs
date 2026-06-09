@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdgeKind, QueryEdges, QueryOrigin, QueryRevisions, ZalsaLocal};
+use crate::zalsa_local::{QueryEdgeKind, QueryEdges, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Id, Revision};
 
 /// Result of memo validation.
@@ -354,7 +354,7 @@ where
         database_key_index: DatabaseKeyIndex,
     ) -> VerifyResult {
         match old_memo.revisions.origin() {
-            QueryOrigin::Derived(edges) => {
+            QueryOriginRef::Derived(edges) => {
                 crate::tracing::debug!(
                     "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
                     old_memo = old_memo.tracing_debug()
@@ -406,7 +406,7 @@ where
                 result
             }
 
-            QueryOrigin::Assigned(_) => {
+            QueryOriginRef::Assigned(_) => {
                 // If the value was assigned by another query,
                 // and that query were up-to-date,
                 // then we would have updated the `verified_at` field already.
@@ -420,7 +420,7 @@ where
                 // in rev 1 but not in rev 2.
                 VerifyResult::changed()
             }
-            QueryOrigin::DerivedUntracked(_) => {
+            QueryOriginRef::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
                 VerifyResult::changed()
             }

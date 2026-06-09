@@ -20,7 +20,7 @@ use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryEdge, QueryOrigin};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -500,7 +500,7 @@ where
         }
     }
 
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOrigin<'db>> {
+    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
         self.origin(zalsa, key)
     }
 
@@ -639,7 +639,7 @@ mod persistence {
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
     use crate::zalsa::Zalsa;
     use crate::zalsa_local::persistence::PersistentQueryOrigin;
-    use crate::zalsa_local::{QueryEdge, QueryOrigin};
+    use crate::zalsa_local::{QueryEdge, QueryOriginRef};
     use crate::{Id, IngredientIndex};
 
     use serde::de;
@@ -700,7 +700,7 @@ mod persistence {
                 if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
                     // Flatten the dependencies of this query down to the base inputs.
                     let flattened_origin = match memo.revisions.origin() {
-                        QueryOrigin::Derived(edges) => {
+                        QueryOriginRef::Derived(edges) => {
                             collect_minimum_serialized_edges(
                                 zalsa,
                                 edges,
@@ -710,7 +710,7 @@ mod persistence {
 
                             PersistentQueryOrigin::derived(flattened_edges.drain(..))
                         }
-                        QueryOrigin::DerivedUntracked(edges) => {
+                        QueryOriginRef::DerivedUntracked(edges) => {
                             collect_minimum_serialized_edges(
                                 zalsa,
                                 edges,
@@ -720,7 +720,7 @@ mod persistence {
 
                             PersistentQueryOrigin::derived_untracked(flattened_edges.drain(..))
                         }
-                        QueryOrigin::Assigned(key) => {
+                        QueryOriginRef::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
                             assert!(
                                 dependency.is_persistable(),

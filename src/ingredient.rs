@@ -10,7 +10,7 @@ use crate::sync::Arc;
 use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa, transmute_data_mut_ptr, transmute_data_ptr};
-use crate::zalsa_local::{QueryEdge, QueryOrigin};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -205,7 +205,7 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     );
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOrigin<'db>> {
+    fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>> {
         let _ = (zalsa, key_index);
         unreachable!("only function ingredients have origins")
     }

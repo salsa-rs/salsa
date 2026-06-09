@@ -796,7 +796,7 @@ fn complete_cycle_query(
     flatten_cycle_dependencies(zalsa, &direct_input_outputs, &mut flattened, &mut seen);
 
     seen.clear();
-    let completion = active_query.pop_completion(iteration, direct_input_outputs);
+    let completion = active_query.pop_completion(iteration, direct_input_outputs, true);
     let completed_query = completion.finish(flattened.drain(..));
     #[cfg(feature = "accumulator")]
     assert!(

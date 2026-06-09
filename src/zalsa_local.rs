@@ -496,7 +496,7 @@ pub(crate) struct QueryRevisions {
 impl QueryRevisions {
     /// Returns the semantic origin of this query.
     #[inline]
-    pub(crate) const fn origin(&self) -> QueryOrigin<'_> {
+    pub(crate) const fn origin(&self) -> QueryOriginRef<'_> {
         self.origin_and_extra.origin()
     }
 
@@ -536,17 +536,17 @@ impl QueryRevisionsExtra {
         mut tracked_struct_ids: ThinVec<(Identity, Id)>,
         cycle_heads: CycleHeads,
         iteration: IterationStamp,
-        cycle_heads_taken: bool,
+        force_extra: bool,
     ) -> Self {
         #[cfg(feature = "accumulator")]
-        let acc = accumulated.is_empty();
+        let accumulated_is_empty = accumulated.is_empty();
         #[cfg(not(feature = "accumulator"))]
-        let acc = true;
+        let accumulated_is_empty = true;
         // `cycle_heads` may be empty because cycle completion moved its entries out before
         // constructing the revisions. Preserve extra storage so those heads can be restored
         // without rebuilding the origin allocation.
-        let inner = if !cycle_heads_taken
-            && acc
+        let inner = if !force_extra
+            && accumulated_is_empty
             && tracked_struct_ids.is_empty()
             && cycle_heads.is_empty()
             && iteration.is_default()
@@ -802,7 +802,7 @@ impl QueryRevisions {
 ///
 /// This is a borrowed view of a query origin stored in [`OriginAndExtra`].
 #[derive(Debug, Clone, Copy)]
-pub enum QueryOrigin<'a> {
+pub enum QueryOriginRef<'a> {
     /// The value was assigned as the output of another query (e.g., using `specify`).
     /// The `DatabaseKeyIndex` is the identity of the assigning query.
     Assigned(DatabaseKeyIndex),
@@ -819,7 +819,7 @@ pub enum QueryOrigin<'a> {
     DerivedUntracked(QueryEdges<'a>),
 }
 
-impl<'a> QueryOrigin<'a> {
+impl<'a> QueryOriginRef<'a> {
     /// Indices for queries *read* by this query
     #[inline]
     pub(crate) fn inputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
@@ -832,8 +832,8 @@ impl<'a> QueryOrigin<'a> {
     /// Indices for queries *written* by this query (if any)
     pub(crate) fn outputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
         let opt_edges = match self {
-            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
-            QueryOrigin::Assigned(_) => None,
+            QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
+            QueryOriginRef::Assigned(_) => None,
         };
         opt_edges.into_iter().flat_map(output_edges)
     }
@@ -841,8 +841,8 @@ impl<'a> QueryOrigin<'a> {
     #[inline]
     pub(crate) const fn edges(self) -> QueryEdges<'a> {
         match self {
-            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => edges,
-            QueryOrigin::Assigned(_) => QueryEdges::wide(&[]),
+            QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => edges,
+            QueryOriginRef::Assigned(_) => QueryEdges::wide(&[]),
         }
     }
 }
@@ -1143,11 +1143,11 @@ impl OriginAndExtra {
         if matches!(self.tag.layout(), OriginAndExtraLayout::WithoutExtra) {
             let extra = QueryRevisionsExtraInner::empty();
             let replacement = match self.origin() {
-                QueryOrigin::Assigned(key) => Self::assigned_with_extra(key, extra),
-                QueryOrigin::Derived(edges) => {
+                QueryOriginRef::Assigned(key) => Self::assigned_with_extra(key, extra),
+                QueryOriginRef::Derived(edges) => {
                     Self::derived(edges.iter(), QueryRevisionsExtra(Some(extra)))
                 }
-                QueryOrigin::DerivedUntracked(edges) => {
+                QueryOriginRef::DerivedUntracked(edges) => {
                     Self::derived_untracked(edges.iter(), QueryRevisionsExtra(Some(extra)))
                 }
             };
@@ -1161,7 +1161,7 @@ impl OriginAndExtra {
         matches!(self.tag.origin().kind(), QueryOriginKind::DerivedUntracked)
     }
 
-    const fn origin(&self) -> QueryOrigin<'_> {
+    const fn origin(&self) -> QueryOriginRef<'_> {
         let tag = self.tag.origin();
         match tag.kind() {
             QueryOriginKind::Assigned => {
@@ -1183,7 +1183,7 @@ impl OriginAndExtra {
                 };
                 // SAFETY: Assigned origins initialize metadata from a valid ingredient index.
                 let ingredient = unsafe { IngredientIndex::new_unchecked(self.metadata) };
-                QueryOrigin::Assigned(DatabaseKeyIndex::new(ingredient, index))
+                QueryOriginRef::Assigned(DatabaseKeyIndex::new(ingredient, index))
             }
             QueryOriginKind::Derived | QueryOriginKind::DerivedUntracked => {
                 let length = self.metadata as usize;
@@ -1222,8 +1222,8 @@ impl OriginAndExtra {
                     }
                 };
                 match tag.kind() {
-                    QueryOriginKind::Derived => QueryOrigin::Derived(edges),
-                    QueryOriginKind::DerivedUntracked => QueryOrigin::DerivedUntracked(edges),
+                    QueryOriginKind::Derived => QueryOriginRef::Derived(edges),
+                    QueryOriginKind::DerivedUntracked => QueryOriginRef::DerivedUntracked(edges),
                     QueryOriginKind::Assigned => unreachable!(),
                 }
             }
@@ -1912,6 +1912,7 @@ impl ActiveQueryGuard<'_> {
         self,
         iteration: IterationStamp,
         reusable_frame_input_outputs: crate::hash::FxIndexSet<QueryEdge>,
+        force_extra: bool,
     ) -> QueryCompletion {
         // SAFETY: We do not access the query stack reentrantly.
         let completion = unsafe {
@@ -1921,6 +1922,7 @@ impl ActiveQueryGuard<'_> {
                         self.database_key_index,
                         iteration,
                         reusable_frame_input_outputs,
+                        force_extra,
                         #[cfg(debug_assertions)]
                         self.push_len,
                     )
@@ -1949,7 +1951,7 @@ impl Drop for ActiveQueryGuard<'_> {
 #[cfg(feature = "persistence")]
 pub(crate) mod persistence {
     #[cfg(test)]
-    use super::QueryOrigin;
+    use super::QueryOriginRef;
     use super::{OriginAndExtra, QueryEdge, QueryEdges, QueryRevisions, QueryRevisionsExtra};
     use crate::DatabaseKeyIndex;
     use crate::sync::atomic::{AtomicBool, Ordering};
@@ -2043,12 +2045,12 @@ pub(crate) mod persistence {
         }
 
         #[cfg(test)]
-        pub(crate) const fn as_ref(&self) -> QueryOrigin<'_> {
+        pub(crate) const fn as_ref(&self) -> QueryOriginRef<'_> {
             match self {
-                Self::Assigned(key) => QueryOrigin::Assigned(*key),
-                Self::Derived(edges) => QueryOrigin::Derived(QueryEdges::wide(edges)),
+                Self::Assigned(key) => QueryOriginRef::Assigned(*key),
+                Self::Derived(edges) => QueryOriginRef::Derived(QueryEdges::wide(edges)),
                 Self::DerivedUntracked(edges) => {
-                    QueryOrigin::DerivedUntracked(QueryEdges::wide(edges))
+                    QueryOriginRef::DerivedUntracked(QueryEdges::wide(edges))
                 }
             }
         }
@@ -2151,7 +2153,7 @@ mod tests {
     use super::{
         AssignedOriginAndExtra, QueryRevisionsExtra, QueryRevisionsExtraInner, SliceWithHeader,
     };
-    use super::{OriginAndExtra, PackedQueryEdge, QueryEdge, QueryOrigin};
+    use super::{OriginAndExtra, PackedQueryEdge, QueryEdge, QueryOriginRef};
     use crate::{DatabaseKeyIndex, Id, IngredientIndex};
 
     #[test]
@@ -2159,7 +2161,7 @@ mod tests {
         let input = QueryEdge::input(key(231, 10_842_122, 41));
         let other_input = QueryEdge::input(key(232, 10_842_123, 42));
         let origin = OriginAndExtra::derived([input, other_input].into_iter(), Default::default());
-        let QueryOrigin::Derived(edges) = origin.origin() else {
+        let QueryOriginRef::Derived(edges) = origin.origin() else {
             panic!("expected derived origin");
         };
 
@@ -2182,7 +2184,7 @@ mod tests {
         let input = QueryEdge::input(key(231, 10_842_122, 41));
         let output = QueryEdge::output(key(232, 10_842_123, 42));
         let origin = OriginAndExtra::derived([input, output].into_iter(), Default::default());
-        let QueryOrigin::Derived(edges) = origin.origin() else {
+        let QueryOriginRef::Derived(edges) = origin.origin() else {
             panic!("expected derived origin");
         };
 
@@ -2203,7 +2205,7 @@ mod tests {
     fn query_origin_packs_largest_supported_generation() {
         let input = QueryEdge::input(key(231, 10_842_122, PackedQueryEdge::GENERATION_MASK));
         let origin = OriginAndExtra::derived([input].into_iter(), Default::default());
-        let QueryOrigin::Derived(edges) = origin.origin() else {
+        let QueryOriginRef::Derived(edges) = origin.origin() else {
             panic!("expected derived origin");
         };
 
@@ -2216,7 +2218,7 @@ mod tests {
         let packed = QueryEdge::input(key(231, 10_842_122, 41));
         let wide = QueryEdge::input(key(232, 10_842_123, PackedQueryEdge::GENERATION_MASK + 1));
         let origin = OriginAndExtra::derived([packed, wide].into_iter(), Default::default());
-        let QueryOrigin::Derived(edges) = origin.origin() else {
+        let QueryOriginRef::Derived(edges) = origin.origin() else {
             panic!("expected derived origin");
         };
 
@@ -2229,7 +2231,7 @@ mod tests {
     fn query_origin_spills_if_ingredient_does_not_fit() {
         let wide = QueryEdge::input(key(PackedQueryEdge::INGREDIENT_MASK + 1, 10_842_122, 41));
         let origin = OriginAndExtra::derived([wide].into_iter(), Default::default());
-        let QueryOrigin::Derived(edges) = origin.origin() else {
+        let QueryOriginRef::Derived(edges) = origin.origin() else {
             panic!("expected derived origin");
         };
 
@@ -2317,7 +2319,7 @@ mod tests {
             size_of::<AssignedOriginAndExtra>()
         );
         assert!(origin.extra().unwrap().cycle_converged);
-        let QueryOrigin::Assigned(stored_key) = origin.origin() else {
+        let QueryOriginRef::Assigned(stored_key) = origin.origin() else {
             panic!("expected assigned origin");
         };
         assert_eq!(stored_key, key);
@@ -2331,7 +2333,7 @@ mod tests {
         let origin = PersistentQueryOrigin::derived_untracked([input, output]);
         let serialized = serde_json::to_string(&origin).unwrap();
         let deserialized_origin: PersistentQueryOrigin = serde_json::from_str(&serialized).unwrap();
-        let QueryOrigin::DerivedUntracked(edges) = deserialized_origin.as_ref() else {
+        let QueryOriginRef::DerivedUntracked(edges) = deserialized_origin.as_ref() else {
             panic!("expected untracked derived origin");
         };
 
