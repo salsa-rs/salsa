@@ -120,6 +120,9 @@ impl ActiveQuery {
             false => accumulated_inputs.load(),
         };
 
+        #[cfg(feature = "persistence")]
+        let record_input = true;
+        #[cfg(not(feature = "persistence"))]
         let record_input = durability != Durability::NEVER_CHANGE || !cycle_heads.is_empty();
         #[cfg(feature = "accumulator")]
         let record_input = record_input || accumulated_inputs.is_any();
