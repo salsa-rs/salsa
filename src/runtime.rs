@@ -243,10 +243,9 @@ impl Runtime {
     /// dependencies.
     #[inline]
     pub(crate) fn last_changed_revision(&self, d: Durability) -> Revision {
-        if d == Durability::NEVER_CHANGE {
-            Revision::start()
-        } else {
-            self.revisions[d.index()]
+        match self.revisions.get(d.index()) {
+            Some(&revision) => revision,
+            None => never_changed_revision(),
         }
     }
 
@@ -441,6 +440,12 @@ impl Runtime {
         // The only field that is serialized is `revisions`.
         self.revisions = other.revisions;
     }
+}
+
+#[cold]
+#[inline(never)]
+fn never_changed_revision() -> Revision {
+    Revision::start()
 }
 
 #[cfg(test)]
