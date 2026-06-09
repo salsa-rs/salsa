@@ -30,7 +30,7 @@ fn diff_outputs_on_revision(
     completed_query: &CompletedQuery,
 ) {
     let (QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges)) =
-        old_revisions.origin.as_ref()
+        old_revisions.origin()
     else {
         return;
     };
@@ -49,7 +49,7 @@ fn diff_outputs_on_revision(
     }
 
     // Preserve any outputs that were recreated in the current revision.
-    for new_output in completed_query.revisions.origin.as_ref().outputs() {
+    for new_output in completed_query.revisions.origin().outputs() {
         stale_outputs.swap_remove(&new_output);
     }
 

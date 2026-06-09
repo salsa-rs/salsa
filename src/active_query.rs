@@ -11,7 +11,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{QueryEdge, QueryOrigin, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{OriginAndExtra, QueryEdge, QueryRevisions, QueryRevisionsExtra};
 use crate::{
     Id,
     cycle::{CycleHeads, IterationStamp},
@@ -203,9 +203,9 @@ impl ActiveQuery {
         } = self;
 
         let origin = if untracked_read {
-            QueryOrigin::derived_untracked(input_outputs.drain(..))
+            OriginAndExtra::derived_untracked(input_outputs.drain(..))
         } else {
-            QueryOrigin::derived(input_outputs.drain(..))
+            OriginAndExtra::derived(input_outputs.drain(..))
         };
         disambiguator_map.clear();
 
@@ -225,11 +225,10 @@ impl ActiveQuery {
         let revisions = QueryRevisions {
             changed_at,
             durability,
-            origin,
+            origin_and_extra: OriginAndExtra::new(origin, extra),
             #[cfg(feature = "accumulator")]
             accumulated_inputs,
             verified_final: AtomicBool::new(verified_final),
-            extra,
         };
 
         CompletedQuery {

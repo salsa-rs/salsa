@@ -353,7 +353,7 @@ where
         old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
     ) -> VerifyResult {
-        match old_memo.revisions.origin.as_ref() {
+        match old_memo.revisions.origin() {
             QueryOriginRef::Derived(edges) => {
                 crate::tracing::debug!(
                     "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
