@@ -74,13 +74,16 @@ pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
     /// The maximum supported ingredient index.
-    ///
-    /// This reserves one bit for an optional tag.
-    const MAX_INDEX: u32 = 0x7FFF_FFFF;
+    const MAX_INDEX: u32 = 0x7FF;
+    const TAG: u32 = 1 << 31;
 
     /// Create an ingredient index from a `u32`.
     pub(crate) fn new(v: u32) -> Self {
-        assert!(v <= Self::MAX_INDEX);
+        assert!(
+            v <= Self::MAX_INDEX,
+            "ingredient index {v} exceeds the maximum supported index {}",
+            Self::MAX_INDEX
+        );
         Self(v)
     }
 
@@ -89,7 +92,7 @@ impl IngredientIndex {
     ///
     /// # Safety
     ///
-    /// The index must be less than or equal to `IngredientIndex::MAX_INDEX`.
+    /// The index must be less than or equal to [`IngredientIndex::MAX_INDEX`].
     pub(crate) const unsafe fn new_unchecked(v: u32) -> Self {
         Self(v)
     }
@@ -99,20 +102,26 @@ impl IngredientIndex {
         self.0
     }
 
-    pub fn successor(self, index: usize) -> Self {
-        IngredientIndex(self.0 + 1 + index as u32)
+    pub fn successor(self, offset: usize) -> Self {
+        let offset = u32::try_from(offset).expect("ingredient index overflow");
+        let index = self
+            .0
+            .checked_add(1)
+            .and_then(|index| index.checked_add(offset))
+            .expect("ingredient index overflow");
+        IngredientIndex::new(index)
     }
 
     /// Returns a new `IngredientIndex` with the tag bit set to the provided value.
     pub(crate) const fn with_tag(mut self, tag: bool) -> IngredientIndex {
         self.0 &= Self::MAX_INDEX;
-        self.0 |= (tag as u32) << 31;
+        self.0 |= (tag as u32) * Self::TAG;
         self
     }
 
     /// Returns the value of the tag bit.
     pub(crate) const fn tag(self) -> bool {
-        self.0 & !Self::MAX_INDEX != 0
+        self.0 & Self::TAG != 0
     }
 }
 
@@ -358,13 +367,24 @@ impl Zalsa {
     fn insert_jar(&mut self, jar: ErasedJar) {
         let jar_type_id = (jar.type_id)();
 
-        let index = IngredientIndex::new(self.ingredients_vec.len() as u32);
-
         if self.jar_map.contains_key(&jar_type_id) {
             return;
         }
 
+        let index = IngredientIndex::new(
+            u32::try_from(self.ingredients_vec.len()).expect("ingredient index overflow"),
+        );
+
         let ingredients = (jar.create_ingredients)(self, index);
+        if let Some(last_index) = self
+            .ingredients_vec
+            .len()
+            .checked_add(ingredients.len())
+            .and_then(|len| len.checked_sub(1))
+        {
+            IngredientIndex::new(u32::try_from(last_index).expect("ingredient index overflow"));
+        }
+
         for ingredient in ingredients {
             let expected_index = ingredient.ingredient_index();
             if ingredient.requires_reset_for_new_revision() {
@@ -474,6 +494,17 @@ impl Zalsa {
     pub fn event_cold(&self, event: &dyn Fn() -> crate::Event) {
         let event_callback = self.event_callback.as_ref().unwrap();
         event_callback(event());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IngredientIndex;
+
+    #[test]
+    #[should_panic(expected = "ingredient index 2048 exceeds the maximum supported index 2047")]
+    fn ingredient_index_rejects_overflow() {
+        IngredientIndex::new(2048);
     }
 }
 

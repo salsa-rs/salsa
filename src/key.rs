@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::NonZeroU32;
 
 use crate::Id;
 use crate::function::VerifyResult;
@@ -11,26 +12,48 @@ use crate::zalsa::{IngredientIndex, Zalsa};
 /// only for inserting into maps and the like.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseKeyIndex {
-    key_index: Id,
-    ingredient_index: IngredientIndex,
+    index: NonZeroU32,
+    metadata: u32,
 }
 // ANCHOR_END: DatabaseKeyIndex
 
 impl DatabaseKeyIndex {
+    const INGREDIENT_SHIFT: u32 = 20;
+    const TAG_SHIFT: u32 = 31;
+    const GENERATION_MASK: u32 = Id::MAX_GENERATION;
+    const INGREDIENT_MASK: u32 = 0x7FF;
+
     #[inline]
     pub(crate) const fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
+        let ingredient = ingredient_index.with_tag(false).as_u32();
+        let tag = ingredient_index.tag();
+        let generation = key_index.generation();
+
+        assert!(ingredient <= Self::INGREDIENT_MASK);
+        assert!(generation <= Self::GENERATION_MASK);
+
         Self {
-            key_index,
-            ingredient_index,
+            // SAFETY: A valid `Id` index is at most `Id::MAX_U32`, so adding one is non-zero
+            // and does not overflow.
+            index: unsafe { NonZeroU32::new_unchecked(key_index.index() + 1) },
+            metadata: generation
+                | (ingredient << Self::INGREDIENT_SHIFT)
+                | ((tag as u32) << Self::TAG_SHIFT),
         }
     }
 
     pub const fn ingredient_index(self) -> IngredientIndex {
-        self.ingredient_index
+        let ingredient = (self.metadata >> Self::INGREDIENT_SHIFT) & Self::INGREDIENT_MASK;
+        let tag = self.metadata >> Self::TAG_SHIFT != 0;
+
+        // SAFETY: The 12 ingredient bits were initialized from a valid `IngredientIndex`.
+        unsafe { IngredientIndex::new_unchecked(ingredient) }.with_tag(tag)
     }
 
     pub const fn key_index(self) -> Id {
-        self.key_index
+        // SAFETY: `index` was initialized from a valid `Id`.
+        unsafe { Id::from_index(self.index.get() - 1) }
+            .with_generation(self.metadata & Self::GENERATION_MASK)
     }
 
     pub(crate) fn maybe_changed_after(
@@ -72,7 +95,7 @@ impl serde::Serialize for DatabaseKeyIndex {
     where
         S: serde::Serializer,
     {
-        serde::Serialize::serialize(&(self.key_index, self.ingredient_index), serializer)
+        serde::Serialize::serialize(&(self.key_index(), self.ingredient_index()), serializer)
     }
 }
 
@@ -84,10 +107,44 @@ impl<'de> serde::Deserialize<'de> for DatabaseKeyIndex {
     {
         let (key_index, ingredient_index) = serde::Deserialize::deserialize(deserializer)?;
 
-        Ok(DatabaseKeyIndex {
-            key_index,
-            ingredient_index,
-        })
+        Ok(DatabaseKeyIndex::new(ingredient_index, key_index))
+    }
+}
+
+const _: [(); 8] = [(); std::mem::size_of::<DatabaseKeyIndex>()];
+const _: [(); 8] = [(); std::mem::size_of::<Option<DatabaseKeyIndex>>()];
+
+#[cfg(test)]
+mod tests {
+    use super::DatabaseKeyIndex;
+    use crate::{Id, IngredientIndex};
+
+    #[test]
+    fn round_trip_largest_supported_values() {
+        let id = unsafe { Id::from_index(Id::MAX_U32 - 1) }
+            .with_generation(DatabaseKeyIndex::GENERATION_MASK);
+        let key =
+            DatabaseKeyIndex::new(IngredientIndex::new(DatabaseKeyIndex::INGREDIENT_MASK), id);
+
+        assert_eq!(key.ingredient_index().as_u32(), 0x7FF);
+        assert_eq!(key.key_index(), id);
+    }
+
+    #[test]
+    fn round_trip_tagged_ingredient() {
+        let id = unsafe { Id::from_index(0) };
+        let ingredient = IngredientIndex::new(42).with_tag(true);
+        let key = DatabaseKeyIndex::new(ingredient, id);
+
+        assert_eq!(key.ingredient_index(), ingredient);
+    }
+
+    #[test]
+    #[should_panic]
+    fn rejects_generation_overflow() {
+        let id =
+            unsafe { Id::from_index(0) }.with_generation(DatabaseKeyIndex::GENERATION_MASK + 1);
+        DatabaseKeyIndex::new(IngredientIndex::new(0), id);
     }
 }
 

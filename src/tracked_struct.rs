@@ -673,7 +673,7 @@ where
             // Updating the fields may make it necessary to increment the generation of the ID. In
             // the unlikely case that the ID is already at its maximum generation, we are forced to leak
             // the previous slot and allocate a new value.
-            if id.generation() == u32::MAX {
+            if id.generation() == Id::MAX_GENERATION {
                 crate::tracing::info!(
                     "leaking tracked struct {:?} due to generation overflow",
                     self.database_key_index(id)

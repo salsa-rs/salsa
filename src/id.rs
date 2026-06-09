@@ -26,6 +26,7 @@ pub struct Id {
 impl Id {
     pub const MAX_U32: u32 = u32::MAX - 0xFF;
     pub const MAX_USIZE: usize = Self::MAX_U32 as usize;
+    pub const MAX_GENERATION: u32 = 0xF_FFFF;
 
     /// Create a `salsa::Id` from a u32 value, without a generation. This
     /// value should be less than [`Self::MAX_U32`].
@@ -91,12 +92,11 @@ impl Id {
     /// Returns a new `Id` with same index, but the generation incremented by one.
     ///
     /// Returns `None` if the generation would overflow, i.e. the current generation
-    /// is `u32::MAX`.
+    /// is [`Self::MAX_GENERATION`].
     #[inline]
     pub fn next_generation(self) -> Option<Id> {
-        self.generation()
-            .checked_add(1)
-            .map(|generation| self.with_generation(generation))
+        (self.generation() < Self::MAX_GENERATION)
+            .then(|| self.with_generation(self.generation() + 1))
     }
 
     /// Mark the `Id` with a generation.
@@ -159,6 +159,17 @@ impl Debug for Id {
         } else {
             write!(f, "Id({:x}g{:x})", self.index(), self.generation())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Id;
+
+    #[test]
+    fn generation_stops_at_maximum() {
+        let id = unsafe { Id::from_index(0) }.with_generation(Id::MAX_GENERATION);
+        assert_eq!(id.next_generation(), None);
     }
 }
 
