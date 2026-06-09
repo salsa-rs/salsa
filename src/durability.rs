@@ -1,7 +1,7 @@
 /// Describes how likely a value is to change—how "durable" it is.
 ///
-/// By default, inputs have `Durability::LOW` and interned values have
-/// `Durability::HIGH`. But inputs can be explicitly set with other
+/// By default, inputs have [`Durability::LOW`] and interned values have
+/// [`Durability::NEVER_CHANGE`]. Inputs can be explicitly set with other
 /// durabilities.
 ///
 /// We use durabilities to optimize the work of "revalidating" a query
@@ -95,6 +95,9 @@ impl Durability {
     pub const HIGH: Durability = Durability(DurabilityVal::High);
 
     /// Values with this durability never change in place.
+    ///
+    /// Setting an input field to this durability permanently freezes that
+    /// field. Any later attempt to change its value or durability will panic.
     pub const NEVER_CHANGE: Durability = Durability(DurabilityVal::NeverChange);
 
     /// The minimum possible durability; equivalent to LOW but
@@ -102,7 +105,7 @@ impl Durability {
     /// levels, this could change).
     pub(crate) const MIN: Durability = Self::LOW;
 
-    /// The maximum possible durability; equivalent to HIGH but
+    /// The maximum possible durability; equivalent to NEVER_CHANGE but
     /// "conceptually" distinct (i.e., if we add more durability
     /// levels, this could change).
     pub(crate) const MAX: Durability = Self::NEVER_CHANGE;

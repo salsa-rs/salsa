@@ -511,6 +511,7 @@ impl QueryRevisions {
     /// This is called after output reconciliation so that a query that becomes
     /// never-changing during re-execution can still preserve outputs recreated
     /// by that execution.
+    #[cfg(not(feature = "persistence"))]
     pub(crate) fn discard_edges_if_never_change(&mut self) {
         if self.durability != Durability::NEVER_CHANGE
             || !matches!(self.origin(), QueryOriginRef::Derived(_))
