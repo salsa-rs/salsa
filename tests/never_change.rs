@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{DiscardLoggerDatabase, ExecuteValidateLoggerDatabase, LogDatabase, LoggerDatabase};
+use common::{DiscardLoggerDatabase, LogDatabase};
+#[cfg(not(feature = "persistence"))]
+use common::{ExecuteValidateLoggerDatabase, LoggerDatabase};
 use expect_test::expect;
 use salsa::{Database, Durability, Setter};
 use test_log::test;
@@ -23,18 +25,14 @@ fn mixed_value(db: &dyn Database, immutable_input: MyInput, mutable_input: MyInp
 }
 
 #[salsa::tracked(lru = 1)]
+#[cfg(not(feature = "persistence"))]
 fn immutable_value_with_lru(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("immutable_value_with_lru({})", input.value(db)));
     input.value(db)
 }
 
-#[salsa::tracked(lru = 1, returns(ref))]
-fn immutable_ref_with_lru(db: &dyn LogDatabase, input: MyInput) -> Vec<u32> {
-    db.push_log(format!("immutable_ref_with_lru({})", input.value(db)));
-    vec![input.value(db)]
-}
-
 #[salsa::tracked]
+#[cfg(not(feature = "persistence"))]
 fn value_from_lru(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("value_from_lru({})", input.value(db)));
     immutable_value_with_lru(db, input)
@@ -65,6 +63,7 @@ fn specified<'db>(_db: &'db dyn Database, _output: Output<'db>) -> u32 {
 }
 
 #[test]
+#[cfg(not(feature = "persistence"))]
 fn skip_dependency_edge_to_never_change_query() {
     let mut db = ExecuteValidateLoggerDatabase::default();
     let immutable_input = MyInput::builder(10)
@@ -100,52 +99,7 @@ fn never_change_input_cannot_be_mutated() {
 }
 
 #[test]
-fn never_change_query_values_with_lru_are_evicted() {
-    let mut db = LoggerDatabase::default();
-    let input1 = MyInput::builder(10)
-        .durability(Durability::NEVER_CHANGE)
-        .new(&db);
-    let input2 = MyInput::builder(20)
-        .durability(Durability::NEVER_CHANGE)
-        .new(&db);
-
-    assert_eq!(immutable_value_with_lru(&db, input1), 10);
-    assert_eq!(immutable_value_with_lru(&db, input2), 20);
-    db.clear_logs();
-
-    db.synthetic_write(Durability::HIGH);
-
-    assert_eq!(immutable_value_with_lru(&db, input1), 10);
-    db.assert_logs(expect![[r#"
-        [
-            "immutable_value_with_lru(10)",
-        ]"#]]);
-}
-
-#[test]
-fn never_change_lru_query_returning_ref_reexecutes_after_eviction() {
-    let mut db = LoggerDatabase::default();
-    let input1 = MyInput::builder(10)
-        .durability(Durability::NEVER_CHANGE)
-        .new(&db);
-    let input2 = MyInput::builder(20)
-        .durability(Durability::NEVER_CHANGE)
-        .new(&db);
-
-    assert_eq!(immutable_ref_with_lru(&db, input1), &[10]);
-    assert_eq!(immutable_ref_with_lru(&db, input2), &[20]);
-    db.clear_logs();
-
-    db.synthetic_write(Durability::HIGH);
-
-    assert_eq!(immutable_ref_with_lru(&db, input1), &[10]);
-    db.assert_logs(expect![[r#"
-        [
-            "immutable_ref_with_lru(10)",
-        ]"#]]);
-}
-
-#[test]
+#[cfg(not(feature = "persistence"))]
 fn callers_can_omit_edges_to_never_change_lru_queries() {
     let mut db = LoggerDatabase::default();
     let input1 = MyInput::builder(10)

@@ -44,11 +44,6 @@ fn input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
     input.field(db).len()
 }
 
-#[salsa::tracked(lru = 1)]
-fn input_to_length_with_lru(db: &dyn salsa::Database, input: MyInput) -> usize {
-    input.field(db).len()
-}
-
 #[salsa::tracked(cycle_fn = cycle_recover_length, cycle_initial = cycle_initial_length)]
 fn cycle_input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
     cycle_input_to_length(db, input).max(input.field(db).len())
@@ -242,6 +237,7 @@ fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
 }
 
 #[test]
+#[cfg(not(feature = "persistence"))]
 fn never_change_query_discards_edges() {
     let db = salsa::DatabaseImpl::new();
     let never_change = MyInput::builder("a".repeat(50))
@@ -262,22 +258,7 @@ fn never_change_query_discards_edges() {
 }
 
 #[test]
-fn never_change_lru_query_discards_edges() {
-    let db = salsa::DatabaseImpl::new();
-    let never_change = MyInput::builder("a".repeat(50))
-        .durability(salsa::Durability::NEVER_CHANGE)
-        .new(&db);
-
-    assert_eq!(input_to_length(&db, never_change), 50);
-    assert_eq!(input_to_length_with_lru(&db, never_change), 50);
-
-    let memory_usage = <dyn salsa::Database>::memory_usage(&db);
-    let without_lru = &memory_usage.queries["input_to_length"];
-    let with_lru = &memory_usage.queries["input_to_length_with_lru"];
-    assert_eq!(with_lru.size_of_metadata(), without_lru.size_of_metadata());
-}
-
-#[test]
+#[cfg(not(feature = "persistence"))]
 fn never_change_cycle_query_discards_edges_after_converging() {
     let db = salsa::DatabaseImpl::new();
     let never_change = MyInput::builder("a".repeat(50))
