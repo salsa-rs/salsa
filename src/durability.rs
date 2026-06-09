@@ -107,8 +107,9 @@ impl Durability {
     /// levels, this could change).
     pub(crate) const MAX: Durability = Self::NEVER_CHANGE;
 
-    /// Number of durability levels.
-    pub(crate) const LEN: usize = Self::NEVER_CHANGE.0 as usize + 1;
+    /// Number of durability levels whose last-change revision is tracked.
+    /// `NEVER_CHANGE` needs no runtime revision slot.
+    pub(crate) const LEN: usize = Self::HIGH.0 as usize + 1;
 
     pub(crate) fn index(self) -> usize {
         self.0 as usize

@@ -243,7 +243,11 @@ impl Runtime {
     /// dependencies.
     #[inline]
     pub(crate) fn last_changed_revision(&self, d: Durability) -> Revision {
-        self.revisions[d.index()]
+        if d == Durability::NEVER_CHANGE {
+            Revision::start()
+        } else {
+            self.revisions[d.index()]
+        }
     }
 
     pub(crate) fn load_cancellation_flag(&self) -> bool {
