@@ -58,7 +58,6 @@ fn everything() {
             "revisions": [
               1,
               1,
-              1,
               1
             ]
           },
@@ -107,7 +106,6 @@ fn everything() {
         {
           "runtime": {
             "revisions": [
-              1,
               1,
               1,
               1
@@ -338,7 +336,6 @@ fn partial_query() {
             "revisions": [
               1,
               1,
-              1,
               1
             ]
           },
@@ -448,7 +445,6 @@ fn partial_query_interned() {
         {
           "runtime": {
             "revisions": [
-              1,
               1,
               1,
               1
@@ -596,7 +592,6 @@ fn serialize_nothing() {
         {
           "runtime": {
             "revisions": [
-              1,
               1,
               1,
               1
