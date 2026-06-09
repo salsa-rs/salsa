@@ -224,6 +224,10 @@ impl Runtime {
     /// Reports that an input with durability `durability` changed.
     /// This will update the 'last changed at' values for every durability
     /// less than or equal to `durability` to the current revision.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `durability` is [`Durability::NEVER_CHANGE`].
     pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
         assert_ne!(
             durability,
