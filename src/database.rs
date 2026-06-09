@@ -54,6 +54,10 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
     /// cancellation. If you invoke it while a snapshot exists, it
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `durability` is [`Durability::NEVER_CHANGE`].
     fn synthetic_write(&mut self, durability: Durability) {
         let zalsa_mut = self.zalsa_mut();
         zalsa_mut.new_revision();

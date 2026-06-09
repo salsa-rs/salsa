@@ -176,6 +176,10 @@ impl<C: Configuration> IngredientImpl<C> {
     /// * `field_index`, index of the field that will be changed
     /// * `durability`, durability of the new value. If omitted, uses the durability of the previous value.
     /// * `setter`, function that modifies the fields tuple; should only modify the element for `field_index`
+    ///
+    /// # Panics
+    ///
+    /// Panics if the field's current durability is [`Durability::NEVER_CHANGE`].
     pub fn set_field<R>(
         &mut self,
         runtime: &mut Runtime,
