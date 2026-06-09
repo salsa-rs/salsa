@@ -847,9 +847,8 @@ impl<'a> QueryOrigin<'a> {
     }
 }
 
-// Note: The discriminant assignment is intentional,
-// we want to group `Derived` and `DerivedUntracked` together on a same bit (the second LSB)
-// as we tend to match against both of them in the same branch.
+// The discriminants reserve bit 1 for derived origins, allowing `Derived` and
+// `DerivedUntracked` to be recognized together.
 #[derive(Clone, Copy)]
 #[repr(u8)]
 enum QueryOriginKind {
