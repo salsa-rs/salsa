@@ -64,8 +64,16 @@ jobs:
       - name: Test docs
         run: cargo test --workspace --doc
 
-  miri:
-    name: Miri
+  miri_shards:
+    name: Miri (${{ matrix.partition }})
+    strategy:
+      fail-fast: false
+      matrix:
+        partition:
+          - slice:1/4
+          - slice:2/4
+          - slice:3/4
+          - slice:4/4
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -84,11 +92,21 @@ jobs:
       - name: Setup Miri
         run: cargo miri setup
       - name: Test with Miri
-        run: cargo miri nextest run --no-fail-fast --tests
+        run: cargo miri nextest run --no-fail-fast --tests --partition ${{ matrix.partition }}
         env:
           MIRIFLAGS: -Zmiri-disable-isolation
       - name: Run examples with Miri
+        if: matrix.partition == 'slice:1/4'
         run: cargo miri run --example calc
+
+  miri:
+    name: Miri
+    if: always()
+    needs: miri_shards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Miri shards
+        run: test "${{ needs.miri_shards.result }}" = success
 
   shuttle:
     name: Shuttle
