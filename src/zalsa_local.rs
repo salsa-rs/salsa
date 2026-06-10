@@ -2330,7 +2330,7 @@ mod tests {
                 panic!("expected untracked derived origin");
             };
             assert!(edges.is_packed());
-            assert_eq!(edges.len(), 0);
+            assert!(edges.iter().next().is_none());
             assert_eq!(
                 origin.allocation_size(),
                 SliceWithHeader::<QueryRevisionsExtraInner, PackedQueryEdge>::layout(0)
