@@ -98,8 +98,8 @@ impl ActiveQuery {
         std::mem::take(&mut self.cycle_heads)
     }
 
-    pub(crate) fn detach_input_outputs(&mut self) -> FxIndexSet<QueryEdge> {
-        std::mem::take(&mut self.input_outputs)
+    pub(crate) fn detach_input_outputs(&mut self) -> DetachedInputOutputs {
+        DetachedInputOutputs(std::mem::take(&mut self.input_outputs))
     }
 
     pub(super) fn add_read(
@@ -306,6 +306,14 @@ impl ActiveQuery {
     }
 }
 
+pub(crate) struct DetachedInputOutputs(FxIndexSet<QueryEdge>);
+
+impl DetachedInputOutputs {
+    pub(crate) fn input_outputs(&self) -> &FxIndexSet<QueryEdge> {
+        &self.0
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct QueryStack {
     stack: Vec<ActiveQuery>,
@@ -373,11 +381,11 @@ impl QueryStack {
         completion.finish(active_query.input_outputs.drain(..))
     }
 
-    pub(crate) fn pop_completion(
+    pub(crate) fn pop_detached_completion(
         &mut self,
         key: DatabaseKeyIndex,
         iteration: IterationStamp,
-        mut reusable_frame_input_outputs: FxIndexSet<QueryEdge>,
+        detached_input_outputs: DetachedInputOutputs,
         force_extra: bool,
         #[cfg(debug_assertions)] push_len: usize,
     ) -> QueryCompletion {
@@ -386,8 +394,8 @@ impl QueryStack {
             #[cfg(debug_assertions)]
             push_len,
         );
-        debug_assert!(active_query.input_outputs.is_empty());
         let completion = active_query.prepare_completion(iteration, force_extra);
+        let DetachedInputOutputs(mut reusable_frame_input_outputs) = detached_input_outputs;
         reusable_frame_input_outputs.clear();
         active_query.input_outputs = reusable_frame_input_outputs;
         completion

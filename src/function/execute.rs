@@ -783,7 +783,7 @@ thread_local! {
 
 fn complete_cycle_query(
     zalsa: &Zalsa,
-    mut active_query: ActiveQueryGuard<'_>,
+    active_query: ActiveQueryGuard<'_>,
     iteration: IterationStamp,
 ) -> CompletedQuery {
     let (mut flattened, mut seen) = FLATTEN_MAPS.take().unwrap_or_default();
@@ -791,12 +791,17 @@ fn complete_cycle_query(
     debug_assert!(flattened.is_empty());
     debug_assert!(seen.is_empty());
 
-    let direct_input_outputs = active_query.detach_input_outputs();
-    flattened.reserve(direct_input_outputs.len());
-    flatten_cycle_dependencies(zalsa, &direct_input_outputs, &mut flattened, &mut seen);
+    let detached_query = active_query.detach();
+    flattened.reserve(detached_query.input_outputs().len());
+    flatten_cycle_dependencies(
+        zalsa,
+        detached_query.input_outputs(),
+        &mut flattened,
+        &mut seen,
+    );
 
     seen.clear();
-    let completion = active_query.pop_completion(iteration, direct_input_outputs, true);
+    let completion = detached_query.pop_completion(iteration, true);
     let completed_query = completion.finish(flattened.drain(..));
     #[cfg(feature = "accumulator")]
     assert!(

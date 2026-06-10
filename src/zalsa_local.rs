@@ -17,7 +17,7 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
 };
-use crate::active_query::{CompletedQuery, QueryCompletion, QueryStack};
+use crate::active_query::{CompletedQuery, DetachedInputOutputs, QueryCompletion, QueryStack};
 use crate::cycle::{AtomicIterationStamp, CycleHeads, IterationStamp, empty_cycle_heads};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
@@ -1696,6 +1696,7 @@ impl<'a> QueryEdges<'a> {
         }
     }
 
+    #[cfg(feature = "accumulator")]
     pub(crate) const fn len(self) -> usize {
         match self.data {
             QueryEdgesData::Packed(edges) => edges.len(),
@@ -1826,7 +1827,7 @@ pub(crate) struct ActiveQueryGuard<'me> {
     pub(crate) database_key_index: DatabaseKeyIndex,
 }
 
-impl ActiveQueryGuard<'_> {
+impl<'me> ActiveQueryGuard<'me> {
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &[(Identity, Id)]) {
         // SAFETY: We do not access the query stack reentrantly.
@@ -1872,14 +1873,18 @@ impl ActiveQueryGuard<'_> {
         }
     }
 
-    pub(crate) fn detach_input_outputs(&mut self) -> crate::hash::FxIndexSet<QueryEdge> {
+    pub(crate) fn detach(self) -> DetachedQuery<'me> {
         // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
+        let input_outputs = unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
                 #[cfg(debug_assertions)]
                 assert_eq!(stack.len(), self.push_len);
                 stack.last_mut().unwrap().detach_input_outputs()
             })
+        };
+        DetachedQuery {
+            guard: self,
+            input_outputs,
         }
     }
 
@@ -1908,20 +1913,20 @@ impl ActiveQueryGuard<'_> {
         self.complete(iteration)
     }
 
-    pub(crate) fn pop_completion(
+    fn pop_detached_completion(
         self,
         iteration: IterationStamp,
-        reusable_frame_input_outputs: crate::hash::FxIndexSet<QueryEdge>,
+        detached_input_outputs: DetachedInputOutputs,
         force_extra: bool,
     ) -> QueryCompletion {
         // SAFETY: We do not access the query stack reentrantly.
         let completion = unsafe {
             self.local_state
                 .with_query_stack_unchecked_mut(move |stack| {
-                    stack.pop_completion(
+                    stack.pop_detached_completion(
                         self.database_key_index,
                         iteration,
-                        reusable_frame_input_outputs,
+                        detached_input_outputs,
                         force_extra,
                         #[cfg(debug_assertions)]
                         self.push_len,
@@ -1930,6 +1935,29 @@ impl ActiveQueryGuard<'_> {
         };
         std::mem::forget(self);
         completion
+    }
+}
+
+pub(crate) struct DetachedQuery<'me> {
+    guard: ActiveQueryGuard<'me>,
+    input_outputs: DetachedInputOutputs,
+}
+
+impl DetachedQuery<'_> {
+    pub(crate) fn input_outputs(&self) -> &crate::hash::FxIndexSet<QueryEdge> {
+        self.input_outputs.input_outputs()
+    }
+
+    pub(crate) fn pop_completion(
+        self,
+        iteration: IterationStamp,
+        force_extra: bool,
+    ) -> QueryCompletion {
+        let Self {
+            guard,
+            input_outputs,
+        } = self;
+        guard.pop_detached_completion(iteration, input_outputs, force_extra)
     }
 }
 
