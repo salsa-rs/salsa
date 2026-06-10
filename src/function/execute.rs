@@ -5,13 +5,12 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp};
 use crate::function::memo::Memo;
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
-use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdgeKind, QueryRevisions};
 use crate::{Cancelled, Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
@@ -614,6 +613,7 @@ fn complete_cycle_participant(
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
     let zalsa = claim_guard.zalsa();
+    let zalsa_local = claim_guard.zalsa_local();
 
     let database_key_index = active_query.database_key_index;
     let iteration = iteration.increment_iteration().unwrap_or_else(|| {
@@ -623,7 +623,7 @@ fn complete_cycle_participant(
 
     let mut completed_query = active_query.pop(iteration);
 
-    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
+    flatten_cycle_dependencies(zalsa, zalsa_local, &mut completed_query.revisions);
 
     *completed_query.revisions.verified_final.get_mut() = false;
     completed_query
@@ -650,9 +650,10 @@ fn try_complete_cycle_head(
 ) -> Result<CompletedQuery, (CompletedQuery, IterationStamp)> {
     let me = active_query.database_key_index;
     let zalsa = claim_guard.zalsa();
+    let zalsa_local = claim_guard.zalsa_local();
 
     let mut completed_query = active_query.pop(iteration);
-    flatten_cycle_dependencies(zalsa, &mut completed_query.revisions);
+    flatten_cycle_dependencies(zalsa, zalsa_local, &mut completed_query.revisions);
 
     // It's important to force a re-execution of the cycle if `changed_at` or `durability` has changed
     // to ensure the reduced durability and changed propagates to all queries depending on this head.
@@ -777,17 +778,10 @@ fn assert_no_new_cycle_heads(
     }
 }
 
-thread_local! {
-    /// Pool the `seen` and `flattened` sets for reuse on the same thread.
-    ///
-    /// Benchmarks showed that repeatedly allocating and regrowing those sets is expensive.
-    static FLATTEN_MAPS: std::cell::Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>> = const { std::cell::Cell::new(None) };
-}
-
 /// Flattens the dependencies of `head` so that `head`'s origin only depends on finalized queries,
 /// or salsa structs (input, tracked, interned).
-fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
-    let (mut flattened, mut seen) = FLATTEN_MAPS.take().unwrap_or_default();
+fn flatten_cycle_dependencies(zalsa: &Zalsa, zalsa_local: &ZalsaLocal, head: &mut QueryRevisions) {
+    let (mut flattened, mut seen) = zalsa_local.flatten_maps.take().unwrap_or_default();
 
     debug_assert!(flattened.is_empty());
     debug_assert!(seen.is_empty());
@@ -834,5 +828,5 @@ fn flatten_cycle_dependencies(zalsa: &Zalsa, head: &mut QueryRevisions) {
 
     seen.clear();
 
-    FLATTEN_MAPS.set(Some((flattened, seen)));
+    zalsa_local.flatten_maps.set(Some((flattened, seen)));
 }

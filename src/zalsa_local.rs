@@ -1,4 +1,4 @@
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::{Cell, RefCell, UnsafeCell};
 use std::fmt;
 use std::fmt::Formatter;
 use std::panic::UnwindSafe;
@@ -17,6 +17,7 @@ use crate::accumulator::{
 use crate::active_query::{CompletedQuery, QueryStack};
 use crate::cycle::{AtomicIterationStamp, CycleHeads, IterationStamp, empty_cycle_heads};
 use crate::durability::Durability;
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
@@ -41,6 +42,8 @@ pub struct ZalsaLocal {
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
     most_recent_pages: UnsafeCell<FxHashMap<IngredientIndex, PageIndex>>,
+
+    pub(crate) flatten_maps: Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>>,
 
     cancelled: CancellationToken,
 }
@@ -87,6 +90,7 @@ impl ZalsaLocal {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: UnsafeCell::new(FxHashMap::default()),
+            flatten_maps: Cell::new(None),
             cancelled: CancellationToken::default(),
         }
     }
