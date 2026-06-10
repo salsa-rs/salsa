@@ -6,7 +6,8 @@
   "minimumReleaseAge": "7 days",
   "enabledManagers": [
     "cargo",
-    "github-actions"
+    "github-actions",
+    "rust-toolchain"
   ],
   "packageRules": [
     {
@@ -17,14 +18,22 @@
       "pinDigests": true
     },
     {
-      "description": "Do not pin rust-toolchain channel branches because only master commits are safe to pin",
+      "description": "Do not pin the synthetic Miri branch because only master commits are safe to pin",
       "matchManagers": [
         "github-actions"
       ],
       "matchPackageNames": [
         "dtolnay/rust-toolchain"
       ],
+      "matchCurrentValue": "miri",
       "pinDigests": false
+    },
+    {
+      "description": "Update the pinned stable Rust version without the dependency cooldown",
+      "matchManagers": [
+        "rust-toolchain"
+      ],
+      "minimumReleaseAge": "0 days"
     },
     {
       "description": "Only raise the minimum supported version when the existing Cargo constraint blocks an update",

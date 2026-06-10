@@ -31,26 +31,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        id: rust-toolchain
+        shell: bash
+        run: |
+          if [[ "${{ matrix.rust }}" == "stable" ]]; then
+            rustup component add rustfmt clippy
+          else
+            args=(--component rustfmt --component clippy)
+            if [[ "${{ matrix.rust }}" == "nightly" ]]; then
+              args+=(--allow-downgrade)
+            fi
+            rustup toolchain install "${{ matrix.rust }}" "${args[@]}"
+            rustup override set "${{ matrix.rust }}"
+          fi
+          rustup show active-toolchain
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2.81.3
         with:
           tool: cargo-nextest
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-
-            ${{ runner.os }}-cargo-
       - name: Format
         run: cargo fmt -- --check
       - name: Clippy
@@ -74,22 +73,14 @@ jobs:
       - name: Install Miri
         uses: dtolnay/rust-toolchain@miri
         id: rust-toolchain
+      - name: Select Miri toolchain
+        run: rustup override set "${{ steps.rust-toolchain.outputs.name }}"
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2.81.3
         with:
           tool: cargo-nextest
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-miri-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-miri-
-            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-
-            ${{ runner.os }}-cargo-
       - name: Setup Miri
         run: cargo miri setup
       - name: Test with Miri
@@ -106,25 +97,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        id: rust-toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          toolchain: stable
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2.81.3
         with:
           tool: cargo-nextest
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-
-            ${{ runner.os }}-cargo-
       - name: Test with Shuttle
         run: cargo nextest run --features shuttle --test parallel
 
@@ -138,29 +117,16 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        id: rust-toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          toolchain: stable
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: "Setup codspeed"
         uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2.81.3
         with:
           tool: cargo-codspeed
-
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-benchmark
-            ${{ runner.os }}-${{ runner.arch }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
 
       - name: "Build benchmarks"
         run: cargo codspeed build -m simulation -m memory

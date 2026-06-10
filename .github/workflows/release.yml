@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup show
       - name: Run release-plz
         uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5
         with:
@@ -49,7 +49,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup show
       - name: Run release-plz
         uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5
         with:
