@@ -238,8 +238,8 @@ mod persistence {
     use crate::function::Configuration;
     use crate::function::memo::Memo;
     use crate::revision::AtomicRevision;
-    use crate::zalsa_local::persistence::MappedQueryRevisions;
-    use crate::zalsa_local::{OriginAndExtra, QueryRevisions};
+    use crate::zalsa_local::QueryRevisions;
+    use crate::zalsa_local::persistence::{MappedQueryRevisions, PersistentQueryOrigin};
 
     use serde::Deserialize;
     use serde::ser::SerializeStruct;
@@ -252,7 +252,10 @@ mod persistence {
     }
 
     impl<'db, C: Configuration> Memo<'db, C> {
-        pub(crate) fn with_origin(&self, origin: OriginAndExtra) -> MappedMemo<'_, 'db, C> {
+        pub(crate) fn with_origin(
+            &self,
+            serialized_origin: PersistentQueryOrigin,
+        ) -> MappedMemo<'_, 'db, C> {
             let Memo {
                 ref verified_at,
                 ref value,
@@ -262,7 +265,7 @@ mod persistence {
             MappedMemo {
                 value: value.as_ref(),
                 verified_at: AtomicRevision::from(verified_at.load()),
-                revisions: revisions.with_origin(origin),
+                revisions: revisions.with_origin(serialized_origin),
             }
         }
     }
