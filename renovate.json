@@ -15,6 +15,7 @@
       "matchManagers": [
         "github-actions"
       ],
+      "commitMessagePrefix": "chore:",
       "pinDigests": true
     },
     {
@@ -33,6 +34,7 @@
       "matchManagers": [
         "rust-toolchain"
       ],
+      "commitMessagePrefix": "chore:",
       "minimumReleaseAge": "0 days"
     },
     {
@@ -40,6 +42,7 @@
       "matchManagers": [
         "cargo"
       ],
+      "commitMessagePrefix": "changed:",
       "rangeStrategy": "replace"
     },
     {
@@ -50,6 +53,7 @@
       "matchDepTypes": [
         "dev-dependencies"
       ],
+      "commitMessagePrefix": "chore:",
       "rangeStrategy": "pin"
     }
   ]

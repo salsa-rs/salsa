@@ -9,3 +9,15 @@ version_group = "salsa"
 [[package]]
 name = "salsa-macro-rules"
 version_group = "salsa"
+
+[changelog]
+commit_parsers = [
+    { message = "^feat", group = "added" },
+    { message = "^changed", group = "changed" },
+    { message = "^deprecated", group = "deprecated" },
+    { message = "^removed", group = "removed" },
+    { message = "^fix", group = "fixed" },
+    { message = "^security", group = "security" },
+    { message = "^chore", skip = true },
+    { message = ".*", group = "other" },
+]
