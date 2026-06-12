@@ -11,12 +11,15 @@
   ],
   "packageRules": [
     {
-      "description": "Pin GitHub Actions to immutable commit SHAs",
+      "description": "Pin GitHub Actions to immutable commit SHAs and update them on Fridays",
       "matchManagers": [
         "github-actions"
       ],
       "commitMessagePrefix": "chore:",
-      "pinDigests": true
+      "pinDigests": true,
+      "schedule": [
+        "* * * * 5"
+      ]
     },
     {
       "description": "Do not pin the synthetic Miri branch because only master commits are safe to pin",
