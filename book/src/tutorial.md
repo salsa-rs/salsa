@@ -18,4 +18,4 @@ print 11 * 2
 When executed, this program prints `12`, `3.14`, and `22`.
 
 If the program contains errors (e.g., a reference to an undefined function), it prints those out too.
-And, of course, it will be reactive, so small changes to the input don't require recompiling (or rexecuting, necessarily) the entire thing.
+And, of course, it will be reactive, so small changes to the input don't require recompiling (or reexecuting, necessarily) the entire thing.

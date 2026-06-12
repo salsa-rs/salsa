@@ -36,8 +36,8 @@ In our compiler, we have just one simple input, the `SourceProgram`, which has a
 ### The data lives in the database
 
 Although they are declared like other Rust structs, Salsa structs are implemented quite differently.
-The values of their fields are stored in the Salsa database and the struct themselves just reference it.
-This means that the struct instances are copy (no matter what fields they contain).
+The values of their fields are stored in the Salsa database and the structs themselves just reference it.
+This means that the struct instances are `Copy` (no matter what fields they contain).
 Creating instances of the struct and accessing fields is done by invoking methods like `new` as well as getters and setters.
 
 In the case of `#[salsa::input]`, the struct contains a `salsa::Id`, which is a non-zero integer.
