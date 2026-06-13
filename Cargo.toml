@@ -110,6 +110,10 @@ required-features = ["accumulator"]
 name = "dataflow"
 harness = false
 
+[[bench]]
+name = "lru"
+harness = false
+
 [[example]]
 name = "lazy-input"
 required-features = ["accumulator"]
