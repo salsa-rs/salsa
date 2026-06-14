@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::parse::Nothing;
+use syn::visit::Visit;
 use syn::visit_mut::VisitMut;
 
 use crate::hygiene::Hygiene;
@@ -104,15 +105,11 @@ impl Macro {
             input_tys,
             output_ty,
         } = self.validity_check(impl_item, fn_item)?;
-        let body_db_lt = syn::Lifetime::new("'db", fn_item.sig.ident.span());
-        let body_self_ty = ChangeLt::db_to(&db_lt, &body_db_lt).in_type(self_ty);
-        let db_ty = ChangeLt::db_to(&db_lt, &body_db_lt)
-            .in_type(&self.with_db_lifetime(db_ty, &body_db_lt));
-        let input_tys: Vec<_> = input_tys
-            .into_iter()
-            .map(|ty| ChangeLt::db_to(&db_lt, &body_db_lt).in_type(&ty))
-            .collect();
-        let output_ty = ChangeLt::db_to(&db_lt, &body_db_lt).in_type(&output_ty);
+        // We do not rename the database lifetime: the inner function carries the
+        // user's original body, which may refer to the lifetime by name. Instead
+        // we normalize elided lifetimes (`'_`) to the (possibly conjured) `db_lt`.
+        let body_self_ty = ChangeLt::elided_to(&db_lt).in_type(self_ty);
+        let db_ty = ChangeLt::elided_to(&db_lt).in_type(&self.with_db_lifetime(db_ty, &db_lt));
         let skipped_inputs = if self_token.is_some() { 2 } else { 1 };
 
         if args.self_ty.is_none() {
@@ -132,20 +129,19 @@ impl Macro {
             db_input_index,
             skipped_inputs,
             &db_lt,
-            &body_db_lt,
         )?;
 
         let tracked_fn: syn::ItemFn = if self_token.is_some() {
             parse_quote! {
                 #salsa_tracked_attr
-                fn #inner_fn_name<#body_db_lt>(db: #db_ty, this: #body_self_ty, #(#input_ids: #input_tys),*) -> #output_ty {
+                fn #inner_fn_name<#db_lt>(db: #db_ty, this: #body_self_ty, #(#input_ids: #input_tys),*) -> #output_ty {
                     <#body_self_ty as #InnerTrait>::#inner_fn_name(this, db, #(#input_ids),*)
                 }
             }
         } else {
             parse_quote! {
                 #salsa_tracked_attr
-                fn #inner_fn_name<#body_db_lt>(db: #db_ty, #(#input_ids: #input_tys),*) -> #output_ty {
+                fn #inner_fn_name<#db_lt>(db: #db_ty, #(#input_ids: #input_tys),*) -> #output_ty {
                     <#body_self_ty as #InnerTrait>::#inner_fn_name(db, #(#input_ids),*)
                 }
             }
@@ -159,7 +155,7 @@ impl Macro {
                     salsa_tracked_attr: #salsa_tracked_attr,
                     self: #self_token,
                     self_ty: #body_self_ty,
-                    db_lt: #body_db_lt,
+                    db_lt: #db_lt,
                     db: #db_ident,
                     db_ty: (#db_ty),
                     input_ids: [#(#input_ids),*],
@@ -182,7 +178,7 @@ impl Macro {
                 salsa::plumbing::setup_tracked_assoc_fn_body! {
                     salsa_tracked_attr: #salsa_tracked_attr,
                     self_ty: #body_self_ty,
-                    db_lt: #body_db_lt,
+                    db_lt: #db_lt,
                     db: #db_ident,
                     db_ty: (#db_ty),
                     input_ids: [#(#input_ids),*],
@@ -206,6 +202,7 @@ impl Macro {
         // and its true return type.
         let outer_db_lt = if self.return_mode_uses_db_lifetime(&args)
             || self.return_type_uses_elided_lifetime(&fn_item.sig.output)
+            || self.inputs_use_elided_lifetime(&fn_item.sig, skipped_inputs)
         {
             Some(db_lt.clone())
         } else {
@@ -233,9 +230,10 @@ impl Macro {
         fn_item: &'syn syn::ImplItemFn,
     ) -> syn::Result<AssociatedFunctionArguments<'syn>> {
         let explicit_db_lt = self.extract_db_lifetime(impl_item, fn_item)?;
-        let db_lt = explicit_db_lt
-            .cloned()
-            .unwrap_or_else(|| crate::db_lifetime::default_db_lifetime(fn_item.sig.ident.span()));
+        let db_lt = match explicit_db_lt {
+            Some(db_lt) => db_lt.clone(),
+            None => self.conjure_db_lifetime(impl_item, fn_item),
+        };
 
         let is_method = matches!(&fn_item.sig.inputs[0], syn::FnArg::Receiver(_));
 
@@ -323,6 +321,30 @@ impl Macro {
         }
 
         Ok(db_lt)
+    }
+
+    /// Conjure a database lifetime name for a method that did not declare one.
+    ///
+    /// We default to `'db`, but fall back to `'db1`, `'db2`, ... if that name is
+    /// already used elsewhere in the signature or self type (for example by a
+    /// higher-ranked `for<'db>` binder), to avoid shadowing it.
+    fn conjure_db_lifetime(
+        &self,
+        impl_item: &syn::ItemImpl,
+        fn_item: &syn::ImplItemFn,
+    ) -> syn::Lifetime {
+        let mut used = UsedLifetimes(HashSet::new());
+        used.visit_type(&impl_item.self_ty);
+        used.visit_signature(&fn_item.sig);
+
+        let span = fn_item.sig.ident.span();
+        let mut name = String::from("db");
+        let mut counter = 1;
+        while used.0.contains(&name) {
+            counter += 1;
+            name = format!("db{counter}");
+        }
+        syn::Lifetime::new(&format!("'{name}"), span)
     }
 
     fn check_self_argument<'syn>(
@@ -433,17 +455,22 @@ impl Macro {
         }
     }
 
+    /// Normalizes the signature of the inner (user body) function so that all of
+    /// its elided lifetimes (`'_`) refer to the database lifetime `db_lt`.
+    ///
+    /// We deliberately replace only elided lifetimes; explicit lifetime names
+    /// the user wrote are left intact so that the body — which may refer to them
+    /// — still compiles.
     fn normalize_signature_lifetimes(
         &self,
         sig: &mut syn::Signature,
         db_input_index: usize,
         skipped_inputs: usize,
-        from_db_lt: &syn::Lifetime,
-        to_db_lt: &syn::Lifetime,
+        db_lt: &syn::Lifetime,
     ) -> syn::Result<()> {
-        self.update_db_argument_lifetime(sig, db_input_index, to_db_lt)?;
+        self.update_db_argument_lifetime(sig, db_input_index, db_lt)?;
         if let Some(syn::FnArg::Receiver(receiver)) = sig.inputs.first_mut() {
-            *receiver.ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(&receiver.ty);
+            *receiver.ty = ChangeLt::elided_to(db_lt).in_type(&receiver.ty);
         }
         if let Some(input) = sig.inputs.iter_mut().nth(db_input_index) {
             let syn::FnArg::Typed(typed) = input else {
@@ -452,16 +479,16 @@ impl Macro {
                     "tracked methods must take a database parameter",
                 ));
             };
-            *typed.ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(&typed.ty);
+            *typed.ty = ChangeLt::elided_to(db_lt).in_type(&typed.ty);
         }
         for input in sig.inputs.iter_mut().skip(skipped_inputs) {
             let syn::FnArg::Typed(typed) = input else {
                 return Err(syn::Error::new_spanned(input, "unexpected receiver"));
             };
-            *typed.ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(&typed.ty);
+            *typed.ty = ChangeLt::elided_to(db_lt).in_type(&typed.ty);
         }
         if let syn::ReturnType::Type(_, ty) = &mut sig.output {
-            **ty = ChangeLt::db_to(from_db_lt, to_db_lt).in_type(ty);
+            **ty = ChangeLt::elided_to(db_lt).in_type(ty);
         }
         Ok(())
     }
@@ -526,11 +553,13 @@ impl Macro {
         let syn::ReturnType::Type(_, ty) = output else {
             return false;
         };
+        crate::xform::uses_elided_lifetime(ty)
+    }
 
-        let mut ty = syn::Type::clone(ty);
-        let mut visitor = ContainsElidedLifetime(false);
-        visitor.visit_type_mut(&mut ty);
-        visitor.0
+    fn inputs_use_elided_lifetime(&self, sig: &syn::Signature, skipped_inputs: usize) -> bool {
+        sig.inputs.iter().skip(skipped_inputs).any(|input| {
+            matches!(input, syn::FnArg::Typed(typed) if crate::xform::uses_elided_lifetime(&typed.ty))
+        })
     }
 
     fn update_return_type(
@@ -581,12 +610,11 @@ impl Macro {
     }
 }
 
-struct ContainsElidedLifetime(bool);
+/// Collects the names of every lifetime mentioned in the visited syntax.
+struct UsedLifetimes(HashSet<String>);
 
-impl VisitMut for ContainsElidedLifetime {
-    fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        if i.ident == "_" {
-            self.0 = true;
-        }
+impl<'ast> syn::visit::Visit<'ast> for UsedLifetimes {
+    fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
+        self.0.insert(i.ident.to_string());
     }
 }

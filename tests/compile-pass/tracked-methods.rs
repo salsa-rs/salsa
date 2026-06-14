@@ -62,4 +62,32 @@ impl<'db> Things<'db> {
     }
 }
 
+#[salsa::tracked]
+impl<'a> Things<'a> {
+    // The body refers to the impl's lifetime by name; the generated signature
+    // must keep using that same name.
+    #[salsa::tracked]
+    fn body_annotation(db: &'a dyn salsa::Database) -> u32 {
+        let _: &'a dyn salsa::Database = db;
+        0
+    }
+
+    // A higher-ranked function pointer return whose binder reuses `'db`; the db
+    // lifetime must not be renamed into the binder. `no_eq` avoids comparing fn
+    // pointers (which is unpredictable and only incidental to this test).
+    #[salsa::tracked(no_eq, unsafe(non_update_types))]
+    fn hrtb(db: &'a dyn salsa::Database) -> for<'db> fn(&'a (), &'db ()) {
+        _ = db;
+        unimplemented!()
+    }
+
+    // An elided, independent input lifetime (`Other<'_>`) must be tied to the db
+    // lifetime on the outer signature so the call to the inner fn type-checks.
+    #[salsa::tracked]
+    fn named_return(db: &'a dyn salsa::Database, other: Other<'_>) -> Things<'a> {
+        _ = (db, other);
+        unimplemented!()
+    }
+}
+
 fn main() {}
