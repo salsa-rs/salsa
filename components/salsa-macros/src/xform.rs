@@ -3,18 +3,27 @@ use std::collections::HashSet;
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::visit::Visit;
 use syn::visit_mut::VisitMut;
 
-pub(crate) struct ChangeLt<'a> {
-    from: Option<&'a str>,
-    to: String,
+/// Rewrites elided lifetimes (`'_`) to a concrete `'db` lifetime.
+///
+/// Higher-ranked lifetimes introduced by `for<..>` binders on function pointers
+/// and trait bounds are left untouched: any lifetime appearing inside such a
+/// binder is either bound by it or higher-ranked, and so is never the database
+/// lifetime.
+pub(crate) struct ChangeLt {
+    to: syn::Lifetime,
+    /// Depth of higher-ranked binders we are currently nested within. While this
+    /// is non-zero, lifetimes must not be rewritten.
+    binder_depth: usize,
 }
 
-impl ChangeLt<'_> {
+impl ChangeLt {
     pub fn elided_to(db_lt: &syn::Lifetime) -> Self {
         ChangeLt {
-            from: Some("_"),
-            to: db_lt.ident.to_string(),
+            to: db_lt.clone(),
+            binder_depth: 0,
         }
     }
 
@@ -25,11 +34,60 @@ impl ChangeLt<'_> {
     }
 }
 
-impl syn::visit_mut::VisitMut for ChangeLt<'_> {
+impl syn::visit_mut::VisitMut for ChangeLt {
     fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        if self.from.map(|f| i.ident == f).unwrap_or(true) {
-            i.ident = syn::Ident::new(&self.to, i.ident.span());
+        if self.binder_depth == 0 && i.ident == "_" {
+            *i = self.to.clone();
         }
+    }
+
+    fn visit_type_bare_fn_mut(&mut self, i: &mut syn::TypeBareFn) {
+        self.binder_depth += 1;
+        syn::visit_mut::visit_type_bare_fn_mut(self, i);
+        self.binder_depth -= 1;
+    }
+
+    fn visit_trait_bound_mut(&mut self, i: &mut syn::TraitBound) {
+        self.binder_depth += 1;
+        syn::visit_mut::visit_trait_bound_mut(self, i);
+        self.binder_depth -= 1;
+    }
+}
+
+/// Returns `true` if `ty` mentions an elided lifetime (`'_`) that would be
+/// rewritten by [`ChangeLt::elided_to`], i.e. one that is not bound by a
+/// higher-ranked `for<..>` binder.
+pub(crate) fn uses_elided_lifetime(ty: &syn::Type) -> bool {
+    let mut finder = ElidedLifetimeFinder {
+        found: false,
+        binder_depth: 0,
+    };
+    finder.visit_type(ty);
+    finder.found
+}
+
+struct ElidedLifetimeFinder {
+    found: bool,
+    binder_depth: usize,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for ElidedLifetimeFinder {
+    fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
+        if self.binder_depth == 0 && i.ident == "_" {
+            self.found = true;
+        }
+    }
+
+    fn visit_type_bare_fn(&mut self, i: &'ast syn::TypeBareFn) {
+        self.binder_depth += 1;
+        syn::visit::visit_type_bare_fn(self, i);
+        self.binder_depth -= 1;
+    }
+
+    fn visit_trait_bound(&mut self, i: &'ast syn::TraitBound) {
+        self.binder_depth += 1;
+        syn::visit::visit_trait_bound(self, i);
+        self.binder_depth -= 1;
     }
 }
 
