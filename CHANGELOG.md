@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.0...salsa-v0.27.1) - 2026-06-14
+
+### Changed
+
+- Update Rust crate hashlink to 0.12 ([#1131](https://github.com/salsa-rs/salsa/pull/1131))
+
+### Other
+
+- LRU benches ([#1110](https://github.com/salsa-rs/salsa/pull/1110))
+- Avoid Miri cache save races ([#1125](https://github.com/salsa-rs/salsa/pull/1125))
+- Use single allocation to store origin and `QueryRevisionExtra` ([#1112](https://github.com/salsa-rs/salsa/pull/1112))
+- Shard Miri tests ([#1123](https://github.com/salsa-rs/salsa/pull/1123))
+- Update actions/upload-pages-artifact action to v5 ([#1122](https://github.com/salsa-rs/salsa/pull/1122))
+- Update actions/configure-pages action to v6 ([#1120](https://github.com/salsa-rs/salsa/pull/1120))
+- Update actions/deploy-pages action to v5 ([#1121](https://github.com/salsa-rs/salsa/pull/1121))
+- Pin the stable Rust toolchain ([#1119](https://github.com/salsa-rs/salsa/pull/1119))
+- Update taiki-e/install-action action to v2.81.3 ([#1117](https://github.com/salsa-rs/salsa/pull/1117))
+- Pin dependencies ([#1116](https://github.com/salsa-rs/salsa/pull/1116))
+- Configure Renovate dependency updates ([#1114](https://github.com/salsa-rs/salsa/pull/1114))
+- Reduce metadata per memo by packing `QueryRevisionsExtra` into `QueryOrigin` ([#1101](https://github.com/salsa-rs/salsa/pull/1101))
+- Add packed `QueryOrigin` ([#1103](https://github.com/salsa-rs/salsa/pull/1103))
+
 ## [0.27.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.2...salsa-v0.27.0) - 2026-06-04
 
 ### Fixed
