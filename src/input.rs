@@ -176,6 +176,10 @@ impl<C: Configuration> IngredientImpl<C> {
     /// * `field_index`, index of the field that will be changed
     /// * `durability`, durability of the new value. If omitted, uses the durability of the previous value.
     /// * `setter`, function that modifies the fields tuple; should only modify the element for `field_index`
+    ///
+    /// # Panics
+    ///
+    /// Panics if the field's current durability is [`Durability::NEVER_CHANGE`].
     pub fn set_field<R>(
         &mut self,
         runtime: &mut Runtime,
@@ -191,6 +195,12 @@ impl<C: Configuration> IngredientImpl<C> {
         // SAFETY: We hold `&mut` on the runtime so no `&`-references can be active.
         // Also, we don't access any other data from the table while `r` is active.
         let data = unsafe { &mut *data_raw };
+
+        assert_ne!(
+            data.durabilities[field_index],
+            Durability::NEVER_CHANGE,
+            "never-changing inputs cannot be mutated"
+        );
 
         data.revisions[field_index] = runtime.current_revision();
 

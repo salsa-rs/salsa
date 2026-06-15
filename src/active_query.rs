@@ -113,14 +113,28 @@ impl ActiveQuery {
     ) {
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
-        self.input_outputs.insert(QueryEdge::input(input));
+
+        #[cfg(feature = "accumulator")]
+        let accumulated_inputs = match has_accumulated {
+            true => InputAccumulatedValues::Any,
+            false => accumulated_inputs.load(),
+        };
+
+        #[cfg(feature = "persistence")]
+        let record_input = true;
+        #[cfg(not(feature = "persistence"))]
+        let record_input = durability != Durability::NEVER_CHANGE || !cycle_heads.is_empty();
+        #[cfg(feature = "accumulator")]
+        let record_input = record_input || accumulated_inputs.is_any();
+
+        if record_input {
+            self.input_outputs.insert(QueryEdge::input(input));
+        }
+
         self.cycle_heads.extend(cycle_heads);
         #[cfg(feature = "accumulator")]
         {
-            self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
-                true => InputAccumulatedValues::Any,
-                false => accumulated_inputs.load(),
-            });
+            self.accumulated_inputs |= accumulated_inputs;
         }
     }
 

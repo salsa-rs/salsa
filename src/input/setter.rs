@@ -6,7 +6,18 @@ use crate::{Durability, Runtime};
 /// Setter for a field of an input.
 pub trait Setter: Sized {
     type FieldTy;
+
+    /// Sets the durability that the field will have after this write.
+    ///
+    /// Setting the durability to [`Durability::NEVER_CHANGE`] is allowed, but
+    /// the field cannot be changed again afterward.
     fn with_durability(self, durability: Durability) -> Self;
+
+    /// Sets the field to `value` and returns its previous value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the field's current durability is [`Durability::NEVER_CHANGE`].
     fn to(self, value: Self::FieldTy) -> Self::FieldTy;
 }
 

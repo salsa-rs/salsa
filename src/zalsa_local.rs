@@ -505,6 +505,29 @@ impl QueryRevisions {
         self.origin_and_extra.is_derived_untracked()
     }
 
+    /// Discard dependency and output edges that a never-changing query will
+    /// never need again.
+    ///
+    /// This is called after output reconciliation so that a query that becomes
+    /// never-changing during re-execution can still preserve outputs recreated
+    /// by that execution.
+    #[cfg(not(feature = "persistence"))]
+    pub(crate) fn discard_edges_if_never_change(&mut self) {
+        if self.durability != Durability::NEVER_CHANGE
+            || !matches!(self.origin(), QueryOriginRef::Derived(_))
+            || !self.cycle_heads().is_empty()
+        {
+            return;
+        }
+
+        #[cfg(feature = "accumulator")]
+        if self.accumulated_inputs.load().is_any() {
+            return;
+        }
+
+        self.origin_and_extra.clear_edges();
+    }
+
     #[cfg(feature = "salsa_unstable")]
     pub(crate) fn allocation_size(&self) -> usize {
         let QueryRevisions {
@@ -1155,6 +1178,25 @@ impl OriginAndExtra {
         }
 
         self.extra_mut().unwrap()
+    }
+
+    #[cfg(not(feature = "persistence"))]
+    fn clear_edges(&mut self) {
+        // Avoid rebuilding the allocation when there are no edges to remove.
+        if self.metadata == 0 {
+            return;
+        }
+
+        let kind = match self.tag.origin().kind() {
+            QueryOriginKind::Assigned => panic!("assigned query origins have no edges"),
+            QueryOriginKind::Derived => DerivedOriginKind::Derived,
+            QueryOriginKind::DerivedUntracked => DerivedOriginKind::DerivedUntracked,
+        };
+
+        let extra = self
+            .extra_mut()
+            .map(|extra| std::mem::replace(extra, QueryRevisionsExtraInner::empty()));
+        *self = Self::new_derived_with_kind([].into_iter(), kind, QueryRevisionsExtra(extra));
     }
 
     const fn is_derived_untracked(&self) -> bool {
@@ -2265,6 +2307,37 @@ mod tests {
 
         assert!(!edges.is_packed());
         assert_eq!(edges.iter().collect::<Vec<_>>(), vec![wide]);
+    }
+
+    #[cfg(all(not(feature = "persistence"), not(feature = "shuttle")))]
+    #[test]
+    fn clearing_edges_preserves_co_allocated_extra() {
+        let packed = QueryEdge::input(key(231, 10_842_122, 41));
+        let wide = QueryEdge::input(key(PackedQueryEdge::INGREDIENT_MASK + 1, 10_842_123, 42));
+
+        for edge in [packed, wide] {
+            let mut extra = QueryRevisionsExtraInner::empty();
+            extra.cycle_converged = true;
+            let mut origin = OriginAndExtra::derived_untracked(
+                [edge].into_iter(),
+                QueryRevisionsExtra(Some(extra)),
+            );
+
+            origin.clear_edges();
+
+            assert!(origin.extra().unwrap().cycle_converged);
+            let QueryOriginRef::DerivedUntracked(edges) = origin.origin() else {
+                panic!("expected untracked derived origin");
+            };
+            assert!(edges.is_packed());
+            assert!(edges.iter().next().is_none());
+            assert_eq!(
+                origin.allocation_size(),
+                SliceWithHeader::<QueryRevisionsExtraInner, PackedQueryEdge>::layout(0)
+                    .0
+                    .size()
+            );
+        }
     }
 
     #[cfg(not(feature = "shuttle"))]
