@@ -113,6 +113,7 @@ harness = false
 [[bench]]
 name = "lru"
 harness = false
+required-features = ["rayon"]
 
 [[example]]
 name = "lazy-input"
