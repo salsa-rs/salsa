@@ -1168,6 +1168,7 @@ fn repeat_query_participating_in_cycle() {
     #[salsa::input]
     struct Input {
         value: u32,
+        stable: u32,
     }
 
     #[salsa::interned]
@@ -1216,6 +1217,8 @@ fn repeat_query_participating_in_cycle() {
     fn query_hot(db: &dyn Db, input: Input) -> u32 {
         let value = head(db, input);
 
+        let _ = input.stable(db);
+
         let _ = Interned::new(db, 2);
 
         let _ = input.value(db);
@@ -1225,7 +1228,7 @@ fn repeat_query_participating_in_cycle() {
 
     let mut db = ExecuteValidateLoggerDatabase::default();
 
-    let input = Input::new(&db, 1);
+    let input = Input::new(&db, 1, 0);
 
     assert_eq!(head(&db, input), 2);
 
@@ -1274,6 +1277,7 @@ fn repeat_query_participating_in_cycle2() {
     #[salsa::input]
     struct Input {
         value: u32,
+        stable: u32,
     }
 
     #[salsa::interned]
@@ -1322,6 +1326,8 @@ fn repeat_query_participating_in_cycle2() {
 
     #[salsa::tracked]
     fn query_hot(db: &dyn Db, input: Input) -> u32 {
+        let _ = input.stable(db);
+
         let _ = Interned::new(db, 2);
 
         let _ = head(db, input);
@@ -1331,7 +1337,7 @@ fn repeat_query_participating_in_cycle2() {
 
     let mut db = ExecuteValidateLoggerDatabase::default();
 
-    let input = Input::new(&db, 1);
+    let input = Input::new(&db, 1, 0);
 
     assert_eq!(head(&db, input), 2);
 
