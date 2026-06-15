@@ -19,8 +19,13 @@ pub trait EvictionPolicy: Send + Sync {
     /// Create a new eviction policy with the given capacity.
     fn new(capacity: usize) -> Self;
 
+    /// Record that an item acquired a memoized value that may need to be evicted.
+    fn admit(&self, id: Id);
+
     /// Record that an item was accessed.
-    fn record_use(&self, id: Id);
+    ///
+    /// Implementations may treat this as a best-effort hint.
+    fn promote(&self, id: Id);
 
     /// Set the maximum capacity.
     fn set_capacity(&mut self, capacity: usize);

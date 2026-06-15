@@ -31,7 +31,7 @@ where
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
 
-        self.eviction.record_use(id);
+        self.eviction.promote(id);
 
         zalsa_local.report_tracked_read(
             database_key_index,
