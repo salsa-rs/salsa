@@ -65,9 +65,9 @@ fn lru_works() {
     }
 
     assert_eq!(load_n_potatoes(), 32);
-    // Values age without requiring any additional admissions. The maintenance
-    // budget spreads inspection of this cohort across revisions.
-    for _ in 0..5 {
+    // Probation values age without requiring any additional admissions. The
+    // maintenance budget spreads inspection of the due cohort across revisions.
+    for _ in 1..16 {
         db.synthetic_write(salsa::Durability::HIGH);
     }
     assert_eq!(load_n_potatoes(), 32);
@@ -94,16 +94,13 @@ fn lru_maintenance_budget_can_be_changed_at_runtime() {
     }
 
     assert_eq!(load_n_potatoes(), 32);
-    // The first collection gives the cohort grace.
-    db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 32);
-
-    // Raising the maintenance floor lets each due cohort be inspected in one
-    // revision. The first inspection marks the cohort cold.
+    // Raising the maintenance floor lets the probation cohort be inspected in
+    // one revision once its grace period expires.
     get_hot_potato::set_lru_capacity(&mut db, 32);
-    db.synthetic_write(salsa::Durability::HIGH);
+    for _ in 1..16 {
+        db.synthetic_write(salsa::Durability::HIGH);
+    }
     assert_eq!(load_n_potatoes(), 32);
-
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 0);
 
@@ -139,9 +136,9 @@ fn lru_keeps_dependency_info() {
     // Advance enough revisions to evict the inner memo values. Use a maintenance
     // budget large enough to inspect the entire cohort on each due revision.
     get_hot_potato::set_lru_capacity(&mut db, input_count);
-    db.synthetic_write(salsa::Durability::HIGH);
-    db.synthetic_write(salsa::Durability::HIGH);
-    db.synthetic_write(salsa::Durability::HIGH);
+    for _ in 0..16 {
+        db.synthetic_write(salsa::Durability::HIGH);
+    }
     assert_eq!(load_n_potatoes(), 0);
 
     // We want to test that calls to `get_hot_potato2` are still considered

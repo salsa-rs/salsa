@@ -13,10 +13,11 @@ fn parse(db: &dyn Db, input: SourceFile) -> Ast {
 ```
 
 The value is currently a minimum per-revision inspection budget, not a hard
-capacity. New values receive multiple revisions of grace. Values that are reused
-across revisions move into older generations, while values that remain cold
-across repeated inspections are evicted. Large due cohorts are processed
-incrementally across revisions to limit maintenance pauses.
+capacity. New values enter a compact probation cohort for 16 revisions. Values
+reused during probation become full residents and can move through warm, hot,
+and tenured generations; one-shot values are evicted directly when probation
+expires. Large due cohorts are processed incrementally across revisions to limit
+maintenance pauses.
 
 ### Zero-Cost When Disabled
 
