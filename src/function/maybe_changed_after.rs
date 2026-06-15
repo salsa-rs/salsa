@@ -1,6 +1,7 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
+use crate::function::eviction::MemoValue;
 use crate::function::memo::{MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::{ClaimGuard, ClaimResult};
 use crate::function::{Configuration, EvictionPolicy, IngredientImpl, Reentrancy};

@@ -4,10 +4,12 @@
 //! eviction strategies to be used for salsa tracked functions.
 
 mod lru;
+mod memo_value;
 mod noop;
 mod volatile;
 
 pub use lru::Lru;
+pub use memo_value::MemoValue;
 pub use noop::NoopEviction;
 pub use volatile::Volatile;
 
@@ -18,6 +20,14 @@ use crate::Id;
 /// Implementations control when memoized values are evicted from the cache.
 /// The eviction policy is selected at compile time via the `Configuration` trait.
 pub trait EvictionPolicy: Send + Sync {
+    /// Storage used for memoized values under this policy.
+    #[doc(hidden)]
+    type Value<T: Send + Sync>: MemoValue<T>;
+
+    /// Whether the memo allocation contains the output value itself.
+    #[doc(hidden)]
+    const STORES_VALUE_INLINE: bool = true;
+
     /// Whether this policy can retire memo values within a revision.
     const RETIRES_VALUES: bool = false;
 

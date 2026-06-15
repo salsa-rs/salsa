@@ -65,11 +65,6 @@ impl SyncTable {
         }
     }
 
-    pub(crate) fn lock_if_unclaimed(&self, key_index: Id) -> Option<SyncGuard<'_>> {
-        let syncs = self.syncs.lock();
-        (!syncs.contains_key(&key_index)).then_some(syncs)
-    }
-
     /// Claims the given key index, or blocks if it is running on another thread.
     pub(crate) fn try_claim<'me>(
         &'me self,

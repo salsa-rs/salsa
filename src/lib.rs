@@ -270,6 +270,7 @@ mod tracing;
 mod tracked_struct;
 mod update;
 mod views;
+mod volatile;
 mod zalsa;
 mod zalsa_local;
 
@@ -301,6 +302,7 @@ pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::storage::{Storage, StorageHandle};
 pub use self::update::{Update, update_fallback};
+pub use self::volatile::Volatile;
 pub use self::zalsa::IngredientIndex;
 pub use self::zalsa_local::CancellationToken;
 pub use crate::attach::{attach, attach_allow_change, with_attached_database};
@@ -401,7 +403,9 @@ pub mod plumbing {
         pub use crate::function::Configuration;
         pub use crate::function::IngredientImpl;
         pub use crate::function::Memo;
-        pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction, Volatile};
+        pub use crate::function::{
+            EvictionPolicy, HasCapacity, Lru, MemoValue, NoopEviction, Volatile,
+        };
         pub use crate::table::memo::MemoEntryType;
     }
 

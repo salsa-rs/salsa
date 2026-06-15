@@ -526,17 +526,6 @@ pub(crate) struct QueryRevisions {
 }
 
 impl QueryRevisions {
-    pub(crate) fn clone_for_eviction(&self) -> Option<Self> {
-        Some(Self {
-            changed_at: self.changed_at,
-            durability: self.durability,
-            origin_and_extra: self.origin_and_extra.clone_for_eviction()?,
-            #[cfg(feature = "accumulator")]
-            accumulated_inputs: self.accumulated_inputs.clone(),
-            verified_final: AtomicBool::new(self.verified_final.load(Ordering::Relaxed)),
-        })
-    }
-
     /// Returns the semantic origin of this query.
     #[inline]
     pub(crate) const fn origin(&self) -> QueryOriginRef<'_> {
@@ -704,24 +693,6 @@ fn is_false(value: &bool) -> bool {
 }
 
 impl QueryRevisionsExtraInner {
-    fn clone_for_eviction(&self) -> Option<Self> {
-        #[cfg(feature = "accumulator")]
-        if !self.accumulated.is_empty() {
-            return None;
-        }
-
-        Some(Self {
-            #[cfg(feature = "accumulator")]
-            accumulated: AccumulatedMap::default(),
-            cycle_heads: self.cycle_heads.clone(),
-            tracked_struct_ids: self.tracked_struct_ids.clone(),
-            iteration: self.iteration.load().into(),
-            cycle_converged: self.cycle_converged,
-            participated_in_cycle: self.participated_in_cycle,
-            poisoned: self.poisoned,
-        })
-    }
-
     fn empty() -> Self {
         QueryRevisionsExtraInner {
             #[cfg(feature = "accumulator")]
@@ -1103,22 +1074,6 @@ where
 }
 
 impl OriginAndExtra {
-    fn clone_for_eviction(&self) -> Option<Self> {
-        let extra = match self.extra() {
-            Some(extra) => QueryRevisionsExtra(Some(extra.clone_for_eviction()?)),
-            None => QueryRevisionsExtra(None),
-        };
-
-        Some(match self.origin() {
-            QueryOriginRef::Assigned(key) => match extra.0 {
-                Some(extra) => Self::assigned_with_extra(key, extra),
-                None => Self::assigned(key),
-            },
-            QueryOriginRef::Derived(edges) => Self::derived(edges.iter(), extra),
-            QueryOriginRef::DerivedUntracked(edges) => Self::derived_untracked(edges.iter(), extra),
-        })
-    }
-
     #[inline]
     pub(crate) fn derived<I>(input_outputs: I, extra: QueryRevisionsExtra) -> Self
     where
@@ -1857,14 +1812,6 @@ impl<'a> QueryEdges<'a> {
     const fn wide(edges: &'a [QueryEdge]) -> Self {
         QueryEdges {
             data: QueryEdgesData::Wide(edges),
-        }
-    }
-
-    #[cfg(feature = "accumulator")]
-    pub(crate) const fn len(self) -> usize {
-        match self.data {
-            QueryEdgesData::Packed(edges) => edges.len(),
-            QueryEdgesData::Wide(edges) => edges.len(),
         }
     }
 

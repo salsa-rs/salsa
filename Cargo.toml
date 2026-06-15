@@ -21,6 +21,7 @@ exclude = [
 salsa-macro-rules = { version = "0.27.2", path = "components/salsa-macro-rules" }
 salsa-macros = { version = "0.27.2", path = "components/salsa-macros", optional = true }
 
+arc-swap = "1"
 boxcar = "0.2.14"
 crossbeam-epoch = "0.9.18"
 crossbeam-queue = "0.3.12"

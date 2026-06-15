@@ -37,7 +37,11 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch_with(db, zalsa, zalsa_local, key, |_| ());
+        if C::Eviction::RETIRES_VALUES {
+            drop(self.fetch_volatile(db, zalsa, zalsa_local, key));
+        } else {
+            self.fetch(db, zalsa, zalsa_local, key);
+        }
 
         let db_key = self.database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();

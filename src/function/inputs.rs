@@ -19,7 +19,7 @@ where
             return;
         };
         let origin = memo.header.origin();
-        inputs.reserve(origin.edges().len());
+        inputs.reserve(origin.edges().iter().len());
         inputs.extend(origin.inputs().rev());
     }
 }

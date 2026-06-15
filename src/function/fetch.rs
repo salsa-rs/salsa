@@ -1,5 +1,5 @@
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
-use crate::function::eviction::EvictionPolicy;
+use crate::function::eviction::{EvictionPolicy, MemoValue};
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
@@ -21,45 +21,8 @@ where
     ) -> &'db C::Output<'db> {
         assert!(
             !C::Eviction::RETIRES_VALUES,
-            "retiring eviction policies must use `fetch_with`"
+            "retiring eviction policies must use `fetch_volatile`"
         );
-
-        // SAFETY: Non-retiring eviction policies keep removed memos alive until
-        // the next revision, which requires exclusive access to the database.
-        unsafe { self.fetch_ref(db, zalsa, zalsa_local, id) }
-    }
-
-    /// Fetches a value and applies `operation` while the memo remains protected
-    /// from concurrent reclamation.
-    #[inline]
-    pub fn fetch_with<'db, R>(
-        &'db self,
-        db: &'db C::DbView,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        id: Id,
-        operation: impl for<'value> FnOnce(&'value C::Output<'db>) -> R,
-    ) -> R {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
-
-        // SAFETY: `_guard` keeps a retiring memo alive until `operation` has
-        // produced a result that cannot borrow from the memo value.
-        operation(unsafe { self.fetch_ref(db, zalsa, zalsa_local, id) })
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the returned reference remains valid while
-    /// it is used, either because memos cannot be retired within the revision
-    /// or because it holds a memo read guard.
-    #[inline]
-    unsafe fn fetch_ref<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        id: Id,
-    ) -> &'db C::Output<'db> {
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);
@@ -68,9 +31,10 @@ where
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
-
-        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
-        let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
+        let memo_value = memo
+            .value
+            .borrow_inline()
+            .expect("a refreshed memo must contain a value");
 
         self.eviction.record_use(id);
 
@@ -87,6 +51,45 @@ where
         );
 
         memo_value
+    }
+
+    /// Fetches an owned handle to a volatile memoized value.
+    #[inline]
+    pub fn fetch_volatile<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        id: Id,
+    ) -> crate::Volatile<C::Output<'db>> {
+        assert!(
+            C::Eviction::RETIRES_VALUES,
+            "non-retiring eviction policies must use `fetch`"
+        );
+
+        zalsa.unwind_if_revision_cancelled(zalsa_local);
+        let _guard = self.memo_read_guard();
+        let database_key_index = self.database_key_index(id);
+
+        loop {
+            let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+            let Some(value) = memo.value.load_volatile() else {
+                continue;
+            };
+
+            zalsa_local.report_tracked_read(
+                database_key_index,
+                memo.header.revisions.durability,
+                memo.header.revisions.changed_at,
+                memo.header.cycle_heads(),
+                #[cfg(feature = "accumulator")]
+                memo.header.revisions.accumulated().is_some(),
+                #[cfg(feature = "accumulator")]
+                &memo.header.revisions.accumulated_inputs,
+            );
+
+            return crate::Volatile(value);
+        }
     }
 
     #[inline(always)]
@@ -122,7 +125,9 @@ where
     ) -> Option<&'db Memo<'db, C>> {
         let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
 
-        memo.value.as_ref()?;
+        if !memo.value.is_some() {
+            return None;
+        }
 
         let database_key_index = self.database_key_index(id);
 

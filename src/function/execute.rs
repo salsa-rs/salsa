@@ -2,6 +2,7 @@ use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp};
+use crate::function::eviction::MemoValue;
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
@@ -230,7 +231,7 @@ where
                 memo
             });
 
-            let last_provisional_value = last_provisional_memo.value.as_ref();
+            let last_provisional_value = last_provisional_memo.value.load();
 
             let last_provisional_value = last_provisional_value.expect(
                 "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
@@ -258,12 +259,12 @@ where
                 new_value = C::recover_from_cycle(
                     db,
                     &cycle,
-                    last_provisional_value,
+                    &last_provisional_value,
                     new_value,
                     C::id_to_input(zalsa, id),
                 );
 
-                C::values_equal(&new_value, last_provisional_value)
+                C::values_equal(&new_value, &last_provisional_value)
             };
 
             let new_cycle_heads = active_query.take_cycle_heads();

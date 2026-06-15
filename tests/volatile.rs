@@ -135,7 +135,7 @@ fn volatile_accumulate(db: &dyn salsa::Database, input: MyInput) -> u32 {
 #[salsa::tracked]
 fn outer_value(db: &dyn salsa::Database, input: MyInput) -> u32 {
     OUTER_EXECUTIONS.with(|n| n.fetch_add(1, Ordering::SeqCst));
-    volatile_value(db, input) + 1
+    *volatile_value(db, input) + 1
 }
 
 #[salsa::tracked(volatile = 2, cycle_initial=cycle_initial)]
@@ -156,14 +156,14 @@ fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id, _input: MyInput) -> 
 fn fill_volatile_cache(db: &salsa::DatabaseImpl) {
     for field in FILL_FIELDS {
         let input = MyInput::new(db, field);
-        assert_eq!(volatile_value(db, input), field);
+        assert_eq!(*volatile_value(db, input), field);
     }
 }
 
 fn fill_volatile_cycle_cache(db: &salsa::DatabaseImpl) {
     for field in FILL_FIELDS {
         let input = MyInput::new(db, field);
-        assert_eq!(volatile_cycle_value(db, input), field);
+        assert_eq!(*volatile_cycle_value(db, input), field);
     }
 }
 
@@ -173,14 +173,14 @@ fn volatile_evicts_automatically_without_new_revision() {
     let db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
 
-    assert_eq!(volatile_value(&db, input), 22);
-    assert_eq!(volatile_value(&db, input), 22);
+    assert_eq!(*volatile_value(&db, input), 22);
+    assert_eq!(*volatile_value(&db, input), 22);
     assert_eq!(volatile_executions(), 1);
 
     fill_volatile_cache(&db);
 
     let executions_before_refetch = volatile_executions();
-    assert_eq!(volatile_value(&db, input), 22);
+    assert_eq!(*volatile_value(&db, input), 22);
     assert_eq!(volatile_executions(), executions_before_refetch + 1);
 }
 
@@ -189,7 +189,7 @@ fn volatile_supports_copy_return_mode() {
     let db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
 
-    assert_eq!(volatile_copy(&db, input), 22);
+    assert_eq!(*volatile_copy(&db, input), 22);
 }
 
 #[test]
@@ -233,6 +233,26 @@ fn volatile_drops_values_without_new_revision() {
     assert!(live_values() < 1_024);
 }
 
+#[test]
+fn volatile_handle_keeps_an_evicted_value_alive() {
+    assert_eq!(live_values(), 0);
+    let db = salsa::DatabaseImpl::new();
+    let input = MyInput::new(&db, 22);
+    let original = volatile_arc(&db, input);
+
+    for field in FILL_FIELDS {
+        let input = MyInput::new(&db, field);
+        drop(volatile_arc(&db, input));
+    }
+
+    let replacement = volatile_arc(&db, input);
+    assert!(!Arc::ptr_eq(&original, &replacement));
+
+    let before_drop = live_values();
+    drop(original);
+    assert_eq!(live_values(), before_drop - 1);
+}
+
 #[cfg(feature = "accumulator")]
 #[test]
 fn volatile_keeps_escaped_accumulated_values_alive() {
@@ -245,11 +265,11 @@ fn volatile_keeps_escaped_accumulated_values_alive() {
 
     for field in FILL_FIELDS {
         let input = MyInput::new(&db, field);
-        assert_eq!(volatile_accumulate(&db, input), field);
+        assert_eq!(*volatile_accumulate(&db, input), field);
     }
 
     let executions_before_refetch = accumulate_executions();
-    assert_eq!(volatile_accumulate(&db, input), 22);
+    assert_eq!(*volatile_accumulate(&db, input), 22);
     assert_eq!(accumulate_executions(), executions_before_refetch);
     assert_eq!(logs[0].0, 22);
 }
@@ -268,7 +288,7 @@ fn volatile_eviction_is_safe_with_parallel_reads() {
             std::thread::spawn(move || {
                 for _ in 0..10 {
                     for input in &inputs {
-                        assert!(*volatile_arc(&db, *input) == LiveValue);
+                        assert!(**volatile_arc(&db, *input) == LiveValue);
                     }
                 }
             })
@@ -296,7 +316,7 @@ fn volatile_eviction_is_safe_with_memory_usage() {
             barrier.wait();
             for _ in 0..10 {
                 for input in &inputs {
-                    assert!(*volatile_arc(&db, *input) == LiveValue);
+                    assert!(**volatile_arc(&db, *input) == LiveValue);
                 }
             }
         })
@@ -335,7 +355,7 @@ fn volatile_does_not_evict_cycle_participants() {
     let db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
 
-    assert_eq!(volatile_value(&db, input), 22);
+    assert_eq!(*volatile_value(&db, input), 22);
     let cycle_value = volatile_cycle_value(&db, input);
 
     fill_volatile_cache(&db);
@@ -344,7 +364,7 @@ fn volatile_does_not_evict_cycle_participants() {
     let volatile_before = volatile_executions();
     let cycle_before = cycle_executions();
 
-    assert_eq!(volatile_value(&db, input), 22);
+    assert_eq!(*volatile_value(&db, input), 22);
     assert_eq!(volatile_cycle_value(&db, input), cycle_value);
 
     assert!(volatile_executions() > volatile_before);

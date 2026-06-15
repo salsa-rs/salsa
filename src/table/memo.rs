@@ -326,52 +326,6 @@ impl MemoTableWithTypes<'_> {
         NonNull::new(old_memo).map(|old_memo| unsafe { MemoEntryType::from_dummy(old_memo) })
     }
 
-    pub(crate) fn compare_exchange<M: Memo>(
-        self,
-        memo_ingredient_index: MemoIngredientIndex,
-        current: NonNull<M>,
-        new: NonNull<M>,
-    ) -> Result<NonNull<M>, NonNull<M>> {
-        let MemoEntry { atomic_memo } = self
-            .memos
-            .memos
-            .get(memo_ingredient_index.as_usize())
-            .ok_or(new)?;
-
-        // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
-        // corresponding `MemoTableTypes`, by construction.
-        let type_ = unsafe {
-            self.types
-                .types
-                .get_unchecked(memo_ingredient_index.as_usize())
-        };
-
-        // Verify that the we are casting to the correct type.
-        if type_.type_id != TypeId::of::<M>() {
-            type_assert_failed(memo_ingredient_index);
-        }
-
-        let current = MemoEntryType::to_dummy(current);
-        let new = MemoEntryType::to_dummy(new);
-
-        atomic_memo
-            .compare_exchange(
-                current.as_ptr(),
-                new.as_ptr(),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .map(|old_memo| {
-                // SAFETY: We asserted that the type is correct above, and a successful
-                // compare-exchange returns the previous pointer, which matched `current`.
-                unsafe { MemoEntryType::from_dummy(NonNull::new_unchecked(old_memo)) }
-            })
-            .map_err(|_| {
-                // SAFETY: We asserted that the type is correct above.
-                unsafe { MemoEntryType::from_dummy(new) }
-            })
-    }
-
     /// Returns a pointer to the memo at the given index, if one has been inserted.
     #[inline]
     pub(crate) fn get<M: Memo>(

@@ -1,5 +1,7 @@
 //! Random-replacement eviction for volatile query values.
 
+use arc_swap::ArcSwapOption;
+
 use crate::Id;
 use crate::hash::hash;
 use crate::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -28,6 +30,9 @@ impl Volatile {
 }
 
 impl EvictionPolicy for Volatile {
+    type Value<T: Send + Sync> = ArcSwapOption<T>;
+
+    const STORES_VALUE_INLINE: bool = false;
     const RETIRES_VALUES: bool = true;
 
     fn new(capacity: usize) -> Self {

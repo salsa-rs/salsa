@@ -6,6 +6,7 @@ use std::ptr::NonNull;
 use crate::cycle::{
     CycleHeads, CycleHeadsIterator, IterationStamp, ProvisionalStatus, empty_cycle_heads,
 };
+use crate::function::eviction::{EvictionPolicy, MemoValue};
 use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
@@ -66,24 +67,22 @@ impl<C: Configuration> IngredientImpl<C> {
         let map = |memo: &mut Memo<'static, C>| {
             if memo.header.can_evict_value() {
                 // Set the memo value to `None`.
-                memo.value = None;
+                memo.value = <C::Eviction as EvictionPolicy>::Value::new(None);
             }
         };
 
         table.map_memo(memo_ingredient_index, map)
     }
 
-    /// Replaces the current memo for `id` with an equivalent value-less memo.
-    ///
-    /// Unlike [`Self::evict_value_from_memo_for`], this can run with `&self`.
-    /// The old memo is freed once active guarded readers have exited.
+    /// Atomically clears the current memo's value while retaining its metadata.
     pub(super) fn evict_value_from_memo(&self, zalsa: &Zalsa, id: Id) -> bool {
+        let _guard = self.memo_read_guard();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index) else {
             return true;
         };
 
-        if old_memo.value.is_none() {
+        if !old_memo.value.is_some() {
             return true;
         }
 
@@ -91,59 +90,28 @@ impl<C: Configuration> IngredientImpl<C> {
             return false;
         }
 
-        // Prevent a query from acquiring provisional cycle state between the
-        // checks below and publishing the value-less replacement.
-        let Some(_unclaimed) = self.sync_table.lock_if_unclaimed(id) else {
+        if !old_memo.can_evict_volatile() {
             return false;
-        };
+        }
 
+        // Cycle participation is fixed when a memo is published. An execution
+        // that newly enters a cycle publishes a different provisional memo, so
+        // concurrently clearing this value cannot erase its cycle state.
         if old_memo.header.was_cycle_participant() {
             return false;
         }
 
-        let Some(revisions) = old_memo.header.revisions.clone_for_eviction() else {
-            return false;
-        };
-
-        let verified_at = old_memo.header.verified_at.load();
-        let new_memo = NonNull::from(Box::leak(Box::new(Memo::new(None, verified_at, revisions))));
-        let old_memo = NonNull::from(old_memo);
-
-        // SAFETY: The memo table stores `'static` memos to support type erasure.
-        // The replacement memo has no value, so it does not carry borrowed output data.
-        let new_memo =
-            unsafe { transmute::<NonNull<Memo<'_, C>>, NonNull<Memo<'static, C>>>(new_memo) };
-        // SAFETY: The table stores this memo as `'static`; the allocation stays
-        // alive through the retired memo queue.
-        let old_memo =
-            unsafe { transmute::<NonNull<Memo<'_, C>>, NonNull<Memo<'static, C>>>(old_memo) };
-
-        match zalsa
-            .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .compare_exchange(memo_ingredient_index, old_memo, new_memo)
-        {
-            Ok(old_memo) => {
-                // SAFETY: The old memo was just removed from the table. Guarded readers
-                // keep it alive until they finish cloning its value.
-                unsafe { self.deleted_entries.push_retired(old_memo) }
-                true
-            }
-            Err(_) => {
-                // SAFETY: `new_memo` was never published.
-                unsafe { drop(Box::from_raw(new_memo.as_ptr())) };
-                false
-            }
-        }
+        old_memo.value.clear();
+        true
     }
 }
 
-#[derive(Debug)]
 pub struct Memo<'db, C: Configuration> {
     /// Configuration-independent state used to validate and manage this memo.
     pub(super) header: MemoHeader,
 
     /// The result of the query, if we decide to memoize it.
-    pub(super) value: Option<C::Output<'db>>,
+    pub(super) value: <C::Eviction as EvictionPolicy>::Value<C::Output<'db>>,
 }
 
 #[derive(Debug)]
@@ -281,7 +249,7 @@ impl<'db, C: Configuration> Memo<'db, C> {
         revisions: QueryRevisions,
     ) -> Self {
         Self {
-            value,
+            value: <C::Eviction as EvictionPolicy>::Value::new(value),
             header: MemoHeader::new(revision_now, revisions),
         }
     }
@@ -292,10 +260,11 @@ impl<'db, C: Configuration> Memo<'db, C> {
         Self::new(None, revision_now, revisions)
     }
 
-    /// Returns whether volatile eviction can free this memo after guarded accesses drain.
+    /// Returns whether this memo supports within-revision volatile eviction.
     ///
-    /// Accumulated values are returned by reference and can outlive a memo read guard.
-    pub(super) fn can_drop_volatile_after_readers(&self) -> bool {
+    /// Accumulated values escape by reference and recomputing would duplicate
+    /// those side-channel results.
+    pub(super) fn can_evict_volatile(&self) -> bool {
         #[cfg(feature = "accumulator")]
         if self.header.revisions.accumulated().is_some() {
             return false;
@@ -329,8 +298,13 @@ where
         let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
         let output_size = std::mem::size_of::<C::Output<'static>>();
         let (size_of_metadata, size_of_fields, heap_size_of_fields) =
-            if let Some(value) = self.value.as_ref() {
-                (size_of - output_size, output_size, C::heap_size(value))
+            if let Some(value) = self.value.load() {
+                let metadata = if C::Eviction::STORES_VALUE_INLINE {
+                    size_of - output_size
+                } else {
+                    size_of
+                };
+                (metadata, output_size, C::heap_size(&value))
             } else {
                 (size_of, 0, Some(0))
             };
@@ -351,7 +325,8 @@ where
 #[cfg(feature = "persistence")]
 mod persistence {
     use crate::function::Configuration;
-    use crate::function::memo::{Memo, MemoHeader};
+    use crate::function::eviction::{EvictionPolicy, MemoValue};
+    use crate::function::memo::Memo;
     use crate::revision::AtomicRevision;
     use crate::zalsa_local::QueryRevisions;
     use crate::zalsa_local::persistence::{MappedQueryRevisions, PersistentQueryOrigin};
@@ -359,9 +334,18 @@ mod persistence {
     use serde::Deserialize;
     use serde::ser::SerializeStruct;
 
-    /// A reference to the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
-    pub(crate) struct MappedMemo<'memo, 'db, C: Configuration> {
-        pub(crate) value: Option<&'memo C::Output<'db>>,
+    type ValueStorage<'db, C> = <<C as Configuration>::Eviction as EvictionPolicy>::Value<
+        <C as Configuration>::Output<'db>,
+    >;
+    type ValueGuard<'memo, 'db, C> =
+        <ValueStorage<'db, C> as MemoValue<<C as Configuration>::Output<'db>>>::Guard<'memo>;
+
+    /// A view of the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
+    pub(crate) struct MappedMemo<'memo, 'db, C: Configuration>
+    where
+        ValueStorage<'db, C>: 'memo,
+    {
+        pub(crate) value: Option<ValueGuard<'memo, 'db, C>>,
         pub(crate) verified_at: AtomicRevision,
         pub(crate) revisions: MappedQueryRevisions<'memo>,
     }
@@ -371,26 +355,18 @@ mod persistence {
             &self,
             serialized_origin: PersistentQueryOrigin,
         ) -> MappedMemo<'_, 'db, C> {
-            let Memo {
-                ref value,
-                ref header,
-            } = *self;
-            let MemoHeader {
-                ref verified_at,
-                ref revisions,
-            } = *header;
-
             MappedMemo {
-                value: value.as_ref(),
-                verified_at: AtomicRevision::from(verified_at.load()),
-                revisions: revisions.with_origin(serialized_origin),
+                value: self.value.load(),
+                verified_at: AtomicRevision::from(self.header.verified_at.load()),
+                revisions: self.header.revisions.with_origin(serialized_origin),
             }
         }
     }
 
-    impl<C> serde::Serialize for MappedMemo<'_, '_, C>
+    impl<'memo, 'db, C> serde::Serialize for MappedMemo<'memo, 'db, C>
     where
         C: Configuration,
+        ValueStorage<'db, C>: 'memo,
     {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -416,9 +392,10 @@ mod persistence {
                 revisions,
             } = self;
 
-            let value = value.expect(
+            let value = value.as_ref().expect(
                 "attempted to serialize memo where `Memo::should_serialize` returned `false`",
             );
+            let value: &C::Output<'db> = std::ops::Deref::deref(value);
 
             let mut s = serializer.serialize_struct("Memo", 3)?;
             s.serialize_field("value", &SerializeValue::<C>(value))?;
@@ -463,13 +440,11 @@ mod persistence {
 
             let memo = DeserializeMemo::<C>::deserialize(deserializer)?;
 
-            Ok(Memo {
-                value: Some(memo.value.0),
-                header: MemoHeader {
-                    verified_at: memo.verified_at,
-                    revisions: memo.revisions,
-                },
-            })
+            Ok(Memo::new(
+                Some(memo.value.0),
+                memo.verified_at.load(),
+                memo.revisions,
+            ))
         }
     }
 }

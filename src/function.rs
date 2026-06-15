@@ -37,7 +37,7 @@ mod memo;
 mod specify;
 mod sync;
 
-pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction, Volatile};
+pub use eviction::{EvictionPolicy, HasCapacity, Lru, MemoValue, NoopEviction, Volatile};
 
 pub type Memo<C> = memo::Memo<'static, C>;
 
@@ -281,18 +281,16 @@ where
         // FIXME: Use `Box::into_non_null` once stable
         let memo = NonNull::from(Box::leak(Box::new(memo)));
 
-        if let Some(old_value) =
+        if let Some(old_memo) =
             self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
         {
             // SAFETY: Volatile memo accesses are guarded. Memos containing accumulated
             // values remain revision-delayed because those values can escape by reference.
             unsafe {
-                if C::Eviction::RETIRES_VALUES
-                    && old_value.as_ref().can_drop_volatile_after_readers()
-                {
-                    self.deleted_entries.push_retired(old_value);
+                if C::Eviction::RETIRES_VALUES && old_memo.as_ref().can_evict_volatile() {
+                    self.deleted_entries.push_retired(old_memo);
                 } else {
-                    self.deleted_entries.push(old_value);
+                    self.deleted_entries.push(old_memo);
                 }
             }
         }

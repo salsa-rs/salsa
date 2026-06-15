@@ -95,7 +95,13 @@ macro_rules! setup_tracked_fn {
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
             $($input_id: $input_ty,)*
-        ) -> ::salsa::plumbing::return_mode_ty!(($return_mode, __), $db_lt, $output_ty) {
+        ) -> ::salsa::plumbing::macro_if! {
+            if $is_volatile {
+                ::salsa::Volatile<$output_ty>
+            } else {
+                ::salsa::plumbing::return_mode_ty!(($return_mode, __), $db_lt, $output_ty)
+            }
+        } {
             use ::salsa::plumbing as $zalsa;
 
             $zalsa::attach($db, || {
@@ -115,9 +121,7 @@ macro_rules! setup_tracked_fn {
 
                 $zalsa::macro_if! {
                     if $is_volatile {
-                        ingredient.fetch_with($db, zalsa, zalsa_local, key, |result| {
-                            $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
-                        })
+                        ingredient.fetch_volatile($db, zalsa, zalsa_local, key)
                     } else {
                         let result = ingredient.fetch($db, zalsa, zalsa_local, key);
                         $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
