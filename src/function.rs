@@ -269,6 +269,8 @@ where
         mut memo: memo::Memo<'db, C>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<'db, C> {
+        let has_value = memo.value.is_some();
+
         if let Some(tracked_struct_ids) = memo.revisions.tracked_struct_ids_mut() {
             tracked_struct_ids.shrink_to_fit();
         }
@@ -278,15 +280,24 @@ where
         // FIXME: Use `Box::into_non_null` once stable
         let memo = NonNull::from(Box::leak(Box::new(memo)));
 
-        if let Some(old_value) =
-            self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
-        {
+        let old_value = self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index);
+        let became_resident = has_value
+            && old_value.is_none_or(|old_value| {
+                // SAFETY: The old memo remains allocated in `deleted_entries` until the next
+                // revision, so it is valid to inspect here.
+                unsafe { old_value.as_ref().value.is_none() }
+            });
+
+        if let Some(old_value) = old_value {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             //
             // SAFETY: Once the revision starts, there will be no outstanding borrows to the
             // memo contents, and so it will be safe to free.
             unsafe { self.deleted_entries.push(old_value) };
+        }
+        if became_resident {
+            self.eviction.admit(id);
         }
         // SAFETY: memo has been inserted into the table
         unsafe { self.extend_memo_lifetime(memo.as_ref()) }

@@ -13,7 +13,10 @@ impl EvictionPolicy for NoopEviction {
     }
 
     #[inline(always)]
-    fn record_use(&self, _id: Id) {}
+    fn admit(&self, _id: Id) {}
+
+    #[inline(always)]
+    fn promote(&self, _id: Id) {}
 
     #[inline(always)]
     fn set_capacity(&mut self, _capacity: usize) {}

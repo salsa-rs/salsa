@@ -37,7 +37,14 @@ impl EvictionPolicy for Lru {
     }
 
     #[inline(always)]
-    fn record_use(&self, id: Id) {
+    fn admit(&self, id: Id) {
+        if self.capacity.is_some() {
+            self.insert(id);
+        }
+    }
+
+    #[inline(always)]
+    fn promote(&self, id: Id) {
         if self.capacity.is_some() {
             self.insert(id);
         }
