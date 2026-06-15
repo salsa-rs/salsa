@@ -4,6 +4,7 @@
 //! touch the policy: reuse is detected lazily from the memo's existing
 //! `verified_at` revision when a resident becomes due for inspection.
 
+use std::collections::VecDeque;
 use std::hash::BuildHasher;
 use std::num::NonZeroUsize;
 
@@ -20,13 +21,14 @@ const GENERATIONS: u8 = 4;
 const WHEEL_SIZE: usize = 64;
 const GHOST_HORIZON: usize = 8;
 const MIN_ADAPTIVE_SAMPLE: usize = 32;
+const TARGET_BACKLOG_REVISIONS: usize = 8;
 
 /// An adaptive generational collector selected by the existing `lru` option.
 ///
-/// The configured value is an activation and minimum growth threshold, not a
+/// The configured value is a minimum per-revision maintenance budget, not a
 /// hard resident-value limit.
 pub struct Lru {
-    activation_floor: Option<NonZeroUsize>,
+    maintenance_floor: Option<NonZeroUsize>,
     hasher: FxBuildHasher,
     shift: u32,
     admissions: Box<[CachePadded<Mutex<Vec<Admission>>>]>,
@@ -51,21 +53,28 @@ struct Resident {
 
 struct State {
     wheel: [Vec<Resident>; WHEEL_SIZE],
+    /// Due buckets detached from the wheel so advancing the clock never has to
+    /// process an entire cohort in one revision.
+    due_cohorts: VecDeque<Vec<Resident>>,
+    /// Empty cohort allocations retained for reuse by wheel buckets.
+    spare_buffers: Vec<Vec<Resident>>,
+    due_count: usize,
     epoch: usize,
     resident_count: usize,
-    next_collection: usize,
     next_admission_shard: usize,
     evictions_by_epoch: [usize; GHOST_HORIZON],
     controller: AdaptiveController,
 }
 
 impl State {
-    fn new(activation_floor: usize) -> Self {
+    fn new() -> Self {
         Self {
             wheel: std::array::from_fn(|_| Vec::new()),
+            due_cohorts: VecDeque::new(),
+            spare_buffers: Vec::new(),
+            due_count: 0,
             epoch: 0,
             resident_count: 0,
-            next_collection: activation_floor,
             next_admission_shard: 0,
             evictions_by_epoch: [0; GHOST_HORIZON],
             controller: AdaptiveController::default(),
@@ -73,13 +82,55 @@ impl State {
     }
 
     fn schedule(&mut self, resident: Resident, delay: usize) {
+        debug_assert!(delay < WHEEL_SIZE);
         let bucket = self.epoch.wrapping_add(delay) & (WHEEL_SIZE - 1);
+        if self.wheel[bucket].capacity() == 0 {
+            if let Some(buffer) = self.spare_buffers.pop() {
+                self.wheel[bucket] = buffer;
+            }
+        }
         self.wheel[bucket].push(resident);
     }
 
-    fn update_collection_target(&mut self, activation_floor: usize) {
-        let growth = (self.resident_count / 2).max(activation_floor);
-        self.next_collection = self.resident_count.saturating_add(growth);
+    fn queue_due_bucket(&mut self) {
+        let bucket = self.epoch & (WHEEL_SIZE - 1);
+        if self.wheel[bucket].is_empty() {
+            return;
+        }
+
+        let due = std::mem::take(&mut self.wheel[bucket]);
+        self.due_count += due.len();
+        self.due_cohorts.push_back(due);
+    }
+
+    fn pop_due(&mut self) -> Option<Resident> {
+        loop {
+            if let Some(resident) = self.due_cohorts.front_mut()?.pop() {
+                self.due_count -= 1;
+
+                if self.due_cohorts.front().is_some_and(Vec::is_empty) {
+                    self.recycle_front_cohort();
+                }
+
+                return Some(resident);
+            }
+
+            self.recycle_front_cohort();
+        }
+    }
+
+    fn recycle_front_cohort(&mut self) {
+        if let Some(buffer) = self.due_cohorts.pop_front() {
+            if self.spare_buffers.len() < WHEEL_SIZE {
+                self.spare_buffers.push(buffer);
+            }
+        }
+    }
+
+    fn maintenance_budget(&self, maintenance_floor: usize) -> usize {
+        // At this rate, a burst decays geometrically while a continuous stream
+        // reaches a stable backlog instead of growing without bound.
+        maintenance_floor.max(self.due_count.div_ceil(TARGET_BACKLOG_REVISIONS))
     }
 }
 
@@ -130,17 +181,17 @@ impl AdaptiveController {
 }
 
 impl Lru {
-    fn with_shards(activation_floor: usize, shards: usize) -> Self {
+    fn with_shards(maintenance_floor: usize, shards: usize) -> Self {
         assert!(shards > 1 && shards.is_power_of_two());
 
         Self {
-            activation_floor: NonZeroUsize::new(activation_floor),
+            maintenance_floor: NonZeroUsize::new(maintenance_floor),
             hasher: FxBuildHasher,
             shift: usize::BITS - shards.trailing_zeros(),
             admissions: (0..shards).map(|_| Default::default()).collect(),
-            state: State::new(activation_floor),
+            state: State::new(),
             current_epoch: AtomicUsize::new(0),
-            ghosts: GhostSketch::new(activation_floor),
+            ghosts: GhostSketch::new(maintenance_floor),
             refaults_by_epoch: std::array::from_fn(|_| AtomicUsize::new(0)),
         }
     }
@@ -197,6 +248,7 @@ impl Lru {
 
     fn advance_epoch(
         &mut self,
+        maintenance_floor: usize,
         last_verified_at: &mut impl FnMut(Id) -> Option<Revision>,
         evicted: &mut Vec<Id>,
     ) {
@@ -212,9 +264,12 @@ impl Lru {
             self.state.controller.observe(evictions, refaults);
         }
 
-        let bucket = self.state.epoch & (WHEEL_SIZE - 1);
-        let due = std::mem::take(&mut self.state.wheel[bucket]);
-        for mut resident in due {
+        self.state.queue_due_bucket();
+        let budget = self.state.maintenance_budget(maintenance_floor);
+        for _ in 0..budget {
+            let Some(mut resident) = self.state.pop_due() else {
+                break;
+            };
             let Some(verified_at) = last_verified_at(resident.id) else {
                 self.state.resident_count = self.state.resident_count.saturating_sub(1);
                 continue;
@@ -254,7 +309,7 @@ impl Lru {
 }
 
 impl EvictionPolicy for Lru {
-    fn new(activation_floor: usize) -> Self {
+    fn new(maintenance_floor: usize) -> Self {
         static SHARDS: OnceLock<usize> = OnceLock::new();
         let shards = *SHARDS.get_or_init(|| {
             let parallelism = std::thread::available_parallelism()
@@ -263,12 +318,12 @@ impl EvictionPolicy for Lru {
             (parallelism * 4).next_power_of_two()
         });
 
-        Self::with_shards(activation_floor, shards)
+        Self::with_shards(maintenance_floor, shards)
     }
 
     #[inline(always)]
     fn admit(&self, id: Id) {
-        if self.activation_floor.is_none() {
+        if self.maintenance_floor.is_none() {
             return;
         }
 
@@ -290,36 +345,33 @@ impl EvictionPolicy for Lru {
     #[inline(always)]
     fn promote(&self, _id: Id) {}
 
-    fn set_capacity(&mut self, activation_floor: usize) {
-        self.activation_floor = NonZeroUsize::new(activation_floor);
-        if self.activation_floor.is_none() {
+    fn set_capacity(&mut self, maintenance_floor: usize) {
+        self.maintenance_floor = NonZeroUsize::new(maintenance_floor);
+        if self.maintenance_floor.is_none() {
             for admissions in &mut self.admissions {
                 admissions.get_mut().clear();
             }
-            self.state = State::new(0);
+            self.state = State::new();
             self.current_epoch.store(0, Ordering::Relaxed);
             self.ghosts.clear();
             for refaults in &mut self.refaults_by_epoch {
                 *refaults.get_mut() = 0;
             }
-        } else {
-            self.state.next_collection = activation_floor;
         }
     }
 
     fn evict(&mut self, mut last_verified_at: impl FnMut(Id) -> Option<Revision>) -> Vec<Id> {
-        let Some(activation_floor) = self.activation_floor.map(NonZeroUsize::get) else {
+        let Some(maintenance_floor) = self.maintenance_floor.map(NonZeroUsize::get) else {
             return Vec::new();
         };
 
         self.drain_admissions(&mut last_verified_at);
-        if self.state.resident_count < self.state.next_collection {
+        if self.state.resident_count == 0 {
             return Vec::new();
         }
 
         let mut evicted = Vec::new();
-        self.advance_epoch(&mut last_verified_at, &mut evicted);
-        self.state.update_collection_target(activation_floor);
+        self.advance_epoch(maintenance_floor, &mut last_verified_at, &mut evicted);
         evicted
     }
 }
@@ -334,8 +386,8 @@ impl GhostSketch {
     const VALID: u64 = 1 << 63;
     const EPOCH_MASK: usize = (1 << 24) - 1;
 
-    fn new(activation_floor: usize) -> Self {
-        let len = activation_floor
+    fn new(maintenance_floor: usize) -> Self {
+        let len = maintenance_floor
             .saturating_mul(4)
             .clamp(256, 65_536)
             .next_power_of_two();
@@ -407,60 +459,65 @@ mod tests {
     }
 
     #[test]
-    fn cold_resident_requires_multiple_collection_epochs() {
+    fn cold_resident_ages_without_new_admissions() {
         let mut lru = Lru::with_shards(1, 2);
         let cold = id(0);
-        let trigger1 = id(1);
-        let trigger2 = id(2);
         let revision = Revision::start();
 
         lru.admit(cold);
         assert_eq!(lru.evict(revisions(&[(cold, revision)])), []);
-
-        lru.admit(trigger1);
-        assert_eq!(
-            lru.evict(revisions(&[(cold, revision), (trigger1, revision)])),
-            []
-        );
-
-        lru.admit(trigger2);
-        assert_eq!(
-            lru.evict(revisions(&[
-                (cold, revision),
-                (trigger1, revision),
-                (trigger2, revision),
-            ])),
-            [cold]
-        );
+        assert_eq!(lru.evict(revisions(&[(cold, revision)])), []);
+        assert_eq!(lru.evict(revisions(&[(cold, revision)])), [cold]);
     }
 
     #[test]
     fn reuse_promotes_a_resident() {
         let mut lru = Lru::with_shards(1, 2);
         let reused = id(0);
-        let trigger1 = id(1);
-        let trigger2 = id(2);
 
         lru.admit(reused);
         assert_eq!(lru.evict(revisions(&[(reused, Revision::start())])), []);
+        assert_eq!(lru.evict(revisions(&[(reused, Revision::from(2))])), []);
+        for _ in 0..4 {
+            assert_eq!(lru.evict(revisions(&[(reused, Revision::from(2))])), []);
+        }
+    }
 
-        lru.admit(trigger1);
-        assert_eq!(
-            lru.evict(revisions(&[
-                (reused, Revision::from(2)),
-                (trigger1, Revision::start()),
-            ])),
-            []
-        );
+    #[test]
+    fn large_due_cohort_is_processed_incrementally() {
+        let mut lru = Lru::with_shards(1, 2);
+        let entries: Vec<_> = (0..32)
+            .map(|index| (id(index), Revision::start()))
+            .collect();
 
-        lru.admit(trigger2);
-        assert_eq!(
-            lru.evict(revisions(&[
-                (reused, Revision::from(2)),
-                (trigger1, Revision::start()),
-                (trigger2, Revision::start()),
-            ])),
-            []
+        for &(id, _) in &entries {
+            lru.admit(id);
+        }
+
+        assert_eq!(lru.evict(revisions(&entries)), []);
+        assert_eq!(lru.state.due_count, 0);
+
+        assert_eq!(lru.evict(revisions(&entries)), []);
+        assert_eq!(lru.state.due_count, 28);
+        assert_eq!(lru.state.resident_count, 32);
+    }
+
+    #[test]
+    fn continuous_cold_admissions_converge() {
+        const ADMISSIONS_PER_REVISION: u32 = 32;
+
+        let mut lru = Lru::with_shards(1, 2);
+        for revision in 0..256 {
+            for offset in 0..ADMISSIONS_PER_REVISION {
+                lru.admit(id(revision * ADMISSIONS_PER_REVISION + offset));
+            }
+            lru.evict(|_| Some(Revision::start()));
+        }
+
+        assert!(
+            lru.state.resident_count < ADMISSIONS_PER_REVISION as usize * 32,
+            "cold resident set did not converge: {}",
+            lru.state.resident_count
         );
     }
 

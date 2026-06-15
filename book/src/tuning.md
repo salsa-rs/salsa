@@ -12,11 +12,11 @@ fn parse(db: &dyn Db, input: SourceFile) -> Ast {
 }
 ```
 
-The value is currently a minimum collection-growth threshold, not a hard
-capacity. New values receive multiple collection epochs of grace. Values that
-are reused across epochs move into older generations, while values that remain
-cold across repeated inspections are evicted. Collection epochs advance only
-after sufficient resident growth and only inspect the due generation.
+The value is currently a minimum per-revision inspection budget, not a hard
+capacity. New values receive multiple revisions of grace. Values that are reused
+across revisions move into older generations, while values that remain cold
+across repeated inspections are evicted. Large due cohorts are processed
+incrementally across revisions to limit maintenance pauses.
 
 ### Zero-Cost When Disabled
 
@@ -27,7 +27,7 @@ zero runtime overhead for functions that don't need cache eviction.
 ### Runtime Threshold Adjustment
 
 For functions with eviction enabled, the existing method adjusts the minimum
-growth threshold at runtime:
+per-revision inspection budget at runtime:
 
 ```rust
 #[salsa::tracked(lru = 128)]
@@ -35,7 +35,7 @@ fn my_query(db: &dyn Db, input: MyInput) -> Output {
     // ...
 }
 
-// Later, adjust the collection threshold:
+// Later, adjust the maintenance budget:
 my_query::set_lru_capacity(db, 256);
 ```
 

@@ -65,30 +65,24 @@ fn lru_works() {
     }
 
     assert_eq!(load_n_potatoes(), 32);
-    // The first collection epoch gives newly admitted values grace.
-    db.synthetic_write(salsa::Durability::HIGH);
+    // Values age without requiring any additional admissions. The maintenance
+    // budget spreads inspection of this cohort across revisions.
+    for _ in 0..5 {
+        db.synthetic_write(salsa::Durability::HIGH);
+    }
     assert_eq!(load_n_potatoes(), 32);
 
-    // Growing the resident set by 50% advances another collection epoch and
-    // marks the original cohort cold, but does not evict it yet.
-    for i in 32..48u32 {
-        let input = MyInput::new(&db, i);
-        get_hot_potato(&db, input);
-    }
     db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 48);
+    assert_eq!(load_n_potatoes(), 24);
 
-    // Another 50% growth gives the original cohort its second cold inspection.
-    for i in 48..72u32 {
-        let input = MyInput::new(&db, i);
-        get_hot_potato(&db, input);
+    for _ in 0..3 {
+        db.synthetic_write(salsa::Durability::HIGH);
     }
-    db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 40);
+    assert_eq!(load_n_potatoes(), 0);
 }
 
 #[test]
-fn lru_growth_floor_can_be_changed_at_runtime() {
+fn lru_maintenance_budget_can_be_changed_at_runtime() {
     let mut db = common::LoggerDatabase::default();
     assert_eq!(load_n_potatoes(), 0);
 
@@ -104,13 +98,12 @@ fn lru_growth_floor_can_be_changed_at_runtime() {
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
 
-    // Lowering the growth floor forces two more collection epochs. The first
-    // marks the cohort cold and the second evicts it.
-    get_hot_potato::set_lru_capacity(&mut db, 1);
+    // Raising the maintenance floor lets each due cohort be inspected in one
+    // revision. The first inspection marks the cohort cold.
+    get_hot_potato::set_lru_capacity(&mut db, 32);
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
 
-    get_hot_potato::set_lru_capacity(&mut db, 1);
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 0);
 
@@ -132,10 +125,9 @@ fn lru_growth_floor_can_be_changed_at_runtime() {
 #[test]
 fn lru_keeps_dependency_info() {
     let mut db = common::LoggerDatabase::default();
-    let activation_floor = 8;
+    let input_count = 9;
 
-    // Invoke `get_hot_potato2` enough times to cross the collection floor.
-    let inputs: Vec<MyInput> = (0..(activation_floor + 1))
+    let inputs: Vec<MyInput> = (0..input_count)
         .map(|i| MyInput::new(&db, i as u32))
         .collect();
 
@@ -144,11 +136,11 @@ fn lru_keeps_dependency_info() {
         assert_eq!(x as usize, i);
     }
 
-    // Advance enough collection epochs to evict the inner memo values.
+    // Advance enough revisions to evict the inner memo values. Use a maintenance
+    // budget large enough to inspect the entire cohort on each due revision.
+    get_hot_potato::set_lru_capacity(&mut db, input_count);
     db.synthetic_write(salsa::Durability::HIGH);
-    get_hot_potato::set_lru_capacity(&mut db, 1);
     db.synthetic_write(salsa::Durability::HIGH);
-    get_hot_potato::set_lru_capacity(&mut db, 1);
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 0);
 
