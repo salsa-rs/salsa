@@ -10,7 +10,7 @@ use crate::sync::Arc;
 use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa, transmute_data_mut_ptr, transmute_data_ptr};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -73,11 +73,7 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     /// Is it a provisional value or has it been finalized and in which iteration.
     ///
     /// Returns `None` if `input` doesn't exist.
-    fn provisional_status<'db>(
-        &self,
-        _zalsa: &'db Zalsa,
-        _input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
+    fn provisional_status(&self, _zalsa: &Zalsa, _input: Id) -> Option<ProvisionalStatus> {
         unreachable!(
             "provisional_status should only be called on cycle heads and only functions can be cycle heads"
         );
@@ -204,9 +200,14 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     );
 
-    /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>> {
-        let _ = (zalsa, key_index);
+    /// Appends the inputs (if any) that were used to create the value at `key_index`.
+    fn extend_origin_inputs(
+        &self,
+        zalsa: &Zalsa,
+        key_index: Id,
+        inputs: &mut Vec<DatabaseKeyIndex>,
+    ) {
+        let _ = (zalsa, key_index, inputs);
         unreachable!("only function ingredients have origins")
     }
 

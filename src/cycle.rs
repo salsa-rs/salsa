@@ -500,11 +500,11 @@ impl Cycle<'_> {
 }
 
 #[derive(Debug)]
-pub enum ProvisionalStatus<'db> {
+pub enum ProvisionalStatus {
     Provisional {
         iteration: IterationStamp,
         verified_at: Revision,
-        cycle_heads: &'db CycleHeads,
+        cycle_heads: CycleHeads,
     },
     Final {
         iteration: IterationStamp,
@@ -512,8 +512,8 @@ pub enum ProvisionalStatus<'db> {
     },
 }
 
-impl<'db> ProvisionalStatus<'db> {
-    pub(crate) fn cycle_heads(&self) -> &'db CycleHeads {
+impl ProvisionalStatus {
+    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
         match self {
             ProvisionalStatus::Provisional { cycle_heads, .. } => cycle_heads,
             ProvisionalStatus::Final { .. } => empty_cycle_heads(),

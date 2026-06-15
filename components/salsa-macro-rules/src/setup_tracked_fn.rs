@@ -64,6 +64,9 @@ macro_rules! setup_tracked_fn {
         // LRU capacity (a literal, maybe 0)
         lru: $lru:tt,
 
+        // If true, the query is volatile and may retire memo values within a revision.
+        is_volatile: $is_volatile:tt,
+
         // The return mode for the function, see `salsa_macros::options::Option::returns`
         return_mode: $return_mode:tt,
 
@@ -97,20 +100,29 @@ macro_rules! setup_tracked_fn {
 
             $zalsa::attach($db, || {
                 let (zalsa, zalsa_local) = $db.zalsas();
-                let result = $zalsa::macro_if! {
+                let ingredient = $fn_name::fn_ingredient_($db, zalsa);
+                let key = $zalsa::macro_if! {
                     if $needs_interner {
                         {
-                            let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
+                            $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
                         }
                     } else {
                         {
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
+                            $zalsa::AsId::as_id(&($($input_id),*))
                         }
                     }
                 };
 
-                $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
+                $zalsa::macro_if! {
+                    if $is_volatile {
+                        ingredient.fetch_with($db, zalsa, zalsa_local, key, |result| {
+                            $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
+                        })
+                    } else {
+                        let result = ingredient.fetch($db, zalsa, zalsa_local, key);
+                        $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
+                    }
+                }
             })
         }
 

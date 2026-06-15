@@ -72,6 +72,69 @@ impl<C: Configuration> IngredientImpl<C> {
 
         table.map_memo(memo_ingredient_index, map)
     }
+
+    /// Replaces the current memo for `id` with an equivalent value-less memo.
+    ///
+    /// Unlike [`Self::evict_value_from_memo_for`], this can run with `&self`.
+    /// The old memo is freed once active guarded readers have exited.
+    pub(super) fn evict_value_from_memo(&self, zalsa: &Zalsa, id: Id) -> bool {
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        let Some(old_memo) = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index) else {
+            return true;
+        };
+
+        if old_memo.value.is_none() {
+            return true;
+        }
+
+        if !matches!(old_memo.header.origin(), QueryOriginRef::Derived(_)) {
+            return false;
+        }
+
+        // Prevent a query from acquiring provisional cycle state between the
+        // checks below and publishing the value-less replacement.
+        let Some(_unclaimed) = self.sync_table.lock_if_unclaimed(id) else {
+            return false;
+        };
+
+        if old_memo.header.was_cycle_participant() {
+            return false;
+        }
+
+        let Some(revisions) = old_memo.header.revisions.clone_for_eviction() else {
+            return false;
+        };
+
+        let verified_at = old_memo.header.verified_at.load();
+        let new_memo = NonNull::from(Box::leak(Box::new(Memo::new(None, verified_at, revisions))));
+        let old_memo = NonNull::from(old_memo);
+
+        // SAFETY: The memo table stores `'static` memos to support type erasure.
+        // The replacement memo has no value, so it does not carry borrowed output data.
+        let new_memo =
+            unsafe { transmute::<NonNull<Memo<'_, C>>, NonNull<Memo<'static, C>>>(new_memo) };
+        // SAFETY: The table stores this memo as `'static`; the allocation stays
+        // alive through the retired memo queue.
+        let old_memo =
+            unsafe { transmute::<NonNull<Memo<'_, C>>, NonNull<Memo<'static, C>>>(old_memo) };
+
+        match zalsa
+            .memo_table_for::<C::SalsaStruct<'_>>(id)
+            .compare_exchange(memo_ingredient_index, old_memo, new_memo)
+        {
+            Ok(old_memo) => {
+                // SAFETY: The old memo was just removed from the table. Guarded readers
+                // keep it alive until they finish cloning its value.
+                unsafe { self.deleted_entries.push_retired(old_memo) }
+                true
+            }
+            Err(_) => {
+                // SAFETY: `new_memo` was never published.
+                unsafe { drop(Box::from_raw(new_memo.as_ptr())) };
+                false
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -141,7 +204,7 @@ impl MemoHeader {
     /// Returns `true` if this memo was part of a cycle in it's last iteration.
     #[inline(always)]
     pub(super) fn was_cycle_participant(&self) -> bool {
-        !self.revisions.cycle_heads().is_empty()
+        self.revisions.participated_in_cycle()
     }
 
     /// Mark memo as having been verified in the `revision_now`, which should
@@ -186,6 +249,7 @@ impl MemoHeader {
                             &"None"
                         },
                     )
+                    .field("poisoned", &self.header.revisions.poisoned())
                     .field("verified_at", &self.header.verified_at)
                     .field("revisions", &self.header.revisions)
                     .finish()
@@ -222,6 +286,24 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
+    pub(super) fn poisoned(revision_now: Revision, mut revisions: QueryRevisions) -> Self {
+        revisions.set_poisoned();
+
+        Self::new(None, revision_now, revisions)
+    }
+
+    /// Returns whether volatile eviction can free this memo after guarded accesses drain.
+    ///
+    /// Accumulated values are returned by reference and can outlive a memo read guard.
+    pub(super) fn can_drop_volatile_after_readers(&self) -> bool {
+        #[cfg(feature = "accumulator")]
+        if self.header.revisions.accumulated().is_some() {
+            return false;
+        }
+
+        true
+    }
+
     /// Returns `true` if this memo should be serialized.
     pub(super) fn should_serialize(&self) -> bool {
         // TODO: Serialization is a good opportunity to prune old query results based on
@@ -245,19 +327,21 @@ where
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
         let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
-        let heap_size = if let Some(value) = self.value.as_ref() {
-            C::heap_size(value)
-        } else {
-            Some(0)
-        };
+        let output_size = std::mem::size_of::<C::Output<'static>>();
+        let (size_of_metadata, size_of_fields, heap_size_of_fields) =
+            if let Some(value) = self.value.as_ref() {
+                (size_of - output_size, output_size, C::heap_size(value))
+            } else {
+                (size_of, 0, Some(0))
+            };
 
         crate::database::MemoInfo {
             debug_name: C::DEBUG_NAME,
             output: crate::database::SlotInfo {
-                size_of_metadata: size_of - std::mem::size_of::<C::Output<'static>>(),
+                size_of_metadata,
                 debug_name: std::any::type_name::<C::Output<'static>>(),
-                size_of_fields: std::mem::size_of::<C::Output<'static>>(),
-                heap_size_of_fields: heap_size,
+                size_of_fields,
+                heap_size_of_fields,
                 memos: Vec::new(),
             },
         }

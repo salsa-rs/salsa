@@ -19,6 +19,47 @@ where
         zalsa_local: &'db ZalsaLocal,
         id: Id,
     ) -> &'db C::Output<'db> {
+        assert!(
+            !C::Eviction::RETIRES_VALUES,
+            "retiring eviction policies must use `fetch_with`"
+        );
+
+        // SAFETY: Non-retiring eviction policies keep removed memos alive until
+        // the next revision, which requires exclusive access to the database.
+        unsafe { self.fetch_ref(db, zalsa, zalsa_local, id) }
+    }
+
+    /// Fetches a value and applies `operation` while the memo remains protected
+    /// from concurrent reclamation.
+    #[inline]
+    pub fn fetch_with<'db, R>(
+        &'db self,
+        db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        id: Id,
+        operation: impl for<'value> FnOnce(&'value C::Output<'db>) -> R,
+    ) -> R {
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+
+        // SAFETY: `_guard` keeps a retiring memo alive until `operation` has
+        // produced a result that cannot borrow from the memo value.
+        operation(unsafe { self.fetch_ref(db, zalsa, zalsa_local, id) })
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned reference remains valid while
+    /// it is used, either because memos cannot be retired within the revision
+    /// or because it holds a memo read guard.
+    #[inline]
+    unsafe fn fetch_ref<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        id: Id,
+    ) -> &'db C::Output<'db> {
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);
