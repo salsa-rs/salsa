@@ -65,13 +65,30 @@ fn lru_works() {
     }
 
     assert_eq!(load_n_potatoes(), 32);
-    // trigger the GC
+    // The first collection epoch gives newly admitted values grace.
     db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 8);
+    assert_eq!(load_n_potatoes(), 32);
+
+    // Growing the resident set by 50% advances another collection epoch and
+    // marks the original cohort cold, but does not evict it yet.
+    for i in 32..48u32 {
+        let input = MyInput::new(&db, i);
+        get_hot_potato(&db, input);
+    }
+    db.synthetic_write(salsa::Durability::HIGH);
+    assert_eq!(load_n_potatoes(), 48);
+
+    // Another 50% growth gives the original cohort its second cold inspection.
+    for i in 48..72u32 {
+        let input = MyInput::new(&db, i);
+        get_hot_potato(&db, input);
+    }
+    db.synthetic_write(salsa::Durability::HIGH);
+    assert_eq!(load_n_potatoes(), 40);
 }
 
 #[test]
-fn lru_can_be_changed_at_runtime() {
+fn lru_growth_floor_can_be_changed_at_runtime() {
     let mut db = common::LoggerDatabase::default();
     assert_eq!(load_n_potatoes(), 0);
 
@@ -83,32 +100,28 @@ fn lru_can_be_changed_at_runtime() {
     }
 
     assert_eq!(load_n_potatoes(), 32);
-    // trigger the GC
+    // The first collection gives the cohort grace.
     db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 8);
-
-    get_hot_potato::set_lru_capacity(&mut db, 16);
-    assert_eq!(load_n_potatoes(), 8);
-    for &(i, input) in inputs.iter() {
-        let p = get_hot_potato(&db, input);
-        assert_eq!(p.0, i);
-    }
-
     assert_eq!(load_n_potatoes(), 32);
-    // trigger the GC
-    db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 16);
 
-    // Special case: setting capacity to zero disables LRU
+    // Lowering the growth floor forces two more collection epochs. The first
+    // marks the cohort cold and the second evicts it.
+    get_hot_potato::set_lru_capacity(&mut db, 1);
+    db.synthetic_write(salsa::Durability::HIGH);
+    assert_eq!(load_n_potatoes(), 32);
+
+    get_hot_potato::set_lru_capacity(&mut db, 1);
+    db.synthetic_write(salsa::Durability::HIGH);
+    assert_eq!(load_n_potatoes(), 0);
+
+    // Setting the value to zero still disables eviction.
     get_hot_potato::set_lru_capacity(&mut db, 0);
-    assert_eq!(load_n_potatoes(), 16);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
         assert_eq!(p.0, i);
     }
 
     assert_eq!(load_n_potatoes(), 32);
-    // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
 
@@ -119,11 +132,10 @@ fn lru_can_be_changed_at_runtime() {
 #[test]
 fn lru_keeps_dependency_info() {
     let mut db = common::LoggerDatabase::default();
-    let capacity = 8;
+    let activation_floor = 8;
 
-    // Invoke `get_hot_potato2` 33 times. This will (in turn) invoke
-    // `get_hot_potato`, which will trigger LRU after 8 executions.
-    let inputs: Vec<MyInput> = (0..(capacity + 1))
+    // Invoke `get_hot_potato2` enough times to cross the collection floor.
+    let inputs: Vec<MyInput> = (0..(activation_floor + 1))
         .map(|i| MyInput::new(&db, i as u32))
         .collect();
 
@@ -132,14 +144,20 @@ fn lru_keeps_dependency_info() {
         assert_eq!(x as usize, i);
     }
 
+    // Advance enough collection epochs to evict the inner memo values.
     db.synthetic_write(salsa::Durability::HIGH);
+    get_hot_potato::set_lru_capacity(&mut db, 1);
+    db.synthetic_write(salsa::Durability::HIGH);
+    get_hot_potato::set_lru_capacity(&mut db, 1);
+    db.synthetic_write(salsa::Durability::HIGH);
+    assert_eq!(load_n_potatoes(), 0);
 
     // We want to test that calls to `get_hot_potato2` are still considered
     // clean. Check that no new executions occur as we go here.
-    db.assert_logs_len((capacity + 1) * 2);
+    db.clear_logs();
 
-    // calling `get_hot_potato2(0)` has to check that `get_hot_potato(0)` is still valid;
-    // even though we've evicted it (LRU), we find that it is still good
+    // Calling `get_hot_potato2(0)` has to check that `get_hot_potato(0)` is still valid;
+    // even though we've evicted its value, we find that it is still good.
     let p = get_hot_potato2(&db, *inputs.first().unwrap());
     assert_eq!(p, 0);
     db.assert_logs_len(0);

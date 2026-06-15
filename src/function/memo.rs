@@ -80,6 +80,19 @@ impl<C: Configuration> IngredientImpl<C> {
 
         table.map_memo(memo_ingredient_index, map)
     }
+
+    pub(super) fn verified_at_for(
+        table: MemoTableWithTypesMut<'_>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<Revision> {
+        let mut verified_at = None;
+        table.map_memo(memo_ingredient_index, |memo: &mut Memo<'static, C>| {
+            if memo.value.is_some() {
+                verified_at = Some(memo.verified_at.load());
+            }
+        });
+        verified_at
+    }
 }
 
 #[derive(Debug)]

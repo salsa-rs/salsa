@@ -1,10 +1,9 @@
 # Tuning Salsa
 
-## Cache Eviction (LRU)
+## Cache Eviction
 
-Salsa supports Least Recently Used (LRU) cache eviction for tracked functions.
-By default, memoized values are never evicted (unbounded cache). You can enable
-LRU eviction by specifying a capacity at compile time:
+By default, memoized values are never evicted. You can enable adaptive,
+generational eviction with the existing `lru` option:
 
 ```rust
 #[salsa::tracked(lru = 128)]
@@ -13,9 +12,11 @@ fn parse(db: &dyn Db, input: SourceFile) -> Ast {
 }
 ```
 
-With `lru = 128`, Salsa will keep at most 128 memoized values for this function.
-When the cache exceeds this capacity, the least recently used values are evicted
-at the start of each new revision.
+The value is currently a minimum collection-growth threshold, not a hard
+capacity. New values receive multiple collection epochs of grace. Values that
+are reused across epochs move into older generations, while values that remain
+cold across repeated inspections are evicted. Collection epochs advance only
+after sufficient resident growth and only inspect the due generation.
 
 ### Zero-Cost When Disabled
 
@@ -23,9 +24,10 @@ When no `lru` capacity is specified (the default), Salsa uses a no-op eviction
 policy that is completely optimized away by the compiler. This means there is
 zero runtime overhead for functions that don't need cache eviction.
 
-### Runtime Capacity Adjustment
+### Runtime Threshold Adjustment
 
-For functions with LRU enabled, you can adjust the capacity at runtime:
+For functions with eviction enabled, the existing method adjusts the minimum
+growth threshold at runtime:
 
 ```rust
 #[salsa::tracked(lru = 128)]
@@ -33,18 +35,19 @@ fn my_query(db: &dyn Db, input: MyInput) -> Output {
     // ...
 }
 
-// Later, adjust the capacity:
+// Later, adjust the collection threshold:
 my_query::set_lru_capacity(db, 256);
 ```
 
-**Note:** The `set_lru_capacity` method is only generated for functions that have
-an `lru` attribute. Functions without LRU enabled do not have this method.
+The method retains its existing name while the eviction API is being evaluated.
+It is only generated for functions that have an `lru` attribute.
 
 ### Memory Management
 
-There is no garbage collection for keys and results of old queries, so LRU caches
-are currently the primary mechanism for avoiding unbounded memory usage in
-long-running applications built on Salsa.
+Eviction drops memoized values but retains their dependency information. The
+collector does not enforce an absolute memory bound: its goal is to prevent
+unused values from accumulating indefinitely while avoiding synchronization on
+query fetches.
 
 ## Intern Queries
 
