@@ -18,6 +18,10 @@ pub mod shim {
             self.0.lock().unwrap()
         }
 
+        pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
+            self.0.try_lock().ok()
+        }
+
         pub fn get_mut(&mut self) -> &mut T {
             self.0.get_mut().unwrap()
         }
