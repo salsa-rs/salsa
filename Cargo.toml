@@ -115,6 +115,19 @@ name = "lru"
 harness = false
 required-features = ["rayon"]
 
+[[bench]]
+name = "workspace"
+harness = false
+required-features = ["accumulator"]
+
+[[bench]]
+name = "graph_shapes"
+harness = false
+
+[[bench]]
+name = "revision_churn"
+harness = false
+
 [[example]]
 name = "lazy-input"
 required-features = ["accumulator"]
