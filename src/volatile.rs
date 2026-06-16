@@ -14,6 +14,13 @@ impl<T> Clone for Volatile<T> {
     }
 }
 
+impl<T> Volatile<T> {
+    /// Converts this handle into the shared value it owns.
+    pub fn into_arc(self) -> Arc<T> {
+        self.0
+    }
+}
+
 impl<T> Deref for Volatile<T> {
     type Target = T;
 

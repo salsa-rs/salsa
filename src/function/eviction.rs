@@ -37,6 +37,15 @@ pub trait EvictionPolicy: Send + Sync {
     /// Record that an item was accessed.
     fn record_use(&self, id: Id);
 
+    /// Record that an item was accessed through an owned volatile handle.
+    ///
+    /// Returns an item whose cached value should be retired after the caller
+    /// has acquired the handle.
+    fn record_volatile_use(&self, id: Id) -> Option<Id> {
+        self.record_use(id);
+        None
+    }
+
     /// Record that an item had a value inserted into its memo.
     ///
     /// Returns an item that should be evicted, if any.

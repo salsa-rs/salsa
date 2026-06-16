@@ -24,7 +24,6 @@ where
             "retiring eviction policies must use `fetch_volatile`"
         );
         zalsa.unwind_if_revision_cancelled(zalsa_local);
-
         let database_key_index = self.database_key_index(id);
 
         #[cfg(feature = "detailed-trace")]
@@ -76,6 +75,10 @@ where
             let Some(value) = memo.value.load_volatile() else {
                 continue;
             };
+
+            if let Some(evict) = self.eviction.record_volatile_use(id) {
+                self.evict_value_from_memo(zalsa, evict);
+            }
 
             zalsa_local.report_tracked_read(
                 database_key_index,
