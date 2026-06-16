@@ -67,7 +67,7 @@ where
         );
 
         zalsa.unwind_if_revision_cancelled(zalsa_local);
-        let _guard = self.memo_read_guard();
+        let _guard = zalsa.memo_read_guard();
         let database_key_index = self.database_key_index(id);
 
         loop {

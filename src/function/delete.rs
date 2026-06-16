@@ -2,6 +2,7 @@ use std::ptr::NonNull;
 
 use crate::function::Configuration;
 use crate::function::memo::Memo;
+use crate::zalsa::MemoReadGuard;
 
 /// Stores memos that must remain alive until the next revision.
 pub(super) struct DeletedEntries<C: Configuration> {
@@ -33,18 +34,33 @@ impl<C: Configuration> DeletedEntries<C> {
         self.memos.push(SharedBox(memo));
     }
 
-    /// Defers freeing a retired volatile memo until active epoch readers have exited.
+    /// Defers freeing a retired volatile memo until active readers have exited.
     ///
     /// # Safety
     ///
     /// The memo must have been removed from the memo table.
-    pub(super) unsafe fn push_retired(&self, memo: NonNull<Memo<'_, C>>) {
-        // SAFETY: The allocation remains valid until the deferred callback runs.
-        let memo =
-            unsafe { std::mem::transmute::<NonNull<Memo<'_, C>>, NonNull<Memo<'static, C>>>(memo) };
-        let memo = SharedBox(memo);
+    pub(super) unsafe fn push_retired(
+        &self,
+        memo: NonNull<Memo<'_, C>>,
+        guard: &MemoReadGuard<'_>,
+    ) {
+        #[cfg(feature = "shuttle")]
+        {
+            let _ = guard;
+            return unsafe { self.push(memo) };
+        }
 
-        crossbeam_epoch::pin().defer(move || drop(memo));
+        #[cfg(not(feature = "shuttle"))]
+        {
+            use seize::Guard;
+
+            // SAFETY: The allocation remains valid until the deferred callback runs.
+            let memo = unsafe {
+                std::mem::transmute::<NonNull<Memo<'_, C>>, NonNull<Memo<'static, C>>>(memo)
+            };
+            // SAFETY: The memo was removed from the table and was allocated by `Box`.
+            unsafe { guard.defer_retire(memo.as_ptr(), seize::reclaim::boxed) };
+        }
     }
 
     /// Free all revision-delayed memos, keeping the list available for reuse.

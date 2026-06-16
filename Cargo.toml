@@ -23,7 +23,6 @@ salsa-macros = { version = "0.27.2", path = "components/salsa-macros", optional 
 
 arc-swap = "1"
 boxcar = "0.2.14"
-crossbeam-epoch = "0.9.18"
 crossbeam-queue = "0.3.12"
 crossbeam-utils = "0.8.21"
 hashbrown = "0.17"
@@ -33,6 +32,7 @@ intrusive-collections = "0.10.1"
 parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
+seize = "0.5.1"
 smallvec = { version = "1", features = ["const_new"] }
 thin-vec = { version = "0.2.14" }
 tracing = { version = "0.1", default-features = false, features = ["std"] }

@@ -5,8 +5,7 @@ use std::ptr::{self, NonNull};
 
 use crate::DatabaseKeyIndex;
 use crate::sync::atomic::{AtomicPtr, Ordering};
-use crate::zalsa::MemoIngredientIndex;
-use crate::zalsa::Zalsa;
+use crate::zalsa::{MemoIngredientIndex, MemoReadGuard, Zalsa};
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -301,6 +300,7 @@ impl MemoTableWithTypes<'_> {
         self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
+        retiring: bool,
     ) -> Option<NonNull<M>> {
         let MemoEntry { atomic_memo } = self
             .memos
@@ -320,7 +320,12 @@ impl MemoTableWithTypes<'_> {
             type_assert_failed(memo_ingredient_index);
         }
 
-        let old_memo = atomic_memo.swap(MemoEntryType::to_dummy(memo).as_ptr(), Ordering::AcqRel);
+        let ordering = if retiring {
+            Ordering::SeqCst
+        } else {
+            Ordering::AcqRel
+        };
+        let old_memo = atomic_memo.swap(MemoEntryType::to_dummy(memo).as_ptr(), ordering);
 
         // SAFETY: We asserted that the type is correct above.
         NonNull::new(old_memo).map(|old_memo| unsafe { MemoEntryType::from_dummy(old_memo) })
@@ -331,6 +336,7 @@ impl MemoTableWithTypes<'_> {
     pub(crate) fn get<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
+        retiring: bool,
     ) -> Option<NonNull<M>> {
         let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
 
@@ -347,17 +353,24 @@ impl MemoTableWithTypes<'_> {
             type_assert_failed(memo_ingredient_index);
         }
 
-        NonNull::new(atomic_memo.load(Ordering::Acquire))
+        let ordering = if retiring {
+            Ordering::SeqCst
+        } else {
+            Ordering::Acquire
+        };
+        NonNull::new(atomic_memo.load(ordering))
             // SAFETY: We asserted that the type is correct above.
             .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
     }
 
     #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
-        let _guard = crossbeam_epoch::pin();
+    pub(crate) fn memory_usage(
+        &self,
+        _guard: &MemoReadGuard<'_>,
+    ) -> Vec<crate::database::MemoInfo> {
         let mut memory_usage = Vec::new();
         for (index, memo) in self.memos.memos.iter().enumerate() {
-            let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
+            let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::SeqCst)) else {
                 continue;
             };
 

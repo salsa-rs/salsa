@@ -91,8 +91,8 @@ where
         id: Id,
         revision: Revision,
     ) -> VerifyResult {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 

@@ -247,16 +247,11 @@ where
         self.eviction.set_capacity(capacity);
     }
 
-    #[inline]
-    fn memo_read_guard(&self) -> Option<crossbeam_epoch::Guard> {
-        (!crossbeam_epoch::is_pinned()).then(crossbeam_epoch::pin)
-    }
-
     /// Returns a reference to the memo value that lives as long as self.
     /// This is UNSAFE: the caller is responsible for ensuring that the
     /// memo will not be released while the returned reference is used.
     /// Non-retiring policies keep removed memos in `deleted_entries` until
-    /// the next revision; retiring policies require an epoch guard.
+    /// the next revision; retiring policies require a reclamation guard.
     unsafe fn extend_memo_lifetime<'this>(
         &'this self,
         memo: &memo::Memo<'this, C>,
@@ -272,6 +267,8 @@ where
         mut memo: memo::Memo<'db, C>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<'db, C> {
+        let guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
+
         if let Some(tracked_struct_ids) = memo.header.revisions.tracked_struct_ids_mut() {
             tracked_struct_ids.shrink_to_fit();
         }
@@ -288,7 +285,8 @@ where
             // values remain revision-delayed because those values can escape by reference.
             unsafe {
                 if C::Eviction::RETIRES_VALUES && old_memo.as_ref().can_evict_volatile() {
-                    self.deleted_entries.push_retired(old_memo);
+                    self.deleted_entries
+                        .push_retired(old_memo, guard.as_ref().unwrap());
                 } else {
                     self.deleted_entries.push(old_memo);
                 }
@@ -346,7 +344,7 @@ where
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let input = edge.key().key_index();
 
         let Some(memo) =
@@ -364,7 +362,7 @@ where
     /// Otherwise, the value is still provisional. For both final and provisional, it also
     /// returns the iteration in which this memo was created (always 0 except for cycle heads).
     fn provisional_status(&self, zalsa: &Zalsa, input: Id) -> Option<ProvisionalStatus> {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let memo =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
 
@@ -372,7 +370,7 @@ where
     }
 
     fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration: IterationStamp) {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
@@ -384,7 +382,7 @@ where
     }
 
     fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
@@ -401,7 +399,7 @@ where
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let memo_index = self.memo_ingredient_index(zalsa, id);
         let Some(memo) = self.get_memo_from_table_for(zalsa, id, memo_index) else {
             return;
@@ -417,7 +415,7 @@ where
     }
 
     fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let Some(memo) =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
         else {
@@ -705,7 +703,7 @@ where
 
 #[cfg(feature = "persistence")]
 mod persistence {
-    use super::{Configuration, IngredientImpl, Memo};
+    use super::{Configuration, EvictionPolicy, IngredientImpl, Memo};
     use crate::hash::{FxHashSet, FxIndexSet};
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
     use crate::zalsa::Zalsa;
@@ -906,6 +904,7 @@ mod persistence {
                     memo_ingredient_index,
                     // FIXME: Use `Box::into_non_null` once stable.
                     NonNull::from(Box::leak(Box::new(memo))),
+                    C::Eviction::RETIRES_VALUES,
                 );
             }
 

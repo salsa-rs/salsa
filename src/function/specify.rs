@@ -1,6 +1,7 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::active_query::CompletedQuery;
+use crate::function::EvictionPolicy;
 use crate::function::eviction::MemoValue;
 use crate::function::memo::Memo;
 use crate::function::sync::{ClaimResult, Reentrancy};
@@ -22,6 +23,7 @@ where
         C::Input<'db>: TrackedStructInDb,
     {
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
 
         let (active_query_key, current_deps, cycle_heads) =
             match zalsa_local.active_query_with_cycle_heads() {
@@ -163,6 +165,7 @@ where
         executor: DatabaseKeyIndex,
         key: Id,
     ) {
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
         let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {

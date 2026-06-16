@@ -13,7 +13,7 @@ where
         key: Id,
         inputs: &mut Vec<DatabaseKeyIndex>,
     ) {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         let Some(memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) else {
             return;

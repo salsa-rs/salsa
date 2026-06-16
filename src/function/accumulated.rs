@@ -15,8 +15,8 @@ where
     where
         A: accumulator::Accumulator,
     {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
 
         // NOTE: We don't have a precise way to track accumulated values at present,
         // so we report any read of them as an untracked read.
@@ -83,8 +83,8 @@ where
         db: &'db C::DbView,
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        let _guard = C::Eviction::RETIRES_VALUES.then(|| self.memo_read_guard());
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
         // Volatile memos with accumulated values remain revision-delayed because
