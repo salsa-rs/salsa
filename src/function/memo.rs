@@ -238,7 +238,7 @@ impl MemoHeader {
         }
     }
 
-    /// Returns `true` if this memo was part of a cycle in it's last iteration.
+    /// Returns `true` if this memo was part of a cycle in its last iteration.
     #[inline(always)]
     pub(super) fn was_cycle_participant(&self) -> bool {
         !self.revisions.cycle_heads().is_empty()
@@ -409,14 +409,11 @@ mod persistence {
             &self,
             serialized_origin: PersistentQueryOrigin,
         ) -> MappedMemo<'_, 'db, C> {
-            let Memo {
-                ref value,
-                ref header,
-            } = *self;
+            let Memo { value, header } = self;
             let MemoHeader {
-                ref verified_at,
-                ref revisions,
-            } = *header;
+                verified_at,
+                revisions,
+            } = header;
 
             MappedMemo {
                 value: value.as_ref(),
