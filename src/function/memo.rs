@@ -218,7 +218,7 @@ impl MemoHeader {
         }
     }
 
-    /// Returns `true` if this memo was part of a cycle in it's last iteration.
+    /// Returns `true` if this memo was part of a cycle in its last iteration.
     #[inline(always)]
     pub(super) fn was_cycle_participant(&self) -> bool {
         !self.revisions.cycle_heads().is_empty()
