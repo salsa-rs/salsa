@@ -13,7 +13,8 @@ pub trait MemoValue<T>: Send + Sync {
     fn new(value: Option<T>) -> Self;
     fn load(&self) -> Option<Self::Guard<'_>>;
     fn is_some(&self) -> bool;
-    fn clear(&self);
+    /// Clears the value, returning whether one was present.
+    fn clear(&self) -> bool;
 
     /// Borrows an inline value. Volatile storage cannot implement this because
     /// its value may be concurrently removed.
@@ -41,7 +42,7 @@ impl<T: Send + Sync> MemoValue<T> for Option<T> {
         Option::is_some(self)
     }
 
-    fn clear(&self) {
+    fn clear(&self) -> bool {
         panic!("inline memo values require exclusive access for eviction")
     }
 
@@ -72,8 +73,8 @@ impl<T: Send + Sync> MemoValue<T> for ArcSwapOption<T> {
         self.load().is_some()
     }
 
-    fn clear(&self) {
-        self.store(None);
+    fn clear(&self) -> bool {
+        self.swap(None).is_some()
     }
 
     fn borrow_inline(&self) -> Option<&T> {

@@ -81,11 +81,11 @@ impl<C: Configuration> IngredientImpl<C> {
         let _guard = zalsa.memo_read_guard();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index) else {
-            return true;
+            return false;
         };
 
         if !old_memo.value.is_some() {
-            return true;
+            return false;
         }
 
         if !matches!(old_memo.header.origin(), QueryOriginRef::Derived(_)) {
@@ -103,8 +103,7 @@ impl<C: Configuration> IngredientImpl<C> {
             return false;
         }
 
-        old_memo.value.clear();
-        true
+        old_memo.value.clear()
     }
 }
 

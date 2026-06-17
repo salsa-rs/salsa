@@ -77,7 +77,9 @@ where
             };
 
             if let Some(evict) = self.eviction.record_volatile_use(id) {
-                self.evict_value_from_memo(zalsa, evict);
+                if self.evict_value_from_memo(zalsa, evict) {
+                    self.eviction.record_volatile_eviction();
+                }
             }
 
             zalsa_local.report_tracked_read(

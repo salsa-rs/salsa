@@ -46,6 +46,12 @@ pub trait EvictionPolicy: Send + Sync {
         None
     }
 
+    /// Record that a volatile value was successfully removed from its memo.
+    fn record_volatile_eviction(&self) {}
+
+    /// Record that a volatile value had to be recomputed after eviction.
+    fn record_volatile_recomputation(&self) {}
+
     /// Record that an item had a value inserted into its memo.
     ///
     /// Returns an item that should be evicted, if any.

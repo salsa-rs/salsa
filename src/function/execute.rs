@@ -2,6 +2,7 @@ use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp};
+use crate::function::eviction::EvictionPolicy;
 use crate::function::eviction::MemoValue;
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
@@ -45,6 +46,13 @@ where
         let zalsa = claim_guard.zalsa();
 
         let id = database_key_index.key_index();
+        if C::Eviction::RETIRES_VALUES
+            && opt_old_memo.is_some_and(|memo| {
+                !memo.value.is_some() && memo.header.verified_at.load() == zalsa.current_revision()
+            })
+        {
+            self.eviction.record_volatile_recomputation();
+        }
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         crate::tracing::info!("{:?}: executing query", database_key_index);
