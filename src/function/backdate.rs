@@ -1,6 +1,6 @@
 use crate::Backtrace;
 use crate::DatabaseKeyIndex;
-use crate::function::memo::Memo;
+use crate::function::memo::{Memo, MemoHeader};
 use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa_local::QueryRevisions;
 use std::fmt;
@@ -19,39 +19,44 @@ where
         revisions: &mut QueryRevisions,
         value: &C::Output<'db>,
     ) {
+        if old_memo.header.can_backdate(revisions)
+            && old_memo
+                .value
+                .as_ref()
+                .is_some_and(|old_value| C::values_equal(old_value, value))
+        {
+            old_memo.header.backdate(index, revisions);
+        }
+    }
+}
+
+impl MemoHeader {
+    fn can_backdate(&self, revisions: &QueryRevisions) -> bool {
         // We've seen issues where queries weren't re-validated when backdating provisional values
         // in ty. This is more of a bandaid because we're close to a release and don't have the time to prove
         // right now whether backdating could be made safe for queries participating in queries.
         // TODO: Write a test that demonstrates that backdating queries participating in a cycle isn't safe
         // OR write many tests showing that it is (and fixing the case where it didn't correctly account for today).
-        if !revisions.cycle_heads().is_empty() || old_memo.may_be_provisional() {
-            return;
-        }
-
-        if let Some(old_value) = &old_memo.value {
+        revisions.cycle_heads().is_empty()
+            && !self.may_be_provisional()
             // Careful: if the value became less durable than it
             // used to be, that is a "breaking change" that our
             // consumers must be aware of. Becoming *more* durable
             // is not. See the test `durable_to_less_durable`.
-            if revisions.durability >= old_memo.revisions.durability
-                && C::values_equal(old_value, value)
-            {
-                crate::tracing::debug!(
-                    "{index:?} value is equal, back-dating to {:?}",
-                    old_memo.revisions.changed_at,
-                );
+            && revisions.durability >= self.revisions.durability
+    }
 
-                if old_memo.revisions.changed_at > revisions.changed_at {
-                    report_backdate_violation(
-                        index,
-                        old_memo.revisions.changed_at,
-                        revisions.changed_at,
-                    );
-                }
+    fn backdate(&self, index: DatabaseKeyIndex, revisions: &mut QueryRevisions) {
+        crate::tracing::debug!(
+            "{index:?} value is equal, back-dating to {:?}",
+            self.revisions.changed_at,
+        );
 
-                revisions.changed_at = old_memo.revisions.changed_at;
-            }
+        if self.revisions.changed_at > revisions.changed_at {
+            report_backdate_violation(index, self.revisions.changed_at, revisions.changed_at);
         }
+
+        revisions.changed_at = self.revisions.changed_at;
     }
 }
 

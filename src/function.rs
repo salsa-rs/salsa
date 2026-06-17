@@ -269,7 +269,7 @@ where
         mut memo: memo::Memo<'db, C>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<'db, C> {
-        if let Some(tracked_struct_ids) = memo.revisions.tracked_struct_ids_mut() {
+        if let Some(tracked_struct_ids) = memo.header.revisions.tracked_struct_ids_mut() {
             tracked_struct_ids.shrink_to_fit();
         }
 
@@ -343,30 +343,8 @@ where
             return;
         };
 
-        let origin = memo.revisions.origin();
-
-        visited_edges.insert(edge);
-
-        // Collect the minimum dependency tree.
-        for edge in origin.edges() {
-            // Avoid forming cycles.
-            if visited_edges.contains(&edge) {
-                continue;
-            }
-
-            // Avoid flattening edges that we're going to serialize directly.
-            if serialized_edges.contains(&edge) {
-                continue;
-            }
-
-            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
-            dependency.collect_minimum_serialized_edges(
-                zalsa,
-                edge,
-                serialized_edges,
-                visited_edges,
-            )
-        }
+        memo.header
+            .collect_minimum_serialized_edges(zalsa, edge, serialized_edges, visited_edges);
     }
 
     /// Returns `final` if the memo has the `verified_final` flag set.
@@ -381,21 +359,7 @@ where
         let memo =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
 
-        let iteration = memo.revisions.iteration();
-        let verified_final = memo.revisions.verified_final.load(Ordering::Relaxed);
-
-        Some(if verified_final {
-            ProvisionalStatus::Final {
-                iteration,
-                verified_at: memo.verified_at.load(),
-            }
-        } else {
-            ProvisionalStatus::Provisional {
-                iteration,
-                verified_at: memo.verified_at.load(),
-                cycle_heads: memo.cycle_heads(),
-            }
-        })
+        Some(memo.header.provisional_status())
     }
 
     fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration: IterationStamp) {
@@ -405,8 +369,8 @@ where
             return;
         };
 
-        memo.revisions
-            .set_iteration_count(Self::database_key_index(self, input), iteration);
+        memo.header
+            .set_cycle_iteration_count(self.database_key_index(input), iteration);
     }
 
     fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
@@ -416,7 +380,7 @@ where
             return;
         };
 
-        memo.revisions.verified_final.store(true, Ordering::Release);
+        memo.header.finalize_cycle_head();
     }
 
     fn flatten_cycle_head_dependencies(
@@ -431,41 +395,13 @@ where
             return;
         };
 
-        let database_key_index = self.database_key_index(id);
-
-        // Only flatten dependencies of provisional queries, because only those
-        // contain cyclic dependencies.
-        if !memo.may_be_provisional() {
-            flattened_input_outputs.insert(QueryEdge::input(database_key_index));
-            return;
-        }
-
-        // There's nothing to do if we've visited this query before.
-        if !seen.insert(database_key_index) {
-            return;
-        }
-
-        let inputs = memo.revisions.origin().inputs();
-
-        match C::CYCLE_STRATEGY {
-            // For queries with cycle handling, simply extend the input/outputs, because
-            // they already flattened their own dependencies when completing the query.
-            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                flattened_input_outputs.extend(inputs.map(QueryEdge::input));
-            }
-            // For regular queries, recurse
-            CycleRecoveryStrategy::Panic => {
-                for input in inputs {
-                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                    ingredient.flatten_cycle_head_dependencies(
-                        zalsa,
-                        input.key_index(),
-                        flattened_input_outputs,
-                        seen,
-                    );
-                }
-            }
-        }
+        memo.header.flatten_cycle_head_dependencies(
+            zalsa,
+            self.database_key_index(id),
+            C::CYCLE_STRATEGY,
+            flattened_input_outputs,
+            seen,
+        );
     }
 
     fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
@@ -475,7 +411,7 @@ where
             return true;
         };
 
-        memo.revisions.cycle_converged()
+        memo.header.cycle_converged()
     }
 
     fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
@@ -621,6 +557,117 @@ where
     }
 }
 
+impl memo::MemoHeader {
+    fn collect_minimum_serialized_edges(
+        &self,
+        zalsa: &Zalsa,
+        edge: QueryEdge,
+        serialized_edges: &mut FxIndexSet<QueryEdge>,
+        visited_edges: &mut FxHashSet<QueryEdge>,
+    ) {
+        visited_edges.insert(edge);
+
+        // Collect the minimum dependency tree.
+        for edge in self.origin().edges() {
+            // Avoid forming cycles.
+            if visited_edges.contains(&edge) {
+                continue;
+            }
+
+            // Avoid flattening edges that we're going to serialize directly.
+            if serialized_edges.contains(&edge) {
+                continue;
+            }
+
+            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+            dependency.collect_minimum_serialized_edges(
+                zalsa,
+                edge,
+                serialized_edges,
+                visited_edges,
+            );
+        }
+    }
+
+    fn provisional_status(&self) -> ProvisionalStatus<'_> {
+        let iteration = self.revisions.iteration();
+        let verified_at = self.verified_at.load();
+
+        if self.revisions.verified_final.load(Ordering::Relaxed) {
+            ProvisionalStatus::Final {
+                iteration,
+                verified_at,
+            }
+        } else {
+            ProvisionalStatus::Provisional {
+                iteration,
+                verified_at,
+                cycle_heads: self.cycle_heads(),
+            }
+        }
+    }
+
+    fn set_cycle_iteration_count(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration: IterationStamp,
+    ) {
+        self.revisions
+            .set_iteration_count(database_key_index, iteration);
+    }
+
+    fn finalize_cycle_head(&self) {
+        self.revisions.verified_final.store(true, Ordering::Release);
+    }
+
+    fn flatten_cycle_head_dependencies(
+        &self,
+        zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
+        cycle_recovery_strategy: CycleRecoveryStrategy,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        // Only flatten dependencies of provisional queries, because only those
+        // contain cyclic dependencies.
+        if !self.may_be_provisional() {
+            flattened_input_outputs.insert(QueryEdge::input(database_key_index));
+            return;
+        }
+
+        // There's nothing to do if we've visited this query before.
+        if !seen.insert(database_key_index) {
+            return;
+        }
+
+        let inputs = self.origin().inputs();
+
+        match cycle_recovery_strategy {
+            // For queries with cycle handling, simply extend the input/outputs, because
+            // they already flattened their own dependencies when completing the query.
+            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
+                flattened_input_outputs.extend(inputs.map(QueryEdge::input));
+            }
+            // For regular queries, recurse.
+            CycleRecoveryStrategy::Panic => {
+                for input in inputs {
+                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                    ingredient.flatten_cycle_head_dependencies(
+                        zalsa,
+                        input.key_index(),
+                        flattened_input_outputs,
+                        seen,
+                    );
+                }
+            }
+        }
+    }
+
+    fn cycle_converged(&self) -> bool {
+        self.revisions.cycle_converged()
+    }
+}
+
 impl<C> std::fmt::Debug for IngredientImpl<C>
 where
     C: Configuration,
@@ -699,7 +746,7 @@ mod persistence {
 
                 if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
                     // Flatten the dependencies of this query down to the base inputs.
-                    let flattened_origin = match memo.revisions.origin() {
+                    let flattened_origin = match memo.header.origin() {
                         QueryOriginRef::Derived(edges) => {
                             collect_minimum_serialized_edges(
                                 zalsa,

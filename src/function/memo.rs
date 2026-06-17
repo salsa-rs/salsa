@@ -64,17 +64,8 @@ impl<C: Configuration> IngredientImpl<C> {
         memo_ingredient_index: MemoIngredientIndex,
     ) {
         let map = |memo: &mut Memo<'static, C>| {
-            match memo.revisions.origin() {
-                QueryOriginRef::Assigned(_) | QueryOriginRef::DerivedUntracked(_) => {
-                    // Careful: Cannot evict memos whose values were
-                    // assigned as output of another query
-                    // or those with untracked inputs
-                    // as their values cannot be reconstructed.
-                }
-                QueryOriginRef::Derived(_) => {
-                    // Set the memo value to `None`.
-                    memo.value = None;
-                }
+            if memo.header.can_evict_value() {
+                memo.value = None;
             }
         };
 
@@ -84,9 +75,15 @@ impl<C: Configuration> IngredientImpl<C> {
 
 #[derive(Debug)]
 pub struct Memo<'db, C: Configuration> {
+    /// Configuration-independent state used to validate and manage this memo.
+    pub(super) header: MemoHeader,
+
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<C::Output<'db>>,
+}
 
+#[derive(Debug)]
+pub(super) struct MemoHeader {
     /// Last revision when this memo was verified; this begins
     /// as the current revision.
     pub(super) verified_at: AtomicRevision,
@@ -95,28 +92,26 @@ pub struct Memo<'db, C: Configuration> {
     pub(super) revisions: QueryRevisions,
 }
 
-impl<'db, C: Configuration> Memo<'db, C> {
-    pub(super) fn new(
-        value: Option<C::Output<'db>>,
-        revision_now: Revision,
-        revisions: QueryRevisions,
-    ) -> Self {
+impl MemoHeader {
+    fn new(revision_now: Revision, revisions: QueryRevisions) -> Self {
         debug_assert!(
             !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_empty(),
             "Memo must be finalized if it has no cycle heads"
         );
-        Memo {
-            value,
+        Self {
             verified_at: AtomicRevision::from(revision_now),
             revisions,
         }
     }
 
-    /// Returns `true` if this memo should be serialized.
-    pub(super) fn should_serialize(&self) -> bool {
-        // TODO: Serialization is a good opportunity to prune old query results based on
-        // the `verified_at` revision.
-        self.value.is_some() && !self.may_be_provisional()
+    #[inline]
+    pub(super) fn origin(&self) -> QueryOriginRef<'_> {
+        self.revisions.origin()
+    }
+
+    fn can_evict_value(&self) -> bool {
+        // Assigned values and values with untracked inputs cannot be reconstructed.
+        matches!(self.origin(), QueryOriginRef::Derived(_))
     }
 
     /// True if this may be a provisional cycle-iteration result.
@@ -170,37 +165,36 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
-    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, 'db, C> {
-        struct TracingDebug<'memo, 'db, C: Configuration> {
-            memo: &'memo Memo<'db, C>,
+    pub(super) fn tracing_debug(&self, has_value: bool) -> impl std::fmt::Debug + use<'_> {
+        struct TracingDebug<'memo> {
+            header: &'memo MemoHeader,
+            has_value: bool,
         }
 
-        impl<C: Configuration> std::fmt::Debug for TracingDebug<'_, '_, C> {
+        impl std::fmt::Debug for TracingDebug<'_> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct("Memo")
                     .field(
                         "value",
-                        if self.memo.value.is_some() {
+                        if self.has_value {
                             &"Some(<value>)"
                         } else {
                             &"None"
                         },
                     )
-                    .field("verified_at", &self.memo.verified_at)
-                    .field("revisions", &self.memo.revisions)
+                    .field("verified_at", &self.header.verified_at)
+                    .field("revisions", &self.header.revisions)
                     .finish()
             }
         }
 
-        TracingDebug { memo: self }
+        TracingDebug {
+            header: self,
+            has_value,
+        }
     }
-}
 
-impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
-where
-    C::Output<'static>: Send + Sync + Any,
-{
-    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
+    pub(super) fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
         for stale_output in self.revisions.origin().outputs() {
             stale_output.remove_stale_output(zalsa, executor);
         }
@@ -210,10 +204,48 @@ where
             key.remove_stale_output(zalsa, executor);
         }
     }
+}
+
+impl<'db, C: Configuration> Memo<'db, C> {
+    pub(super) fn new(
+        value: Option<C::Output<'db>>,
+        revision_now: Revision,
+        revisions: QueryRevisions,
+    ) -> Self {
+        Self {
+            value,
+            header: MemoHeader::new(revision_now, revisions),
+        }
+    }
+
+    #[inline]
+    pub(super) fn revision(&self) -> &QueryRevisions {
+        &self.header.revisions
+    }
+
+    /// Returns `true` if this memo should be serialized.
+    pub(super) fn should_serialize(&self) -> bool {
+        // TODO: Serialization is a good opportunity to prune old query results based on
+        // the `verified_at` revision.
+        self.value.is_some() && !self.header.may_be_provisional()
+    }
+
+    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, 'db, C> {
+        self.header.tracing_debug(self.value.is_some())
+    }
+}
+
+impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
+where
+    C::Output<'static>: Send + Sync + Any,
+{
+    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
+        self.header.remove_outputs(zalsa, executor);
+    }
 
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
-        let size_of = std::mem::size_of::<Memo<C>>() + self.revisions.allocation_size();
+        let size_of = std::mem::size_of::<Memo<C>>() + self.revision().allocation_size();
         let heap_size = if let Some(value) = self.value.as_ref() {
             C::heap_size(value)
         } else {
@@ -236,7 +268,7 @@ where
 #[cfg(feature = "persistence")]
 mod persistence {
     use crate::function::Configuration;
-    use crate::function::memo::Memo;
+    use crate::function::memo::{Memo, MemoHeader};
     use crate::revision::AtomicRevision;
     use crate::zalsa_local::QueryRevisions;
     use crate::zalsa_local::persistence::{MappedQueryRevisions, PersistentQueryOrigin};
@@ -257,10 +289,13 @@ mod persistence {
             serialized_origin: PersistentQueryOrigin,
         ) -> MappedMemo<'_, 'db, C> {
             let Memo {
-                ref verified_at,
                 ref value,
-                ref revisions,
+                ref header,
             } = *self;
+            let MemoHeader {
+                ref verified_at,
+                ref revisions,
+            } = *header;
 
             MappedMemo {
                 value: value.as_ref(),
@@ -347,8 +382,10 @@ mod persistence {
 
             Ok(Memo {
                 value: Some(memo.value.0),
-                verified_at: memo.verified_at,
-                revisions: memo.revisions,
+                header: MemoHeader {
+                    verified_at: memo.verified_at,
+                    revisions: memo.revisions,
+                },
             })
         }
     }
@@ -448,6 +485,8 @@ mod _memory_usage {
     use std::num::NonZeroUsize;
 
     // Memo's are stored a lot, make sure their size doesn't randomly increase.
+    const _: [(); std::mem::size_of::<super::MemoHeader>()] =
+        [(); std::mem::size_of::<[usize; 4]>()];
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 5]>()];
 
