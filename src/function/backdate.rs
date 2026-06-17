@@ -24,7 +24,7 @@ where
         // right now whether backdating could be made safe for queries participating in queries.
         // TODO: Write a test that demonstrates that backdating queries participating in a cycle isn't safe
         // OR write many tests showing that it is (and fixing the case where it didn't correctly account for today).
-        if !revisions.cycle_heads().is_empty() || old_memo.may_be_provisional() {
+        if !revisions.cycle_heads().is_empty() || old_memo.header.may_be_provisional() {
             return;
         }
 
@@ -33,23 +33,23 @@ where
             // used to be, that is a "breaking change" that our
             // consumers must be aware of. Becoming *more* durable
             // is not. See the test `durable_to_less_durable`.
-            if revisions.durability >= old_memo.revisions.durability
+            if revisions.durability >= old_memo.header.revisions.durability
                 && C::values_equal(old_value, value)
             {
                 crate::tracing::debug!(
                     "{index:?} value is equal, back-dating to {:?}",
-                    old_memo.revisions.changed_at,
+                    old_memo.header.revisions.changed_at,
                 );
 
-                if old_memo.revisions.changed_at > revisions.changed_at {
+                if old_memo.header.revisions.changed_at > revisions.changed_at {
                     report_backdate_violation(
                         index,
-                        old_memo.revisions.changed_at,
+                        old_memo.header.revisions.changed_at,
                         revisions.changed_at,
                     );
                 }
 
-                revisions.changed_at = old_memo.revisions.changed_at;
+                revisions.changed_at = old_memo.header.revisions.changed_at;
             }
         }
     }

@@ -1,7 +1,7 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
-use crate::function::memo::{Memo, TryClaimCycleHeadsIter, TryClaimHeadsResult};
+use crate::function::memo::{MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use std::sync::atomic::Ordering;
@@ -92,17 +92,20 @@ where
                 return VerifyResult::changed();
             };
 
-            let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
-            if can_shallow_update.yes() && !memo.may_be_provisional() {
-                self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
+            let can_shallow_update =
+                memo.header
+                    .shallow_verify_memo(zalsa, database_key_index, memo.value.is_some());
+            if can_shallow_update.yes() && !memo.header.may_be_provisional() {
+                memo.header
+                    .update_shallow(zalsa, database_key_index, can_shallow_update);
 
-                return if memo.revisions.changed_at > revision {
+                return if memo.header.revisions.changed_at > revision {
                     VerifyResult::changed()
                 } else {
                     VerifyResult::unchanged_with_accumulated(
                         #[cfg(feature = "accumulator")]
                         {
-                            memo.revisions.accumulated_inputs.load()
+                            memo.header.revisions.accumulated_inputs.load()
                         },
                     )
                 };
@@ -165,25 +168,42 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+        let can_shallow_update = old_memo.header.shallow_verify_memo(
+            zalsa,
+            database_key_index,
+            old_memo.value.is_some(),
+        );
         if can_shallow_update.yes()
-            && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, old_memo)
+            && old_memo.header.validate_may_be_provisional(
+                zalsa,
+                zalsa_local,
+                database_key_index,
+                old_memo.value.is_some(),
+            )
         {
-            self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
+            old_memo
+                .header
+                .update_shallow(zalsa, database_key_index, can_shallow_update);
 
-            return Some(if old_memo.revisions.changed_at > revision {
+            return Some(if old_memo.header.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
                 VerifyResult::unchanged_with_accumulated(
                     #[cfg(feature = "accumulator")]
                     {
-                        old_memo.revisions.accumulated_inputs.load()
+                        old_memo.header.revisions.accumulated_inputs.load()
                     },
                 )
             });
         }
 
-        let deep_verify = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
+        let deep_verify = old_memo.header.deep_verify_memo(
+            db.into(),
+            zalsa,
+            database_key_index,
+            C::CYCLE_STRATEGY,
+            old_memo.value.is_some(),
+        );
 
         if let VerifyResult::Unchanged {
             #[cfg(feature = "accumulator")]
@@ -191,7 +211,7 @@ where
         } = deep_verify
         {
             // Check if the inputs are still valid. We can just compare `changed_at`.
-            return Some(if old_memo.revisions.changed_at > revision {
+            return Some(if old_memo.header.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
                 // Propagate accumulated values from inputs *and* from this memo itself.
@@ -201,7 +221,7 @@ where
                 VerifyResult::unchanged_with_accumulated(
                     #[cfg(feature = "accumulator")]
                     {
-                        if old_memo.revisions.accumulated().is_some() {
+                        if old_memo.header.revisions.accumulated().is_some() {
                             InputAccumulatedValues::Any
                         } else {
                             accumulated
@@ -215,31 +235,35 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        if old_memo.value.is_some() && !old_memo.may_be_provisional() {
+        if old_memo.value.is_some() && !old_memo.header.may_be_provisional() {
             let memo = self.execute(db, claim_guard, Some(old_memo))?;
-            let changed_at = memo.revisions.changed_at;
+            let changed_at = memo.header.revisions.changed_at;
 
             // Always assume that a provisional value has changed.
             //
             // We don't know if a provisional value has actually changed. To determine whether a provisional
             // value has changed, we need to iterate the outer cycle, which cannot be done here.
-            return Some(if changed_at > revision || memo.may_be_provisional() {
-                VerifyResult::changed()
-            } else {
-                VerifyResult::unchanged_with_accumulated(
-                    #[cfg(feature = "accumulator")]
-                    match memo.revisions.accumulated() {
-                        Some(_) => InputAccumulatedValues::Any,
-                        None => memo.revisions.accumulated_inputs.load(),
-                    },
-                )
-            });
+            return Some(
+                if changed_at > revision || memo.header.may_be_provisional() {
+                    VerifyResult::changed()
+                } else {
+                    VerifyResult::unchanged_with_accumulated(
+                        #[cfg(feature = "accumulator")]
+                        match memo.header.revisions.accumulated() {
+                            Some(_) => InputAccumulatedValues::Any,
+                            None => memo.header.revisions.accumulated_inputs.load(),
+                        },
+                    )
+                },
+            );
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
         Some(VerifyResult::changed())
     }
+}
 
+impl MemoHeader {
     /// `Some` if the memo's value and `changed_at` time is still valid in this revision.
     /// Does only a shallow O(1) check, doesn't walk the dependencies.
     ///
@@ -252,13 +276,13 @@ where
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<'_, C>,
+        has_value: bool,
     ) -> ShallowUpdate {
         crate::tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
-            memo = memo.tracing_debug()
+            memo = self.tracing_debug(has_value)
         );
-        let verified_at = memo.verified_at.load();
+        let verified_at = self.verified_at.load();
         let revision_now = zalsa.current_revision();
 
         if verified_at == revision_now {
@@ -266,7 +290,7 @@ where
             return ShallowUpdate::Verified;
         }
 
-        let last_changed = zalsa.last_changed_revision(memo.revisions.durability);
+        let last_changed = zalsa.last_changed_revision(self.revisions.durability);
         crate::tracing::trace!(
             "{database_key_index:?}: check_durability({database_key_index:#?}, last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
@@ -286,12 +310,11 @@ where
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<'_, C>,
         update: ShallowUpdate,
     ) {
         if let ShallowUpdate::HigherDurability = update {
-            memo.mark_as_verified(zalsa, database_key_index);
-            memo.mark_outputs_as_verified(zalsa, database_key_index);
+            self.mark_as_verified(zalsa, database_key_index);
+            self.mark_outputs_as_verified(zalsa, database_key_index);
         }
     }
 
@@ -306,13 +329,13 @@ where
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<'_, C>,
+        has_value: bool,
     ) -> bool {
-        if !memo.may_be_provisional() {
+        if !self.may_be_provisional() {
             return true;
         }
 
-        let cycle_heads = memo.cycle_heads();
+        let cycle_heads = self.cycle_heads();
 
         if cycle_heads.is_empty() {
             return true;
@@ -320,14 +343,14 @@ where
 
         crate::tracing::trace!(
             "{database_key_index:?}: validate_may_be_provisional(memo = {memo:#?})",
-            memo = memo.tracing_debug()
+            memo = self.tracing_debug(has_value)
         );
 
-        let verified_at = memo.verified_at.load();
+        let verified_at = self.verified_at.load();
         validate_provisional(
             zalsa,
             database_key_index,
-            &memo.revisions,
+            &self.revisions,
             verified_at,
             cycle_heads,
         ) || validate_same_iteration(
@@ -348,19 +371,20 @@ where
     /// outputs have changed.
     pub(super) fn deep_verify_memo(
         &self,
-        db: &C::DbView,
+        db: crate::database::RawDatabase<'_>,
         zalsa: &Zalsa,
-        old_memo: &Memo<'_, C>,
         database_key_index: DatabaseKeyIndex,
+        cycle_recovery_strategy: CycleRecoveryStrategy,
+        has_value: bool,
     ) -> VerifyResult {
-        match old_memo.revisions.origin() {
+        match self.origin() {
             QueryOriginRef::Derived(edges) => {
                 crate::tracing::debug!(
                     "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
-                    old_memo = old_memo.tracing_debug()
+                    old_memo = self.tracing_debug(has_value)
                 );
 
-                let is_provisional = old_memo.may_be_provisional();
+                let is_provisional = self.may_be_provisional();
 
                 // If the value is from the same revision but is still provisional, consider it changed
                 // because we're now in a new iteration.
@@ -382,25 +406,25 @@ where
                 //
                 // For queries with cycle handling, verify the flattened
                 // dependencies of the cycle head instead.
-                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Panic
-                    && old_memo.was_cycle_participant()
+                if cycle_recovery_strategy == CycleRecoveryStrategy::Panic
+                    && self.was_cycle_participant()
                 {
                     return VerifyResult::changed();
                 }
 
-                let verified_at = old_memo.verified_at.load();
+                let verified_at = self.verified_at.load();
 
                 let result = deep_verify_edges(
-                    db.into(),
+                    db,
                     zalsa,
-                    &old_memo.revisions,
+                    &self.revisions,
                     verified_at,
                     edges,
                     database_key_index,
                 );
 
                 if result.is_unchanged() {
-                    old_memo.mark_as_verified(zalsa, database_key_index);
+                    self.mark_as_verified(zalsa, database_key_index);
                 }
 
                 result

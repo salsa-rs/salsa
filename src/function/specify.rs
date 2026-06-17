@@ -1,7 +1,7 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::active_query::CompletedQuery;
-use crate::function::memo::Memo;
+use crate::function::memo::{Memo, MemoHeader};
 use crate::function::{Configuration, IngredientImpl};
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
@@ -89,8 +89,10 @@ where
 
         let memo = Memo {
             value: Some(value),
-            verified_at: AtomicRevision::from(revision),
-            revisions: completed_query.revisions,
+            header: MemoHeader {
+                verified_at: AtomicRevision::from(revision),
+                revisions: completed_query.revisions,
+            },
         };
 
         crate::tracing::debug!(
@@ -124,19 +126,20 @@ where
 
         // If we are marking this as validated, it must be a value that was
         // assigned by `executor`.
-        match memo.revisions.origin() {
+        match memo.header.origin() {
             QueryOriginRef::Assigned(by_query) => assert_eq!(by_query, executor),
             _ => panic!(
                 "expected a query assigned by `{:?}`, not `{:?}`",
                 executor,
-                memo.revisions.origin(),
+                memo.header.origin(),
             ),
         }
 
         let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(zalsa, database_key_index);
+        memo.header.mark_as_verified(zalsa, database_key_index);
         #[cfg(feature = "accumulator")]
-        memo.revisions
+        memo.header
+            .revisions
             .accumulated_inputs
             .store(InputAccumulatedValues::Empty);
     }

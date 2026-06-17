@@ -138,8 +138,8 @@ where
         let mut iteration = IterationStamp::initial(cancellation_count);
 
         if let Some(old_memo) = opt_old_memo {
-            if old_memo.verified_at.load() == zalsa.current_revision()
-                && old_memo.revisions.iteration().cancellation_count() == cancellation_count
+            if old_memo.header.verified_at.load() == zalsa.current_revision()
+                && old_memo.header.revisions.iteration().cancellation_count() == cancellation_count
             {
                 // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
                 // However, the locking doesn't handle the case where a thread fetches the result of a panicking
@@ -158,11 +158,11 @@ where
 
                 // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
                 // force at least two executions.
-                if old_memo.cycle_heads().contains(&database_key_index) {
+                if old_memo.header.cycle_heads().contains(&database_key_index) {
                     last_provisional_memo_opt = Some(old_memo);
                 }
 
-                iteration = old_memo.revisions.iteration();
+                iteration = old_memo.header.revisions.iteration();
             }
         }
 
@@ -261,7 +261,7 @@ where
                         )
                     });
 
-                debug_assert!(memo.may_be_provisional());
+                debug_assert!(memo.header.may_be_provisional());
                 memo
             });
 
@@ -322,7 +322,7 @@ where
                 active_query,
                 claim_guard,
                 cycle_heads,
-                &last_provisional_memo.revisions,
+                &last_provisional_memo.header.revisions,
                 outer_cycle,
                 iteration,
                 cycle_iteration,
@@ -373,17 +373,17 @@ where
         if let Some(old_memo) = opt_old_memo {
             // If we already executed this query once, then use the tracked-struct ids from the
             // previous execution as the starting point for the new one.
-            active_query.seed_tracked_struct_ids(old_memo.revisions.tracked_struct_ids());
+            active_query.seed_tracked_struct_ids(old_memo.header.revisions.tracked_struct_ids());
 
             // Copy over all inputs and outputs from a previous iteration.
             // This is necessary to:
             // * ensure that tracked struct created during the previous iteration
             //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
             // * ensure the final returned memo depends on all inputs from all iterations.
-            if old_memo.may_be_provisional()
-                && old_memo.verified_at.load() == zalsa.current_revision()
+            if old_memo.header.may_be_provisional()
+                && old_memo.header.verified_at.load() == zalsa.current_revision()
             {
-                active_query.seed_iteration(&old_memo.revisions);
+                active_query.seed_iteration(&old_memo.header.revisions);
             }
         }
 

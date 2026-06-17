@@ -19,7 +19,7 @@ where
         old_memo: &Memo<'_, C>,
         completed_query: &CompletedQuery,
     ) {
-        diff_outputs_on_revision(zalsa, key, &old_memo.revisions, completed_query);
+        diff_outputs_on_revision(zalsa, key, &old_memo.header.revisions, completed_query);
     }
 }
 

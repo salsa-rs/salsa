@@ -4,16 +4,18 @@ use std::mem::transmute;
 use std::ptr::NonNull;
 
 use crate::cycle::{
-    CycleHeads, CycleHeadsIterator, IterationStamp, ProvisionalStatus, empty_cycle_heads,
+    CycleHeads, CycleHeadsIterator, CycleRecoveryStrategy, IterationStamp, ProvisionalStatus,
+    empty_cycle_heads,
 };
 use crate::function::{Configuration, IngredientImpl};
+use crate::hash::{FxHashSet, FxIndexSet};
 use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -64,17 +66,8 @@ impl<C: Configuration> IngredientImpl<C> {
         memo_ingredient_index: MemoIngredientIndex,
     ) {
         let map = |memo: &mut Memo<'static, C>| {
-            match memo.revisions.origin() {
-                QueryOriginRef::Assigned(_) | QueryOriginRef::DerivedUntracked(_) => {
-                    // Careful: Cannot evict memos whose values were
-                    // assigned as output of another query
-                    // or those with untracked inputs
-                    // as their values cannot be reconstructed.
-                }
-                QueryOriginRef::Derived(_) => {
-                    // Set the memo value to `None`.
-                    memo.value = None;
-                }
+            if memo.header.can_evict_value() {
+                memo.value = None;
             }
         };
 
@@ -84,9 +77,15 @@ impl<C: Configuration> IngredientImpl<C> {
 
 #[derive(Debug)]
 pub struct Memo<'db, C: Configuration> {
+    /// Configuration-independent state used to validate and manage this memo.
+    pub(super) header: MemoHeader,
+
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<C::Output<'db>>,
+}
 
+#[derive(Debug)]
+pub(super) struct MemoHeader {
     /// Last revision when this memo was verified; this begins
     /// as the current revision.
     pub(super) verified_at: AtomicRevision,
@@ -95,28 +94,26 @@ pub struct Memo<'db, C: Configuration> {
     pub(super) revisions: QueryRevisions,
 }
 
-impl<'db, C: Configuration> Memo<'db, C> {
-    pub(super) fn new(
-        value: Option<C::Output<'db>>,
-        revision_now: Revision,
-        revisions: QueryRevisions,
-    ) -> Self {
+impl MemoHeader {
+    fn new(revision_now: Revision, revisions: QueryRevisions) -> Self {
         debug_assert!(
             !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_empty(),
             "Memo must be finalized if it has no cycle heads"
         );
-        Memo {
-            value,
+        Self {
             verified_at: AtomicRevision::from(revision_now),
             revisions,
         }
     }
 
-    /// Returns `true` if this memo should be serialized.
-    pub(super) fn should_serialize(&self) -> bool {
-        // TODO: Serialization is a good opportunity to prune old query results based on
-        // the `verified_at` revision.
-        self.value.is_some() && !self.may_be_provisional()
+    #[inline]
+    pub(super) fn origin(&self) -> QueryOriginRef<'_> {
+        self.revisions.origin()
+    }
+
+    fn can_evict_value(&self) -> bool {
+        // Assigned values and values with untracked inputs cannot be reconstructed.
+        matches!(self.origin(), QueryOriginRef::Derived(_))
     }
 
     /// True if this may be a provisional cycle-iteration result.
@@ -170,37 +167,36 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
-    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, 'db, C> {
-        struct TracingDebug<'memo, 'db, C: Configuration> {
-            memo: &'memo Memo<'db, C>,
+    pub(super) fn tracing_debug(&self, has_value: bool) -> impl std::fmt::Debug + use<'_> {
+        struct TracingDebug<'memo> {
+            header: &'memo MemoHeader,
+            has_value: bool,
         }
 
-        impl<C: Configuration> std::fmt::Debug for TracingDebug<'_, '_, C> {
+        impl std::fmt::Debug for TracingDebug<'_> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct("Memo")
                     .field(
                         "value",
-                        if self.memo.value.is_some() {
+                        if self.has_value {
                             &"Some(<value>)"
                         } else {
                             &"None"
                         },
                     )
-                    .field("verified_at", &self.memo.verified_at)
-                    .field("revisions", &self.memo.revisions)
+                    .field("verified_at", &self.header.verified_at)
+                    .field("revisions", &self.header.revisions)
                     .finish()
             }
         }
 
-        TracingDebug { memo: self }
+        TracingDebug {
+            header: self,
+            has_value,
+        }
     }
-}
 
-impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
-where
-    C::Output<'static>: Send + Sync + Any,
-{
-    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
+    pub(super) fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
         for stale_output in self.revisions.origin().outputs() {
             stale_output.remove_stale_output(zalsa, executor);
         }
@@ -211,9 +207,151 @@ where
         }
     }
 
+    pub(super) fn collect_minimum_serialized_edges(
+        &self,
+        zalsa: &Zalsa,
+        edge: QueryEdge,
+        serialized_edges: &mut FxIndexSet<QueryEdge>,
+        visited_edges: &mut FxHashSet<QueryEdge>,
+    ) {
+        visited_edges.insert(edge);
+
+        // Collect the minimum dependency tree.
+        for edge in self.origin().edges() {
+            // Avoid forming cycles.
+            if visited_edges.contains(&edge) {
+                continue;
+            }
+
+            // Avoid flattening edges that we're going to serialize directly.
+            if serialized_edges.contains(&edge) {
+                continue;
+            }
+
+            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+            dependency.collect_minimum_serialized_edges(
+                zalsa,
+                edge,
+                serialized_edges,
+                visited_edges,
+            );
+        }
+    }
+
+    pub(super) fn provisional_status(&self) -> ProvisionalStatus<'_> {
+        let iteration = self.revisions.iteration();
+        let verified_at = self.verified_at.load();
+
+        if self.revisions.verified_final.load(Ordering::Relaxed) {
+            ProvisionalStatus::Final {
+                iteration,
+                verified_at,
+            }
+        } else {
+            ProvisionalStatus::Provisional {
+                iteration,
+                verified_at,
+                cycle_heads: self.cycle_heads(),
+            }
+        }
+    }
+
+    pub(super) fn set_cycle_iteration_count(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration: IterationStamp,
+    ) {
+        self.revisions
+            .set_iteration_count(database_key_index, iteration);
+    }
+
+    pub(super) fn finalize_cycle_head(&self) {
+        self.revisions.verified_final.store(true, Ordering::Release);
+    }
+
+    pub(super) fn flatten_cycle_head_dependencies(
+        &self,
+        zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
+        cycle_recovery_strategy: CycleRecoveryStrategy,
+        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+        seen: &mut FxHashSet<DatabaseKeyIndex>,
+    ) {
+        // Only flatten dependencies of provisional queries, because only those
+        // contain cyclic dependencies.
+        if !self.may_be_provisional() {
+            flattened_input_outputs.insert(QueryEdge::input(database_key_index));
+            return;
+        }
+
+        // There's nothing to do if we've visited this query before.
+        if !seen.insert(database_key_index) {
+            return;
+        }
+
+        let inputs = self.origin().inputs();
+
+        match cycle_recovery_strategy {
+            // For queries with cycle handling, simply extend the input/outputs, because
+            // they already flattened their own dependencies when completing the query.
+            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
+                flattened_input_outputs.extend(inputs.map(QueryEdge::input));
+            }
+            // For regular queries, recurse.
+            CycleRecoveryStrategy::Panic => {
+                for input in inputs {
+                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                    ingredient.flatten_cycle_head_dependencies(
+                        zalsa,
+                        input.key_index(),
+                        flattened_input_outputs,
+                        seen,
+                    );
+                }
+            }
+        }
+    }
+
+    pub(super) fn cycle_converged(&self) -> bool {
+        self.revisions.cycle_converged()
+    }
+}
+
+impl<'db, C: Configuration> Memo<'db, C> {
+    pub(super) fn new(
+        value: Option<C::Output<'db>>,
+        revision_now: Revision,
+        revisions: QueryRevisions,
+    ) -> Self {
+        Self {
+            value,
+            header: MemoHeader::new(revision_now, revisions),
+        }
+    }
+
+    /// Returns `true` if this memo should be serialized.
+    pub(super) fn should_serialize(&self) -> bool {
+        // TODO: Serialization is a good opportunity to prune old query results based on
+        // the `verified_at` revision.
+        self.value.is_some() && !self.header.may_be_provisional()
+    }
+
+    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, 'db, C> {
+        self.header.tracing_debug(self.value.is_some())
+    }
+}
+
+impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
+where
+    C::Output<'static>: Send + Sync + Any,
+{
+    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
+        self.header.remove_outputs(zalsa, executor);
+    }
+
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
-        let size_of = std::mem::size_of::<Memo<C>>() + self.revisions.allocation_size();
+        let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
         let heap_size = if let Some(value) = self.value.as_ref() {
             C::heap_size(value)
         } else {
@@ -236,7 +374,7 @@ where
 #[cfg(feature = "persistence")]
 mod persistence {
     use crate::function::Configuration;
-    use crate::function::memo::Memo;
+    use crate::function::memo::{Memo, MemoHeader};
     use crate::revision::AtomicRevision;
     use crate::zalsa_local::QueryRevisions;
     use crate::zalsa_local::persistence::{MappedQueryRevisions, PersistentQueryOrigin};
@@ -257,10 +395,13 @@ mod persistence {
             serialized_origin: PersistentQueryOrigin,
         ) -> MappedMemo<'_, 'db, C> {
             let Memo {
-                ref verified_at,
                 ref value,
-                ref revisions,
+                ref header,
             } = *self;
+            let MemoHeader {
+                ref verified_at,
+                ref revisions,
+            } = *header;
 
             MappedMemo {
                 value: value.as_ref(),
@@ -347,8 +488,10 @@ mod persistence {
 
             Ok(Memo {
                 value: Some(memo.value.0),
-                verified_at: memo.verified_at,
-                revisions: memo.revisions,
+                header: MemoHeader {
+                    verified_at: memo.verified_at,
+                    revisions: memo.revisions,
+                },
             })
         }
     }
@@ -448,6 +591,8 @@ mod _memory_usage {
     use std::num::NonZeroUsize;
 
     // Memo's are stored a lot, make sure their size doesn't randomly increase.
+    const _: [(); std::mem::size_of::<super::MemoHeader>()] =
+        [(); std::mem::size_of::<[usize; 4]>()];
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 5]>()];
 

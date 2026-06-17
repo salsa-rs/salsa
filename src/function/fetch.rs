@@ -35,13 +35,13 @@ where
 
         zalsa_local.report_tracked_read(
             database_key_index,
-            memo.revisions.durability,
-            memo.revisions.changed_at,
-            memo.cycle_heads(),
+            memo.header.revisions.durability,
+            memo.header.revisions.changed_at,
+            memo.header.cycle_heads(),
             #[cfg(feature = "accumulator")]
-            memo.revisions.accumulated().is_some(),
+            memo.header.revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
-            &memo.revisions.accumulated_inputs,
+            &memo.header.revisions.accumulated_inputs,
         );
 
         memo_value
@@ -80,10 +80,13 @@ where
 
         let database_key_index = self.database_key_index(id);
 
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo);
+        let can_shallow_update = memo
+            .header
+            .shallow_verify_memo(zalsa, database_key_index, true);
 
-        if can_shallow_update.yes() && !memo.may_be_provisional() {
-            self.update_shallow(zalsa, database_key_index, memo, can_shallow_update);
+        if can_shallow_update.yes() && !memo.header.may_be_provisional() {
+            memo.header
+                .update_shallow(zalsa, database_key_index, can_shallow_update);
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.
@@ -130,23 +133,33 @@ where
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 let can_shallow_update =
-                    self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+                    old_memo
+                        .header
+                        .shallow_verify_memo(zalsa, database_key_index, true);
                 if can_shallow_update.yes()
-                    && self.validate_may_be_provisional(
+                    && old_memo.header.validate_may_be_provisional(
                         zalsa,
                         zalsa_local,
                         database_key_index,
-                        old_memo,
+                        true,
                     )
                 {
-                    self.update_shallow(zalsa, database_key_index, old_memo, can_shallow_update);
+                    old_memo
+                        .header
+                        .update_shallow(zalsa, database_key_index, can_shallow_update);
 
                     // SAFETY: memo is present in memo_map and we have verified that it is
                     // still valid for the current revision.
                     return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                 }
 
-                let verify_result = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
+                let verify_result = old_memo.header.deep_verify_memo(
+                    db.into(),
+                    zalsa,
+                    database_key_index,
+                    C::CYCLE_STRATEGY,
+                    true,
+                );
 
                 if verify_result.is_unchanged() {
                     // SAFETY: memo is present in memo_map and we have verified that it is
@@ -192,19 +205,25 @@ where
                     // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
                     // but that would require inserting itself as a cycle head, which either requires clone
                     // on the value OR a concurrent `Vec` for cycle heads.
-                    if memo.verified_at.load() == zalsa.current_revision()
+                    if memo.header.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
-                        && memo.revisions.iteration().cancellation_count() == cancellation_count
-                        && memo.revisions.cycle_heads().contains(&database_key_index)
+                        && memo.header.revisions.iteration().cancellation_count()
+                            == cancellation_count
+                        && memo
+                            .header
+                            .revisions
+                            .cycle_heads()
+                            .contains(&database_key_index)
                     {
-                        memo.revisions
+                        memo.header
+                            .revisions
                             .cycle_heads()
                             .remove_all_except(database_key_index);
 
                         crate::tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
                                 returning last provisional value: {:#?}",
-                            memo.revisions
+                            memo.header.revisions
                         );
 
                         // SAFETY: memo is present in memo_map.
@@ -219,12 +238,12 @@ where
 
                 let iteration = memo_guard
                     .and_then(|old_memo| {
-                        if old_memo.verified_at.load() == zalsa.current_revision()
+                        if old_memo.header.verified_at.load() == zalsa.current_revision()
                             && old_memo.value.is_some()
-                            && old_memo.revisions.iteration().cancellation_count()
+                            && old_memo.header.revisions.iteration().cancellation_count()
                                 == cancellation_count
                         {
-                            Some(old_memo.revisions.iteration())
+                            Some(old_memo.header.revisions.iteration())
                         } else {
                             None
                         }
