@@ -37,10 +37,10 @@ pub trait Configuration: Sized + 'static {
     const PERSIST: bool;
 
     // The minimum number of revisions that must pass before a stale value is garbage collected.
-    #[cfg(test)]
+    #[cfg(not(test))]
     const REVISIONS: NonZeroUsize = NonZeroUsize::new(3).unwrap();
 
-    #[cfg(not(test))] // More aggressive garbage collection by default when testing.
+    #[cfg(test)] // More aggressive garbage collection by default when testing.
     const REVISIONS: NonZeroUsize = NonZeroUsize::new(1).unwrap();
 
     /// The fields of the struct being interned.
