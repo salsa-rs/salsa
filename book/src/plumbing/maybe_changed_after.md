@@ -1,6 +1,6 @@
 # Maybe changed after
 
-The `maybe_changed_after` operation computes whether a query's value *may have changed* **after** the given revision. In other words, `Q.maybe_change_since(R)` is true if the value of the query `Q` may have changed in the revisions `(R+1)..R_now`, where `R_now` is the current revision. Note that it doesn't make sense to ask `maybe_changed_after(R_now)`.
+The `maybe_changed_after` operation computes whether a query's value *may have changed* **after** the given revision. In other words, `Q.maybe_changed_after(R)` is true if the value of the query `Q` may have changed in the revisions `(R+1)..R_now`, where `R_now` is the current revision. Note that it doesn't make sense to ask `maybe_changed_after(R_now)`.
 
 ## Input queries
 
