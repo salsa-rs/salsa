@@ -271,12 +271,7 @@ fn everything() {
                   "changed_at": 1,
                   "durability": 2,
                   "origin": {
-                    "Derived": [
-                      [
-                        3073,
-                        4
-                      ]
-                    ]
+                    "Derived": []
                   },
                   "verified_final": true,
                   "extra": null
