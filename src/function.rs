@@ -648,7 +648,7 @@ impl memo::MemoHeader {
             CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
                 flattened_input_outputs.extend(inputs.map(QueryEdge::input));
             }
-            // For regular queries, recurse.
+            // For regular queries, recurse
             CycleRecoveryStrategy::Panic => {
                 for input in inputs {
                     let ingredient = zalsa.lookup_ingredient(input.ingredient_index());

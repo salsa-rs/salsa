@@ -258,6 +258,7 @@ impl MemoHeader {
         };
 
         if verified {
+            // Check if the inputs are still valid. We can just compare `changed_at`.
             Some(if self.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
@@ -266,6 +267,7 @@ impl MemoHeader {
         } else if has_value && !self.may_be_provisional() {
             None
         } else {
+            // Otherwise, nothing for it: have to consider the value to have changed.
             Some(VerifyResult::changed())
         }
     }

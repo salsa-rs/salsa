@@ -185,9 +185,8 @@ where
                         completed_query,
                         requires_initial_value,
                     } => {
-                        // For FallbackImmediate, use the fallback value instead of the computed
-                        // value for all cycle participants. This ensures that the results don't
-                        // depend on the query call order, see
+                        // For FallbackImmediate, use the fallback value instead of the computed value
+                        // for all cycle participants. This ensures that the results don't depend on the query call order, see
                         // https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285.
                         if requires_initial_value {
                             new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
@@ -360,19 +359,14 @@ impl MemoHeader {
             return None;
         }
 
-        // The `DependencyGraph` locking propagates panics when another thread is blocked on a
-        // panicking query. However, the locking doesn't handle the case where a thread fetches
-        // the result of a panicking cycle head query after all locks were released. That's what
-        // we do here.
-        //
+        // The `DependencyGraph` locking propagates panics when another thread is blocked on a panicking query.
+        // However, the locking doesn't handle the case where a thread fetches the result of a panicking
+        // cycle head query **after** all locks were released. That's what we do here.
         // We could consider re-executing the entire cycle but:
         // a) It's tricky to ensure that all queries participating in the cycle will re-execute
-        //    (we can't rely on `iteration` being updated for nested cycles because the nested
-        //    cycles may have completed successfully).
+        //    (we can't rely on `iteration` being updated for nested cycles because the nested cycles may have completed successfully).
         // b) It's guaranteed that this query will panic again anyway.
-        //
-        // That's why we simply propagate the panic here. It simplifies our lives and avoids
-        // duplicate panic messages.
+        // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
         if !has_value {
             tracing::warn!(
                 "Propagating panic for cycle head that panicked in an earlier execution in that revision"
@@ -382,8 +376,8 @@ impl MemoHeader {
 
         Some(PreviousIteration {
             iteration: self.revisions.iteration(),
-            // Only use the last provisional memo if it was a cycle head in the last iteration.
-            // This forces at least two executions.
+            // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
+            // force at least two executions.
             reuse_as_provisional: self.cycle_heads().contains(&database_key_index),
         })
     }
@@ -413,9 +407,10 @@ fn try_complete_query<'db>(
 ) -> QueryExecutionOutcome<'db> {
     let database_key_index = active_query.database_key_index;
 
-    // Take the cycle heads to not fight Rust's borrow checker.
+    // Take the cycle heads to not-fight-rust's-borrow-checker.
     let mut cycle_heads = active_query.take_cycle_heads();
 
+    // If there are no cycle heads, break out of the loop.
     if cycle_heads.is_empty() {
         // There's no cycle iteration state to preserve.
         let iteration = if iteration.is_initial_iteration() {
@@ -443,8 +438,8 @@ fn try_complete_query<'db>(
         database_key_index,
     );
 
-    // Did the new result depend on our own provisional value, in a cycle? If not, this query
-    // is only a participant in an outer cycle.
+    // Did the new result we got depend on our own provisional value, in a cycle?
+    // If not, return because this query is not a cycle head.
     if !depends_on_self {
         let Some(outer_cycle) = outer_cycle else {
             panic!(
@@ -465,16 +460,17 @@ fn try_complete_query<'db>(
         };
     }
 
-    // If this is the outermost cycle, use the maximum iteration count of all cycles. This is
-    // important for when later iterations introduce new cycle heads that then become the
-    // outermost cycle. We want to ensure that the iteration count keeps increasing for all
-    // queries or they won't be re-executed because `validate_same_iteration` would pass when we
-    // go from 1 -> 0 and then increment by 1 to 1.
+    // If this is the outermost cycle, use the maximum iteration count of all cycles.
+    // This is important for when later iterations introduce new cycle heads (that then
+    // become the outermost cycle). We want to ensure that the iteration count keeps increasing
+    // for all queries or they won't be re-executed because `validate_same_iteration` would
+    // pass when we go from 1 -> 0 and then increment by 1 to 1).
     let cycle_iteration = if outer_cycle.is_none() {
         max_iteration
     } else {
-        // Otherwise keep the iteration count because outer cycles already have a cycle head with
-        // this exact iteration count (and we don't allow heads from different iterations).
+        // Otherwise keep the iteration count because outer cycles
+        // already have a cycle head with this exact iteration count (and we don't allow
+        // heads from different iterations).
         iteration
     };
 

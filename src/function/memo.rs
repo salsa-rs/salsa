@@ -65,6 +65,7 @@ impl<C: Configuration> IngredientImpl<C> {
     ) {
         let map = |memo: &mut Memo<'static, C>| {
             if memo.header.can_evict_value() {
+                // Set the memo value to `None`.
                 memo.value = None;
             }
         };
@@ -110,7 +111,10 @@ impl MemoHeader {
     }
 
     fn can_evict_value(&self) -> bool {
-        // Assigned values and values with untracked inputs cannot be reconstructed.
+        // Careful: Cannot evict memos whose values were
+        // assigned as output of another query
+        // or those with untracked inputs
+        // as their values cannot be reconstructed.
         matches!(self.origin(), QueryOriginRef::Derived(_))
     }
 
