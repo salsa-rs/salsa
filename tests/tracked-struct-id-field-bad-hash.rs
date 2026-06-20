@@ -8,6 +8,7 @@
 //! ids are based on the *hash* of the untracked fields, ids are generational
 //! based on the field values.
 
+use salsa::plumbing::{AsId, ZalsaDatabase};
 use salsa::{Database as Db, Setter};
 use test_log::test;
 
@@ -80,6 +81,12 @@ fn dependent_query() {
     // but practically it has been re-created due to generational ids.
     let tracked = create_tracked(&db, input);
     assert_eq!(with_tracked(&db, tracked), 0);
+    let entry = MyTracked::ingredient(&db)
+        .entries(db.zalsa())
+        .next()
+        .unwrap();
+    assert_eq!(entry.as_struct().as_id(), tracked.as_id());
+
     input.set_field(&mut db).to(2);
     let tracked = create_tracked(&db, input);
     assert_eq!(with_tracked(&db, tracked), 2);

@@ -21,6 +21,7 @@ use crate::revision::{AtomicRevision, OptionalAtomicRevision};
 use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
+use crate::sync::atomic::{AtomicU32, Ordering};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
@@ -383,6 +384,9 @@ pub struct Value<C>
 where
     C: Configuration,
 {
+    /// The generation of the ID currently stored in this table slot.
+    generation: AtomicU32,
+
     /// The revision when this tracked struct was last updated.
     /// This field also acts as a kind of "lock" over the `value` field. Once it is equal
     /// to `Some(current_revision)`, the fields are locked and
@@ -557,7 +561,8 @@ where
         fields: C::Fields<'db>,
     ) -> Id {
         let current_revision = zalsa.current_revision();
-        let value = |_| Value {
+        let value = |id: Id| Value {
+            generation: AtomicU32::new(id.generation()),
             updated_at: OptionalAtomicRevision::new(Some(current_revision)),
             durability: current_deps.durability,
             revisions: C::new_revisions(current_deps.changed_at),
@@ -728,6 +733,12 @@ where
             id = id
                 .next_generation()
                 .expect("already verified that generation is not maximum");
+            // SAFETY: We hold the write lock for this value.
+            unsafe {
+                (*data_raw)
+                    .generation
+                    .store(id.generation(), Ordering::Release)
+            };
         }
 
         let durability = unsafe { &mut (*data_raw).durability };
@@ -928,7 +939,9 @@ where
             })
             .map(|(id, value)| StructEntry {
                 value,
-                key: self.database_key_index(id),
+                key: self.database_key_index(
+                    id.with_generation(value.generation.load(Ordering::Acquire)),
+                ),
             })
     }
 }
@@ -1303,6 +1316,7 @@ mod persistence {
     use super::{Configuration, IngredientImpl, Value};
     use crate::plumbing::Ingredient;
     use crate::revision::OptionalAtomicRevision;
+    use crate::sync::atomic::{AtomicU32, Ordering};
     use crate::table::memo::MemoTable;
     use crate::zalsa::Zalsa;
     use crate::{Durability, Id};
@@ -1338,6 +1352,7 @@ mod persistence {
                 .slots_of::<Value<C>>()
                 .filter(|(_, value)| value.updated_at.load().is_some())
             {
+                let id = id.with_generation(value.generation.load(Ordering::Acquire));
                 map.serialize_entry(&id.as_bits(), value)?;
             }
 
@@ -1356,6 +1371,7 @@ mod persistence {
             let mut value = serializer.serialize_struct("Value", 4)?;
 
             let Value {
+                generation: _,
                 durability,
                 updated_at,
                 revisions,
@@ -1429,6 +1445,7 @@ mod persistence {
                 let (page_idx, _) = crate::table::split_id(id);
 
                 let value = Value::<C> {
+                    generation: AtomicU32::new(id.generation()),
                     updated_at: value.updated_at,
                     durability: value.durability,
                     revisions: value.revisions,
@@ -1457,7 +1474,8 @@ mod persistence {
                 };
 
                 assert_eq!(
-                    allocated_id, id,
+                    allocated_id.index(),
+                    id.index(),
                     "values are serialized in allocation order"
                 );
             }
