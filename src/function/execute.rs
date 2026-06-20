@@ -68,7 +68,8 @@ where
                 (new_value, active_query.pop(IterationStamp::default()))
             }
             CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                let _cancellation_guard = CancellationGuard::new(claim_guard.zalsa_local());
+                let _cancellation_guard =
+                    DisableLocalCancellationGuard::new(claim_guard.zalsa_local());
 
                 self.execute_maybe_iterate(
                     db,
@@ -394,12 +395,12 @@ where
 }
 
 #[must_use]
-struct CancellationGuard<'a> {
+struct DisableLocalCancellationGuard<'a> {
     zalsa_local: &'a ZalsaLocal,
     was_disabled: bool,
 }
 
-impl<'a> CancellationGuard<'a> {
+impl<'a> DisableLocalCancellationGuard<'a> {
     fn new(zalsa_local: &'a ZalsaLocal) -> Self {
         Self {
             zalsa_local,
@@ -408,7 +409,7 @@ impl<'a> CancellationGuard<'a> {
     }
 }
 
-impl Drop for CancellationGuard<'_> {
+impl Drop for DisableLocalCancellationGuard<'_> {
     fn drop(&mut self) {
         self.zalsa_local
             .set_cancellation_disabled(self.was_disabled);
