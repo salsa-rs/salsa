@@ -6,7 +6,7 @@
 mod common;
 use common::LogDatabase;
 use expect_test::expect;
-use salsa::{Database, Durability, Setter};
+use salsa::{Database, Durability, HashEqLike, Lookup, Setter};
 use test_log::test;
 
 #[salsa::input]
@@ -28,6 +28,81 @@ impl std::hash::Hash for BadHash {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_i16(0);
     }
+}
+
+#[derive(Debug)]
+struct PanickingLookup {
+    value: usize,
+    should_panic: bool,
+}
+
+impl std::hash::Hash for PanickingLookup {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_i16(0);
+    }
+}
+
+impl Lookup<BadHash> for PanickingLookup {
+    fn into_owned(self) -> BadHash {
+        assert!(!self.should_panic, "lookup panic");
+        BadHash(self.value)
+    }
+}
+
+impl HashEqLike<PanickingLookup> for BadHash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_i16(0);
+    }
+
+    fn eq(&self, data: &PanickingLookup) -> bool {
+        self.0 == data.value
+    }
+}
+
+#[salsa::input]
+struct PanickingInput {
+    value: usize,
+    should_panic: bool,
+}
+
+#[salsa::interned(revisions = 1)]
+struct PanickingInterned<'db> {
+    value: BadHash,
+}
+
+#[salsa::tracked]
+fn intern_panicking(db: &dyn Database, input: PanickingInput) -> PanickingInterned<'_> {
+    PanickingInterned::new(
+        db,
+        PanickingLookup {
+            value: input.value(db),
+            should_panic: input.should_panic(db),
+        },
+    )
+}
+
+#[test]
+fn panic_during_reuse_does_not_orphan_slot() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use salsa::plumbing::AsId;
+
+    let mut db = common::LoggerDatabase::default();
+    let input = PanickingInput::new(&db, 0, false);
+
+    let first_id = intern_panicking(&db, input).as_id();
+    input.set_value(&mut db).to(1);
+    let second_id = intern_panicking(&db, input).as_id();
+    assert_eq!(second_id, first_id.next_generation().unwrap());
+
+    input.set_value(&mut db).to(2);
+    input.set_should_panic(&mut db).to(true);
+    let result = catch_unwind(AssertUnwindSafe(|| intern_panicking(&db, input)));
+    assert!(result.is_err());
+
+    input.set_should_panic(&mut db).to(false);
+    let recovered_id = intern_panicking(&db, input).as_id();
+    assert_eq!(recovered_id, second_id.next_generation().unwrap());
 }
 
 #[salsa::interned]
@@ -317,6 +392,43 @@ fn test_reuse() {
             "DidValidateInternedValue { key: Interned(Id(402g2)), revision: R10 }",
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(9)) }",
+        ]"#]]);
+}
+
+#[test]
+fn reuse_discards_memos_for_old_generation() {
+    use salsa::plumbing::AsId;
+
+    #[salsa::tracked]
+    fn intern(db: &dyn Database, input: Input) -> Interned<'_> {
+        Interned::new(db, BadHash(input.field1(db)))
+    }
+
+    #[salsa::tracked]
+    fn read(db: &dyn Database, interned: Interned<'_>) -> usize {
+        interned.field1(db).0
+    }
+
+    let mut db = common::DiscardLoggerDatabase::default();
+    let input = Input::new(&db, 0);
+    let first = intern(&db, input);
+    let first_id = first.as_id();
+    assert_eq!(read(&db, first), 0);
+    db.clear_logs();
+
+    let mut reused = false;
+    for value in 1..10 {
+        input.set_field1(&mut db).to(value);
+        if intern(&db, input).as_id().index() == first_id.index() {
+            reused = true;
+            break;
+        }
+    }
+    assert!(reused);
+
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(DidDiscard { key: read(Id(400)) })",
         ]"#]]);
 }
 
