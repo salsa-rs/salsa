@@ -102,9 +102,8 @@ impl<'de> serde::Deserialize<'de> for AtomicRevision {
     where
         D: serde::Deserializer<'de>,
     {
-        serde::Deserialize::deserialize(deserializer).map(|data| Self {
-            data: AtomicUsize::new(data),
-        })
+        let revision: Revision = serde::Deserialize::deserialize(deserializer)?;
+        Ok(Self::new(revision))
     }
 }
 
@@ -228,6 +227,12 @@ impl OptionalAtomicRevision {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn atomic_revision_rejects_zero_when_deserializing() {
+        assert!(serde_json::from_str::<AtomicRevision>("0").is_err());
+    }
 
     #[test]
     fn optional_atomic_revision() {
