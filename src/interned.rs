@@ -1150,6 +1150,11 @@ impl<C: Configuration> RevisionQueue<C> {
     fn record_cold(&self, revision: Revision) {
         let _lock = self.lock.lock();
 
+        // Another thread may have recorded this revision while we waited for the lock.
+        if self.revisions[0].load() >= revision {
+            return;
+        }
+
         // Otherwise, update the queue, maintaining sorted order.
         //
         // Note that this should only happen once per revision.
@@ -1748,5 +1753,52 @@ mod persistence {
                 .map(DeserializeFields)
                 .map_err(de::Error::custom)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestConfiguration;
+
+    impl Configuration for TestConfiguration {
+        const LOCATION: crate::ingredient::Location = crate::ingredient::Location {
+            file: file!(),
+            line: line!(),
+        };
+        const DEBUG_NAME: &'static str = "TestConfiguration";
+        const PERSIST: bool = false;
+        const REVISIONS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
+
+        type Fields<'db> = ();
+        type Struct<'db> = Id;
+
+        fn serialize<S>(_value: &Self::Fields<'_>, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: plumbing::serde::Serializer,
+        {
+            unimplemented!()
+        }
+
+        fn deserialize<'de, D>(_deserializer: D) -> Result<Self::Fields<'static>, D::Error>
+        where
+            D: plumbing::serde::Deserializer<'de>,
+        {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn revision_queue_records_each_revision_once() {
+        let queue = RevisionQueue::<TestConfiguration>::default();
+        let revision = Revision::start().next();
+
+        // Simulate two threads that both passed the fast-path check before taking the lock.
+        queue.record_cold(revision);
+        queue.record_cold(revision);
+
+        assert_eq!(queue.revisions[0].load(), revision);
+        assert_eq!(queue.revisions[1].load(), Revision::start());
     }
 }
