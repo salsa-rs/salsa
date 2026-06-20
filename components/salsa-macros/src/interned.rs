@@ -45,7 +45,7 @@ impl AllowedOptions for InternedStruct {
 
     const NON_UPDATE_TYPES: bool = true;
 
-    const SINGLETON: bool = true;
+    const SINGLETON: bool = false;
 
     const DATA: bool = true;
 

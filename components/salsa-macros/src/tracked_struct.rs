@@ -41,7 +41,7 @@ impl AllowedOptions for TrackedStruct {
 
     const NON_UPDATE_TYPES: bool = false;
 
-    const SINGLETON: bool = true;
+    const SINGLETON: bool = false;
 
     const DATA: bool = true;
 
