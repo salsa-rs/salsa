@@ -437,19 +437,19 @@ where
 }
 
 #[cfg(feature = "triomphe")]
-unsafe impl<T> Update for trimophe::Arc<T>
+unsafe impl<T> Update for triomphe::Arc<T>
 where
     T: Update,
 {
     unsafe fn maybe_update(old_pointer: *mut Self, new_arc: Self) -> bool {
-        let old_arc: &mut trimophe::Arc<T> = unsafe { &mut *old_pointer };
+        let old_arc: &mut triomphe::Arc<T> = unsafe { &mut *old_pointer };
 
-        if trimophe::Arc::ptr_eq(old_arc, &new_arc) {
+        if triomphe::Arc::ptr_eq(old_arc, &new_arc) {
             return false;
         }
 
-        if let Some(inner) = trimophe::Arc::get_mut(old_arc) {
-            match trimophe::Arc::try_unwrap(new_arc) {
+        if let Some(inner) = triomphe::Arc::get_mut(old_arc) {
+            match triomphe::Arc::try_unwrap(new_arc) {
                 Ok(new_inner) => unsafe { T::maybe_update(inner, new_inner) },
                 Err(new_arc) => {
                     // We can't unwrap the new arc, so we have to update the old one in place.
