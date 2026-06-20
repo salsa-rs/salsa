@@ -922,6 +922,10 @@ where
         zalsa
             .table()
             .slots_of::<Value<C>>()
+            .filter(|(_, value)| {
+                // Deleted values remain allocated for reuse with `updated_at == None`.
+                value.updated_at.load().is_some()
+            })
             .map(|(id, value)| StructEntry {
                 value,
                 key: self.database_key_index(id),
@@ -1056,7 +1060,13 @@ where
     }
 
     fn should_serialize(&self, zalsa: &Zalsa) -> bool {
-        C::PERSIST && self.entries(zalsa).next().is_some()
+        C::PERSIST
+            && zalsa
+                .table()
+                .slots_of::<Value<C>>()
+                // Serialization has exclusive database access, so any value that is not
+                // write-locked is live, even if it has not been verified in this revision.
+                .any(|(_, value)| value.updated_at.load().is_some())
     }
 
     #[cfg(feature = "persistence")]
@@ -1315,10 +1325,19 @@ mod persistence {
         {
             let Self { zalsa, .. } = self;
 
-            let count = zalsa.table().slots_of::<Value<C>>().count();
+            let count = zalsa
+                .table()
+                .slots_of::<Value<C>>()
+                // Deleted values remain allocated for reuse with `updated_at == None`.
+                .filter(|(_, value)| value.updated_at.load().is_some())
+                .count();
             let mut map = serializer.serialize_map(Some(count))?;
 
-            for (id, value) in zalsa.table().slots_of::<Value<C>>() {
+            for (id, value) in zalsa
+                .table()
+                .slots_of::<Value<C>>()
+                .filter(|(_, value)| value.updated_at.load().is_some())
+            {
                 map.serialize_entry(&id.as_bits(), value)?;
             }
 
