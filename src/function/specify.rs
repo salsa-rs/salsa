@@ -39,8 +39,8 @@ where
         // * Q4 invokes Q2 and then Q1
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
-        let database_key_index = <C::Input<'db>>::database_key_index(zalsa, key);
-        if !zalsa_local.is_tracked_struct_of_active_query(database_key_index) {
+        let input_key = <C::Input<'db>>::database_key_index(zalsa, key);
+        if !zalsa_local.is_tracked_struct_of_active_query(input_key) {
             panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
 
@@ -76,8 +76,12 @@ where
             stale_tracked_structs: Vec::new(),
         };
 
+        let database_key_index = self.database_key_index(key);
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
+            completed_query
+                .stale_tracked_structs
+                .extend_from_slice(old_memo.revisions.tracked_struct_ids());
             self.backdate_if_appropriate(
                 old_memo,
                 database_key_index,
@@ -101,7 +105,6 @@ where
         self.insert_memo(zalsa, key, memo, memo_ingredient_index);
 
         // Record that the current query *specified* a value for this cell.
-        let database_key_index = self.database_key_index(key);
         zalsa_local.add_output(database_key_index);
     }
 
