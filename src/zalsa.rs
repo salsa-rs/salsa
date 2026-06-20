@@ -195,10 +195,21 @@ impl Zalsa {
 
         // Collect and initialize all registered ingredients.
         #[cfg(feature = "inventory")]
-        let mut jars = inventory::iter::<ErasedJar>()
-            .copied()
-            .chain(jars)
-            .collect::<Vec<_>>();
+        let mut jars = {
+            let inventory_jars = inventory::iter::<ErasedJar>().copied().collect::<Vec<_>>();
+
+            for jar in &jars {
+                assert!(
+                    inventory_jars
+                        .iter()
+                        .any(|inventory_jar| (inventory_jar.type_id)() == (jar.type_id)()),
+                    "ingredient `{}` is not registered with inventory",
+                    jar.type_name(),
+                );
+            }
+
+            inventory_jars.into_iter().chain(jars).collect::<Vec<_>>()
+        };
 
         #[cfg(not(feature = "inventory"))]
         let mut jars = jars;

@@ -224,6 +224,7 @@ impl<Db: Database> StorageBuilder<Db> {
     /// Manually register an ingredient.
     ///
     /// Manual ingredient registration is necessary when the `inventory` feature is disabled.
+    /// When `inventory` is enabled, the ingredient must also be registered globally.
     pub fn ingredient<I: HasJar>(mut self) -> Self {
         self.jars.push(ErasedJar::erase::<I>());
         self
