@@ -428,30 +428,6 @@ where
     memos: MemoTable,
 }
 
-#[must_use]
-struct WriteGuard<'a> {
-    updated_at: &'a OptionalAtomicRevision,
-    restore_to: Option<Revision>,
-    id: Id,
-}
-
-impl WriteGuard<'_> {
-    fn release(mut self, revision: Revision) {
-        self.restore_to = Some(revision);
-    }
-}
-
-impl Drop for WriteGuard<'_> {
-    fn drop(&mut self) {
-        let swapped_out = self.updated_at.swap(self.restore_to);
-        assert!(
-            swapped_out.is_none(),
-            "two concurrent writers to {:?}, should not be possible",
-            self.id
-        );
-    }
-}
-
 // ANCHOR_END: ValueStruct
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -951,6 +927,30 @@ where
                 value,
                 key: self.database_key_index(id),
             })
+    }
+}
+
+#[must_use]
+struct WriteGuard<'a> {
+    updated_at: &'a OptionalAtomicRevision,
+    restore_to: Option<Revision>,
+    id: Id,
+}
+
+impl WriteGuard<'_> {
+    fn release(mut self, revision: Revision) {
+        self.restore_to = Some(revision);
+    }
+}
+
+impl Drop for WriteGuard<'_> {
+    fn drop(&mut self) {
+        let swapped_out = self.updated_at.swap(self.restore_to);
+        assert!(
+            swapped_out.is_none(),
+            "two concurrent writers to {:?}, should not be possible",
+            self.id
+        );
     }
 }
 
