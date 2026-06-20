@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use proc_macro2::{Literal, Span, TokenStream};
-use syn::{Token, parenthesized, parse::ParseStream, spanned::Spanned};
+use syn::{Token, parenthesized, parse::ParseStream, spanned::Spanned, visit::Visit};
 use synstructure::BindStyle;
 
 use crate::{hygiene::Hygiene, kw};
@@ -22,6 +24,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
 
     let old_pointer = hygiene.ident("old_pointer");
     let new_value = hygiene.ident("new_value");
+    let mut used_type_params = UsedTypeParams::new(&input.generics);
 
     let fields: TokenStream = structure
         .variants()
@@ -82,6 +85,9 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
 
                 let field_ty = &binding.ast().ty;
                 let field_index = Literal::usize_unsuffixed(index);
+                if attr.is_none() {
+                    used_type_params.visit_type(field_ty);
+                }
 
                 let (maybe_update, unsafe_token) = match attr {
                     Some(attr) => {
@@ -130,8 +136,9 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
         .collect::<syn::Result<_>>()?;
 
     let ident = &input.ident;
+    let used_type_params = used_type_params.used;
     let generics = input.generics;
-    let generics = add_trait_bounds(generics);
+    let generics = add_trait_bounds(generics, &used_type_params);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let tokens = quote! {
@@ -151,14 +158,54 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     Ok(crate::debug::dump_tokens(&input.ident, tokens))
 }
 
-// Add a bound `T: salsa::Update` to every type parameter T
-fn add_trait_bounds(mut generics: syn::Generics) -> syn::Generics {
+fn add_trait_bounds(
+    mut generics: syn::Generics,
+    used_type_params: &HashSet<String>,
+) -> syn::Generics {
     for param in &mut generics.params {
-        if let syn::GenericParam::Type(type_param) = param {
+        let syn::GenericParam::Type(type_param) = param else {
+            continue;
+        };
+
+        if used_type_params.contains(&type_param.ident.to_string()) {
             type_param.bounds.push(syn::parse_quote!(::salsa::Update));
         }
     }
     generics
+}
+
+struct UsedTypeParams {
+    type_params: HashSet<String>,
+    used: HashSet<String>,
+}
+
+impl UsedTypeParams {
+    fn new(generics: &syn::Generics) -> Self {
+        let type_params = generics
+            .type_params()
+            .map(|type_param| type_param.ident.to_string())
+            .collect();
+
+        Self {
+            type_params,
+            used: HashSet::new(),
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for UsedTypeParams {
+    fn visit_type_path(&mut self, i: &'ast syn::TypePath) {
+        if i.qself.is_none() {
+            if let Some(segment) = i.path.segments.first() {
+                let ident = segment.ident.to_string();
+                if self.type_params.contains(&ident) {
+                    self.used.insert(ident);
+                }
+            }
+        }
+
+        syn::visit::visit_type_path(self, i);
+    }
 }
 
 pub(crate) fn assert_update(
