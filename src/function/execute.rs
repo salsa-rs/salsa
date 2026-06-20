@@ -63,7 +63,7 @@ where
                     opt_old_memo.map(|memo| &memo.header),
                 );
 
-                // Ordinary queries don't need an epoch stamp. Keeping the default avoids
+                // Ordinary queries don't need a cycle iteration stamp. Keeping the default avoids
                 // allocating `QueryRevisionsExtra` after a revision-preserving cancellation.
                 (new_value, active_query.pop(IterationStamp::default()))
             }
@@ -174,14 +174,14 @@ where
             );
 
             let (mut active_query, cycle_heads, outer_cycle, cycle_iteration) =
-                match prepare_cycle_step(
+                match try_complete_query(
                     zalsa,
                     active_query,
                     claim_guard,
                     C::CYCLE_STRATEGY,
                     iteration,
                 ) {
-                    CycleStep::Complete {
+                    QueryExecutionOutcome::Completed {
                         completed_query,
                         requires_initial_value,
                     } => {
@@ -195,7 +195,7 @@ where
 
                         break (new_value, completed_query);
                     }
-                    CycleStep::CycleHead {
+                    QueryExecutionOutcome::CycleHead {
                         active_query,
                         cycle_heads,
                         outer_cycle,
@@ -333,8 +333,8 @@ struct PreviousIteration {
     reuse_as_provisional: bool,
 }
 
-enum CycleStep<'db> {
-    Complete {
+enum QueryExecutionOutcome<'db> {
+    Completed {
         completed_query: CompletedQuery,
         requires_initial_value: bool,
     },
@@ -404,20 +404,20 @@ impl MemoHeader {
     }
 }
 
-fn prepare_cycle_step<'db>(
+fn try_complete_query<'db>(
     zalsa: &Zalsa,
     mut active_query: ActiveQueryGuard<'db>,
     claim_guard: &mut ClaimGuard<'db>,
     cycle_recovery_strategy: CycleRecoveryStrategy,
     iteration: IterationStamp,
-) -> CycleStep<'db> {
+) -> QueryExecutionOutcome<'db> {
     let database_key_index = active_query.database_key_index;
 
     // Take the cycle heads to not fight Rust's borrow checker.
     let mut cycle_heads = active_query.take_cycle_heads();
 
     if cycle_heads.is_empty() {
-        // There's no cycle state whose epoch needs to be preserved.
+        // There's no cycle iteration state to preserve.
         let iteration = if iteration.is_initial_iteration() {
             IterationStamp::default()
         } else {
@@ -427,7 +427,7 @@ fn prepare_cycle_step<'db>(
             })
         };
 
-        return CycleStep::Complete {
+        return QueryExecutionOutcome::Completed {
             completed_query: active_query.pop(iteration),
             requires_initial_value: false,
         };
@@ -452,7 +452,7 @@ fn prepare_cycle_step<'db>(
             );
         };
 
-        return CycleStep::Complete {
+        return QueryExecutionOutcome::Completed {
             completed_query: complete_cycle_participant(
                 active_query,
                 claim_guard,
@@ -478,7 +478,7 @@ fn prepare_cycle_step<'db>(
         iteration
     };
 
-    CycleStep::CycleHead {
+    QueryExecutionOutcome::CycleHead {
         active_query,
         cycle_heads,
         outer_cycle,
