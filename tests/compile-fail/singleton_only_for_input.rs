@@ -9,14 +9,17 @@ struct MyInput {
 
 #[salsa::tracked(singleton)]
 struct MyTracked<'db> {
-    field: u32,
+    field: &'db str,
+}
+
+#[salsa::interned(singleton)]
+struct MyInterned<'db> {
+    field: &'db str,
 }
 
 #[salsa::tracked(singleton)]
-fn create_tracked_structs(db: &dyn salsa::Database, input: MyInput) -> Vec<MyTracked> {
-    (0..input.field(db))
-        .map(|i| MyTracked::new(db, i))
-        .collect()
+fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> u32 {
+    input.field(db)
 }
 
 #[salsa::accumulator(singleton)]
