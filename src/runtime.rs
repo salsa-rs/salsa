@@ -254,8 +254,8 @@ impl Runtime {
         self.revision_cancelled.store(true, Ordering::Release);
     }
 
-    pub(crate) fn reset_cancellation_flag(&mut self) {
-        *self.revision_cancelled.get_mut() = false;
+    pub(crate) fn reset_cancellation_flag(&self) {
+        self.revision_cancelled.store(false, Ordering::Release);
     }
 
     pub(crate) fn bump_cancellation_count(&mut self) -> bool {

@@ -101,6 +101,22 @@ struct Coordinate {
     cvar: Condvar,
 }
 
+#[must_use]
+struct CancellationFlagGuard<'a>(&'a Zalsa);
+
+impl<'a> CancellationFlagGuard<'a> {
+    fn new(zalsa: &'a Zalsa) -> Self {
+        zalsa.runtime().set_cancellation_flag();
+        Self(zalsa)
+    }
+}
+
+impl Drop for CancellationFlagGuard<'_> {
+    fn drop(&mut self) {
+        self.0.runtime().reset_cancellation_flag();
+    }
+}
+
 // We cannot panic while holding a lock to `clones: Mutex<usize>` and therefore we cannot enter an
 // inconsistent state.
 impl RefUnwindSafe for Coordinate {}
@@ -164,20 +180,21 @@ impl<Db: Database> Storage<Db> {
                 == Some(true),
             "attempted to cancel within query computation, this is a deadlock"
         );
-        self.handle.zalsa_impl.runtime().set_cancellation_flag();
+        {
+            let _cancellation_flag = CancellationFlagGuard::new(&self.handle.zalsa_impl);
 
-        self.handle
-            .zalsa_impl
-            .event(&|| Event::new(EventKind::DidSetCancellationFlag));
+            self.handle
+                .zalsa_impl
+                .event(&|| Event::new(EventKind::DidSetCancellationFlag));
 
-        let mut clones = self.handle.coordinate.clones.lock();
-        while *clones != 1 {
-            clones = self.handle.coordinate.cvar.wait(clones);
+            let mut clones = self.handle.coordinate.clones.lock();
+            while *clones != 1 {
+                clones = self.handle.coordinate.cvar.wait(clones);
+            }
         }
+
         // The ref count on the `Arc` should now be 1
         let zalsa = Arc::get_mut(&mut self.handle.zalsa_impl).unwrap();
-        // cancellation is done, so reset the flag
-        zalsa.runtime_mut().reset_cancellation_flag();
         // Advance the epoch only after cancelled workers have dropped their handles. Otherwise,
         // a worker unwinding from cancellation could insert a provisional memo with the new epoch.
         let overflow = zalsa.runtime_mut().bump_cancellation_count();
