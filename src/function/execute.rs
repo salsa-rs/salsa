@@ -174,21 +174,15 @@ where
             );
 
             let (mut active_query, cycle_heads, outer_cycle, cycle_iteration) =
-                match try_complete_query(
-                    zalsa,
-                    active_query,
-                    claim_guard,
-                    C::CYCLE_STRATEGY,
-                    iteration,
-                ) {
-                    QueryExecutionOutcome::Completed {
-                        completed_query,
-                        requires_initial_value,
-                    } => {
+                match try_complete_query(zalsa, active_query, claim_guard, iteration) {
+                    QueryExecutionOutcome::Completed(completed_query) => {
+                        break (new_value, completed_query);
+                    }
+                    QueryExecutionOutcome::Participant(completed_query) => {
                         // For FallbackImmediate, use the fallback value instead of the computed value
                         // for all cycle participants. This ensures that the results don't depend on the query call order, see
                         // https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285.
-                        if requires_initial_value {
+                        if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                             new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                         }
 
@@ -333,10 +327,8 @@ struct PreviousIteration {
 }
 
 enum QueryExecutionOutcome<'db> {
-    Completed {
-        completed_query: CompletedQuery,
-        requires_initial_value: bool,
-    },
+    Completed(CompletedQuery),
+    Participant(CompletedQuery),
     CycleHead {
         active_query: ActiveQueryGuard<'db>,
         cycle_heads: CycleHeads,
@@ -402,7 +394,6 @@ fn try_complete_query<'db>(
     zalsa: &Zalsa,
     mut active_query: ActiveQueryGuard<'db>,
     claim_guard: &mut ClaimGuard<'db>,
-    cycle_recovery_strategy: CycleRecoveryStrategy,
     iteration: IterationStamp,
 ) -> QueryExecutionOutcome<'db> {
     let database_key_index = active_query.database_key_index;
@@ -422,10 +413,7 @@ fn try_complete_query<'db>(
             })
         };
 
-        return QueryExecutionOutcome::Completed {
-            completed_query: active_query.pop(iteration),
-            requires_initial_value: false,
-        };
+        return QueryExecutionOutcome::Completed(active_query.pop(iteration));
     }
 
     let (max_iteration, depends_on_self) =
@@ -447,17 +435,13 @@ fn try_complete_query<'db>(
             );
         };
 
-        return QueryExecutionOutcome::Completed {
-            completed_query: complete_cycle_participant(
-                active_query,
-                claim_guard,
-                cycle_heads,
-                outer_cycle,
-                iteration,
-            ),
-            requires_initial_value: cycle_recovery_strategy
-                == CycleRecoveryStrategy::FallbackImmediate,
-        };
+        return QueryExecutionOutcome::Participant(complete_cycle_participant(
+            active_query,
+            claim_guard,
+            cycle_heads,
+            outer_cycle,
+            iteration,
+        ));
     }
 
     // If this is the outermost cycle, use the maximum iteration count of all cycles.

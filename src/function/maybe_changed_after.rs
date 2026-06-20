@@ -2,7 +2,7 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
 use crate::function::memo::{MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
-use crate::function::sync::ClaimResult;
+use crate::function::sync::{ClaimGuard, ClaimResult};
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use std::sync::atomic::Ordering;
 
@@ -170,9 +170,7 @@ where
 
         if let Some(result) = old_memo.header.maybe_changed_after_cold(
             db.into(),
-            zalsa,
-            zalsa_local,
-            database_key_index,
+            &claim_guard,
             revision,
             C::CYCLE_STRATEGY,
             old_memo.value.is_some(),
@@ -223,17 +221,18 @@ impl MemoHeader {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn maybe_changed_after_cold(
         &self,
         db: crate::database::RawDatabase<'_>,
-        zalsa: &Zalsa,
-        zalsa_local: &ZalsaLocal,
-        database_key_index: DatabaseKeyIndex,
+        claim_guard: &ClaimGuard<'_>,
         revision: Revision,
         cycle_recovery_strategy: CycleRecoveryStrategy,
         has_value: bool,
     ) -> Option<VerifyResult> {
+        let zalsa = claim_guard.zalsa();
+        let zalsa_local = claim_guard.zalsa_local();
+        let database_key_index = claim_guard.database_key_index();
+
         crate::tracing::debug!(
             "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
                 revision = {revision:?}, old_memo = {old_memo:#?}",
@@ -247,14 +246,8 @@ impl MemoHeader {
             self.update_shallow(zalsa, database_key_index, can_shallow_update);
             true
         } else {
-            self.deep_verify_memo(
-                db,
-                zalsa,
-                database_key_index,
-                cycle_recovery_strategy,
-                has_value,
-            )
-            .is_unchanged()
+            self.deep_verify_memo(db, claim_guard, cycle_recovery_strategy, has_value)
+                .is_unchanged()
         };
 
         if verified {
@@ -374,17 +367,19 @@ impl MemoHeader {
     /// current revision. When this returns Unchanged with no cycle heads, it also updates the
     /// memo's `verified_at` field if needed to make future calls cheaper.
     ///
-    /// Takes an [`ActiveQueryGuard`] argument because this function recursively
+    /// Takes a [`ClaimGuard`] argument because this function recursively
     /// walks dependencies of `old_memo` and may even execute them to see if their
     /// outputs have changed.
     fn deep_verify_memo(
         &self,
         db: crate::database::RawDatabase<'_>,
-        zalsa: &Zalsa,
-        database_key_index: DatabaseKeyIndex,
+        claim_guard: &ClaimGuard<'_>,
         cycle_recovery_strategy: CycleRecoveryStrategy,
         has_value: bool,
     ) -> VerifyResult {
+        let zalsa = claim_guard.zalsa();
+        let database_key_index = claim_guard.database_key_index();
+
         match self.origin() {
             QueryOriginRef::Derived(edges) => {
                 crate::tracing::debug!(

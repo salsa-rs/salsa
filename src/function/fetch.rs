@@ -137,9 +137,7 @@ where
                     .header
                     .maybe_changed_after_cold(
                         db.into(),
-                        zalsa,
-                        zalsa_local,
-                        database_key_index,
+                        &claim_guard,
                         zalsa.current_revision(),
                         C::CYCLE_STRATEGY,
                         true,
