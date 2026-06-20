@@ -428,6 +428,30 @@ where
     memos: MemoTable,
 }
 
+#[must_use]
+struct WriteGuard<'a> {
+    updated_at: &'a OptionalAtomicRevision,
+    restore_to: Option<Revision>,
+    id: Id,
+}
+
+impl WriteGuard<'_> {
+    fn release(mut self, revision: Revision) {
+        self.restore_to = Some(revision);
+    }
+}
+
+impl Drop for WriteGuard<'_> {
+    fn drop(&mut self) {
+        let swapped_out = self.updated_at.swap(self.restore_to);
+        assert!(
+            swapped_out.is_none(),
+            "two concurrent writers to {:?}, should not be possible",
+            self.id
+        );
+    }
+}
+
 // ANCHOR_END: ValueStruct
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -657,9 +681,10 @@ where
         // during the current revision and thus obtained an `&` reference to those fields
         // that is still live.
 
-        {
+        let write_guard = {
             // SAFETY: `updated_at` is never exclusively borrowed, so borrowing it is sound
-            let last_updated_at = unsafe { (*data_raw).updated_at.load() };
+            let updated_at = unsafe { &(*data_raw).updated_at };
+            let last_updated_at = updated_at.load();
             assert!(
                 last_updated_at.is_some(),
                 "two concurrent writers to {id:?}, should not be possible"
@@ -686,14 +711,20 @@ where
             // reading from this same `id`, which can only happen if the user has leaked it.
             // Tsk tsk.
             // SAFETY: `updated_at` is never exclusively borrowed, so borrowing it is sound
-            let swapped = unsafe { (*data_raw).updated_at.swap(None) };
+            let swapped = updated_at.swap(None);
+            let write_guard = WriteGuard {
+                updated_at,
+                restore_to: swapped,
+                id,
+            };
             if last_updated_at != swapped {
                 panic!(
                     "failed to acquire write lock, id `{id:?}` \
                     must have been leaked across threads"
                 );
             }
-        }
+            write_guard
+        };
 
         // SAFETY: We have now *claimed* mutable access to the `value` field by swapping in `None`,
         // any attempt to read concurrently will panic so it is safe to take exclusive references.
@@ -738,13 +769,7 @@ where
             }
         }
         *durability = current_deps.durability;
-        // SAFETY: `updated_at` is never exclusively borrowed, so borrowing it is sound
-        // release the lock
-        let swapped_out = unsafe { (*data_raw).updated_at.swap(Some(zalsa.current_revision())) };
-        assert!(
-            swapped_out.is_none(),
-            "two concurrent writers to {id:?}, should not be possible"
-        );
+        write_guard.release(zalsa.current_revision());
 
         Ok(id)
     }
