@@ -42,6 +42,17 @@ pub unsafe trait Slot: Any + Send + Sync {
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn memos(slot: *const Self, current_revision: Revision) -> *const MemoTable;
 
+    /// Access the [`MemoTable`] for this slot without acquiring a tracked-struct read lock.
+    ///
+    /// # Safety condition
+    ///
+    /// The caller must have exclusive access to the database containing this slot, and
+    /// `current_revision` must be the database's current revision.
+    unsafe fn memos_exclusive(slot: *const Self, current_revision: Revision) -> *const MemoTable {
+        // SAFETY: The caller provides the guarantees required by `memos`.
+        unsafe { Self::memos(slot, current_revision) }
+    }
+
     /// Mutably access the [`MemoTable`] for this slot.
     fn memos_mut(&mut self) -> &mut MemoTable;
 }
@@ -59,6 +70,7 @@ struct SlotVTable {
     layout: Layout,
     /// [`Slot`] methods
     memos: SlotMemosFnErased,
+    memos_exclusive: SlotMemosFnErased,
     memos_mut: SlotMemosMutFnErased,
     /// The type name of what is stored as entries in data.
     type_name: fn() -> &'static str,
@@ -88,6 +100,10 @@ impl SlotVTable {
                 type_name: std::any::type_name::<T>,
                 // SAFETY: The signatures are ABI-compatible.
                 memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnErased>(T::memos) },
+                // SAFETY: The signatures are ABI-compatible.
+                memos_exclusive: unsafe {
+                    mem::transmute::<SlotMemosFn<T>, SlotMemosFnErased>(T::memos_exclusive)
+                },
                 // SAFETY: The signatures are ABI-compatible.
                 memos_mut: unsafe {
                     mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnErased>(T::memos_mut)
@@ -326,6 +342,26 @@ impl Table {
         unsafe { page.memo_types.attach_memos(memos) }
     }
 
+    /// Get the memo table associated with `id` without acquiring a tracked-struct read lock.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have exclusive access to the database containing this table for the
+    /// lifetime of the returned memo table, and `current_revision` must be its current revision.
+    pub(crate) unsafe fn dyn_memos_exclusive(
+        &self,
+        id: Id,
+        current_revision: Revision,
+    ) -> MemoTableWithTypes<'_> {
+        let (page, slot) = split_id(id);
+        let page = &self.pages[page.0];
+        // SAFETY: We supply a valid slot pointer, and the caller provides the other guarantees.
+        let memos =
+            unsafe { &*(page.slot_vtable.memos_exclusive)(page.get(slot), current_revision) };
+        // SAFETY: The `Page` keeps the correct memo types.
+        unsafe { page.memo_types.attach_memos(memos) }
+    }
+
     /// Get the memo table associated with `id`
     pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypesMut<'_> {
         let (page, slot) = split_id(id);
@@ -352,6 +388,18 @@ impl Table {
                         let id = make_id(PageIndex::new(page_index), SlotIndex::new(slot_index));
                         (id, value)
                     })
+            })
+    }
+
+    /// Returns the IDs of slots with type `T` without creating references to their values.
+    pub(crate) fn slot_ids_of<T: Slot>(&self) -> impl Iterator<Item = Id> + '_ {
+        self.pages
+            .iter()
+            .filter_map(|(page_index, page)| Some((page_index, page.cast_type::<T>()?)))
+            .flat_map(|(page_index, view)| {
+                (0..view.page_data().len()).map(move |slot_index| {
+                    make_id(PageIndex::new(page_index), SlotIndex::new(slot_index))
+                })
             })
     }
 

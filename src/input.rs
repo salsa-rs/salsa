@@ -18,7 +18,7 @@ use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::{Slot, Table};
-use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa, ZalsaMut};
 use crate::zalsa_local::QueryEdge;
 use crate::{Durability, Id, Revision, Runtime};
 
@@ -309,7 +309,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     fn collect_minimum_serialized_edges(
         &self,
-        _zalsa: &Zalsa,
+        _zalsa: &ZalsaMut<'_>,
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
@@ -345,9 +345,9 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     /// Returns memory usage information about any inputs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+    fn memory_usage(&self, zalsa: &ZalsaMut<'_>) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
-            .entries(db.zalsa())
+            .entries(zalsa)
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
@@ -360,16 +360,12 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         C::PERSIST
     }
 
-    fn should_serialize(&self, zalsa: &Zalsa) -> bool {
+    fn should_serialize(&self, zalsa: &ZalsaMut<'_>) -> bool {
         C::PERSIST && self.entries(zalsa).next().is_some()
     }
 
     #[cfg(feature = "persistence")]
-    unsafe fn serialize<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
-    ) {
+    fn serialize(&self, zalsa: &ZalsaMut<'_>, f: &mut dyn FnMut(&dyn erased_serde::Serialize)) {
         f(&persistence::SerializeIngredient {
             zalsa,
             _ingredient: self,
@@ -490,14 +486,14 @@ mod persistence {
     use crate::input::singleton::SingletonChoice;
     use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
-    use crate::zalsa::Zalsa;
+    use crate::zalsa::{Zalsa, ZalsaMut};
 
-    pub struct SerializeIngredient<'db, C>
+    pub struct SerializeIngredient<'a, C>
     where
         C: Configuration,
     {
-        pub zalsa: &'db Zalsa,
-        pub _ingredient: &'db IngredientImpl<C>,
+        pub zalsa: &'a ZalsaMut<'a>,
+        pub _ingredient: &'a IngredientImpl<C>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>

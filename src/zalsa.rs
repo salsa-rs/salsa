@@ -168,6 +168,42 @@ pub struct Zalsa {
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
 }
 
+/// Shared access to [`Zalsa`] while the database is exclusively borrowed.
+///
+/// This capability is created from `&mut Zalsa`. Database entry points obtain that mutable
+/// reference only after all other database handles have been cancelled and dropped. The
+/// capability lets read-only operations carry the exclusivity guarantee without requiring
+/// `unsafe` methods throughout the ingredient API.
+#[doc(hidden)]
+pub struct ZalsaMut<'db>(&'db Zalsa);
+
+impl<'db> ZalsaMut<'db> {
+    pub(crate) fn new(zalsa: &'db mut Zalsa) -> Self {
+        Self(zalsa)
+    }
+
+    pub(crate) fn zalsa(&self) -> &'db Zalsa {
+        self.0
+    }
+
+    pub(crate) fn memo_table(&self, id: Id) -> MemoTableWithTypes<'db> {
+        // SAFETY: `ZalsaMut` can only be constructed from an exclusive `Zalsa` borrow.
+        unsafe {
+            self.0
+                .table()
+                .dyn_memos_exclusive(id, self.0.current_revision())
+        }
+    }
+}
+
+impl std::ops::Deref for ZalsaMut<'_> {
+    type Target = Zalsa;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
 /// inconsistent states. The contents of said fields are largely ID mappings, with the exception
 /// of [`Runtime::dependency_graph`]. However, [`Runtime::dependency_graph`] does not

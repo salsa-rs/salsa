@@ -68,7 +68,7 @@ fn input_to_tracked_tuple(
 fn test() {
     use expect_test::expect;
 
-    let db = salsa::DatabaseImpl::new();
+    let mut db = salsa::DatabaseImpl::new();
 
     let input1 = MyInput::new(&db, "a".repeat(50));
     let input2 = MyInput::new(&db, "a".repeat(150));
@@ -86,7 +86,7 @@ fn test() {
     let _string1 = input_to_string(&db);
     let _string2 = input_to_string_get_size(&db);
 
-    let memory_usage = <dyn salsa::Database>::memory_usage(&db);
+    let memory_usage = <dyn salsa::Database>::memory_usage(&mut db);
 
     let expected = expect![[r#"
         [
@@ -204,14 +204,14 @@ fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
     let input2 = MyInput::new(&db, "a".repeat(150));
 
     assert_eq!(input_to_length(&db, input1), 50);
-    let before = <dyn salsa::Database>::memory_usage(&db);
+    let before = <dyn salsa::Database>::memory_usage(&mut db);
     let before = &before.queries["input_to_length"];
     assert_eq!(before.count(), 1);
 
     db.trigger_lru_eviction();
 
     assert_eq!(input_to_length(&db, input2), 150);
-    let after = <dyn salsa::Database>::memory_usage(&db);
+    let after = <dyn salsa::Database>::memory_usage(&mut db);
     let after = &after.queries["input_to_length"];
     assert_eq!(after.count(), 2);
     assert_eq!(after.size_of_metadata(), before.size_of_metadata() * 2);

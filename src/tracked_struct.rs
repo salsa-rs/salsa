@@ -23,7 +23,7 @@ use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::{Slot, Table};
-use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa, ZalsaMut};
 use crate::zalsa_local::QueryEdge;
 use crate::{Durability, Event, EventKind, Id, Revision};
 
@@ -917,20 +917,85 @@ where
         unsafe { self.lock_fields(data, zalsa.current_revision()) }
     }
 
-    /// Returns all data corresponding to the tracked struct.
-    pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = StructEntry<'db, C>> {
+    /// Returns the keys of all live tracked structs without borrowing their values.
+    #[doc(hidden)]
+    pub fn entry_keys<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+    ) -> impl Iterator<Item = DatabaseKeyIndex> + 'db {
+        let ingredient_index = self.ingredient_index;
         zalsa
             .table()
-            .slots_of::<Value<C>>()
-            .filter(|(_, value)| {
+            .slot_ids_of::<Value<C>>()
+            .filter(move |id| {
+                let value = Self::data_raw(zalsa.table(), *id);
                 // Deleted values remain allocated for reuse with `updated_at == None`.
-                value.updated_at.load().is_some()
+                // SAFETY: `updated_at` is never exclusively borrowed. Reading it through a raw
+                // slot pointer does not create a reference to fields another thread may update.
+                unsafe { (*value).updated_at.load().is_some() }
             })
-            .map(|(id, value)| StructEntry {
-                value,
-                key: self.database_key_index(id),
-            })
+            .map(move |id| DatabaseKeyIndex::new(ingredient_index, id))
     }
+}
+
+/// A handle to a tracked-struct ingredient.
+#[derive(Copy, Clone)]
+pub struct IngredientHandle<C: Configuration>(PhantomData<fn() -> C>);
+
+impl<C: Configuration> IngredientHandle<C> {
+    #[doc(hidden)]
+    pub fn new<Db>(db: &Db) -> Self
+    where
+        Db: ?Sized + crate::Database,
+    {
+        let zalsa = db.zalsa();
+        let ingredient_index = zalsa.lookup_jar_by_type::<JarImpl<C>>();
+
+        // Assert that the registered jar contains the tracked-struct ingredient expected here.
+        zalsa
+            .lookup_ingredient(ingredient_index)
+            .assert_type::<IngredientImpl<C>>();
+
+        Self(PhantomData)
+    }
+
+    /// Returns all live values for this tracked-struct ingredient.
+    ///
+    /// **WARNING:** This triggers cancellation and waits for all other database handles to be
+    /// dropped. Calling it while another handle is retained by the current thread can deadlock.
+    pub fn entries<'db, Db>(
+        &self,
+        db: &'db mut Db,
+    ) -> impl Iterator<Item = StructEntry<'db, C>> + 'db
+    where
+        Db: ?Sized + crate::Database,
+    {
+        // Taking mutable access cancels and waits for all other database handles. The returned
+        // entries keep that mutable borrow alive for as long as their values can be inspected.
+        let zalsa_mut = ZalsaMut::new(db.zalsa_mut());
+        let ingredient_index = zalsa_mut.lookup_jar_by_type::<JarImpl<C>>();
+
+        entries(&zalsa_mut, ingredient_index)
+    }
+}
+
+/// Returns references to live tracked-struct values.
+fn entries<'db, C>(
+    zalsa: &ZalsaMut<'db>,
+    ingredient_index: IngredientIndex,
+) -> impl Iterator<Item = StructEntry<'db, C>> + 'db + use<'db, C>
+where
+    C: Configuration,
+{
+    let zalsa = zalsa.zalsa();
+    zalsa
+        .table()
+        .slots_of::<Value<C>>()
+        .filter(|(_, value)| value.updated_at.load().is_some())
+        .map(move |(id, value)| StructEntry {
+            value,
+            key: DatabaseKeyIndex::new(ingredient_index, id),
+        })
 }
 
 /// A tracked struct entry.
@@ -988,7 +1053,7 @@ where
 
     fn collect_minimum_serialized_edges(
         &self,
-        _zalsa: &Zalsa,
+        _zalsa: &ZalsaMut<'_>,
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
@@ -1044,9 +1109,8 @@ where
 
     /// Returns memory usage information about any tracked structs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
-        let memory_usage = self
-            .entries(db.zalsa())
+    fn memory_usage(&self, zalsa: &ZalsaMut<'_>) -> Option<Vec<crate::database::SlotInfo>> {
+        let memory_usage = entries::<C>(zalsa, self.ingredient_index)
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
@@ -1059,22 +1123,12 @@ where
         C::PERSIST
     }
 
-    fn should_serialize(&self, zalsa: &Zalsa) -> bool {
-        C::PERSIST
-            && zalsa
-                .table()
-                .slots_of::<Value<C>>()
-                // Serialization has exclusive database access, so any value that is not
-                // write-locked is live, even if it has not been verified in this revision.
-                .any(|(_, value)| value.updated_at.load().is_some())
+    fn should_serialize(&self, zalsa: &ZalsaMut<'_>) -> bool {
+        C::PERSIST && self.entry_keys(zalsa).next().is_some()
     }
 
     #[cfg(feature = "persistence")]
-    unsafe fn serialize<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
-    ) {
+    fn serialize(&self, zalsa: &ZalsaMut<'_>, f: &mut dyn FnMut(&dyn erased_serde::Serialize)) {
         f(&persistence::SerializeIngredient {
             zalsa,
             _ingredient: self,
@@ -1183,6 +1237,16 @@ where
         unsafe { acquire_read_lock(&(*this).updated_at, current_revision) };
         // SAFETY: `this` is a valid pointer given the caller obligation and we have acquired a read
         // lock, so `values` is not aliased
+        unsafe { &raw const (*this).memos }
+    }
+
+    #[inline(always)]
+    unsafe fn memos_exclusive(
+        this: *const Self,
+        _current_revision: Revision,
+    ) -> *const crate::table::memo::MemoTable {
+        // SAFETY: Caller obligation demands this pointer to be valid, and exclusive database
+        // access guarantees that the tracked struct is not being updated or deleted.
         unsafe { &raw const (*this).memos }
     }
 
@@ -1304,15 +1368,15 @@ mod persistence {
     use crate::plumbing::Ingredient;
     use crate::revision::OptionalAtomicRevision;
     use crate::table::memo::MemoTable;
-    use crate::zalsa::Zalsa;
+    use crate::zalsa::{Zalsa, ZalsaMut};
     use crate::{Durability, Id};
 
-    pub struct SerializeIngredient<'db, C>
+    pub struct SerializeIngredient<'a, C>
     where
         C: Configuration,
     {
-        pub zalsa: &'db Zalsa,
-        pub _ingredient: &'db IngredientImpl<C>,
+        pub zalsa: &'a ZalsaMut<'a>,
+        pub _ingredient: &'a IngredientImpl<C>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>

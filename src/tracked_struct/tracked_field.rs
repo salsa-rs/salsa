@@ -6,7 +6,7 @@ use crate::ingredient::Ingredient;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
-use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa, ZalsaMut};
 use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Id};
 
@@ -74,7 +74,7 @@ where
 
     fn collect_minimum_serialized_edges(
         &self,
-        _zalsa: &Zalsa,
+        _zalsa: &ZalsaMut<'_>,
         _edge: QueryEdge,
         _serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
@@ -124,7 +124,7 @@ where
         C::PERSIST
     }
 
-    fn should_serialize(&self, _zalsa: &Zalsa) -> bool {
+    fn should_serialize(&self, _zalsa: &ZalsaMut<'_>) -> bool {
         // However, they are never serialized directly.
         false
     }

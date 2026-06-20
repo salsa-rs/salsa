@@ -162,7 +162,7 @@ pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
 #[cfg(feature = "persistence")]
 mod persistence {
     use crate::plumbing::Ingredient;
-    use crate::zalsa::Zalsa;
+    use crate::zalsa::{Zalsa, ZalsaMut};
     use crate::{Database, IngredientIndex, Runtime};
 
     use std::fmt;
@@ -173,10 +173,14 @@ mod persistence {
     impl dyn Database {
         /// Returns a type implementing [`serde::Serialize`], that can be used to serialize the
         /// current state of the database.
+        ///
+        /// **WARNING:** This triggers cancellation and waits for all other database handles to be
+        /// dropped. Calling it while another handle is retained by the current thread can deadlock.
         pub fn as_serialize(&mut self) -> impl serde::Serialize + '_ {
+            let zalsa_mut = ZalsaMut::new(self.zalsa_mut());
             SerializeDatabase {
-                runtime: self.zalsa().runtime(),
-                ingredients: SerializeIngredients(self.zalsa()),
+                runtime: zalsa_mut.zalsa().runtime(),
+                ingredients: SerializeIngredients(zalsa_mut),
             }
         }
 
@@ -198,14 +202,14 @@ mod persistence {
         pub ingredients: SerializeIngredients<'db>,
     }
 
-    pub struct SerializeIngredients<'db>(pub &'db Zalsa);
+    pub struct SerializeIngredients<'db>(pub ZalsaMut<'db>);
 
     impl serde::Serialize for SerializeIngredients<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
-            let SerializeIngredients(zalsa) = self;
+            let zalsa = &self.0;
 
             let mut ingredients = zalsa
                 .ingredients()
@@ -228,7 +232,7 @@ mod persistence {
         }
     }
 
-    struct SerializeIngredient<'db>(&'db dyn Ingredient, &'db Zalsa);
+    struct SerializeIngredient<'a>(&'a dyn Ingredient, &'a ZalsaMut<'a>);
 
     impl serde::Serialize for SerializeIngredient<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -238,16 +242,13 @@ mod persistence {
             let mut result = None;
             let mut serializer = Some(serializer);
 
-            // SAFETY: `<dyn Database>::as_serialize` take `&mut self`.
-            unsafe {
-                self.0.serialize(self.1, &mut |serialize| {
-                    let serializer = serializer.take().expect(
-                        "`Ingredient::serialize` must invoke the serialization callback only once",
-                    );
+            self.0.serialize(self.1, &mut |serialize| {
+                let serializer = serializer.take().expect(
+                    "`Ingredient::serialize` must invoke the serialization callback only once",
+                );
 
-                    result = Some(erased_serde::serialize(&serialize, serializer))
-                })
-            };
+                result = Some(erased_serde::serialize(&serialize, serializer))
+            });
 
             result.expect("`Ingredient::serialize` must invoke the serialization callback")
         }
@@ -404,15 +405,20 @@ mod memory_usage {
     use hashbrown::HashMap;
 
     use crate::Database;
+    use crate::zalsa::ZalsaMut;
 
     impl dyn Database {
         /// Returns memory usage information about ingredients in the database.
-        pub fn memory_usage(&self) -> DatabaseInfo {
+        ///
+        /// **WARNING:** This triggers cancellation and waits for all other database handles to be
+        /// dropped. Calling it while another handle is retained by the current thread can deadlock.
+        pub fn memory_usage(&mut self) -> DatabaseInfo {
             let mut queries = HashMap::new();
             let mut structs = Vec::new();
+            let zalsa_mut = ZalsaMut::new(self.zalsa_mut());
 
-            for input_ingredient in self.zalsa().ingredients() {
-                let Some(input_info) = input_ingredient.memory_usage(self) else {
+            for input_ingredient in zalsa_mut.ingredients() {
+                let Some(input_info) = input_ingredient.memory_usage(&zalsa_mut) else {
                     continue;
                 };
 

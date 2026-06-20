@@ -21,7 +21,7 @@ use crate::revision::AtomicRevision;
 use crate::sync::{Arc, Mutex, OnceLock};
 use crate::table::Slot;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
-use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, Zalsa, ZalsaMut};
 use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
@@ -958,7 +958,7 @@ where
 
     fn collect_minimum_serialized_edges(
         &self,
-        _zalsa: &Zalsa,
+        _zalsa: &ZalsaMut<'_>,
         edge: QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
@@ -1003,7 +1003,7 @@ where
 
     /// Returns memory usage information about any interned values.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+    fn memory_usage(&self, zalsa: &ZalsaMut<'_>) -> Option<Vec<crate::database::SlotInfo>> {
         use parking_lot::lock_api::RawMutex;
 
         for shard in self.shards.iter() {
@@ -1012,7 +1012,7 @@ where
         }
 
         // SAFETY: We hold the locks for all shards.
-        let entries = unsafe { self.entries_inner(false, db.zalsa()) };
+        let entries = unsafe { self.entries_inner(false, zalsa) };
 
         let memory_usage = entries
             // SAFETY: The memo table belongs to a value that we allocated, so it
@@ -1032,16 +1032,12 @@ where
         C::PERSIST
     }
 
-    fn should_serialize(&self, zalsa: &Zalsa) -> bool {
+    fn should_serialize(&self, zalsa: &ZalsaMut<'_>) -> bool {
         C::PERSIST && self.entries(zalsa).next().is_some()
     }
 
     #[cfg(feature = "persistence")]
-    unsafe fn serialize<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
-    ) {
+    fn serialize(&self, zalsa: &ZalsaMut<'_>, f: &mut dyn FnMut(&dyn erased_serde::Serialize)) {
         f(&persistence::SerializeIngredient {
             zalsa,
             ingredient: self,
@@ -1535,15 +1531,15 @@ mod persistence {
     use super::{Configuration, IngredientImpl, Value, ValueShared};
     use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
-    use crate::zalsa::Zalsa;
+    use crate::zalsa::{Zalsa, ZalsaMut};
     use crate::{Durability, Id, Revision};
 
-    pub struct SerializeIngredient<'db, C>
+    pub struct SerializeIngredient<'a, C>
     where
         C: Configuration,
     {
-        pub zalsa: &'db Zalsa,
-        pub ingredient: &'db IngredientImpl<C>,
+        pub zalsa: &'a ZalsaMut<'a>,
+        pub ingredient: &'a IngredientImpl<C>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>
@@ -1565,8 +1561,7 @@ mod persistence {
             let mut map = serializer.serialize_map(Some(count))?;
 
             for (_, value) in zalsa.table().slots_of::<Value<C>>() {
-                // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
-                // to the database.
+                // SAFETY: `SerializeIngredient` carries exclusive database access.
                 let id = unsafe { (*value.shared.get()).id };
 
                 map.serialize_entry(&id.as_bits(), value)?;
@@ -1594,12 +1589,10 @@ mod persistence {
                 memos: _,
             } = self;
 
-            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
-            // to the database.
+            // SAFETY: `SerializeIngredient` carries exclusive database access.
             let fields = unsafe { &*fields.get() };
 
-            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
-            // to the database.
+            // SAFETY: `SerializeIngredient` carries exclusive database access.
             let ValueShared {
                 durability,
                 last_interned_at,

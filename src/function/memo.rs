@@ -12,7 +12,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
 use crate::table::memo::MemoTableWithTypesMut;
-use crate::zalsa::{MemoIngredientIndex, Zalsa};
+use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaMut};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
@@ -51,6 +51,19 @@ impl<C: Configuration> IngredientImpl<C> {
         let static_memo = zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
             .get(memo_ingredient_index)?;
+        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
+        // for `'db` though as we delay their dropping to the end of a revision.
+        Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
+    }
+
+    /// Loads the current memo for `key_index` without acquiring a tracked-struct read lock.
+    pub(super) fn get_memo_from_table_for_exclusive<'db>(
+        &self,
+        zalsa: &ZalsaMut<'db>,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db Memo<'db, C>> {
+        let static_memo = zalsa.memo_table(id).get(memo_ingredient_index)?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })

@@ -118,7 +118,7 @@ pub mod plumbing {
     pub use crate::update::{Update, always_update};
     pub use crate::views::DatabaseDownCaster;
     pub use crate::zalsa::{
-        ErasedJar, HasJar, IngredientIndex, JarKind, Zalsa, ZalsaDatabase, register_jar,
+        ErasedJar, HasJar, IngredientIndex, JarKind, Zalsa, ZalsaDatabase, ZalsaMut, register_jar,
         transmute_data_ptr, views,
     };
     pub use crate::zalsa_local::ZalsaLocal;
@@ -168,6 +168,8 @@ pub mod plumbing {
 
     pub mod tracked_struct {
         pub use crate::tracked_struct::tracked_field::FieldIngredientImpl;
-        pub use crate::tracked_struct::{Configuration, IngredientImpl, JarImpl, Value};
+        pub use crate::tracked_struct::{
+            Configuration, IngredientHandle, IngredientImpl, JarImpl, Value,
+        };
     }
 }

@@ -220,8 +220,11 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $Configuration {
-                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<Self> {
-                    Self::ingredient_(db.zalsa())
+                pub fn ingredient<$Db>(db: &$Db) -> $zalsa_struct::IngredientHandle<Self>
+                where
+                    $Db: ?Sized + $zalsa::Database,
+                {
+                    $zalsa_struct::IngredientHandle::new(db)
                 }
 
                 fn ingredient_(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
@@ -263,8 +266,7 @@ macro_rules! setup_tracked_struct {
                 fn entries(
                     zalsa: &$zalsa::Zalsa
                 ) -> impl Iterator<Item = $zalsa::DatabaseKeyIndex> + '_ {
-                    let ingredient_index = zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
-                    <$Configuration>::ingredient_(zalsa).entries(zalsa).map(|entry| entry.key())
+                    <$Configuration>::ingredient_(zalsa).entry_keys(zalsa)
                 }
 
                 #[inline]

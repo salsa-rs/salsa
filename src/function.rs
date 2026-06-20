@@ -19,7 +19,7 @@ use crate::sync::Arc;
 use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
-use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
+use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa, ZalsaMut};
 use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{Cycle, Id, Revision};
 
@@ -330,16 +330,18 @@ where
 
     fn collect_minimum_serialized_edges(
         &self,
-        zalsa: &Zalsa,
+        zalsa: &ZalsaMut<'_>,
         edge: QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
         let input = edge.key().key_index();
 
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
+        let Some(memo) = self.get_memo_from_table_for_exclusive(
+            zalsa,
+            input,
+            self.memo_ingredient_index(zalsa, input),
+        ) else {
             return;
         };
 
@@ -574,7 +576,7 @@ where
         C::PERSIST
     }
 
-    fn should_serialize(&self, zalsa: &Zalsa) -> bool {
+    fn should_serialize(&self, zalsa: &ZalsaMut<'_>) -> bool {
         if !C::PERSIST {
             return false;
         }
@@ -583,8 +585,11 @@ where
         for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
             let memo_ingredient_index = self.memo_ingredient_indices.get(entry.ingredient_index());
 
-            let memo =
-                self.get_memo_from_table_for(zalsa, entry.key_index(), memo_ingredient_index);
+            let memo = self.get_memo_from_table_for_exclusive(
+                zalsa,
+                entry.key_index(),
+                memo_ingredient_index,
+            );
 
             if memo.is_some_and(|memo| memo.should_serialize()) {
                 return true;
@@ -595,11 +600,7 @@ where
     }
 
     #[cfg(feature = "persistence")]
-    unsafe fn serialize<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        f: &mut dyn FnMut(&dyn erased_serde::Serialize),
-    ) {
+    fn serialize(&self, zalsa: &ZalsaMut<'_>, f: &mut dyn FnMut(&dyn erased_serde::Serialize)) {
         f(&persistence::SerializeIngredient {
             zalsa,
             ingredient: self,
@@ -637,7 +638,7 @@ mod persistence {
     use super::{Configuration, IngredientImpl, Memo};
     use crate::hash::{FxHashSet, FxIndexSet};
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
-    use crate::zalsa::Zalsa;
+    use crate::zalsa::{Zalsa, ZalsaMut};
     use crate::zalsa_local::persistence::PersistentQueryOrigin;
     use crate::zalsa_local::{QueryEdge, QueryOriginRef};
     use crate::{Id, IngredientIndex};
@@ -647,12 +648,12 @@ mod persistence {
 
     use std::ptr::NonNull;
 
-    pub struct SerializeIngredient<'db, C>
+    pub struct SerializeIngredient<'a, C>
     where
         C: Configuration,
     {
-        pub zalsa: &'db Zalsa,
-        pub ingredient: &'db IngredientImpl<C>,
+        pub zalsa: &'a ZalsaMut<'a>,
+        pub ingredient: &'a IngredientImpl<C>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>
@@ -671,7 +672,7 @@ mod persistence {
                         .memo_ingredient_indices
                         .get(entry.ingredient_index());
 
-                    let memo = ingredient.get_memo_from_table_for(
+                    let memo = ingredient.get_memo_from_table_for_exclusive(
                         zalsa,
                         entry.key_index(),
                         memo_ingredient_index,
@@ -691,7 +692,7 @@ mod persistence {
                     .memo_ingredient_indices
                     .get(entry.ingredient_index());
 
-                let memo = ingredient.get_memo_from_table_for(
+                let memo = ingredient.get_memo_from_table_for_exclusive(
                     zalsa,
                     entry.key_index(),
                     memo_ingredient_index,
@@ -753,7 +754,7 @@ mod persistence {
 
     // Flatten the dependency edges before serialization.
     fn collect_minimum_serialized_edges(
-        zalsa: &Zalsa,
+        zalsa: &ZalsaMut<'_>,
         edges: crate::zalsa_local::QueryEdges<'_>,
         visited_edges: &mut FxHashSet<QueryEdge>,
         flattened_edges: &mut FxIndexSet<QueryEdge>,

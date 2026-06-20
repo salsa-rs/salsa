@@ -23,7 +23,7 @@ fn tracked_fn(db: &dyn salsa::Database, input: InputStruct) -> TrackedStruct<'_>
 #[test]
 fn execute() {
     use salsa::plumbing::ZalsaDatabase;
-    let db = salsa::DatabaseImpl::new();
+    let mut db = salsa::DatabaseImpl::new();
 
     let interned1 = InternedStruct::new(&db, "Salsa".to_string());
     let interned2 = InternedStruct::new(&db, "Salsa2".to_string());
@@ -55,10 +55,9 @@ fn execute() {
     assert_eq!(tracked1.field(&db), 44);
 
     let tracked = TrackedStruct::ingredient(&db)
-        .entries(db.zalsa())
+        .entries(&mut db)
         .collect::<Vec<_>>();
 
     assert_eq!(tracked.len(), 1);
-    assert_eq!(tracked[0].as_struct(), tracked1);
-    assert_eq!(tracked[0].value().fields().0, tracked1.field(&db));
+    assert_eq!(tracked[0].value().fields().0, 44);
 }

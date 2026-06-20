@@ -1,0 +1,10 @@
+error[E0502]: cannot borrow `db` as immutable because it is also borrowed as mutable
+  --> tests/compile-fail/tracked-entry-cannot-read-through-db.rs:13:29
+   |
+ 9 |         .entries(&mut db)
+   |                  ------- mutable borrow occurs here
+...
+13 |     entry.as_struct().value(&db);
+   |                       ----- ^^^ immutable borrow occurs here
+   |                       |
+   |                       mutable borrow later used by call
