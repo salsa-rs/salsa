@@ -59,6 +59,22 @@ impl VerifyResult {
         Self::unchanged()
     }
 
+    /// Returns an unchanged result that propagates accumulated values from both
+    /// the memo itself and its inputs.
+    #[inline]
+    fn unchanged_for_memo(revisions: &QueryRevisions) -> Self {
+        #[cfg(not(feature = "accumulator"))]
+        let _ = revisions;
+
+        Self::unchanged_with_accumulated(
+            #[cfg(feature = "accumulator")]
+            match revisions.accumulated() {
+                Some(_) => InputAccumulatedValues::Any,
+                None => revisions.accumulated_inputs.load(),
+            },
+        )
+    }
+
     pub(crate) const fn is_unchanged(&self) -> bool {
         matches!(self, Self::Unchanged { .. })
     }
@@ -99,15 +115,7 @@ where
                 return if memo.revisions.changed_at > revision {
                     VerifyResult::changed()
                 } else {
-                    VerifyResult::unchanged_with_accumulated(
-                        #[cfg(feature = "accumulator")]
-                        {
-                            match memo.revisions.accumulated() {
-                                Some(_) => InputAccumulatedValues::Any,
-                                None => memo.revisions.accumulated_inputs.load(),
-                            }
-                        },
-                    )
+                    VerifyResult::unchanged_for_memo(&memo.revisions)
                 };
             }
 
@@ -177,43 +185,18 @@ where
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
-                VerifyResult::unchanged_with_accumulated(
-                    #[cfg(feature = "accumulator")]
-                    {
-                        match old_memo.revisions.accumulated() {
-                            Some(_) => InputAccumulatedValues::Any,
-                            None => old_memo.revisions.accumulated_inputs.load(),
-                        }
-                    },
-                )
+                VerifyResult::unchanged_for_memo(&old_memo.revisions)
             });
         }
 
         let deep_verify = self.deep_verify_memo(db, zalsa, old_memo, database_key_index);
 
-        if let VerifyResult::Unchanged {
-            #[cfg(feature = "accumulator")]
-            accumulated,
-        } = deep_verify
-        {
+        if deep_verify.is_unchanged() {
             // Check if the inputs are still valid. We can just compare `changed_at`.
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::changed()
             } else {
-                // Propagate accumulated values from inputs *and* from this memo itself.
-                // Without the own-accumulated check, a caller querying accumulated values
-                // would see `Empty` and skip traversing into this subtree even though
-                // this memo directly pushed accumulated values.
-                VerifyResult::unchanged_with_accumulated(
-                    #[cfg(feature = "accumulator")]
-                    {
-                        if old_memo.revisions.accumulated().is_some() {
-                            InputAccumulatedValues::Any
-                        } else {
-                            accumulated
-                        }
-                    },
-                )
+                VerifyResult::unchanged_for_memo(&old_memo.revisions)
             });
         }
 
@@ -232,13 +215,7 @@ where
             return Some(if changed_at > revision || memo.may_be_provisional() {
                 VerifyResult::changed()
             } else {
-                VerifyResult::unchanged_with_accumulated(
-                    #[cfg(feature = "accumulator")]
-                    match memo.revisions.accumulated() {
-                        Some(_) => InputAccumulatedValues::Any,
-                        None => memo.revisions.accumulated_inputs.load(),
-                    },
-                )
+                VerifyResult::unchanged_for_memo(&memo.revisions)
             });
         }
 
