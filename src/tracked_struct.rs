@@ -20,7 +20,7 @@ use crate::plumbing::{self, ZalsaLocal};
 use crate::revision::{AtomicRevision, OptionalAtomicRevision};
 use crate::runtime::Stamp;
 use crate::salsa_struct::SalsaStructInDb;
-use crate::sync::Arc;
+use crate::sync::{Arc, Mutex};
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
@@ -198,6 +198,12 @@ where
 
     /// Store freed ids
     free_list: SegQueue<Id>,
+
+    /// IDs whose update unwound after acquiring the write lock.
+    ///
+    /// Their slots remain write-locked and are never reused. Keeping this state out-of-band avoids
+    /// increasing the size of every tracked value or reserving an `updated_at` revision.
+    poisoned_ids: Mutex<Option<FxHashSet<Id>>>,
 
     memo_table_types: Arc<MemoTableTypes>,
 }
@@ -489,6 +495,7 @@ where
             ingredient_index: index,
             phantom: PhantomData,
             free_list: Default::default(),
+            poisoned_ids: Default::default(),
             memo_table_types: Arc::new(MemoTableTypes::default()),
         }
     }
@@ -627,9 +634,10 @@ where
         // * When we begin updating, we store `None` in the `updated_at` field
         // * When completed, we store `Some(current_revision)` in `updated_at`
         //
-        // No matter what mischief users get up to, it should be impossible for us to
-        // observe `None` in `updated_at`. The `id` should only be associated with one
-        // query and that query can only be running in one thread at a time.
+        // Outside an active writer, we can only observe `None` if a previous update unwound.
+        // `poisoned_ids` records that case. Observing `None` for an ID that is not poisoned means
+        // there are two concurrent writers: the `id` should only be associated with one query and
+        // that query can only be running in one thread at a time.
         //
         // We *can* observe `Some(current_revision)` however, which means that this
         // tracked struct is already updated for this revision in two ways.
@@ -660,14 +668,22 @@ where
         let write_guard = {
             // SAFETY: `updated_at` is never exclusively borrowed, so borrowing it is sound
             let updated_at = unsafe { &(*data_raw).updated_at };
-            let last_updated_at = updated_at.load();
-            assert!(
-                last_updated_at.is_some(),
-                "two concurrent writers to {id:?}, should not be possible"
-            );
+            let Some(last_updated_at) = updated_at.load() else {
+                assert!(
+                    self.poisoned_ids
+                        .lock()
+                        .as_ref()
+                        .is_some_and(|poisoned_ids| poisoned_ids.contains(&id)),
+                    "two concurrent writers to {id:?}, should not be possible"
+                );
+
+                // A previous update unwound after partially updating this value. Leave its slot
+                // permanently write-locked and allocate a fully initialized replacement instead.
+                return Err(fields);
+            };
 
             // The value is already read-locked, but we can reuse it safely as per above.
-            if last_updated_at == Some(zalsa.current_revision()) {
+            if last_updated_at == zalsa.current_revision() {
                 return Ok(id);
             }
 
@@ -686,20 +702,25 @@ where
             // Acquire the write-lock. This can only fail if there is a parallel thread
             // reading from this same `id`, which can only happen if the user has leaked it.
             // Tsk tsk.
-            // SAFETY: `updated_at` is never exclusively borrowed, so borrowing it is sound
-            let swapped = updated_at.swap(None);
-            let write_guard = WriteGuard {
-                updated_at,
-                restore_to: swapped,
-                id,
-            };
-            if last_updated_at != swapped {
+            // Use compare-exchange so a failed acquisition does not modify the lock. This lets us
+            // arm the guard only after successfully claiming the value; dropping an armed guard
+            // without releasing it marks the ID as poisoned.
+            if updated_at
+                .compare_exchange(Some(last_updated_at), None)
+                .is_err()
+            {
                 panic!(
                     "failed to acquire write lock, id `{id:?}` \
                     must have been leaked across threads"
                 );
             }
-            write_guard
+
+            WriteGuard {
+                updated_at,
+                poisoned_ids: &self.poisoned_ids,
+                publish_revision: None,
+                id,
+            }
         };
 
         // SAFETY: We have now *claimed* mutable access to the `value` field by swapping in `None`,
@@ -933,19 +954,28 @@ where
 #[must_use]
 struct WriteGuard<'a> {
     updated_at: &'a OptionalAtomicRevision,
-    restore_to: Option<Revision>,
+    poisoned_ids: &'a Mutex<Option<FxHashSet<Id>>>,
+    publish_revision: Option<Revision>,
     id: Id,
 }
 
 impl WriteGuard<'_> {
     fn release(mut self, revision: Revision) {
-        self.restore_to = Some(revision);
+        self.publish_revision = Some(revision);
     }
 }
 
 impl Drop for WriteGuard<'_> {
     fn drop(&mut self) {
-        let swapped_out = self.updated_at.swap(self.restore_to);
+        let Some(revision) = self.publish_revision else {
+            self.poisoned_ids
+                .lock()
+                .get_or_insert_default()
+                .insert(self.id);
+            return;
+        };
+
+        let swapped_out = self.updated_at.swap(Some(revision));
         assert!(
             swapped_out.is_none(),
             "two concurrent writers to {:?}, should not be possible",
