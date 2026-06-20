@@ -61,7 +61,7 @@ pub use self::return_mode::SalsaAsRef;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::storage::{Storage, StorageHandle};
-pub use self::update::Update;
+pub use self::update::{Update, update_fallback};
 pub use self::zalsa::IngredientIndex;
 pub use self::zalsa_local::CancellationToken;
 pub use crate::attach::{attach, attach_allow_change, with_attached_database};

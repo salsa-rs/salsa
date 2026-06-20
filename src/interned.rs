@@ -1315,6 +1315,31 @@ where
     }
 }
 
+#[cfg(feature = "triomphe")]
+impl<'a, T> HashEqLike<&'a T> for triomphe::Arc<T>
+where
+    T: ?Sized + Hash + Eq,
+    triomphe::Arc<T>: From<&'a T>,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(&**self, &mut *h)
+    }
+    fn eq(&self, data: &&T) -> bool {
+        **self == **data
+    }
+}
+
+#[cfg(feature = "triomphe")]
+impl<'a, T> Lookup<triomphe::Arc<T>> for &'a T
+where
+    T: ?Sized + Hash + Eq,
+    triomphe::Arc<T>: From<&'a T>,
+{
+    fn into_owned(self) -> triomphe::Arc<T> {
+        triomphe::Arc::from(self)
+    }
+}
+
 impl Lookup<String> for &str {
     fn into_owned(self) -> String {
         self.to_owned()
