@@ -15,6 +15,28 @@ use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisi
 use crate::{Cancelled, Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
+#[must_use]
+struct CancellationGuard<'a> {
+    zalsa_local: &'a ZalsaLocal,
+    was_disabled: bool,
+}
+
+impl<'a> CancellationGuard<'a> {
+    fn new(zalsa_local: &'a ZalsaLocal) -> Self {
+        Self {
+            zalsa_local,
+            was_disabled: zalsa_local.set_cancellation_disabled(true),
+        }
+    }
+}
+
+impl Drop for CancellationGuard<'_> {
+    fn drop(&mut self) {
+        self.zalsa_local
+            .set_cancellation_disabled(self.was_disabled);
+    }
+}
+
 impl<C> IngredientImpl<C>
 where
     C: Configuration,
@@ -68,19 +90,14 @@ where
                 (new_value, active_query.pop(IterationStamp::default()))
             }
             CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                let zalsa_local = claim_guard.zalsa_local();
-                let was_disabled = zalsa_local.set_cancellation_disabled(true);
+                let _cancellation_guard = CancellationGuard::new(claim_guard.zalsa_local());
 
-                let res = self.execute_maybe_iterate(
+                self.execute_maybe_iterate(
                     db,
                     opt_old_memo,
                     &mut claim_guard,
                     memo_ingredient_index,
-                );
-
-                zalsa_local.set_cancellation_disabled(was_disabled);
-
-                res
+                )
             }
         };
 
