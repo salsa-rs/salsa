@@ -95,6 +95,7 @@ pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error
 }
 
 mod kw {
+    syn::custom_keyword!(bounds);
     syn::custom_keyword!(with);
     syn::custom_keyword!(maybe_update);
 }

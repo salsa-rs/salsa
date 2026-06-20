@@ -25,6 +25,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     let old_pointer = hygiene.ident("old_pointer");
     let new_value = hygiene.ident("new_value");
     let mut used_type_params = UsedTypeParams::new(&input.generics);
+    let mut additional_bounds = Vec::new();
 
     let fields: TokenStream = structure
         .variants()
@@ -79,40 +80,53 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
                 if let Some(attr) = attrs.next() {
                     return Err(syn::Error::new(
                         attr.path().span(),
-                        "multiple #[update(with)] attributes on field",
+                        "multiple #[update] attributes on field",
                     ));
                 }
 
                 let field_ty = &binding.ast().ty;
                 let field_index = Literal::usize_unsuffixed(index);
-                if attr.is_none() {
+                let attr = attr
+                    .map(|attr| attr.parse_args::<UpdateFieldArgs>())
+                    .transpose()?;
+                let has_update_with = attr
+                    .as_ref()
+                    .and_then(|attr| attr.update_with.as_ref())
+                    .is_some();
+                if !has_update_with {
                     used_type_params.visit_type(field_ty);
                 }
 
                 let (maybe_update, unsafe_token) = match attr {
                     Some(attr) => {
-                        attr.parse_args_with(|parser: ParseStream| {
-                            let mut content;
-
-                            let unsafe_token = parser.parse::<Token![unsafe]>()?;
-                            parenthesized!(content in parser);
-                            let with_token = content.parse::<kw::with>()?;
-                            parenthesized!(content in content);
-                            let expr = content.parse::<syn::Expr>()?;
-                            Ok((
-                                quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #expr; maybe_update }) },
-                                unsafe_token,
-                            ))
-                        })?
-                    }
-                    None => {
-                        (
-                            quote!(
-                                salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update
+                        additional_bounds.extend(attr.bounds);
+                        match attr.update_with {
+                            Some(update_with) => {
+                                let UpdateWith {
+                                    unsafe_token,
+                                    with_token,
+                                    expr,
+                                } = update_with;
+                                let span = with_token.span();
+                                (
+                                    quote_spanned! { span =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #expr; maybe_update }) },
+                                    unsafe_token,
+                                )
+                            }
+                            None => (
+                                quote!(
+                                    salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update
+                                ),
+                                Token![unsafe](Span::call_site()),
                             ),
-                            Token![unsafe](Span::call_site()),
-                        )
+                        }
                     }
+                    None => (
+                        quote!(
+                            salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update
+                        ),
+                        Token![unsafe](Span::call_site()),
+                    ),
                 };
                 let update_field = quote! {
                     #maybe_update(
@@ -138,7 +152,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     let ident = &input.ident;
     let used_type_params = used_type_params.used;
     let generics = input.generics;
-    let generics = add_trait_bounds(generics, &used_type_params);
+    let generics = add_trait_bounds(generics, &used_type_params, additional_bounds);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let tokens = quote! {
@@ -161,6 +175,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
 fn add_trait_bounds(
     mut generics: syn::Generics,
     used_type_params: &HashSet<String>,
+    additional_bounds: Vec<syn::WherePredicate>,
 ) -> syn::Generics {
     for param in &mut generics.params {
         let syn::GenericParam::Type(type_param) = param else {
@@ -171,7 +186,77 @@ fn add_trait_bounds(
             type_param.bounds.push(syn::parse_quote!(::salsa::Update));
         }
     }
+
     generics
+        .make_where_clause()
+        .predicates
+        .extend(additional_bounds);
+
+    generics
+}
+
+struct UpdateFieldArgs {
+    bounds: Vec<syn::WherePredicate>,
+    update_with: Option<UpdateWith>,
+}
+
+impl syn::parse::Parse for UpdateFieldArgs {
+    fn parse(parser: ParseStream<'_>) -> syn::Result<Self> {
+        let mut bounds = Vec::new();
+        let mut update_with = None;
+
+        while !parser.is_empty() {
+            if parser.peek(kw::bounds) {
+                let content;
+
+                parser.parse::<kw::bounds>()?;
+                parenthesized!(content in parser);
+                bounds.extend(content.parse_terminated(syn::WherePredicate::parse, Token![,])?);
+            } else if parser.peek(Token![unsafe]) {
+                if let Some(UpdateWith { unsafe_token, .. }) = update_with.as_ref() {
+                    return Err(syn::Error::new(
+                        unsafe_token.span,
+                        "multiple `unsafe(with(...))` options in `#[update]` attribute",
+                    ));
+                }
+
+                let mut content;
+
+                let unsafe_token = parser.parse::<Token![unsafe]>()?;
+                parenthesized!(content in parser);
+                let with_token = content.parse::<kw::with>()?;
+                parenthesized!(content in content);
+                let expr = content.parse::<syn::Expr>()?;
+                if !content.is_empty() {
+                    return Err(content.error("unexpected tokens in update function"));
+                }
+                update_with = Some(UpdateWith {
+                    unsafe_token,
+                    with_token,
+                    expr,
+                });
+            } else if parser.peek(kw::with) {
+                return Err(parser.error("expected `unsafe`"));
+            } else {
+                return Err(parser.error("expected `bounds` or `unsafe`"));
+            }
+
+            if !parser.is_empty() {
+                parser.parse::<Token![,]>()?;
+            }
+        }
+
+        Ok(Self {
+            bounds,
+            update_with,
+        })
+    }
+}
+
+struct UpdateWith {
+    unsafe_token: Token![unsafe],
+    with_token: kw::with,
+    expr: syn::Expr,
 }
 
 struct UsedTypeParams {
