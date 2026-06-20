@@ -14,17 +14,11 @@ use syn::visit_mut::VisitMut;
 /// lifetime.
 pub(crate) struct ChangeLt {
     to: syn::Lifetime,
-    /// Depth of higher-ranked binders we are currently nested within. While this
-    /// is non-zero, lifetimes must not be rewritten.
-    binder_depth: usize,
 }
 
 impl ChangeLt {
     pub fn elided_to(db_lt: &syn::Lifetime) -> Self {
-        ChangeLt {
-            to: db_lt.clone(),
-            binder_depth: 0,
-        }
+        ChangeLt { to: db_lt.clone() }
     }
 
     pub fn in_type(mut self, ty: &syn::Type) -> syn::Type {
@@ -36,21 +30,19 @@ impl ChangeLt {
 
 impl syn::visit_mut::VisitMut for ChangeLt {
     fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        if self.binder_depth == 0 && i.ident == "_" {
+        if i.ident == "_" {
             *i = self.to.clone();
         }
     }
 
-    fn visit_type_bare_fn_mut(&mut self, i: &mut syn::TypeBareFn) {
-        self.binder_depth += 1;
-        syn::visit_mut::visit_type_bare_fn_mut(self, i);
-        self.binder_depth -= 1;
-    }
+    // Function-pointer lifetimes are independently bound.
+    fn visit_type_bare_fn_mut(&mut self, _: &mut syn::TypeBareFn) {}
 
     fn visit_trait_bound_mut(&mut self, i: &mut syn::TraitBound) {
-        self.binder_depth += 1;
-        syn::visit_mut::visit_trait_bound_mut(self, i);
-        self.binder_depth -= 1;
+        // Only `for<...>` introduces a higher-ranked binder.
+        if i.lifetimes.is_none() {
+            syn::visit_mut::visit_trait_bound_mut(self, i);
+        }
     }
 }
 
@@ -58,36 +50,28 @@ impl syn::visit_mut::VisitMut for ChangeLt {
 /// rewritten by [`ChangeLt::elided_to`], i.e. one that is not bound by a
 /// higher-ranked `for<..>` binder.
 pub(crate) fn uses_elided_lifetime(ty: &syn::Type) -> bool {
-    let mut finder = ElidedLifetimeFinder {
-        found: false,
-        binder_depth: 0,
-    };
+    let mut finder = ElidedLifetimeFinder { found: false };
     finder.visit_type(ty);
     finder.found
 }
 
 struct ElidedLifetimeFinder {
     found: bool,
-    binder_depth: usize,
 }
 
 impl<'ast> syn::visit::Visit<'ast> for ElidedLifetimeFinder {
     fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
-        if self.binder_depth == 0 && i.ident == "_" {
+        if i.ident == "_" {
             self.found = true;
         }
     }
 
-    fn visit_type_bare_fn(&mut self, i: &'ast syn::TypeBareFn) {
-        self.binder_depth += 1;
-        syn::visit::visit_type_bare_fn(self, i);
-        self.binder_depth -= 1;
-    }
+    fn visit_type_bare_fn(&mut self, _: &'ast syn::TypeBareFn) {}
 
     fn visit_trait_bound(&mut self, i: &'ast syn::TraitBound) {
-        self.binder_depth += 1;
-        syn::visit::visit_trait_bound(self, i);
-        self.binder_depth -= 1;
+        if i.lifetimes.is_none() {
+            syn::visit::visit_trait_bound(self, i);
+        }
     }
 }
 
