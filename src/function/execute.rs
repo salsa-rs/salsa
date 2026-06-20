@@ -68,19 +68,15 @@ where
                 (new_value, active_query.pop(IterationStamp::default()))
             }
             CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                let zalsa_local = claim_guard.zalsa_local();
-                let was_disabled = zalsa_local.set_cancellation_disabled(true);
+                let _cancellation_guard =
+                    DisableLocalCancellationGuard::new(claim_guard.zalsa_local());
 
-                let res = self.execute_maybe_iterate(
+                self.execute_maybe_iterate(
                     db,
                     opt_old_memo,
                     &mut claim_guard,
                     memo_ingredient_index,
-                );
-
-                zalsa_local.set_cancellation_disabled(was_disabled);
-
-                res
+                )
             }
         };
 
@@ -395,6 +391,28 @@ where
         );
 
         (new_value, active_query)
+    }
+}
+
+#[must_use]
+struct DisableLocalCancellationGuard<'a> {
+    zalsa_local: &'a ZalsaLocal,
+    was_disabled: bool,
+}
+
+impl<'a> DisableLocalCancellationGuard<'a> {
+    fn new(zalsa_local: &'a ZalsaLocal) -> Self {
+        Self {
+            zalsa_local,
+            was_disabled: zalsa_local.set_cancellation_disabled(true),
+        }
+    }
+}
+
+impl Drop for DisableLocalCancellationGuard<'_> {
+    fn drop(&mut self) {
+        self.zalsa_local
+            .set_cancellation_disabled(self.was_disabled);
     }
 }
 

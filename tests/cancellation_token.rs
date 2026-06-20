@@ -3,7 +3,11 @@
 
 mod common;
 
-use std::{sync::Barrier, thread};
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::Barrier,
+    thread,
+};
 
 use expect_test::expect;
 use salsa::{Cancelled, Database};
@@ -24,6 +28,23 @@ fn a(db: &dyn Database, input: MyInput) -> u32 {
 #[salsa::tracked]
 fn b(db: &dyn Database, input: MyInput) -> u32 {
     input.field(db)
+}
+
+#[salsa::tracked(cycle_initial = |_, _| 0)]
+fn panicking_cycle_query(_db: &dyn Database) -> u32 {
+    panic!("boom")
+}
+
+#[salsa::tracked]
+fn uncancelled_query(_db: &dyn Database) -> u32 {
+    1
+}
+
+#[salsa::tracked]
+fn cancel_after_cycle_panic(db: &dyn Database) -> u32 {
+    assert!(catch_unwind(AssertUnwindSafe(|| panicking_cycle_query(db))).is_err());
+    db.cancellation_token().cancel();
+    uncancelled_query(db)
 }
 
 static BARRIER: Barrier = Barrier::new(2);
@@ -64,4 +85,11 @@ fn cancellation_token() {
             "WillCheckCancellation",
             "WillExecute { database_key: b(Id(0)) }",
         ]"#]]);
+}
+
+#[test]
+fn cancellation_is_restored_after_cycle_panic() {
+    let db = common::LoggerDatabase::default();
+    let result = Cancelled::catch(|| cancel_after_cycle_panic(&db));
+    assert!(matches!(result, Err(Cancelled::Local)), "{result:?}");
 }
