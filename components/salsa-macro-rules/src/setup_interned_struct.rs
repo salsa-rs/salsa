@@ -223,10 +223,6 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            unsafe impl< $($db_lt_arg)? > Send for $Struct< $($db_lt_arg)? > {}
-
-            unsafe impl< $($db_lt_arg)? > Sync for $Struct< $($db_lt_arg)? > {}
-
             $zalsa::macro_if! { $generate_debug_impl =>
                 impl< $($db_lt_arg)? > ::std::fmt::Debug for $Struct< $($db_lt_arg)? > {
                     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
