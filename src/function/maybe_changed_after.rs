@@ -102,7 +102,10 @@ where
                     VerifyResult::unchanged_with_accumulated(
                         #[cfg(feature = "accumulator")]
                         {
-                            memo.revisions.accumulated_inputs.load()
+                            match memo.revisions.accumulated() {
+                                Some(_) => InputAccumulatedValues::Any,
+                                None => memo.revisions.accumulated_inputs.load(),
+                            }
                         },
                     )
                 };
@@ -177,7 +180,10 @@ where
                 VerifyResult::unchanged_with_accumulated(
                     #[cfg(feature = "accumulator")]
                     {
-                        old_memo.revisions.accumulated_inputs.load()
+                        match old_memo.revisions.accumulated() {
+                            Some(_) => InputAccumulatedValues::Any,
+                            None => old_memo.revisions.accumulated_inputs.load(),
+                        }
                     },
                 )
             });
