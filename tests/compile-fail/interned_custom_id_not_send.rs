@@ -1,12 +1,9 @@
-use std::marker::PhantomData;
-use std::rc::Rc;
-
 use salsa::plumbing::{AsId, FromId};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 struct LocalId {
     id: salsa::Id,
-    not_send_or_sync: PhantomData<Rc<()>>,
+    not_send_or_sync: *const (),
 }
 
 impl AsId for LocalId {
@@ -19,7 +16,7 @@ impl FromId for LocalId {
     fn from_id(id: salsa::Id) -> Self {
         Self {
             id,
-            not_send_or_sync: PhantomData,
+            not_send_or_sync: std::ptr::null(),
         }
     }
 }
