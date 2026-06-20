@@ -441,7 +441,7 @@ where
     T: Update,
 {
     unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
-        let old_pointer: *mut T = unsafe { std::ptr::addr_of_mut!((*old_pointer)[0]) };
+        let old_pointer = old_pointer.cast::<T>();
         let mut changed = false;
         for (new_element, i) in new_vec.into_iter().zip(0..) {
             changed |= unsafe { T::maybe_update(old_pointer.add(i), new_element) };
@@ -580,11 +580,12 @@ unsafe impl<T> Update for PhantomData<T> {
     }
 }
 
-#[cfg(all(test, feature = "ordermap"))]
+#[cfg(test)]
 mod tests {
     use super::Update;
 
     #[test]
+    #[cfg(feature = "ordermap")]
     fn update_order_map_reorders_entries() {
         let mut old = ordermap::OrderMap::from([(1_u32, 10_u32), (2, 20)]);
         let new = ordermap::OrderMap::from([(2_u32, 20_u32), (1, 10)]);
@@ -594,5 +595,15 @@ mod tests {
 
         assert!(changed);
         assert_eq!(old, new);
+    }
+
+    #[test]
+    fn update_empty_array() {
+        let mut old: [u32; 0] = [];
+
+        // SAFETY: `old` is valid for reads and writes for the duration of this call.
+        let changed = unsafe { Update::maybe_update(&mut old, []) };
+
+        assert!(!changed);
     }
 }
