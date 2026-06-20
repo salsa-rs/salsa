@@ -101,22 +101,6 @@ struct Coordinate {
     cvar: Condvar,
 }
 
-#[must_use]
-struct CancellationFlagGuard<'a>(&'a Zalsa);
-
-impl<'a> CancellationFlagGuard<'a> {
-    fn new(zalsa: &'a Zalsa) -> Self {
-        zalsa.runtime().set_cancellation_flag();
-        Self(zalsa)
-    }
-}
-
-impl Drop for CancellationFlagGuard<'_> {
-    fn drop(&mut self) {
-        self.0.runtime().reset_cancellation_flag();
-    }
-}
-
 // We cannot panic while holding a lock to `clones: Mutex<usize>` and therefore we cannot enter an
 // inconsistent state.
 impl RefUnwindSafe for Coordinate {}
@@ -294,5 +278,21 @@ impl Drop for CoordinateDrop {
     fn drop(&mut self) {
         *self.0.clones.lock() -= 1;
         self.0.cvar.notify_all();
+    }
+}
+
+#[must_use]
+struct CancellationFlagGuard<'a>(&'a Zalsa);
+
+impl<'a> CancellationFlagGuard<'a> {
+    fn new(zalsa: &'a Zalsa) -> Self {
+        zalsa.runtime().set_cancellation_flag();
+        Self(zalsa)
+    }
+}
+
+impl Drop for CancellationFlagGuard<'_> {
+    fn drop(&mut self) {
+        self.0.runtime().reset_cancellation_flag();
     }
 }
