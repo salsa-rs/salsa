@@ -856,15 +856,16 @@ where
     ) -> impl Iterator<Item = StructEntry<'db, C>> {
         // TODO: Grab all locks eagerly.
         zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
-            if should_lock {
+            let id = if should_lock {
                 // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
                 let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
-            }
 
-            // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
-            //
-            // Note that this ID includes the generation, unlike the ID provided by the table.
-            let id = unsafe { (*value.shared.get()).id };
+                // SAFETY: We hold the lock for the shard containing the value.
+                unsafe { (*value.shared.get()).id }
+            } else {
+                // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
+                unsafe { (*value.shared.get()).id }
+            };
 
             StructEntry {
                 value,
