@@ -222,11 +222,6 @@ impl<'db, C: Configuration> Memo<'db, C> {
         }
     }
 
-    #[inline]
-    pub(super) fn revision(&self) -> &QueryRevisions {
-        &self.header.revisions
-    }
-
     /// Returns `true` if this memo should be serialized.
     pub(super) fn should_serialize(&self) -> bool {
         // TODO: Serialization is a good opportunity to prune old query results based on
@@ -249,7 +244,7 @@ where
 
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
-        let size_of = std::mem::size_of::<Memo<C>>() + self.revision().allocation_size();
+        let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
         let heap_size = if let Some(value) = self.value.as_ref() {
             C::heap_size(value)
         } else {

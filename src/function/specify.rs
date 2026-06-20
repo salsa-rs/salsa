@@ -143,7 +143,8 @@ where
         let database_key_index = self.database_key_index(key);
         memo.header.mark_as_verified(zalsa, database_key_index);
         #[cfg(feature = "accumulator")]
-        memo.revision()
+        memo.header
+            .revisions
             .accumulated_inputs
             .store(InputAccumulatedValues::Empty);
     }

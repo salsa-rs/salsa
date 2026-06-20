@@ -264,7 +264,7 @@ where
                 active_query,
                 claim_guard,
                 cycle_heads,
-                last_provisional_memo.revision(),
+                &last_provisional_memo.header.revisions,
                 outer_cycle,
                 iteration,
                 cycle_iteration,

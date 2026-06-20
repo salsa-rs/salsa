@@ -185,7 +185,7 @@ where
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
         let memo = self.execute(db, claim_guard, Some(old_memo))?;
-        let changed_at = memo.revision().changed_at;
+        let changed_at = memo.header.revisions.changed_at;
 
         // Always assume that a provisional value has changed.
         //
@@ -195,7 +195,7 @@ where
             if changed_at > revision || memo.header.may_be_provisional() {
                 VerifyResult::changed()
             } else {
-                VerifyResult::unchanged_for_memo(memo.revision())
+                VerifyResult::unchanged_for_memo(&memo.header.revisions)
             },
         )
     }
