@@ -27,6 +27,12 @@ struct BoundEscaped<T, U> {
     value2: U,
 }
 
+#[derive(salsa::Update)]
+struct FallbackEscaped<T> {
+    #[update(fallback)]
+    value: T,
+}
+
 unsafe fn skip_update<T>(_: *mut T, _: T) -> bool {
     false
 }
@@ -43,4 +49,5 @@ fn assert_update<T: salsa::Update>() {}
 fn main() {
     assert_update::<Escaped<NotUpdate>>();
     assert_update::<BoundEscaped<NotUpdate, CloneOnly>>();
+    assert_update::<FallbackEscaped<NotUpdate>>();
 }

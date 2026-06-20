@@ -89,19 +89,18 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
                 let attr = attr
                     .map(|attr| attr.parse_args::<UpdateFieldArgs>())
                     .transpose()?;
-                let has_update_with = attr
+                let has_escape_hatch = attr
                     .as_ref()
-                    .and_then(|attr| attr.update_with.as_ref())
-                    .is_some();
-                if !has_update_with {
+                    .is_some_and(UpdateFieldArgs::has_escape_hatch);
+                if !has_escape_hatch {
                     used_type_params.visit_type(field_ty);
                 }
 
                 let (maybe_update, unsafe_token) = match attr {
                     Some(attr) => {
                         additional_bounds.extend(attr.bounds);
-                        match attr.update_with {
-                            Some(update_with) => {
+                        match attr.update_strategy {
+                            Some(UpdateStrategy::With(update_with)) => {
                                 let UpdateWith {
                                     unsafe_token,
                                     with_token,
@@ -111,6 +110,14 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
                                 (
                                     quote_spanned! { span =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #expr; maybe_update }) },
                                     unsafe_token,
+                                )
+                            }
+                            Some(UpdateStrategy::Fallback(fallback_token)) => {
+                                additional_bounds.push(syn::parse_quote!(#field_ty: 'static + ::core::cmp::PartialEq));
+                                let span = fallback_token.span();
+                                (
+                                    quote_spanned! { span => salsa::update_fallback::<#field_ty> },
+                                    Token![unsafe](Span::call_site()),
                                 )
                             }
                             None => (
@@ -197,13 +204,19 @@ fn add_trait_bounds(
 
 struct UpdateFieldArgs {
     bounds: Vec<syn::WherePredicate>,
-    update_with: Option<UpdateWith>,
+    update_strategy: Option<UpdateStrategy>,
+}
+
+impl UpdateFieldArgs {
+    fn has_escape_hatch(&self) -> bool {
+        self.update_strategy.is_some()
+    }
 }
 
 impl syn::parse::Parse for UpdateFieldArgs {
     fn parse(parser: ParseStream<'_>) -> syn::Result<Self> {
         let mut bounds = Vec::new();
-        let mut update_with = None;
+        let mut update_strategy: Option<UpdateStrategy> = None;
 
         while !parser.is_empty() {
             if parser.peek(kw::bounds) {
@@ -213,10 +226,10 @@ impl syn::parse::Parse for UpdateFieldArgs {
                 parenthesized!(content in parser);
                 bounds.extend(content.parse_terminated(syn::WherePredicate::parse, Token![,])?);
             } else if parser.peek(Token![unsafe]) {
-                if let Some(UpdateWith { unsafe_token, .. }) = update_with.as_ref() {
+                if let Some(update_strategy) = update_strategy.as_ref() {
                     return Err(syn::Error::new(
-                        unsafe_token.span,
-                        "multiple `unsafe(with(...))` options in `#[update]` attribute",
+                        update_strategy.span(),
+                        "multiple update strategies in `#[update]` attribute",
                     ));
                 }
 
@@ -230,15 +243,24 @@ impl syn::parse::Parse for UpdateFieldArgs {
                 if !content.is_empty() {
                     return Err(content.error("unexpected tokens in update function"));
                 }
-                update_with = Some(UpdateWith {
+                update_strategy = Some(UpdateStrategy::With(UpdateWith {
                     unsafe_token,
                     with_token,
                     expr,
-                });
+                }));
+            } else if parser.peek(kw::fallback) {
+                if let Some(update_strategy) = update_strategy.as_ref() {
+                    return Err(syn::Error::new(
+                        update_strategy.span(),
+                        "multiple update strategies in `#[update]` attribute",
+                    ));
+                }
+
+                update_strategy = Some(UpdateStrategy::Fallback(parser.parse()?));
             } else if parser.peek(kw::with) {
                 return Err(parser.error("expected `unsafe`"));
             } else {
-                return Err(parser.error("expected `bounds` or `unsafe`"));
+                return Err(parser.error("expected `bounds`, `fallback`, or `unsafe`"));
             }
 
             if !parser.is_empty() {
@@ -248,7 +270,7 @@ impl syn::parse::Parse for UpdateFieldArgs {
 
         Ok(Self {
             bounds,
-            update_with,
+            update_strategy,
         })
     }
 }
@@ -257,6 +279,20 @@ struct UpdateWith {
     unsafe_token: Token![unsafe],
     with_token: kw::with,
     expr: syn::Expr,
+}
+
+enum UpdateStrategy {
+    With(UpdateWith),
+    Fallback(kw::fallback),
+}
+
+impl UpdateStrategy {
+    fn span(&self) -> Span {
+        match self {
+            Self::With(UpdateWith { unsafe_token, .. }) => unsafe_token.span,
+            Self::Fallback(fallback_token) => fallback_token.span(),
+        }
+    }
 }
 
 struct UsedTypeParams {
