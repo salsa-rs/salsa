@@ -788,16 +788,28 @@ where
 
         let data = Self::data_raw(zalsa.table(), id);
 
+        struct RestoreRevisionOnPanic<'a>(&'a OptionalAtomicRevision, Revision);
+
+        impl Drop for RestoreRevisionOnPanic<'_> {
+            fn drop(&mut self) {
+                let _ = self.0.swap(Some(self.1));
+            }
+        }
+
         // We want to set `updated_at` to `None`, signalling that other field values
         // cannot be read. The current value should be `Some(R0)` for some older revision.
-        match unsafe { (*data).updated_at.swap(None) } {
-            None => {
-                panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
-            }
-            Some(r) if r == zalsa.current_revision() => panic!(
+        let Some(previous_revision) = (unsafe { (*data).updated_at.swap(None) }) else {
+            panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
+        };
+        let restore_revision = RestoreRevisionOnPanic(
+            // SAFETY: `data` is a valid pointer acquired from the table.
+            unsafe { &(*data).updated_at },
+            previous_revision,
+        );
+        if previous_revision == zalsa.current_revision() {
+            panic!(
                 "cannot delete read-locked id `{id:?}`; value leaked across threads or user functions not deterministic"
-            ),
-            Some(_) => (),
+            );
         }
 
         // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
@@ -809,6 +821,7 @@ where
 
         // now that all cleanup has occurred, make available for re-use
         self.free_list.push(id);
+        mem::forget(restore_revision);
     }
 
     /// Clears the given memo table.
