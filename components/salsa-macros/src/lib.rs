@@ -80,6 +80,59 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
     tracked::tracked(args, input)
 }
 
+/// Derives `salsa::Update` for a struct or enum.
+///
+/// Generic type parameters receive an implicit `salsa::Update` bound unless all their uses appear
+/// in fields that use the `fallback` or `unsafe(with(...))` update strategies.
+///
+/// The `#[update(...)]` field helper supports these forms:
+///
+/// - `#[update(fallback)]` updates the field with `salsa::update_fallback`.
+///   This form adds a `FieldTy: 'static + PartialEq` bound to the generated impl.
+/// - `#[update(unsafe(with(expr)))]` updates the field with `expr`, which must have type
+///   `unsafe fn(*mut FieldTy, FieldTy) -> bool`. The caller is responsible for
+///   ensuring the custom function upholds the `salsa::Update` safety contract.
+/// - `#[update(bounds(Predicate, ...))]` adds one or more where-predicates to the generated impl.
+///   This form can be combined with `fallback` or `unsafe(with(...))`; by itself it does not change
+///   how the field is updated.
+///
+/// # Examples
+///
+/// ```ignore
+/// #[derive(Clone, PartialEq, Eq, salsa::Update)]
+/// struct Foo<T> {
+///     value: T,
+/// }
+/// ```
+///
+/// Since `value` uses the normal update path, the generated impl requires `T: salsa::Update`.
+///
+/// ```ignore
+/// #[derive(Clone, PartialEq, Eq, salsa::Update)]
+/// struct Foo<T> {
+///     #[update(fallback)]
+///     value: T,
+/// }
+/// ```
+///
+/// The `fallback` helper uses `salsa::update_fallback` and requires `T: 'static + PartialEq`
+/// instead of `T: salsa::Update`.
+///
+/// ```ignore
+/// #[derive(Clone, PartialEq, Eq, salsa::Update)]
+/// struct Foo<T, U> {
+///     #[update(bounds(T: 'static + PartialEq, Vec<U>: Clone), unsafe(with(custom_update::<T>)))]
+///     value: T,
+///     marker: std::marker::PhantomData<U>,
+/// }
+///
+/// unsafe fn custom_update<T>(old: *mut T, new: T) -> bool
+/// where
+///     T: 'static + PartialEq,
+/// {
+///     salsa::update_fallback(old, new)
+/// }
+/// ```
 #[proc_macro_derive(Update, attributes(update))]
 pub fn update(input: TokenStream) -> TokenStream {
     let item = parse_macro_input!(input as syn::DeriveInput);
@@ -95,6 +148,8 @@ pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error
 }
 
 mod kw {
+    syn::custom_keyword!(bounds);
+    syn::custom_keyword!(fallback);
     syn::custom_keyword!(with);
     syn::custom_keyword!(maybe_update);
 }

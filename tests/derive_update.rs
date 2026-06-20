@@ -15,6 +15,15 @@ struct MyInput2 {
     field2: &'static str,
 }
 
+#[derive(Debug, PartialEq)]
+struct FallbackValue(&'static str);
+
+#[derive(salsa::Update)]
+struct MyInput3 {
+    #[update(fallback)]
+    field: FallbackValue,
+}
+
 unsafe fn custom_update(dest: *mut &'static str, _data: &'static str) -> bool {
     unsafe { *dest = "ill-behaved for testing purposes" };
     true
@@ -28,6 +37,32 @@ fn derived() {
     assert_eq!(m.field, "bar");
     assert!(!unsafe { salsa::Update::maybe_update(&mut m, MyInput { field: "bar" }) });
     assert_eq!(m.field, "bar");
+}
+
+#[test]
+fn derived_fallback() {
+    let mut m = MyInput3 {
+        field: FallbackValue("foo"),
+    };
+    assert_eq!(m.field, FallbackValue("foo"));
+    assert!(unsafe {
+        salsa::Update::maybe_update(
+            &mut m,
+            MyInput3 {
+                field: FallbackValue("bar"),
+            },
+        )
+    });
+    assert_eq!(m.field, FallbackValue("bar"));
+    assert!(!unsafe {
+        salsa::Update::maybe_update(
+            &mut m,
+            MyInput3 {
+                field: FallbackValue("bar"),
+            },
+        )
+    });
+    assert_eq!(m.field, FallbackValue("bar"));
 }
 
 #[test]
