@@ -7,6 +7,7 @@ use crate::zalsa_local::CancellationToken;
 use crate::{Durability, Revision};
 
 #[derive(Copy, Clone)]
+#[repr(transparent)]
 pub struct RawDatabase<'db> {
     pub(crate) ptr: NonNull<()>,
     _marker: std::marker::PhantomData<&'db dyn Database>,
