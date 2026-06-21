@@ -11,7 +11,7 @@ impl<'db, C> IngredientInDb<'db, C>
 where
     C: Configuration,
 {
-    #[inline(always)]
+    #[inline]
     pub fn fetch(&self, id: Id) -> &'db C::Output<'db> {
         let zalsa = self.zalsa;
         let zalsa_local = self.zalsa_local;
@@ -48,9 +48,7 @@ where
     #[inline(always)]
     pub(super) fn refresh_memo(&self, id: Id) -> &'db Memo<'db, C> {
         let ingredient = self.ingredient;
-        let db = self.db;
         let zalsa = self.zalsa;
-        let zalsa_local = self.zalsa_local;
         let memo_ingredient_index = ingredient.memo_ingredient_index(zalsa, id);
 
         loop {
@@ -61,9 +59,7 @@ where
                 return memo;
             }
 
-            if let Some(memo) =
-                ingredient.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)
-            {
+            if let Some(memo) = self.fetch_cold(id, memo_ingredient_index) {
                 return memo;
             }
         }
@@ -102,6 +98,21 @@ where
         } else {
             None
         }
+    }
+
+    #[inline(always)]
+    fn fetch_cold(
+        &self,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db Memo<'db, C>> {
+        self.ingredient.fetch_cold(
+            self.zalsa,
+            self.zalsa_local,
+            self.db,
+            id,
+            memo_ingredient_index,
+        )
     }
 }
 

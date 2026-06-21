@@ -165,7 +165,7 @@ impl<'db, C: Configuration> IngredientInDb<'db, C> {
     /// # Safety
     ///
     /// `get_ingredient` must return an ingredient registered in the `Zalsa` it receives.
-    #[inline(always)]
+    #[inline]
     pub unsafe fn new_unchecked(
         db: &'db C::DbView,
         get_ingredient: impl FnOnce(&'db Zalsa) -> &'db IngredientImpl<C>,
@@ -188,7 +188,7 @@ impl<'db, C: Configuration> IngredientInDb<'db, C> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn zalsas(&self) -> (&'db Zalsa, &'db ZalsaLocal) {
         (self.zalsa, self.zalsa_local)
     }

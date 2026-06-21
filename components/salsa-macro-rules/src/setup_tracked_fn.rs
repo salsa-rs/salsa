@@ -256,7 +256,7 @@ macro_rules! setup_tracked_fn {
             }
 
             impl $Configuration {
-                #[inline(always)]
+                #[inline]
                 fn fn_ingredient<'db>(db: &'db dyn $Db) -> $zalsa::function::IngredientInDb<'db, $Configuration> {
                     // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the first
                     // ingredient created by our jar is the function ingredient in the provided
