@@ -3,7 +3,7 @@ use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
-use crate::zalsa::{MemoIngredientIndex, Zalsa};
+use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
 
@@ -11,14 +11,29 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
+    /// Fetches the memoized value for `id`, executing the tracked function if necessary.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be registered in `zalsa`, `db` must use `zalsa` as its storage, and
+    /// `zalsa_local` must be the local state paired with `db`.
     #[inline]
-    pub fn fetch<'db>(
+    pub unsafe fn fetch<'db>(
         &'db self,
         db: &'db C::DbView,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         id: Id,
     ) -> &'db C::Output<'db> {
+        debug_assert!(std::ptr::eq(db.zalsa(), zalsa));
+        debug_assert!(std::ptr::eq(db.zalsa_local(), zalsa_local));
+        debug_assert!(std::ptr::eq(
+            self,
+            zalsa
+                .lookup_ingredient(self.index)
+                .assert_type::<IngredientImpl<C>>()
+        ));
+
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);
