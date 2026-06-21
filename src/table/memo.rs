@@ -142,8 +142,9 @@ impl LazyMemoEntries {
             return memos;
         }
 
-        let mut new_memos: Box<[MemoEntry]> = (0..self.len).map(|_| MemoEntry::default()).collect();
-        let new_memos_ptr = new_memos.as_mut_ptr();
+        let new_memos: Box<[MemoEntry]> = (0..self.len).map(|_| MemoEntry::default()).collect();
+        let new_memos = Box::into_raw(new_memos);
+        let new_memos_ptr = new_memos.cast::<MemoEntry>();
 
         let ptr = match self.ptr.compare_exchange(
             ptr::null_mut(),
@@ -151,11 +152,13 @@ impl LazyMemoEntries {
             Ordering::Release,
             Ordering::Acquire,
         ) {
-            Ok(_) => {
-                mem::forget(new_memos);
-                new_memos_ptr
+            Ok(_) => new_memos_ptr,
+            Err(ptr) => {
+                // SAFETY: The compare-exchange failed, so `new_memos` was not published and this
+                // thread retains ownership of the allocation.
+                unsafe { drop(Box::from_raw(new_memos)) };
+                ptr
             }
-            Err(ptr) => ptr,
         };
 
         // SAFETY: `ptr` is either the boxed slice allocated above or the boxed slice published by
