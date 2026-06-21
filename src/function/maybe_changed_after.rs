@@ -291,6 +291,17 @@ impl MemoHeader {
             return ShallowUpdate::Verified;
         }
 
+        self.shallow_verify_memo_cold(zalsa, database_key_index, verified_at)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn shallow_verify_memo_cold(
+        &self,
+        zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
+        verified_at: Revision,
+    ) -> ShallowUpdate {
         let last_changed = zalsa.last_changed_revision(self.revisions.durability);
         crate::tracing::trace!(
             "{database_key_index:?}: check_durability({database_key_index:#?}, last_changed={:?} <= verified_at={:?}) = {:?}",
