@@ -39,9 +39,13 @@ impl<C: Configuration> IngredientImpl<C> {
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C>> {
-        let memo = zalsa
-            .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .get(memo_ingredient_index)?;
+        // SAFETY: `memo_ingredient_index` comes from this ingredient's memo ingredient map, which
+        // registered `Memo<C>` as the type for the index.
+        let memo = unsafe {
+            zalsa
+                .memo_table_for::<C::SalsaStruct<'_>>(id)
+                .get(memo_ingredient_index)?
+        };
         // SAFETY: The memo table owns this allocation for at least `'db`.
         Some(unsafe { memo.as_ref() })
     }
