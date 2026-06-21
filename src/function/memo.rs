@@ -39,12 +39,31 @@ impl<C: Configuration> IngredientImpl<C> {
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C>> {
-        // SAFETY: `memo_ingredient_index` comes from this ingredient's memo ingredient map, which
-        // registered `Memo<C>` as the type for the index.
+        let memo = zalsa
+            .memo_table_for::<C::SalsaStruct<'_>>(id)
+            .get(memo_ingredient_index)?;
+        // SAFETY: The memo table owns this allocation for at least `'db`.
+        Some(unsafe { memo.as_ref() })
+    }
+
+    /// Loads the current memo without checking its registered type.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be registered in `zalsa`, and `memo_ingredient_index` must come from this
+    /// ingredient's memo ingredient map.
+    pub(super) unsafe fn get_memo_from_table_for_unchecked<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db Memo<C>> {
+        // SAFETY: The caller guarantees that this ingredient's memo map registered `Memo<C>` at
+        // `memo_ingredient_index` in `zalsa`.
         let memo = unsafe {
             zalsa
                 .memo_table_for::<C::SalsaStruct<'_>>(id)
-                .get(memo_ingredient_index)?
+                .get_unchecked(memo_ingredient_index)?
         };
         // SAFETY: The memo table owns this allocation for at least `'db`.
         Some(unsafe { memo.as_ref() })

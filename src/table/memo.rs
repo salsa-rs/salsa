@@ -375,12 +375,39 @@ impl<'a> MemoTableWithTypes<'a> {
     }
 
     /// Returns a pointer to the memo at the given index, if one has been inserted.
+    #[inline]
+    pub(crate) fn get<M: Memo>(
+        self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<NonNull<M>> {
+        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+
+        // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
+        // corresponding `MemoTableTypes`, by construction.
+        let type_ = unsafe {
+            self.types
+                .types
+                .get_unchecked(memo_ingredient_index.as_usize())
+        };
+
+        // Verify that we are casting to the correct type.
+        if type_.type_id != TypeId::of::<M>() {
+            type_assert_failed(memo_ingredient_index);
+        }
+
+        NonNull::new(atomic_memo.load(Ordering::Acquire))
+            // SAFETY: We asserted that the type is correct above.
+            .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
+    }
+
+    /// Returns a pointer to the memo at the given index, if one has been inserted, without
+    /// checking its registered type.
     ///
     /// # Safety
     ///
     /// `M` must be the type registered for `memo_ingredient_index`.
     #[inline]
-    pub(crate) unsafe fn get<M: Memo>(
+    pub(crate) unsafe fn get_unchecked<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<M>> {

@@ -41,7 +41,8 @@ where
         #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
-        let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+        // SAFETY: Guaranteed by the caller and asserted above in debug builds.
+        let memo = unsafe { self.refresh_memo(db, zalsa, zalsa_local, id) };
 
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value().unwrap_unchecked() };
@@ -64,7 +65,13 @@ where
     }
 
     #[inline(always)]
-    pub(super) fn refresh_memo<'db>(
+    /// Refreshes the memo for `id`.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be registered in `zalsa`, `db` must use `zalsa` as its storage, and
+    /// `zalsa_local` must be the local state paired with `db`.
+    pub(super) unsafe fn refresh_memo<'db>(
         &'db self,
         db: &'db C::DbView,
         zalsa: &'db Zalsa,
@@ -77,7 +84,8 @@ where
             // Keep the hot and cold probes in distinct control-flow blocks. Using `or_else`
             // here can outline both into one function, making hot hits pay for the cold path's
             // stack frame.
-            if let Some(memo) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
+            // SAFETY: Guaranteed by the caller of `refresh_memo`.
+            if let Some(memo) = unsafe { self.fetch_hot(zalsa, id, memo_ingredient_index) } {
                 return memo;
             }
 
@@ -88,13 +96,21 @@ where
     }
 
     #[inline(always)]
-    fn fetch_hot<'db>(
+    /// Attempts to fetch a memo that is already valid in the current revision.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be registered in `zalsa`.
+    unsafe fn fetch_hot<'db>(
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C>> {
-        let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
+        // SAFETY: The caller guarantees that `self` is registered in `zalsa`, and
+        // `memo_ingredient_index` was read from this ingredient's memo map.
+        let memo =
+            unsafe { self.get_memo_from_table_for_unchecked(zalsa, id, memo_ingredient_index)? };
 
         memo.value.as_ref()?;
 

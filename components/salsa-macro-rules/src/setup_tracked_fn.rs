@@ -101,17 +101,15 @@ macro_rules! setup_tracked_fn {
                 let (zalsa, zalsa_local) = $db.zalsas();
                 // SAFETY: `zalsa` and `zalsa_local` were obtained from `$db`, and
                 // `fn_ingredient_` looks up the function ingredient in `zalsa`.
-                let result = unsafe {
-                    $zalsa::macro_if! {
-                        if $needs_interner {
-                            {
-                                let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
-                                $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
-                            }
-                        } else {
-                            {
-                                $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
-                            }
+                let result = $zalsa::macro_if! {
+                    if $needs_interner {
+                        {
+                            let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
+                            unsafe { $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key) }
+                        }
+                    } else {
+                        {
+                            unsafe { $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*))) }
                         }
                     }
                 };
