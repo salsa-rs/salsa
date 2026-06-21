@@ -2,10 +2,24 @@ use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
 use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl, Reentrancy};
-use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
+use crate::function::{Configuration, IngredientImpl, IngredientInDb, Reentrancy};
+use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
+
+impl<'db, C> IngredientInDb<'db, C>
+where
+    C: Configuration,
+{
+    #[inline(always)]
+    pub fn fetch(&self, id: Id) -> &'db C::Output<'db> {
+        // SAFETY: `IngredientInDb` binds the ingredient, database, storage, and local state.
+        unsafe {
+            self.ingredient
+                .fetch(self.db, self.zalsa, self.zalsa_local, id)
+        }
+    }
+}
 
 impl<C> IngredientImpl<C>
 where
@@ -25,15 +39,6 @@ where
         zalsa_local: &'db ZalsaLocal,
         id: Id,
     ) -> &'db C::Output<'db> {
-        debug_assert!(std::ptr::eq(db.zalsa(), zalsa));
-        debug_assert!(std::ptr::eq(db.zalsa_local(), zalsa_local));
-        debug_assert!(std::ptr::eq(
-            self,
-            zalsa
-                .lookup_ingredient(self.index)
-                .assert_type::<IngredientImpl<C>>()
-        ));
-
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);

@@ -19,8 +19,8 @@ use crate::sync::Arc;
 use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
-use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa, ZalsaDatabase};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef, ZalsaLocal};
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -148,6 +148,52 @@ pub trait Configuration: Any {
     fn deserialize<'de, D>(deserializer: D) -> Result<Self::Output<'static>, D::Error>
     where
         D: plumbing::serde::Deserializer<'de>;
+}
+
+/// A function ingredient bound to the database that registered it.
+#[doc(hidden)]
+pub struct IngredientInDb<'db, C: Configuration> {
+    ingredient: &'db IngredientImpl<C>,
+    db: &'db C::DbView,
+    zalsa: &'db Zalsa,
+    zalsa_local: &'db ZalsaLocal,
+}
+
+impl<'db, C: Configuration> IngredientInDb<'db, C> {
+    /// Creates a function ingredient bound to a database.
+    ///
+    /// # Safety
+    ///
+    /// `ingredient` must be registered in `zalsa`, `db` must use `zalsa` as its storage, and
+    /// `zalsa_local` must be the local state paired with `db`.
+    #[inline(always)]
+    pub unsafe fn new_unchecked(
+        ingredient: &'db IngredientImpl<C>,
+        db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+    ) -> Self {
+        debug_assert!(std::ptr::eq(db.zalsa(), zalsa));
+        debug_assert!(std::ptr::eq(db.zalsa_local(), zalsa_local));
+        debug_assert!(std::ptr::eq(
+            ingredient,
+            zalsa
+                .lookup_ingredient(ingredient.index)
+                .assert_type::<IngredientImpl<C>>()
+        ));
+
+        Self {
+            ingredient,
+            db,
+            zalsa,
+            zalsa_local,
+        }
+    }
+
+    #[inline(always)]
+    pub fn zalsas(&self) -> (&'db Zalsa, &'db ZalsaLocal) {
+        (self.zalsa, self.zalsa_local)
+    }
 }
 
 /// Function ingredients are the "workhorse" of salsa.
