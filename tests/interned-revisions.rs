@@ -196,6 +196,40 @@ struct Immortal<'db> {
     field1: BadHash,
 }
 
+#[salsa::interned(revisions = 4)]
+#[derive(Debug)]
+struct SpilledInterned<'db> {
+    field1: BadHash,
+}
+
+#[test]
+fn test_revisions_above_inline_capacity() {
+    #[salsa::tracked]
+    fn function(db: &dyn Database, input: Input) -> SpilledInterned<'_> {
+        SpilledInterned::new(db, BadHash(input.field1(db)))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    let result = function(&db, input);
+    assert_eq!(result.field1(&db).0, 0);
+    assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);
+
+    for i in 1..4 {
+        input.set_field1(&mut db).to(i);
+
+        let result = function(&db, input);
+        assert_eq!(result.field1(&db).0, i);
+        assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);
+    }
+
+    input.set_field1(&mut db).to(4);
+    let result = function(&db, input);
+    assert_eq!(result.field1(&db).0, 4);
+    assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 1);
+}
+
 #[test]
 fn test_immortal() {
     #[salsa::tracked]

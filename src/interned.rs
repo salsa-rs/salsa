@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use crossbeam_utils::CachePadded;
 use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef, intrusive_adapter};
 use rustc_hash::FxBuildHasher;
+use smallvec::SmallVec;
 
 use crate::durability::Durability;
 use crate::function::VerifyResult;
@@ -1103,8 +1104,8 @@ where
 /// read, as revisions may be created in bursts.
 struct RevisionQueue<C> {
     lock: Mutex<()>,
-    // Once `feature(generic_const_exprs)` is stable this can just be an array.
-    revisions: Box<[AtomicRevision]>,
+    /// Recent revisions, stored inline for the default configuration.
+    revisions: SmallVec<[AtomicRevision; 3]>,
     _configuration: PhantomData<fn() -> C>,
 }
 
@@ -1114,7 +1115,7 @@ const IMMORTAL: NonZeroUsize = NonZeroUsize::MAX;
 impl<C: Configuration> Default for RevisionQueue<C> {
     fn default() -> RevisionQueue<C> {
         let revisions = if C::REVISIONS == IMMORTAL {
-            Box::default()
+            SmallVec::new()
         } else {
             (0..C::REVISIONS.get())
                 .map(|_| AtomicRevision::start())
