@@ -83,11 +83,11 @@ fn basic() {
     db.assert_logs(expect![[r#"
         [
             "intermediate_result(MyInput { [salsa id]: Id(0), field: 2 })",
-            "salsa_event(WillDiscardStaleOutput { execute_key: create_tracked_structs(Id(0)), output_key: MyTracked(Id(402)) })",
-            "salsa_event(DidDiscard { key: MyTracked(Id(402)) })",
-            "salsa_event(DidDiscard { key: contribution_from_struct(Id(402)) })",
-            "salsa_event(DidDiscard { key: MyTracked(Id(405)) })",
-            "salsa_event(DidDiscard { key: copy_field(Id(405)) })",
+            "salsa_event(WillDiscardStaleOutput { execute_key: create_tracked_structs(Id(0)), output_key: MyTracked(Id(102)) })",
+            "salsa_event(DidDiscard { key: MyTracked(Id(102)) })",
+            "salsa_event(DidDiscard { key: contribution_from_struct(Id(102)) })",
+            "salsa_event(DidDiscard { key: MyTracked(Id(105)) })",
+            "salsa_event(DidDiscard { key: copy_field(Id(105)) })",
             "final_result(MyInput { [salsa id]: Id(0), field: 2 })",
         ]"#]]);
 }

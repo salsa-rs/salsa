@@ -161,7 +161,7 @@ fn everything() {
               }
             },
             "2": {
-              "1025": {
+              "257": {
                 "durabilities": [
                   0
                 ],
@@ -174,7 +174,7 @@ fn everything() {
               }
             },
             "4": {
-              "3073": {
+              "769": {
                 "durability": 3,
                 "last_interned_at": 1,
                 "fields": [
@@ -183,7 +183,7 @@ fn everything() {
               }
             },
             "5": {
-              "4097": {
+              "1025": {
                 "durability": 0,
                 "updated_at": 1,
                 "revisions": [],
@@ -193,7 +193,7 @@ fn everything() {
               }
             },
             "7": {
-              "5121": {
+              "1281": {
                 "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
@@ -203,14 +203,14 @@ fn everything() {
               }
             },
             "19": {
-              "2049": {
+              "513": {
                 "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": null
               }
             },
             "6": {
-              "7:5121": {
+              "7:1281": {
                 "value": "aaa",
                 "verified_at": 1,
                 "revisions": {
@@ -235,7 +235,7 @@ fn everything() {
             },
             "8": {
               "0:3": {
-                "value": 4097,
+                "value": 1025,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -257,7 +257,7 @@ fn everything() {
                           "hash": 6073466998405137972,
                           "disambiguator": 0
                         },
-                        4097
+                        1025
                       ]
                     ],
                     "cycle_heads": []
@@ -266,8 +266,8 @@ fn everything() {
               }
             },
             "18": {
-              "19:2049": {
-                "value": 3073,
+              "19:513": {
+                "value": 769,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -467,7 +467,7 @@ fn partial_query_interned() {
               }
             },
             "4": {
-              "3073": {
+              "769": {
                 "durability": 0,
                 "last_interned_at": 1,
                 "fields": [
@@ -476,7 +476,7 @@ fn partial_query_interned() {
               }
             },
             "17": {
-              "1025": {
+              "257": {
                 "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
@@ -486,8 +486,8 @@ fn partial_query_interned() {
               }
             },
             "16": {
-              "17:1025": {
-                "value": 3073,
+              "17:257": {
+                "value": 769,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -499,7 +499,7 @@ fn partial_query_interned() {
                         1
                       ],
                       [
-                        3073,
+                        769,
                         4
                       ]
                     ]

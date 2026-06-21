@@ -60,11 +60,11 @@ fn the_test() {
     db.assert_logs(expect![[r#"
         [
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: query_b(Id(400)) })",
-            "salsa_event(WillExecute { database_key: query_c(Id(800)) })",
-            "salsa_event(WillExecute { database_key: query_d(Id(c00)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(100)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(200)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(300)) })",
             "salsa_event(WillIterateCycle { database_key: query_a(Id(0)), iteration: 1 })",
-            "salsa_event(WillExecute { database_key: query_b(Id(400)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(100)) })",
             "salsa_event(DidFinalizeCycle { database_key: query_a(Id(0)), iteration: 1 })",
         ]"#]]);
 }

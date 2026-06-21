@@ -64,12 +64,12 @@ fn the_test() {
     // as we would when starting from `query_a`
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(800)), revision: R2 })",
-            "salsa_event(WillExecute { database_key: query_b(Id(800)) })",
-            "salsa_event(DidValidateInternedValue { key: query_c::interned_arguments(Id(c00)), revision: R2 })",
-            "salsa_event(WillExecute { database_key: query_c(Id(c00)) })",
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(1000)), revision: R2 })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_d(Id(1000)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(400)) })",
+            "salsa_event(DidValidateInternedValue { key: query_b::interned_arguments(Id(100)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: query_b(Id(100)) })",
+            "salsa_event(DidValidateInternedValue { key: query_c::interned_arguments(Id(200)), revision: R2 })",
+            "salsa_event(WillExecute { database_key: query_c(Id(200)) })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(300)), revision: R2 })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_d(Id(300)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(0)) })",
         ]"#]]);
 }
