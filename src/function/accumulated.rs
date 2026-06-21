@@ -12,7 +12,11 @@ where
 {
     /// Helper used by `accumulate` functions. Computes the results accumulated by `database_key_index`
     /// and its inputs.
-    pub fn accumulated_by<'db, A>(&self, db: &'db C::DbView, key: Id) -> Vec<&'db A>
+    ///
+    /// # Safety
+    ///
+    /// `self` must be registered in the `Zalsa` owned by `db`.
+    pub unsafe fn accumulated_by<'db, A>(&self, db: &'db C::DbView, key: Id) -> Vec<&'db A>
     where
         A: accumulator::Accumulator,
     {
@@ -37,7 +41,9 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch(db, zalsa, zalsa_local, key);
+        // SAFETY: The caller guarantees that `self` is registered in the `Zalsa` owned by `db`,
+        // and `zalsa` and `zalsa_local` were obtained from `db` above.
+        unsafe { self.fetch(db, zalsa, zalsa_local, key) };
 
         let db_key = self.database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();

@@ -99,15 +99,19 @@ macro_rules! setup_tracked_fn {
 
             $zalsa::attach($db, || {
                 let (zalsa, zalsa_local) = $db.zalsas();
-                let result = $zalsa::macro_if! {
-                    if $needs_interner {
-                        {
-                            let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
-                        }
-                    } else {
-                        {
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
+                // SAFETY: `zalsa` and `zalsa_local` were obtained from `$db`, and
+                // `fn_ingredient_` looks up the function ingredient in `zalsa`.
+                let result = unsafe {
+                    $zalsa::macro_if! {
+                        if $needs_interner {
+                            {
+                                let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
+                                $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
+                            }
+                        } else {
+                            {
+                                $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
+                            }
                         }
                     }
                 };
@@ -479,7 +483,9 @@ macro_rules! setup_tracked_fn {
                             }
                         };
 
-                        $Configuration::fn_ingredient($db).accumulated_by::<A>($db, key)
+                        // SAFETY: `fn_ingredient` looks up the function ingredient in the `Zalsa`
+                        // owned by `$db`.
+                        unsafe { $Configuration::fn_ingredient($db).accumulated_by::<A>($db, key) }
                     }
                 }
 
