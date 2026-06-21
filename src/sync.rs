@@ -69,6 +69,15 @@ pub mod shim {
             }
         }
 
+        pub fn get_mut(&mut self) -> Option<&mut T> {
+            if *self.0.get_mut() {
+                // SAFETY: The value is initialized and we have exclusive access to the lock.
+                Some(unsafe { self.1.get_mut().assume_init_mut() })
+            } else {
+                None
+            }
+        }
+
         pub fn get_or_init<F>(&self, f: F) -> &T
         where
             F: FnOnce() -> T,
@@ -92,11 +101,26 @@ pub mod shim {
 
             Ok(())
         }
+
+        pub fn take(&mut self) -> Option<T> {
+            if std::mem::take(self.0.get_mut()) {
+                // SAFETY: The value was initialized, and clearing the flag transfers ownership.
+                Some(unsafe { self.1.get_mut().assume_init_read() })
+            } else {
+                None
+            }
+        }
     }
 
     impl<T> From<T> for OnceLock<T> {
         fn from(value: T) -> OnceLock<T> {
             OnceLock(Mutex::new(true), UnsafeCell::new(MaybeUninit::new(value)))
+        }
+    }
+
+    impl<T> Drop for OnceLock<T> {
+        fn drop(&mut self) {
+            drop(self.take());
         }
     }
 

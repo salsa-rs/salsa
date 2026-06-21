@@ -3,7 +3,10 @@ use std::fmt::Debug;
 use std::mem;
 use std::ptr::{self, NonNull};
 
+use thin_vec::ThinVec;
+
 use crate::DatabaseKeyIndex;
+use crate::sync::OnceLock;
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
@@ -12,21 +15,21 @@ use crate::zalsa::Zalsa;
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
 pub struct MemoTable {
-    memos: Box<[MemoEntry]>,
+    memos: OnceLock<ThinVec<MemoEntry>>,
 }
 
+#[cfg(not(feature = "shuttle"))]
+const _: [(); mem::size_of::<MemoTable>()] = [(); 2 * mem::size_of::<usize>()];
+
 impl MemoTable {
-    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.
+    /// Create a `MemoTable` that allocates slots on the first memo insertion.
     ///
     /// # Safety
     ///
     /// The created memo table must only be accessed with the same `MemoTableTypes`.
-    pub unsafe fn new(types: &MemoTableTypes) -> Self {
-        // Note that the safety invariant guarantees that any indices in-bounds for
-        // this table are also in-bounds for its `MemoTableTypes`, as `MemoTableTypes`
-        // is append-only.
+    pub unsafe fn new(_types: &MemoTableTypes) -> Self {
         Self {
-            memos: (0..types.len()).map(|_| MemoEntry::default()).collect(),
+            memos: OnceLock::new(),
         }
     }
 
@@ -34,9 +37,15 @@ impl MemoTable {
     ///
     /// Note that the memo entries should be freed manually before calling this function.
     pub fn reset(&mut self) {
-        for memo in &mut self.memos {
-            *memo = MemoEntry::default();
-        }
+        self.memos.take();
+    }
+
+    fn get_or_init(&self, len: usize) -> &ThinVec<MemoEntry> {
+        self.memos.get_or_init(|| {
+            let mut memos = ThinVec::with_capacity(len);
+            memos.extend((0..len).map(|_| MemoEntry::default()));
+            memos
+        })
     }
 }
 
@@ -188,19 +197,16 @@ impl MemoTableWithTypes<'_> {
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
     ) -> Option<NonNull<M>> {
-        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
-
-        // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
-        // corresponding `MemoTableTypes`, by construction.
-        let type_ = unsafe {
-            self.types
-                .types
-                .get_unchecked(memo_ingredient_index.as_usize())
-        };
+        let memo_ingredient_index = memo_ingredient_index.as_usize();
+        let type_ = self.types.types.get(memo_ingredient_index)?;
+        let MemoEntry { atomic_memo } = self
+            .memos
+            .get_or_init(self.types.len())
+            .get(memo_ingredient_index)?;
 
         // Verify that the we are casting to the correct type.
         if type_.type_id != TypeId::of::<M>() {
-            type_assert_failed(memo_ingredient_index);
+            type_assert_failed(MemoIngredientIndex::from_usize(memo_ingredient_index));
         }
 
         let old_memo = atomic_memo.swap(MemoEntryType::to_dummy(memo).as_ptr(), Ordering::AcqRel);
@@ -215,7 +221,11 @@ impl MemoTableWithTypes<'_> {
         self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<M>> {
-        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+        let MemoEntry { atomic_memo } = self
+            .memos
+            .memos
+            .get()?
+            .get(memo_ingredient_index.as_usize())?;
 
         // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
         // corresponding `MemoTableTypes`, by construction.
@@ -238,7 +248,10 @@ impl MemoTableWithTypes<'_> {
     #[cfg(feature = "salsa_unstable")]
     pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
         let mut memory_usage = Vec::new();
-        for (index, memo) in self.memos.memos.iter().enumerate() {
+        let Some(memos) = self.memos.memos.get() else {
+            return memory_usage;
+        };
+        for (index, memo) in memos.iter().enumerate() {
             let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
                 continue;
             };
@@ -270,8 +283,10 @@ impl MemoTableWithTypesMut<'_> {
         memo_ingredient_index: MemoIngredientIndex,
         f: impl FnOnce(&mut M),
     ) {
-        let Some(MemoEntry { atomic_memo }) =
-            self.memos.memos.get_mut(memo_ingredient_index.as_usize())
+        let Some(memos) = self.memos.memos.get_mut() else {
+            return;
+        };
+        let Some(MemoEntry { atomic_memo }) = memos.get_mut(memo_ingredient_index.as_usize())
         else {
             return;
         };
@@ -307,8 +322,11 @@ impl MemoTableWithTypesMut<'_> {
     /// the database exist as there may be outstanding borrows into the pointer contents.
     #[inline]
     pub unsafe fn drop(&mut self) {
+        let Some(memos) = self.memos.memos.get_mut() else {
+            return;
+        };
         let types = self.types.types.iter();
-        for (type_, memo) in std::iter::zip(types, &mut self.memos.memos) {
+        for (type_, memo) in std::iter::zip(types, memos) {
             // SAFETY: The types match as per our constructor invariant.
             unsafe { memo.take(type_) };
         }
@@ -322,8 +340,10 @@ impl MemoTableWithTypesMut<'_> {
         &mut self,
         mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>),
     ) {
-        self.memos
-            .memos
+        let Some(memos) = self.memos.memos.get_mut() else {
+            return;
+        };
+        memos
             .iter_mut()
             .zip(self.types.types.iter())
             .enumerate()
