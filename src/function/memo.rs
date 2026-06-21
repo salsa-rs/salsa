@@ -48,9 +48,13 @@ impl<C: Configuration> IngredientImpl<C> {
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<'db, C>> {
-        let static_memo = zalsa
-            .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .get(memo_ingredient_index)?;
+        // SAFETY: `memo_ingredient_index` comes from this ingredient's memo ingredient map, which
+        // registered `Memo<C>` as the type for the index.
+        let static_memo = unsafe {
+            zalsa
+                .memo_table_for::<C::SalsaStruct<'_>>(id)
+                .get(memo_ingredient_index)?
+        };
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
