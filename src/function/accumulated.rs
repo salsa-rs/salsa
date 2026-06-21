@@ -93,14 +93,21 @@ where
         output
     }
 
-    pub(super) fn accumulated_map<'db>(
+    /// Returns the values accumulated by `key`.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be registered in the `Zalsa` owned by `db`.
+    pub(super) unsafe fn accumulated_map<'db>(
         &'db self,
         db: &'db C::DbView,
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let (zalsa, zalsa_local) = db.zalsas();
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
-        let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
+        // SAFETY: The caller guarantees that `self` is registered in the `Zalsa` owned by `db`,
+        // and `zalsa` and `zalsa_local` were obtained from `db` above.
+        let memo = unsafe { self.refresh_memo(db, zalsa, zalsa_local, key) };
         (
             memo.header.revisions.accumulated(),
             memo.header.revisions.accumulated_inputs.load(),

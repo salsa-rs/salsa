@@ -503,7 +503,8 @@ where
     ) {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        self.accumulated_map(db, key_index)
+        // SAFETY: The caller guarantees that `db` belongs to this ingredient.
+        unsafe { self.accumulated_map(db, key_index) }
     }
 
     fn is_persistable(&self) -> bool {
