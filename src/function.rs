@@ -164,17 +164,15 @@ impl<'db, C: Configuration> IngredientInDb<'db, C> {
     ///
     /// # Safety
     ///
-    /// `ingredient` must be registered in `zalsa`, `db` must use `zalsa` as its storage, and
-    /// `zalsa_local` must be the local state paired with `db`.
+    /// `get_ingredient` must return an ingredient registered in the `Zalsa` it receives.
     #[inline(always)]
     pub unsafe fn new_unchecked(
-        ingredient: &'db IngredientImpl<C>,
         db: &'db C::DbView,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
+        get_ingredient: impl FnOnce(&'db Zalsa) -> &'db IngredientImpl<C>,
     ) -> Self {
-        debug_assert!(std::ptr::eq(db.zalsa(), zalsa));
-        debug_assert!(std::ptr::eq(db.zalsa_local(), zalsa_local));
+        let (zalsa, zalsa_local) = db.zalsas();
+        let ingredient = get_ingredient(zalsa);
+
         debug_assert!(std::ptr::eq(
             ingredient,
             zalsa
@@ -193,6 +191,14 @@ impl<'db, C: Configuration> IngredientInDb<'db, C> {
     #[inline(always)]
     pub fn zalsas(&self) -> (&'db Zalsa, &'db ZalsaLocal) {
         (self.zalsa, self.zalsa_local)
+    }
+}
+
+impl<C: Configuration> std::ops::Deref for IngredientInDb<'_, C> {
+    type Target = IngredientImpl<C>;
+
+    fn deref(&self) -> &Self::Target {
+        self.ingredient
     }
 }
 
@@ -549,8 +555,9 @@ where
     ) {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        // SAFETY: The caller guarantees that `db` belongs to this ingredient.
-        unsafe { self.accumulated_map(db, key_index) }
+        // SAFETY: The caller guarantees that `self` is registered in the `Zalsa` owned by `db`.
+        let ingredient = unsafe { IngredientInDb::new_unchecked(db, |_| self) };
+        ingredient.accumulated_map(key_index)
     }
 
     fn is_persistable(&self) -> bool {

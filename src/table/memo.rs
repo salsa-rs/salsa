@@ -342,7 +342,7 @@ impl MemoTableWithTypes<'_> {
                 .get_unchecked(memo_ingredient_index.as_usize())
         };
 
-        // Verify that we are casting to the correct type.
+        // Verify that the we are casting to the correct type.
         if type_.type_id != TypeId::of::<M>() {
             type_assert_failed(memo_ingredient_index);
         }
