@@ -3,12 +3,26 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::active_query::CompletedQuery;
 use crate::function::memo::Memo;
 use crate::function::sync::{ClaimResult, Reentrancy};
-use crate::function::{Configuration, IngredientImpl};
+use crate::function::{Configuration, IngredientImpl, IngredientInDb};
+use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{OriginAndExtra, QueryOriginRef, QueryRevisions};
 use crate::{DatabaseKeyIndex, Id};
+
+impl<'db, C> IngredientInDb<'db, C>
+where
+    C: Configuration,
+{
+    #[inline]
+    pub fn specify_and_record(&self, key: Id, value: C::Output<'db>)
+    where
+        C::Input<'db>: TrackedStructInDb,
+    {
+        self.ingredient.specify_and_record(self.db, key, value)
+    }
+}
 
 impl<C> IngredientImpl<C>
 where

@@ -1,10 +1,24 @@
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::accumulator::{self};
-use crate::function::{Configuration, IngredientImpl};
+use crate::function::{Configuration, IngredientImpl, IngredientInDb};
 use crate::hash::FxHashSet;
 use crate::zalsa::ZalsaDatabase;
 use crate::zalsa_local::QueryOriginRef;
 use crate::{DatabaseKeyIndex, Id};
+
+impl<'db, C> IngredientInDb<'db, C>
+where
+    C: Configuration,
+{
+    #[inline]
+    pub fn accumulated_by<A>(&self, key: Id) -> Vec<&'db A>
+    where
+        A: accumulator::Accumulator,
+    {
+        // SAFETY: `IngredientInDb` binds the ingredient to the database.
+        unsafe { self.ingredient.accumulated_by::<A>(self.db, key) }
+    }
+}
 
 impl<C> IngredientImpl<C>
 where
