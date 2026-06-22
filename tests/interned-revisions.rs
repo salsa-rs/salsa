@@ -190,6 +190,42 @@ fn test_non_reusable_existing_value_does_not_record_dependency() {
     }
 }
 
+#[test]
+fn test_non_reusable_value_still_updates_query_stamp() {
+    #[salsa::tracked]
+    fn outer(db: &dyn Database, input: Input) -> bool {
+        let _ = input.field1(db);
+        let _ = Interned::new(db, BadHash(0));
+        true
+    }
+
+    #[salsa::tracked]
+    fn intern_from_input(db: &dyn Database, input: Input) -> Interned<'_> {
+        Interned::new(db, BadHash(input.field1(db)))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    // Create an interned value with low durability in a revision after the outer query's other
+    // inputs last changed. This makes the outer query's `changed_at` depend on the interned value.
+    db.synthetic_write(Durability::LOW);
+    assert!(outer(&db, input));
+
+    // Collect the original interned value, then recreate it outside an active query. This gives the
+    // new generation high durability, making it non-reusable.
+    for key in 1..10 {
+        db.synthetic_write(Durability::LOW);
+        let _ = intern_from_input(&db, Input::new(&db, key));
+    }
+    let _ = Interned::new(&db, BadHash(0));
+
+    // Revalidating `outer` observes that the old interned value was collected and executes it
+    // again. Even though the replacement is non-reusable and needs no dependency edge, its revision
+    // must still contribute to the new query stamp.
+    assert!(outer(&db, input));
+}
+
 #[salsa::interned(revisions = usize::MAX)]
 #[derive(Debug)]
 struct Immortal<'db> {

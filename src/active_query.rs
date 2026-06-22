@@ -131,8 +131,12 @@ impl ActiveQuery {
         revision: Revision,
     ) {
         self.durability = self.durability.min(durability);
-        self.changed_at = self.changed_at.max(revision);
+        self.add_changed_at(revision);
         self.input_outputs.insert(QueryEdge::input(input));
+    }
+
+    pub(super) fn add_changed_at(&mut self, revision: Revision) {
+        self.changed_at = self.changed_at.max(revision);
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {

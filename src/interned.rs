@@ -215,6 +215,11 @@ impl ValueShared {
     ) {
         if Self::is_reusable_with_durability::<C>(durability) {
             zalsa_local.report_tracked_read_simple(index, durability, current_revision);
+        } else {
+            // The value cannot be reused, so the dependency edge is unnecessary. Its durability
+            // is derived from the active query, but its revision must still contribute to the
+            // query's stamp because the interned ID may have changed due to reuse.
+            zalsa_local.report_tracked_read_revision(current_revision);
         }
     }
 }
