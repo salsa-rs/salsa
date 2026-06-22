@@ -69,9 +69,9 @@ fn test_leaked_inputs_ignored() {
         [
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
-            "DidInternValue { key: counter_field::interned_arguments(Id(200)), revision: R1 }",
+            "DidInternValue { key: counter_field::interned_arguments(Id(100)), revision: R1 }",
             "WillCheckCancellation",
-            "WillExecute { database_key: counter_field(Id(200)) }",
+            "WillExecute { database_key: counter_field(Id(100)) }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1, (0, 0));
@@ -88,9 +88,9 @@ fn test_leaked_inputs_ignored() {
         [
             "DidSetCancellationFlag",
             "WillCheckCancellation",
-            "DidValidateInternedValue { key: counter_field::interned_arguments(Id(200)), revision: R2 }",
+            "DidValidateInternedValue { key: counter_field::interned_arguments(Id(100)), revision: R2 }",
             "WillCheckCancellation",
-            "WillExecute { database_key: counter_field(Id(200)) }",
+            "WillExecute { database_key: counter_field(Id(100)) }",
             "WillExecute { database_key: function(Id(0)) }",
             "WillCheckCancellation",
         ]"#]]);

@@ -81,7 +81,7 @@ fn skip_dependency_edge_to_never_change_query() {
     assert_eq!(mixed_value(&db, immutable_input, mutable_input), 30);
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(WillExecute { database_key: mixed_value(Id(400)) })",
+            "salsa_event(WillExecute { database_key: mixed_value(Id(80)) })",
             "salsa_event(WillExecute { database_key: immutable_value(Id(0)) })",
         ]"#]]);
 
@@ -90,7 +90,7 @@ fn skip_dependency_edge_to_never_change_query() {
     assert_eq!(mixed_value(&db, immutable_input, mutable_input), 30);
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateMemoizedValue { database_key: mixed_value(Id(400)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: mixed_value(Id(80)) })",
         ]"#]]);
 }
 

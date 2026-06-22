@@ -16,7 +16,7 @@ use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
 
-const PAGE_LEN_BITS: usize = 8;
+const PAGE_LEN_BITS: usize = 7;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
 const MAX_PAGES: usize = Id::MAX_USIZE / PAGE_LEN;

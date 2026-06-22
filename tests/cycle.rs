@@ -1250,7 +1250,7 @@ fn repeat_query_participating_in_cycle() {
     // Ultimately, this can easily be more expensive than running the cycle head again.
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(100)), revision: R2 })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(80)), revision: R2 })",
             "salsa_event(WillExecute { database_key: head(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
@@ -1360,7 +1360,7 @@ fn repeat_query_participating_in_cycle2() {
     // Salsa would end up recusively validating the hot query over and over again.
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateInternedValue { key: Interned(Id(100)), revision: R2 })",
+            "salsa_event(DidValidateInternedValue { key: Interned(Id(80)), revision: R2 })",
             "salsa_event(WillExecute { database_key: head(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_hot(Id(0)) })",

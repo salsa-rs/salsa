@@ -161,7 +161,7 @@ fn everything() {
               }
             },
             "2": {
-              "257": {
+              "129": {
                 "durabilities": [
                   0
                 ],
@@ -174,7 +174,7 @@ fn everything() {
               }
             },
             "4": {
-              "769": {
+              "385": {
                 "durability": 3,
                 "last_interned_at": 1,
                 "fields": [
@@ -183,7 +183,7 @@ fn everything() {
               }
             },
             "5": {
-              "1025": {
+              "513": {
                 "durability": 0,
                 "updated_at": 1,
                 "revisions": [],
@@ -193,7 +193,7 @@ fn everything() {
               }
             },
             "7": {
-              "1281": {
+              "641": {
                 "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
@@ -203,14 +203,14 @@ fn everything() {
               }
             },
             "19": {
-              "513": {
+              "257": {
                 "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": null
               }
             },
             "6": {
-              "7:1281": {
+              "7:641": {
                 "value": "aaa",
                 "verified_at": 1,
                 "revisions": {
@@ -235,7 +235,7 @@ fn everything() {
             },
             "8": {
               "0:3": {
-                "value": 1025,
+                "value": 513,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -257,7 +257,7 @@ fn everything() {
                           "hash": 6073466998405137972,
                           "disambiguator": 0
                         },
-                        1025
+                        513
                       ]
                     ],
                     "cycle_heads": []
@@ -266,8 +266,8 @@ fn everything() {
               }
             },
             "18": {
-              "19:513": {
-                "value": 769,
+              "19:257": {
+                "value": 385,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -467,7 +467,7 @@ fn partial_query_interned() {
               }
             },
             "4": {
-              "769": {
+              "385": {
                 "durability": 0,
                 "last_interned_at": 1,
                 "fields": [
@@ -476,7 +476,7 @@ fn partial_query_interned() {
               }
             },
             "17": {
-              "257": {
+              "129": {
                 "durability": 3,
                 "last_interned_at": 18446744073709551615,
                 "fields": [
@@ -486,8 +486,8 @@ fn partial_query_interned() {
               }
             },
             "16": {
-              "17:257": {
-                "value": 769,
+              "17:129": {
+                "value": 385,
                 "verified_at": 1,
                 "revisions": {
                   "changed_at": 1,
@@ -499,7 +499,7 @@ fn partial_query_interned() {
                         1
                       ],
                       [
-                        769,
+                        385,
                         4
                       ]
                     ]

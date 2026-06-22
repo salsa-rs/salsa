@@ -67,7 +67,7 @@ fn test_leaked_inputs_ignored() {
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
             "WillCheckCancellation",
-            "WillExecute { database_key: counter_field(Id(100)) }",
+            "WillExecute { database_key: counter_field(Id(80)) }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1, (0, 0));
@@ -85,7 +85,7 @@ fn test_leaked_inputs_ignored() {
             "DidSetCancellationFlag",
             "WillCheckCancellation",
             "WillCheckCancellation",
-            "DidValidateMemoizedValue { database_key: counter_field(Id(100)) }",
+            "DidValidateMemoizedValue { database_key: counter_field(Id(80)) }",
             "WillExecute { database_key: function(Id(0)) }",
             "WillCheckCancellation",
         ]"#]]);

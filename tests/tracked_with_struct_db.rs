@@ -40,14 +40,14 @@ fn execute() {
         let t1 = create_tracked_list(db, input);
         expect_test::expect![[r#"
             MyTracked {
-                [salsa id]: Id(101),
+                [salsa id]: Id(81),
                 data: MyInput {
                     [salsa id]: Id(0),
                     field: "foo",
                 },
                 next: Next(
                     MyTracked {
-                        [salsa id]: Id(100),
+                        [salsa id]: Id(80),
                         data: MyInput {
                             [salsa id]: Id(0),
                             field: "foo",

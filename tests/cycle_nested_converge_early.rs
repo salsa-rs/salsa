@@ -76,18 +76,18 @@ fn the_test() {
     db.assert_logs(expect![[r#"
         [
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: query_b(Id(100)) })",
-            "salsa_event(WillExecute { database_key: query_c(Id(200)) })",
-            "salsa_event(WillExecute { database_key: query_d(Id(300)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(80)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(100)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(180)) })",
             "salsa_event(WillIterateCycle { database_key: query_a(Id(0)), iteration: 1 })",
-            "salsa_event(WillExecute { database_key: query_b(Id(100)) })",
-            "salsa_event(WillExecute { database_key: query_c(Id(200)) })",
-            "salsa_event(DidFinalizeCycle { database_key: query_b(Id(100)), iteration: 1 })",
-            "salsa_event(WillExecute { database_key: query_d(Id(300)) })",
+            "salsa_event(WillExecute { database_key: query_b(Id(80)) })",
+            "salsa_event(WillExecute { database_key: query_c(Id(100)) })",
+            "salsa_event(DidFinalizeCycle { database_key: query_b(Id(80)), iteration: 1 })",
+            "salsa_event(WillExecute { database_key: query_d(Id(180)) })",
             "salsa_event(WillIterateCycle { database_key: query_a(Id(0)), iteration: 2 })",
-            "salsa_event(WillExecute { database_key: query_d(Id(300)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(180)) })",
             "salsa_event(WillIterateCycle { database_key: query_a(Id(0)), iteration: 3 })",
-            "salsa_event(WillExecute { database_key: query_d(Id(300)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(180)) })",
             "salsa_event(DidFinalizeCycle { database_key: query_a(Id(0)), iteration: 3 })",
         ]"#]]);
 }
