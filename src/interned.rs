@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use crossbeam_utils::CachePadded;
 use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef, intrusive_adapter};
 use rustc_hash::FxBuildHasher;
+use smallvec::SmallVec;
 
 use crate::durability::Durability;
 use crate::function::VerifyResult;
@@ -25,6 +26,13 @@ use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
+#[cfg(not(test))]
+const DEFAULT_REVISIONS: usize = 3;
+
+// More aggressive garbage collection by default when testing.
+#[cfg(test)]
+const DEFAULT_REVISIONS: usize = 1;
+
 /// Trait that defines the key properties of an interned struct.
 ///
 /// Implemented by the `#[salsa::interned]` macro when applied to
@@ -37,11 +45,7 @@ pub trait Configuration: Sized + 'static {
     const PERSIST: bool;
 
     // The minimum number of revisions that must pass before a stale value is garbage collected.
-    #[cfg(not(test))]
-    const REVISIONS: NonZeroUsize = NonZeroUsize::new(3).unwrap();
-
-    #[cfg(test)] // More aggressive garbage collection by default when testing.
-    const REVISIONS: NonZeroUsize = NonZeroUsize::new(1).unwrap();
+    const REVISIONS: NonZeroUsize = NonZeroUsize::new(DEFAULT_REVISIONS).unwrap();
 
     /// The fields of the struct being interned.
     type Fields<'db>: InternedData;
@@ -1109,8 +1113,8 @@ where
 /// read, as revisions may be created in bursts.
 struct RevisionQueue<C> {
     lock: Mutex<()>,
-    // Once `feature(generic_const_exprs)` is stable this can just be an array.
-    revisions: Box<[AtomicRevision]>,
+    /// Recent revisions, stored inline for the default configuration.
+    revisions: SmallVec<[AtomicRevision; DEFAULT_REVISIONS]>,
     _configuration: PhantomData<fn() -> C>,
 }
 
@@ -1120,7 +1124,7 @@ const IMMORTAL: NonZeroUsize = NonZeroUsize::MAX;
 impl<C: Configuration> Default for RevisionQueue<C> {
     fn default() -> RevisionQueue<C> {
         let revisions = if C::REVISIONS == IMMORTAL {
-            Box::default()
+            SmallVec::new()
         } else {
             (0..C::REVISIONS.get())
                 .map(|_| AtomicRevision::start())
