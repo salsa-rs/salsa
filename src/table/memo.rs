@@ -102,7 +102,8 @@ impl LazyMemoEntries {
             return None;
         }
 
-        Some(&self.initialize()[index])
+        let memos = self.as_slice().unwrap_or_else(|| self.initialize());
+        Some(&memos[index])
     }
 
     #[inline]
@@ -122,6 +123,9 @@ impl LazyMemoEntries {
     fn as_slice(&self) -> Option<&[MemoEntry]> {
         let ptr = NonNull::new(self.ptr.load(Ordering::Acquire))?;
 
+        // The acquire load synchronizes with the release operation that published the pointer,
+        // ensuring that the memo entries are initialized before we create references to them.
+        //
         // SAFETY: A non-null pointer comes from a boxed slice of length `self.len`. The allocation
         // cannot be freed while `self` is shared.
         Some(unsafe { std::slice::from_raw_parts(ptr.as_ptr(), self.len) })
@@ -138,14 +142,12 @@ impl LazyMemoEntries {
 
     #[cold]
     fn initialize(&self) -> &[MemoEntry] {
-        if let Some(memos) = self.as_slice() {
-            return memos;
-        }
-
         let new_memos: Box<[MemoEntry]> = (0..self.len).map(|_| MemoEntry::default()).collect();
         let new_memos = Box::into_raw(new_memos);
         let new_memos_ptr = new_memos.cast::<MemoEntry>();
 
+        // Release publishes the initialized memo entries. If another thread won the race, acquire
+        // synchronizes with its release operation before we create references to its allocation.
         let ptr = match self.ptr.compare_exchange(
             ptr::null_mut(),
             new_memos_ptr,
