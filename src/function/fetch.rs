@@ -1,5 +1,6 @@
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
 use crate::function::eviction::EvictionPolicy;
+use crate::function::maybe_changed_after::ShallowUpdate;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
@@ -90,8 +91,9 @@ where
             .shallow_verify_memo(zalsa, database_key_index, true);
 
         if can_shallow_update.yes() && !memo.header.may_be_provisional() {
-            memo.header
-                .update_shallow(zalsa, database_key_index, can_shallow_update);
+            if can_shallow_update == ShallowUpdate::HigherDurability {
+                memo.header.update_shallow(zalsa, database_key_index);
+            }
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.

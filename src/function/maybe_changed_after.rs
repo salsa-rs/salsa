@@ -214,7 +214,9 @@ impl MemoHeader {
     ) -> Option<VerifyResult> {
         let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
         if can_shallow_update.yes() && !self.may_be_provisional() {
-            self.update_shallow(zalsa, database_key_index, can_shallow_update);
+            if can_shallow_update == ShallowUpdate::HigherDurability {
+                self.update_shallow(zalsa, database_key_index);
+            }
 
             Some(if self.revisions.changed_at > revision {
                 VerifyResult::changed()
@@ -242,7 +244,9 @@ impl MemoHeader {
         if can_shallow_update.yes()
             && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, has_value)
         {
-            self.update_shallow(zalsa, database_key_index, can_shallow_update);
+            if can_shallow_update == ShallowUpdate::HigherDurability {
+                self.update_shallow(zalsa, database_key_index);
+            }
             true
         } else {
             self.deep_verify_memo(db, claim_guard, cycle_recovery_strategy, has_value)
@@ -333,16 +337,9 @@ impl MemoHeader {
     }
 
     #[inline]
-    pub(super) fn update_shallow(
-        &self,
-        zalsa: &Zalsa,
-        database_key_index: DatabaseKeyIndex,
-        update: ShallowUpdate,
-    ) {
-        if let ShallowUpdate::HigherDurability = update {
-            self.mark_as_verified(zalsa, database_key_index);
-            self.mark_outputs_as_verified(zalsa, database_key_index);
-        }
+    pub(super) fn update_shallow(&self, zalsa: &Zalsa, database_key_index: DatabaseKeyIndex) {
+        self.mark_as_verified(zalsa, database_key_index);
+        self.mark_outputs_as_verified(zalsa, database_key_index);
     }
 
     /// Validates this memo if it is a provisional memo. Returns true for:
