@@ -548,8 +548,14 @@ mod memory_usage {
     }
 
     impl PageInfo {
-        pub(crate) fn from_page_fills(page_capacity: usize, mut page_fills: Vec<usize>) -> Self {
-            debug_assert!(!page_fills.is_empty());
+        pub(crate) fn from_page_fills(
+            page_capacity: usize,
+            mut page_fills: Vec<usize>,
+        ) -> Option<Self> {
+            if page_fills.is_empty() {
+                return None;
+            }
+
             debug_assert!(
                 page_fills
                     .iter()
@@ -562,7 +568,7 @@ mod memory_usage {
                 page_fills[rank - 1]
             };
 
-            Self {
+            Some(Self {
                 page_count: page_fills.len(),
                 page_capacity,
                 excess_capacity: page_fills.iter().map(|&fill| page_capacity - fill).sum(),
@@ -571,7 +577,7 @@ mod memory_usage {
                 p75_fill: percentile(75),
                 p90_fill: percentile(90),
                 p99_fill: percentile(99),
-            }
+            })
         }
 
         fn empty(page_capacity: usize) -> Self {
@@ -649,7 +655,7 @@ mod memory_usage {
 
         #[test]
         fn page_info_uses_nearest_rank_percentiles() {
-            let page_info = PageInfo::from_page_fills(128, (1..=100).collect());
+            let page_info = PageInfo::from_page_fills(128, (1..=100).collect()).unwrap();
 
             assert_eq!(page_info.page_count(), 100);
             assert_eq!(page_info.page_capacity(), 128);
@@ -662,17 +668,8 @@ mod memory_usage {
         }
 
         #[test]
-        fn empty_page_info_has_zero_counts() {
-            let page_info = PageInfo::empty(128);
-
-            assert_eq!(page_info.page_count(), 0);
-            assert_eq!(page_info.page_capacity(), 128);
-            assert_eq!(page_info.excess_capacity(), 0);
-            assert_eq!(page_info.p25_fill(), 0);
-            assert_eq!(page_info.p50_fill(), 0);
-            assert_eq!(page_info.p75_fill(), 0);
-            assert_eq!(page_info.p90_fill(), 0);
-            assert_eq!(page_info.p99_fill(), 0);
+        fn page_info_is_none_without_page_fills() {
+            assert_eq!(PageInfo::from_page_fills(128, Vec::new()), None);
         }
     }
 }

@@ -220,11 +220,9 @@ impl Table {
 
         page_fills
             .into_iter()
-            .map(|(ingredient, fills)| {
-                (
-                    ingredient,
-                    crate::database::PageInfo::from_page_fills(PAGE_LEN, fills),
-                )
+            .filter_map(|(ingredient, fills)| {
+                crate::database::PageInfo::from_page_fills(PAGE_LEN, fills)
+                    .map(|page_info| (ingredient, page_info))
             })
             .collect()
     }
