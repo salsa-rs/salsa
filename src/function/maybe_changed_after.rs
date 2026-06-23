@@ -287,7 +287,7 @@ impl MemoHeader {
     /// eagerly finalize all provisional memos in cycle iteration, we have to lazily check here
     /// (via `validate_provisional`) whether a may-be-provisional memo should actually be verified
     /// final, because its cycle heads are all now final.
-    #[inline]
+    #[inline(always)]
     pub(super) fn shallow_verify_memo(
         &self,
         zalsa: &Zalsa,
