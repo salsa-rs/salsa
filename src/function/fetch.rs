@@ -135,14 +135,7 @@ where
             if old_memo.value.is_some()
                 && old_memo
                     .header
-                    .maybe_changed_after_cold(
-                        db.into(),
-                        &claim_guard,
-                        zalsa.current_revision(),
-                        C::CYCLE_STRATEGY,
-                        true,
-                    )
-                    .is_some_and(|result| result.is_unchanged())
+                    .verify_memo(db.into(), &claim_guard, C::CYCLE_STRATEGY, true)
             {
                 // SAFETY: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.

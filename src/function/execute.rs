@@ -13,7 +13,7 @@ use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
 use crate::{Cancelled, Cycle, tracing};
-use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
+use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -178,13 +178,25 @@ where
                     QueryExecutionOutcome::Completed(completed_query) => {
                         break (new_value, completed_query);
                     }
-                    QueryExecutionOutcome::Participant(completed_query) => {
+                    QueryExecutionOutcome::Participant {
+                        active_query,
+                        cycle_heads,
+                        outer_cycle,
+                    } => {
                         // For FallbackImmediate, use the fallback value instead of the computed value
                         // for all cycle participants. This ensures that the results don't depend on the query call order, see
                         // https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285.
                         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                             new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
                         }
+
+                        let completed_query = complete_cycle_participant(
+                            active_query,
+                            claim_guard,
+                            cycle_heads,
+                            outer_cycle,
+                            iteration,
+                        );
 
                         break (new_value, completed_query);
                     }
@@ -307,7 +319,7 @@ where
         opt_old_header: Option<&MemoHeader>,
     ) -> (C::Output<'db>, ActiveQueryGuard<'db>) {
         if let Some(old_header) = opt_old_header {
-            old_header.seed_active_query(zalsa.current_revision(), &active_query);
+            old_header.seed_active_query(zalsa, &active_query);
         }
 
         // Query was not previously executed, or value is potentially
@@ -328,7 +340,11 @@ struct PreviousIteration {
 
 enum QueryExecutionOutcome<'db> {
     Completed(CompletedQuery),
-    Participant(CompletedQuery),
+    Participant {
+        active_query: ActiveQueryGuard<'db>,
+        cycle_heads: CycleHeads,
+        outer_cycle: DatabaseKeyIndex,
+    },
     CycleHead {
         active_query: ActiveQueryGuard<'db>,
         cycle_heads: CycleHeads,
@@ -374,7 +390,7 @@ impl MemoHeader {
         })
     }
 
-    fn seed_active_query(&self, revision_now: Revision, active_query: &ActiveQueryGuard<'_>) {
+    fn seed_active_query(&self, zalsa: &Zalsa, active_query: &ActiveQueryGuard<'_>) {
         // If we already executed this query once, then use the tracked-struct ids from the
         // previous execution as the starting point for the new one.
         active_query.seed_tracked_struct_ids(self.revisions.tracked_struct_ids());
@@ -384,7 +400,7 @@ impl MemoHeader {
         // * ensure that tracked struct created during the previous iteration
         //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
         // * ensure the final returned memo depends on all inputs from all iterations.
-        if self.may_be_provisional() && self.verified_at.load() == revision_now {
+        if self.may_be_provisional() && self.verified_at.load() == zalsa.current_revision() {
             active_query.seed_iteration(&self.revisions);
         }
     }
@@ -435,13 +451,11 @@ fn try_complete_query<'db>(
             );
         };
 
-        return QueryExecutionOutcome::Participant(complete_cycle_participant(
+        return QueryExecutionOutcome::Participant {
             active_query,
-            claim_guard,
             cycle_heads,
             outer_cycle,
-            iteration,
-        ));
+        };
     }
 
     // If this is the outermost cycle, use the maximum iteration count of all cycles.

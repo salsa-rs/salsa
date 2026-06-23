@@ -182,20 +182,25 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        let memo = self.execute(db, claim_guard, Some(old_memo))?;
-        let changed_at = memo.header.revisions.changed_at;
+        if old_memo.value.is_some() && !old_memo.header.may_be_provisional() {
+            let memo = self.execute(db, claim_guard, Some(old_memo))?;
+            let changed_at = memo.header.revisions.changed_at;
 
-        // Always assume that a provisional value has changed.
-        //
-        // We don't know if a provisional value has actually changed. To determine whether a provisional
-        // value has changed, we need to iterate the outer cycle, which cannot be done here.
-        Some(
-            if changed_at > revision || memo.header.may_be_provisional() {
-                VerifyResult::changed()
-            } else {
-                VerifyResult::unchanged_for_memo(&memo.header.revisions)
-            },
-        )
+            // Always assume that a provisional value has changed.
+            //
+            // We don't know if a provisional value has actually changed. To determine whether a provisional
+            // value has changed, we need to iterate the outer cycle, which cannot be done here.
+            return Some(
+                if changed_at > revision || memo.header.may_be_provisional() {
+                    VerifyResult::changed()
+                } else {
+                    VerifyResult::unchanged_for_memo(&memo.header.revisions)
+                },
+            );
+        }
+
+        // Otherwise, nothing for it: have to consider the value to have changed.
+        Some(VerifyResult::changed())
     }
 }
 
@@ -221,6 +226,30 @@ impl MemoHeader {
         }
     }
 
+    /// Returns whether this memo is still valid in the current revision.
+    pub(super) fn verify_memo(
+        &self,
+        db: crate::database::RawDatabase<'_>,
+        claim_guard: &ClaimGuard<'_>,
+        cycle_recovery_strategy: CycleRecoveryStrategy,
+        has_value: bool,
+    ) -> bool {
+        let zalsa = claim_guard.zalsa();
+        let zalsa_local = claim_guard.zalsa_local();
+        let database_key_index = claim_guard.database_key_index();
+
+        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
+        if can_shallow_update.yes()
+            && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, has_value)
+        {
+            self.update_shallow(zalsa, database_key_index, can_shallow_update);
+            true
+        } else {
+            self.deep_verify_memo(db, claim_guard, cycle_recovery_strategy, has_value)
+                .is_unchanged()
+        }
+    }
+
     pub(super) fn maybe_changed_after_cold(
         &self,
         db: crate::database::RawDatabase<'_>,
@@ -229,8 +258,6 @@ impl MemoHeader {
         cycle_recovery_strategy: CycleRecoveryStrategy,
         has_value: bool,
     ) -> Option<VerifyResult> {
-        let zalsa = claim_guard.zalsa();
-        let zalsa_local = claim_guard.zalsa_local();
         let database_key_index = claim_guard.database_key_index();
 
         crate::tracing::debug!(
@@ -239,16 +266,7 @@ impl MemoHeader {
             old_memo = self.tracing_debug(has_value)
         );
 
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
-        let verified = if can_shallow_update.yes()
-            && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, has_value)
-        {
-            self.update_shallow(zalsa, database_key_index, can_shallow_update);
-            true
-        } else {
-            self.deep_verify_memo(db, claim_guard, cycle_recovery_strategy, has_value)
-                .is_unchanged()
-        };
+        let verified = self.verify_memo(db, claim_guard, cycle_recovery_strategy, has_value);
 
         if verified {
             // Check if the inputs are still valid. We can just compare `changed_at`.
@@ -257,11 +275,8 @@ impl MemoHeader {
             } else {
                 VerifyResult::unchanged_for_memo(&self.revisions)
             })
-        } else if has_value && !self.may_be_provisional() {
-            None
         } else {
-            // Otherwise, nothing for it: have to consider the value to have changed.
-            Some(VerifyResult::changed())
+            None
         }
     }
 
