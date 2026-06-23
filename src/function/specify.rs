@@ -1,7 +1,7 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::active_query::CompletedQuery;
-use crate::function::memo::Memo;
+use crate::function::memo::{Memo, MemoHeader};
 use crate::function::{Configuration, IngredientImpl};
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
@@ -39,8 +39,8 @@ where
         // * Q4 invokes Q2 and then Q1
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
-        let database_key_index = <C::Input<'db>>::database_key_index(zalsa, key);
-        if !zalsa_local.is_tracked_struct_of_active_query(database_key_index) {
+        let input_key = <C::Input<'db>>::database_key_index(zalsa, key);
+        if !zalsa_local.is_tracked_struct_of_active_query(input_key) {
             panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
 
@@ -76,21 +76,29 @@ where
             stale_tracked_structs: Vec::new(),
         };
 
+        let database_key_index = self.database_key_index(key);
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
+            completed_query
+                .stale_tracked_structs
+                .extend_from_slice(old_memo.header.revisions.tracked_struct_ids());
             self.backdate_if_appropriate(
                 old_memo,
                 database_key_index,
                 &mut completed_query.revisions,
                 &value,
             );
-            self.diff_outputs(zalsa, database_key_index, old_memo, &completed_query);
+            old_memo
+                .header
+                .diff_outputs(zalsa, database_key_index, &completed_query);
         }
 
         let memo = Memo {
             value: Some(value),
-            verified_at: AtomicRevision::from(revision),
-            revisions: completed_query.revisions,
+            header: MemoHeader {
+                verified_at: AtomicRevision::from(revision),
+                revisions: completed_query.revisions,
+            },
         };
 
         crate::tracing::debug!(
@@ -101,7 +109,6 @@ where
         self.insert_memo(zalsa, key, memo, memo_ingredient_index);
 
         // Record that the current query *specified* a value for this cell.
-        let database_key_index = self.database_key_index(key);
         zalsa_local.add_output(database_key_index);
     }
 
@@ -124,19 +131,20 @@ where
 
         // If we are marking this as validated, it must be a value that was
         // assigned by `executor`.
-        match memo.revisions.origin() {
+        match memo.header.origin() {
             QueryOriginRef::Assigned(by_query) => assert_eq!(by_query, executor),
             _ => panic!(
                 "expected a query assigned by `{:?}`, not `{:?}`",
                 executor,
-                memo.revisions.origin(),
+                memo.header.origin(),
             ),
         }
 
         let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(zalsa, database_key_index);
+        memo.header.mark_as_verified(zalsa, database_key_index);
         #[cfg(feature = "accumulator")]
-        memo.revisions
+        memo.header
+            .revisions
             .accumulated_inputs
             .store(InputAccumulatedValues::Empty);
     }

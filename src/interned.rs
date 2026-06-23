@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use crossbeam_utils::CachePadded;
 use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef, intrusive_adapter};
 use rustc_hash::FxBuildHasher;
+use smallvec::SmallVec;
 
 use crate::durability::Durability;
 use crate::function::VerifyResult;
@@ -25,6 +26,13 @@ use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
 use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
+#[cfg(not(test))]
+const DEFAULT_REVISIONS: usize = 3;
+
+// More aggressive garbage collection by default when testing.
+#[cfg(test)]
+const DEFAULT_REVISIONS: usize = 1;
+
 /// Trait that defines the key properties of an interned struct.
 ///
 /// Implemented by the `#[salsa::interned]` macro when applied to
@@ -37,11 +45,7 @@ pub trait Configuration: Sized + 'static {
     const PERSIST: bool;
 
     // The minimum number of revisions that must pass before a stale value is garbage collected.
-    #[cfg(test)]
-    const REVISIONS: NonZeroUsize = NonZeroUsize::new(3).unwrap();
-
-    #[cfg(not(test))] // More aggressive garbage collection by default when testing.
-    const REVISIONS: NonZeroUsize = NonZeroUsize::new(1).unwrap();
+    const REVISIONS: NonZeroUsize = NonZeroUsize::new(DEFAULT_REVISIONS).unwrap();
 
     /// The fields of the struct being interned.
     type Fields<'db>: InternedData;
@@ -215,6 +219,11 @@ impl ValueShared {
     ) {
         if Self::is_reusable_with_durability::<C>(durability) {
             zalsa_local.report_tracked_read_simple(index, durability, current_revision);
+        } else {
+            // The value cannot be reused, so the dependency edge is unnecessary. Its durability
+            // is derived from the active query, but its revision must still contribute to the
+            // query's stamp because the interned ID may have changed due to reuse.
+            zalsa_local.report_tracked_read_revision(current_revision);
         }
     }
 }
@@ -856,15 +865,16 @@ where
     ) -> impl Iterator<Item = StructEntry<'db, C>> {
         // TODO: Grab all locks eagerly.
         zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
-            if should_lock {
+            let id = if should_lock {
                 // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
                 let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
-            }
 
-            // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
-            //
-            // Note that this ID includes the generation, unlike the ID provided by the table.
-            let id = unsafe { (*value.shared.get()).id };
+                // SAFETY: We hold the lock for the shard containing the value.
+                unsafe { (*value.shared.get()).id }
+            } else {
+                // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
+                unsafe { (*value.shared.get()).id }
+            };
 
             StructEntry {
                 value,
@@ -1103,8 +1113,8 @@ where
 /// read, as revisions may be created in bursts.
 struct RevisionQueue<C> {
     lock: Mutex<()>,
-    // Once `feature(generic_const_exprs)` is stable this can just be an array.
-    revisions: Box<[AtomicRevision]>,
+    /// Recent revisions, stored inline for the default configuration.
+    revisions: SmallVec<[AtomicRevision; DEFAULT_REVISIONS]>,
     _configuration: PhantomData<fn() -> C>,
 }
 
@@ -1114,7 +1124,7 @@ const IMMORTAL: NonZeroUsize = NonZeroUsize::MAX;
 impl<C: Configuration> Default for RevisionQueue<C> {
     fn default() -> RevisionQueue<C> {
         let revisions = if C::REVISIONS == IMMORTAL {
-            Box::default()
+            SmallVec::new()
         } else {
             (0..C::REVISIONS.get())
                 .map(|_| AtomicRevision::start())
@@ -1149,6 +1159,11 @@ impl<C: Configuration> RevisionQueue<C> {
     #[cold]
     fn record_cold(&self, revision: Revision) {
         let _lock = self.lock.lock();
+
+        // Another thread may have recorded this revision while we waited for the lock.
+        if self.revisions[0].load() >= revision {
+            return;
+        }
 
         // Otherwise, update the queue, maintaining sorted order.
         //
@@ -1312,6 +1327,31 @@ where
 {
     fn into_owned(self) -> Arc<T> {
         Arc::from(self)
+    }
+}
+
+#[cfg(feature = "triomphe")]
+impl<'a, T> HashEqLike<&'a T> for triomphe::Arc<T>
+where
+    T: ?Sized + Hash + Eq,
+    triomphe::Arc<T>: From<&'a T>,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(&**self, &mut *h)
+    }
+    fn eq(&self, data: &&T) -> bool {
+        **self == **data
+    }
+}
+
+#[cfg(feature = "triomphe")]
+impl<'a, T> Lookup<triomphe::Arc<T>> for &'a T
+where
+    T: ?Sized + Hash + Eq,
+    triomphe::Arc<T>: From<&'a T>,
+{
+    fn into_owned(self) -> triomphe::Arc<T> {
+        triomphe::Arc::from(self)
     }
 }
 
@@ -1723,5 +1763,52 @@ mod persistence {
                 .map(DeserializeFields)
                 .map_err(de::Error::custom)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestConfiguration;
+
+    impl Configuration for TestConfiguration {
+        const LOCATION: crate::ingredient::Location = crate::ingredient::Location {
+            file: file!(),
+            line: line!(),
+        };
+        const DEBUG_NAME: &'static str = "TestConfiguration";
+        const PERSIST: bool = false;
+        const REVISIONS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
+
+        type Fields<'db> = ();
+        type Struct<'db> = Id;
+
+        fn serialize<S>(_value: &Self::Fields<'_>, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: plumbing::serde::Serializer,
+        {
+            unimplemented!()
+        }
+
+        fn deserialize<'de, D>(_deserializer: D) -> Result<Self::Fields<'static>, D::Error>
+        where
+            D: plumbing::serde::Deserializer<'de>,
+        {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn revision_queue_records_each_revision_once() {
+        let queue = RevisionQueue::<TestConfiguration>::default();
+        let revision = Revision::start().next();
+
+        // Simulate two threads that both passed the fast-path check before taking the lock.
+        queue.record_cold(revision);
+        queue.record_cold(revision);
+
+        assert_eq!(queue.revisions[0].load(), revision);
+        assert_eq!(queue.revisions[1].load(), Revision::start());
     }
 }

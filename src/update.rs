@@ -346,7 +346,14 @@ where
     S: BuildHasher,
 {
     unsafe fn maybe_update(old_pointer: *mut Self, new_map: Self) -> bool {
-        maybe_update_map!(old_pointer, new_map)
+        let old_map = unsafe { &mut *old_pointer };
+
+        if old_map.keys().ne(new_map.keys()) {
+            *old_map = new_map;
+            true
+        } else {
+            maybe_update_map!(old_pointer, new_map)
+        }
     }
 }
 
@@ -429,12 +436,40 @@ where
     }
 }
 
+#[cfg(feature = "triomphe")]
+unsafe impl<T> Update for triomphe::Arc<T>
+where
+    T: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_arc: Self) -> bool {
+        let old_arc: &mut triomphe::Arc<T> = unsafe { &mut *old_pointer };
+
+        if triomphe::Arc::ptr_eq(old_arc, &new_arc) {
+            return false;
+        }
+
+        if let Some(inner) = triomphe::Arc::get_mut(old_arc) {
+            match triomphe::Arc::try_unwrap(new_arc) {
+                Ok(new_inner) => unsafe { T::maybe_update(inner, new_inner) },
+                Err(new_arc) => {
+                    // We can't unwrap the new arc, so we have to update the old one in place.
+                    *old_arc = new_arc;
+                    true
+                }
+            }
+        } else {
+            unsafe { *old_pointer = new_arc };
+            true
+        }
+    }
+}
+
 unsafe impl<T, const N: usize> Update for [T; N]
 where
     T: Update,
 {
     unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
-        let old_pointer: *mut T = unsafe { std::ptr::addr_of_mut!((*old_pointer)[0]) };
+        let old_pointer = old_pointer.cast::<T>();
         let mut changed = false;
         for (new_element, i) in new_vec.into_iter().zip(0..) {
             changed |= unsafe { T::maybe_update(old_pointer.add(i), new_element) };
@@ -494,6 +529,8 @@ macro_rules! fallback_impl {
 
 fallback_impl! {
     String,
+    i128,
+    u128,
     i64,
     u64,
     i32,
@@ -570,5 +607,33 @@ where
 unsafe impl<T> Update for PhantomData<T> {
     unsafe fn maybe_update(_old_pointer: *mut Self, _new_value: Self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Update;
+
+    #[test]
+    #[cfg(feature = "ordermap")]
+    fn update_order_map_reorders_entries() {
+        let mut old = ordermap::OrderMap::from([(1_u32, 10_u32), (2, 20)]);
+        let new = ordermap::OrderMap::from([(2_u32, 20_u32), (1, 10)]);
+
+        // SAFETY: `old` is valid for reads and writes for the duration of this call.
+        let changed = unsafe { Update::maybe_update(&mut old, new.clone()) };
+
+        assert!(changed);
+        assert_eq!(old, new);
+    }
+
+    #[test]
+    fn update_empty_array() {
+        let mut old: [u32; 0] = [];
+
+        // SAFETY: `old` is valid for reads and writes for the duration of this call.
+        let changed = unsafe { Update::maybe_update(&mut old, []) };
+
+        assert!(!changed);
     }
 }

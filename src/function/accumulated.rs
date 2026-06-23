@@ -96,8 +96,8 @@ where
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
         (
-            memo.revisions.accumulated(),
-            memo.revisions.accumulated_inputs.load(),
+            memo.header.revisions.accumulated(),
+            memo.header.revisions.accumulated_inputs.load(),
         )
     }
 }

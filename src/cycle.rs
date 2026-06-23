@@ -309,6 +309,10 @@ impl CycleHeads {
 
     #[inline]
     pub(crate) fn extend(&mut self, other: &Self) {
+        if other.is_empty() {
+            return;
+        }
+
         self.0.reserve(other.0.len());
 
         for head in other {

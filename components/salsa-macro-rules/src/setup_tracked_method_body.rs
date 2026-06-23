@@ -12,6 +12,7 @@ macro_rules! setup_tracked_method_body {
         output_ty: $output_ty:ty,
         inner_fn_name: $inner_fn_name:ident,
         inner_fn: $inner_fn:item,
+        tracked_fn: $tracked_fn:item,
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -29,10 +30,7 @@ macro_rules! setup_tracked_method_body {
                 $inner_fn
             }
 
-            #[$salsa_tracked_attr]
-            fn $inner_fn_name<$($db_lt)?>(db: $($db_ty)*, this: $self_ty, $($input_id: $input_ty),*) -> $output_ty {
-                <$self_ty as $InnerTrait>::$inner_fn_name(this, db, $($input_id),*)
-            }
+            $tracked_fn
 
             $inner_fn_name($db, $self, $($input_id),*)
         }
