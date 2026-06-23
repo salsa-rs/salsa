@@ -165,6 +165,17 @@ fn inputs(c: &mut Criterion) {
         )
     });
 
+    group.bench_function(BenchmarkId::new("cached", "Input"), |b| {
+        let db = salsa::DatabaseImpl::default();
+        let input = Input::new(&db, "hello, world!".to_owned());
+
+        // Prewarm the memo. Every measured call reads a value that has already been verified in
+        // the current revision.
+        assert_eq!(length(&db, input), 13);
+
+        b.iter(|| length(black_box(&db), black_box(input)))
+    });
+
     group.bench_function(BenchmarkId::new("new", "SupertypeInput"), |b| {
         b.iter_batched_ref(
             || {
