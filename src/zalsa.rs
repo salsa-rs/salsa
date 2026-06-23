@@ -294,9 +294,17 @@ impl Zalsa {
     /// Cancellation will automatically be triggered by salsa on any query
     /// invocation.
     #[inline]
-    pub(crate) fn unwind_if_revision_cancelled(&self, zalsa_local: &ZalsaLocal) {
-        self.event(&|| crate::Event::new(crate::EventKind::WillCheckCancellation));
+    pub(crate) fn unwind_if_revision_cancelled<Db>(&self, db: &Db, zalsa_local: &ZalsaLocal)
+    where
+        Db: ?Sized + Database,
+    {
+        self.event_with_db(db, &|| {
+            crate::Event::new(crate::EventKind::WillCheckCancellation)
+        });
         if zalsa_local.should_trigger_local_cancellation() {
+            if !crate::attach::is_attached(db) {
+                zalsa_local.uncancel();
+            }
             zalsa_local.unwind_cancelled();
         }
         if self.runtime().load_cancellation_flag() {
@@ -466,6 +474,22 @@ impl Zalsa {
         if self.event_callback.is_some() {
             self.event_cold(event);
         }
+    }
+
+    #[inline(always)]
+    pub(crate) fn event_with_db<Db>(&self, db: &Db, event: &dyn Fn() -> crate::Event)
+    where
+        Db: ?Sized + Database,
+    {
+        if self.event_callback.is_some() {
+            self.event_with_db_cold(db.as_dyn_database(), event);
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn event_with_db_cold(&self, db: &dyn Database, event: &dyn Fn() -> crate::Event) {
+        crate::attach(db, || self.event_cold(event));
     }
 
     // Avoid inlining, as events are typically only enabled for debugging purposes.

@@ -37,6 +37,7 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
+        crate::attach::assert_current_database(db);
         self.fetch(db, zalsa, zalsa_local, key);
 
         let db_key = self.database_key_index(key);
@@ -94,6 +95,7 @@ where
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let (zalsa, zalsa_local) = db.zalsas();
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
+        crate::attach::assert_current_database(db);
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
         (
             memo.header.revisions.accumulated(),

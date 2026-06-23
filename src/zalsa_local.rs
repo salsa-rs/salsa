@@ -1,5 +1,5 @@
 use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::{Cell, RefCell, UnsafeCell};
 use std::fmt;
 use std::fmt::Formatter;
 use std::marker::PhantomData;
@@ -35,6 +35,12 @@ use crate::{Cancelled, Id, Revision};
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
 pub struct ZalsaLocal {
+    /// Whether this database handle is the one currently attached to its thread.
+    ///
+    /// Mirrored from the thread-local attachment state so hot query entry can establish that the
+    /// passed database is current without consulting thread-local storage.
+    attached: Cell<bool>,
+
     /// Vector of active queries.
     ///
     /// Unwinding note: pushes onto this vector must be popped -- even
@@ -88,6 +94,7 @@ impl CancellationToken {
 impl ZalsaLocal {
     pub(crate) fn new() -> Self {
         ZalsaLocal {
+            attached: Cell::new(false),
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: UnsafeCell::new(FxHashMap::default()),
             cancelled: CancellationToken::default(),
@@ -195,6 +202,17 @@ impl ZalsaLocal {
         }
     }
 
+    /// Returns true if this database handle is currently attached to its thread.
+    #[inline(always)]
+    pub(crate) fn is_attached(&self) -> bool {
+        self.attached.get()
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_attached(&self, attached: bool) {
+        self.attached.set(attached);
+    }
+
     /// Executes a closure within the context of the current active query stacks (mutable).
     ///
     /// # Safety
@@ -300,16 +318,20 @@ impl ZalsaLocal {
 
     /// Register that currently active query reads the given input
     #[inline(always)]
-    pub(crate) fn report_tracked_read(
+    pub(crate) fn report_tracked_read<Db>(
         &self,
+        db: &Db,
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
         cycle_heads: &CycleHeads,
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
-    ) {
-        crate::tracing::debug!(
+    ) where
+        Db: ?Sized + crate::Database,
+    {
+        crate::tracing::debug_with_db!(
+            db,
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
             input,
             durability,
@@ -350,6 +372,37 @@ impl ZalsaLocal {
             changed_at
         );
 
+        self.report_tracked_read_simple_impl(input, durability, changed_at);
+    }
+
+    #[inline(always)]
+    pub(crate) fn report_tracked_read_simple_with_db<Db>(
+        &self,
+        db: &Db,
+        input: DatabaseKeyIndex,
+        durability: Durability,
+        changed_at: Revision,
+    ) where
+        Db: ?Sized + crate::Database,
+    {
+        crate::tracing::debug_with_db!(
+            db,
+            "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
+            input,
+            durability,
+            changed_at
+        );
+
+        self.report_tracked_read_simple_impl(input, durability, changed_at);
+    }
+
+    #[inline(always)]
+    fn report_tracked_read_simple_impl(
+        &self,
+        input: DatabaseKeyIndex,
+        durability: Durability,
+        changed_at: Revision,
+    ) {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
@@ -475,6 +528,7 @@ impl ZalsaLocal {
 // - `most_recent_pages` can't observe broken states as we cannot panic such that we enter an
 //   inconsistent state
 // - neither can `query_stack` as we require the closures accessing it to be `UnwindSafe`
+// - `attached` is updated in lockstep with thread-local attachment state by its guards
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used" and "all the outputs it has written to".

@@ -211,14 +211,17 @@ impl ValueShared {
     }
 
     /// Record a dependency on this value if its slot can be reused.
-    fn report_tracked_read_if_reusable<C: Configuration>(
+    fn report_tracked_read_if_reusable<C: Configuration, Db>(
+        db: &Db,
         zalsa_local: &ZalsaLocal,
         index: DatabaseKeyIndex,
         current_revision: Revision,
         durability: Durability,
-    ) {
+    ) where
+        Db: ?Sized + crate::Database,
+    {
         if Self::is_reusable_with_durability::<C>(durability) {
-            zalsa_local.report_tracked_read_simple(index, durability, current_revision);
+            zalsa_local.report_tracked_read_simple_with_db(db, index, durability, current_revision);
         } else {
             // The value cannot be reused, so the dependency edge is unnecessary. Its durability
             // is derived from the active query, but its revision must still contribute to the
@@ -346,8 +349,9 @@ where
     ///
     /// Note: Using the database within the `assemble` function may result in a deadlock if
     /// the database ends up trying to intern or allocate a new value.
-    pub fn intern<'db, Key>(
+    pub fn intern<'db, Key, Db>(
         &'db self,
+        db: &Db,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         key: Key,
@@ -355,9 +359,10 @@ where
     ) -> C::Struct<'db>
     where
         Key: Hash,
+        Db: ?Sized + crate::Database,
         C::Fields<'db>: HashEqLike<Key>,
     {
-        FromId::from_id(self.intern_id(zalsa, zalsa_local, key, assemble))
+        FromId::from_id(self.intern_id(db, zalsa, zalsa_local, key, assemble))
     }
 
     /// Intern data to a unique reference.
@@ -370,8 +375,9 @@ where
     ///
     /// Note: Using the database within the `assemble` function may result in a deadlock if
     /// the database ends up trying to intern or allocate a new value.
-    pub fn intern_id<'db, Key>(
+    pub fn intern_id<'db, Key, Db>(
         &'db self,
+        db: &Db,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         key: Key,
@@ -379,6 +385,7 @@ where
     ) -> crate::Id
     where
         Key: Hash,
+        Db: ?Sized + crate::Database,
         // We'd want the following predicate, but this currently implies `'static` due to a rustc
         // bug
         // for<'db> C::Data<'db>: HashEqLike<Key>,
@@ -415,7 +422,7 @@ where
             if { value_shared.last_interned_at } < current_revision {
                 value_shared.last_interned_at = current_revision;
 
-                zalsa.event(&|| {
+                zalsa.event_with_db(db, &|| {
                     Event::new(EventKind::DidValidateInternedValue {
                         key: index,
                         revision: current_revision,
@@ -455,7 +462,8 @@ where
             // See `intern_id_cold` for why we need to use `current_revision` here. Note that just
             // because this value was previously interned does not mean it was previously interned
             // by *our query*, so the same considerations apply.
-            ValueShared::report_tracked_read_if_reusable::<C>(
+            ValueShared::report_tracked_read_if_reusable::<C, _>(
+                db,
                 zalsa_local,
                 index,
                 current_revision,
@@ -468,6 +476,7 @@ where
         // Fill up the table for the first few revisions without attempting garbage collection.
         if !self.revision_queue.is_primed() {
             return self.intern_id_cold(
+                db,
                 key,
                 zalsa,
                 zalsa_local,
@@ -534,7 +543,8 @@ where
             // Record a dependency on the new value if its slot can be reused.
             //
             // See `intern_id_cold` for why we need to use `current_revision` here.
-            ValueShared::report_tracked_read_if_reusable::<C>(
+            ValueShared::report_tracked_read_if_reusable::<C, _>(
+                db,
                 zalsa_local,
                 index,
                 current_revision,
@@ -601,7 +611,7 @@ where
 
             drop(old_fields);
 
-            zalsa.event(&|| {
+            zalsa.event_with_db(db, &|| {
                 Event::new(EventKind::DidReuseInternedValue {
                     key: index,
                     revision: current_revision,
@@ -612,15 +622,25 @@ where
         }
 
         // If we could not find any stale slots, we are forced to allocate a new one.
-        self.intern_id_cold(key, zalsa, zalsa_local, assemble, shard, shard_index, hash)
+        self.intern_id_cold(
+            db,
+            key,
+            zalsa,
+            zalsa_local,
+            assemble,
+            shard,
+            shard_index,
+            hash,
+        )
     }
 
     /// The cold path for interning a value, allocating a new slot.
     ///
     /// Returns `true` if the current thread interned the value.
     #[allow(clippy::too_many_arguments)]
-    fn intern_id_cold<'db, Key>(
+    fn intern_id_cold<'db, Key, Db>(
         &'db self,
+        db: &Db,
         key: Key,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
@@ -631,6 +651,7 @@ where
     ) -> crate::Id
     where
         Key: Hash,
+        Db: ?Sized + crate::Database,
         C::Fields<'db>: HashEqLike<Key>,
     {
         let current_revision = zalsa.current_revision();
@@ -672,14 +693,15 @@ where
         // the query has changed without a corresponding input changing. Using `current_revision`
         // for dependencies on interned values encodes the fact that interned IDs are not stable
         // across revisions.
-        ValueShared::report_tracked_read_if_reusable::<C>(
+        ValueShared::report_tracked_read_if_reusable::<C, _>(
+            db,
             zalsa_local,
             index,
             current_revision,
             durability,
         );
 
-        zalsa.event(&|| {
+        zalsa.event_with_db(db, &|| {
             Event::new(EventKind::DidInternValue {
                 key: index,
                 revision: current_revision,

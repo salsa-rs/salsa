@@ -1,4 +1,5 @@
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
+use crate::database::AsDynDatabase;
 use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
@@ -19,12 +20,17 @@ where
         zalsa_local: &'db ZalsaLocal,
         id: Id,
     ) -> &'db C::Output<'db> {
-        zalsa.unwind_if_revision_cancelled(zalsa_local);
+        zalsa.unwind_if_revision_cancelled(db, zalsa_local);
 
         let database_key_index = self.database_key_index(id);
 
         #[cfg(debug_assertions)]
-        let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
+        let _span = crate::tracing::debug_span_with_db!(
+            db,
+            "fetch",
+            query = ?database_key_index
+        )
+        .entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
 
@@ -35,6 +41,7 @@ where
 
         let revisions = &memo.header.revisions;
         zalsa_local.report_tracked_read(
+            db,
             database_key_index,
             revisions.durability,
             revisions.changed_at,
@@ -62,11 +69,13 @@ where
             // Keep the hot and cold probes in distinct control-flow blocks. Using `or_else`
             // here can outline both into one function, making hot hits pay for the cold path's
             // stack frame.
-            if let Some(memo) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
+            if let Some(memo) = self.fetch_hot(db, zalsa, id, memo_ingredient_index) {
                 return memo;
             }
 
-            if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index) {
+            if let Some(memo) = crate::attach::attach_if_needed(db, || {
+                self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)
+            }) {
                 return memo;
             }
         }
@@ -75,6 +84,7 @@ where
     #[inline(always)]
     fn fetch_hot<'db>(
         &'db self,
+        db: &'db C::DbView,
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
@@ -85,13 +95,17 @@ where
 
         let database_key_index = self.database_key_index(id);
 
-        let can_shallow_update = memo
-            .header
-            .shallow_verify_memo(zalsa, database_key_index, true);
+        let can_shallow_update =
+            memo.header
+                .shallow_verify_memo(db.as_dyn_database(), zalsa, database_key_index, true);
 
         if can_shallow_update.yes() && !memo.header.may_be_provisional() {
-            memo.header
-                .update_shallow(zalsa, database_key_index, can_shallow_update);
+            memo.header.update_shallow(
+                db.as_dyn_database(),
+                zalsa,
+                database_key_index,
+                can_shallow_update,
+            );
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.
@@ -137,9 +151,13 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some()
-                && old_memo
-                    .header
-                    .verify_memo(db.into(), &claim_guard, C::CYCLE_STRATEGY, true)
+                && old_memo.header.verify_memo(
+                    db.into(),
+                    db.as_dyn_database(),
+                    &claim_guard,
+                    C::CYCLE_STRATEGY,
+                    true,
+                )
             {
                 // SAFETY: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.

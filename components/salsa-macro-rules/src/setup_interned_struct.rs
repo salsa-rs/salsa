@@ -315,7 +315,8 @@ macro_rules! setup_interned_struct {
                     )*
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
-                    $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
+                    $zalsa::assert_current_database(db);
+                    $Configuration::ingredient(zalsa).intern(db, zalsa, zalsa_local,
                         StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| ($($zalsa::Lookup::into_owned(data.$field_index),)*))
                 }
 

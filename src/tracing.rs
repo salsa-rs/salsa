@@ -25,9 +25,28 @@ macro_rules! debug {
     };
 }
 
+macro_rules! trace_with_db {
+    ($db:expr, $($x:tt)*) => {
+        crate::tracing::event_with_db!($db, TRACE, $($x)*)
+    };
+}
+
+macro_rules! debug_with_db {
+    ($db:expr, $($x:tt)*) => {
+        crate::tracing::event_with_db!($db, DEBUG, $($x)*)
+    };
+}
+
 macro_rules! debug_span {
     ($($x:tt)*) => {
         crate::tracing::span!(DEBUG, $($x)*)
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! debug_span_with_db {
+    ($db:expr, $($x:tt)*) => {
+        crate::tracing::span_with_db!($db, DEBUG, $($x)*)
     };
 }
 
@@ -50,6 +69,21 @@ macro_rules! event {
     }};
 }
 
+macro_rules! event_with_db {
+    ($db:expr, $level:ident, $($x:tt)*) => {{
+        if ::tracing::enabled!(::tracing::Level::$level) {
+            let event = {
+                #[cold] #[inline(never)] || {
+                    crate::attach($db, || {
+                        ::tracing::event!(::tracing::Level::$level, $($x)*)
+                    })
+                }
+            };
+            event();
+        }
+    }};
+}
+
 macro_rules! span {
     ($level:ident, $($x:tt)*) => {{
         let span = {
@@ -64,5 +98,26 @@ macro_rules! span {
     }};
 }
 
+#[allow(unused_macros)]
+macro_rules! span_with_db {
+    ($db:expr, $level:ident, $($x:tt)*) => {{
+        if ::tracing::enabled!(::tracing::Level::$level) {
+            let span = {
+                #[cold] #[inline(never)] || {
+                    crate::attach($db, || {
+                        ::tracing::span!(::tracing::Level::$level, $($x)*)
+                    })
+                }
+            };
+            span()
+        } else {
+            ::tracing::Span::none()
+        }
+    }};
+}
+
 #[expect(unused_imports)]
-pub(crate) use {debug, debug_span, event, info, info_span, span, trace, warn_event as warn};
+pub(crate) use {
+    debug, debug_span, debug_span_with_db, debug_with_db, event, event_with_db, info, info_span,
+    span, span_with_db, trace, trace_with_db, warn_event as warn,
+};
