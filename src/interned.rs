@@ -560,10 +560,8 @@ where
             //
             // SAFETY: We hold the lock for the shard containing the value, and the
             // value has not been interned in the current revision, so no references to
-            // it can exist. This mutable reference must be created after `reserve`, whose
-            // hasher can read the fields of this value.
-            let old_fields = unsafe { &mut *value.fields.get() };
-            let old_fields = std::mem::replace(old_fields, new_fields);
+            // it can exist.
+            let old_fields = unsafe { std::mem::replace(&mut *value.fields.get(), new_fields) };
 
             // Insert the new value into the ID map.
             shard.key_map.insert_unique(hash, new_id, hasher);
