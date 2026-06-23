@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `page_size = 128 | 256 | 512 | 1024` to input, interned, and tracked struct macros.
+
 ## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.27.0...salsa-macros-v0.27.1) - 2026-06-24
 
 ### Fixed

@@ -69,6 +69,8 @@ macro_rules! setup_interned_struct {
         // The function used to implement `C::heap_size`.
         heap_size_fn: $($heap_size_fn:path)?,
 
+        page_size: $page_size:ident,
+
         // If `true`, `serialize_fn` and `deserialize_fn` have been provided.
         persist: $persist:tt,
 
@@ -157,6 +159,7 @@ macro_rules! setup_interned_struct {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 const PERSIST: bool = $persist;
 
+                type PageSize = $zalsa::$page_size;
                 $(
                     const REVISIONS: ::core::num::NonZeroUsize = ::core::num::NonZeroUsize::new($revisions).unwrap();
                 )?

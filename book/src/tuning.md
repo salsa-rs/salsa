@@ -1,5 +1,23 @@
 # Tuning Salsa
 
+## Table page sizes
+
+Input, interned, and tracked structs can select their table page capacity in slots:
+
+```rust
+#[salsa::input(page_size = 128)]
+struct Project {
+    name: String,
+}
+```
+
+The supported capacities are `128`, `256`, `512`, and `1024`. Omitting the option is equivalent
+to `page_size = 1024`. The option applies to Salsa structs, not tracked functions.
+
+Smaller pages waste less capacity for sparse ingredients; larger pages use fewer page objects for
+dense ingredients. Page size is part of the persisted ID encoding, so serialized databases cannot
+be reused after changing it.
+
 ## Cache Eviction (LRU)
 
 Salsa supports Least Recently Used (LRU) cache eviction for tracked functions.

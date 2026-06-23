@@ -63,6 +63,8 @@ impl AllowedOptions for TrackedStruct {
 
     const HEAP_SIZE: bool = true;
 
+    const PAGE_SIZE: bool = true;
+
     const SELF_TY: bool = false;
 
     const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedValue;
@@ -149,6 +151,7 @@ impl Macro {
         let deserialize_fn = salsa_struct.deserialize_fn();
 
         let heap_size_fn = self.args.heap_size_fn.iter();
+        let page_size = format_ident!("PageSize{}", self.args.page_size.unwrap_or(1024));
 
         let num_tracked_fields = salsa_struct.num_tracked_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
@@ -199,6 +202,7 @@ impl Macro {
                     generate_debug_impl: #generate_debug_impl,
 
                     heap_size_fn: #(#heap_size_fn)*,
+                    page_size: #page_size,
 
                     persist: #persist,
                     serialize_fn: #(#serialize_fn)*,

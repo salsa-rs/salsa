@@ -87,6 +87,7 @@ const _: () = {
             line: line!(),
         };
         const DEBUG_NAME: &'static str = "InternedString";
+        type PageSize = zalsa_::PageSize1024;
         type Fields<'a> = StructData<'a>;
         type Struct<'a> = InternedString<'a>;
 

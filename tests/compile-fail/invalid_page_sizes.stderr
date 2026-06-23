@@ -1,0 +1,11 @@
+error: expected 128, 256, 512, or 1024 slots
+ --> tests/compile-fail/invalid_page_sizes.rs:1:31
+  |
+1 | #[salsa::interned(page_size = 127)]
+  |                               ^^^
+
+error: `page_size` must be an integer literal
+ --> tests/compile-fail/invalid_page_sizes.rs:6:28
+  |
+6 | #[salsa::input(page_size = 64 * 2)]
+  |                            ^^
