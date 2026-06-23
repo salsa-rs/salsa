@@ -58,10 +58,14 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         loop {
-            if let Some(memo) = self
-                .fetch_hot(zalsa, id, memo_ingredient_index)
-                .or_else(|| self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index))
-            {
+            // Keep the hot and cold probes in distinct control-flow blocks. Using `or_else`
+            // here can outline both into one function, making hot hits pay for the cold path's
+            // stack frame.
+            if let Some(memo) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
+                return memo;
+            }
+
+            if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index) {
                 return memo;
             }
         }
