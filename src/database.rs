@@ -549,13 +549,12 @@ mod memory_usage {
 
     impl PageInfo {
         pub(crate) fn from_page_fills(page_capacity: usize, mut page_fills: Vec<usize>) -> Self {
-            page_fills.retain(|&fill| fill > 0);
-
-            if page_fills.is_empty() {
-                return Self::empty(page_capacity);
-            }
-
-            debug_assert!(page_fills.iter().all(|&fill| fill <= page_capacity));
+            debug_assert!(!page_fills.is_empty());
+            debug_assert!(
+                page_fills
+                    .iter()
+                    .all(|&fill| fill > 0 && fill <= page_capacity)
+            );
             page_fills.sort_unstable();
 
             let percentile = |percentile: usize| {
@@ -649,8 +648,8 @@ mod memory_usage {
         use super::PageInfo;
 
         #[test]
-        fn page_info_uses_nearest_rank_percentiles_and_ignores_empty_pages() {
-            let page_info = PageInfo::from_page_fills(128, (0..=100).collect());
+        fn page_info_uses_nearest_rank_percentiles() {
+            let page_info = PageInfo::from_page_fills(128, (1..=100).collect());
 
             assert_eq!(page_info.page_count(), 100);
             assert_eq!(page_info.page_capacity(), 128);
@@ -663,8 +662,8 @@ mod memory_usage {
         }
 
         #[test]
-        fn page_info_is_empty_without_non_empty_pages() {
-            let page_info = PageInfo::from_page_fills(128, vec![0, 0]);
+        fn empty_page_info_has_zero_counts() {
+            let page_info = PageInfo::empty(128);
 
             assert_eq!(page_info.page_count(), 0);
             assert_eq!(page_info.page_capacity(), 128);
