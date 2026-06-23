@@ -2,7 +2,7 @@
 // Expected sizes assume a 64-bit target.
 #![cfg(target_pointer_width = "64")]
 
-use salsa::Database as _;
+use salsa::{Database as _, Setter as _};
 
 #[salsa::input(heap_size = string_tuple_size_of)]
 struct MyInput {
@@ -27,6 +27,12 @@ fn input_to_interned(db: &dyn salsa::Database, input: MyInput) -> MyInterned<'_>
 #[salsa::tracked]
 fn input_to_tracked(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db))
+}
+
+#[salsa::tracked]
+fn maybe_input_to_tracked(db: &dyn salsa::Database, input: MyInput) -> Option<MyTracked<'_>> {
+    let field = input.field(db);
+    (!field.is_empty()).then(|| MyTracked::new(db, field))
 }
 
 #[salsa::tracked]
@@ -107,6 +113,27 @@ fn test() {
 
     let memory_usage = <dyn salsa::Database>::memory_usage(&db);
 
+    let input_info = memory_usage
+        .structs
+        .iter()
+        .find(|ingredient| ingredient.debug_name() == "MyInput")
+        .unwrap();
+    let input_pages = input_info.page_info().unwrap();
+    assert_eq!(input_pages.page_count(), 1);
+    assert_eq!(input_pages.page_capacity(), 1024);
+    assert_eq!(input_pages.excess_capacity(), 1021);
+    assert_eq!(input_pages.p25_fill(), 3);
+    assert_eq!(input_pages.p50_fill(), 3);
+    assert_eq!(input_pages.p75_fill(), 3);
+    assert_eq!(input_pages.p90_fill(), 3);
+    assert_eq!(input_pages.p99_fill(), 3);
+    assert!(
+        memory_usage
+            .queries
+            .values()
+            .all(|query| query.page_info().is_none())
+    );
+
     let expected = expect![[r#"
         [
             IngredientInfo {
@@ -117,6 +144,18 @@ fn test() {
                 heap_size_of_fields: Some(
                     450,
                 ),
+                page_info: Some(
+                    PageInfo {
+                        page_count: 1,
+                        page_capacity: 1024,
+                        excess_capacity: 1021,
+                        p25_fill: 3,
+                        p50_fill: 3,
+                        p75_fill: 3,
+                        p90_fill: 3,
+                        p99_fill: 3,
+                    },
+                ),
             },
             IngredientInfo {
                 debug_name: "MyInterned",
@@ -125,6 +164,18 @@ fn test() {
                 size_of_fields: 72,
                 heap_size_of_fields: Some(
                     450,
+                ),
+                page_info: Some(
+                    PageInfo {
+                        page_count: 1,
+                        page_capacity: 1024,
+                        excess_capacity: 1021,
+                        p25_fill: 3,
+                        p50_fill: 3,
+                        p75_fill: 3,
+                        p90_fill: 3,
+                        p99_fill: 3,
+                    },
                 ),
             },
             IngredientInfo {
@@ -135,6 +186,18 @@ fn test() {
                 heap_size_of_fields: Some(
                     300,
                 ),
+                page_info: Some(
+                    PageInfo {
+                        page_count: 1,
+                        page_capacity: 1024,
+                        excess_capacity: 1020,
+                        p25_fill: 4,
+                        p50_fill: 4,
+                        p75_fill: 4,
+                        p90_fill: 4,
+                        p99_fill: 4,
+                    },
+                ),
             },
             IngredientInfo {
                 debug_name: "input_to_string::interned_arguments",
@@ -142,6 +205,18 @@ fn test() {
                 size_of_metadata: 56,
                 size_of_fields: 0,
                 heap_size_of_fields: None,
+                page_info: Some(
+                    PageInfo {
+                        page_count: 1,
+                        page_capacity: 1024,
+                        excess_capacity: 1023,
+                        p25_fill: 1,
+                        p50_fill: 1,
+                        p75_fill: 1,
+                        p90_fill: 1,
+                        p99_fill: 1,
+                    },
+                ),
             },
             IngredientInfo {
                 debug_name: "input_to_string_get_size::interned_arguments",
@@ -149,6 +224,18 @@ fn test() {
                 size_of_metadata: 56,
                 size_of_fields: 0,
                 heap_size_of_fields: None,
+                page_info: Some(
+                    PageInfo {
+                        page_count: 1,
+                        page_capacity: 1024,
+                        excess_capacity: 1023,
+                        p25_fill: 1,
+                        p50_fill: 1,
+                        p75_fill: 1,
+                        p90_fill: 1,
+                        p99_fill: 1,
+                    },
+                ),
             },
         ]"#]];
 
@@ -167,6 +254,7 @@ fn test() {
                     size_of_metadata: 144,
                     size_of_fields: 24,
                     heap_size_of_fields: None,
+                    page_info: None,
                 },
             ),
             (
@@ -177,6 +265,7 @@ fn test() {
                     size_of_metadata: 32,
                     size_of_fields: 24,
                     heap_size_of_fields: None,
+                    page_info: None,
                 },
             ),
             (
@@ -189,6 +278,7 @@ fn test() {
                     heap_size_of_fields: Some(
                         1000,
                     ),
+                    page_info: None,
                 },
             ),
             (
@@ -199,6 +289,7 @@ fn test() {
                     size_of_metadata: 240,
                     size_of_fields: 16,
                     heap_size_of_fields: None,
+                    page_info: None,
                 },
             ),
             (
@@ -209,6 +300,7 @@ fn test() {
                     size_of_metadata: 144,
                     size_of_fields: 16,
                     heap_size_of_fields: None,
+                    page_info: None,
                 },
             ),
         ]"#]];
@@ -276,4 +368,32 @@ fn never_change_cycle_query_discards_edges_after_converging() {
     let after = &after.queries["cycle_input_to_length"];
     assert_eq!(after.count(), 2);
     assert!(after.size_of_metadata() > before.size_of_metadata() * 2);
+}
+
+#[test]
+fn page_info_tracks_allocated_slots_after_tracked_struct_deletion() {
+    let mut db = salsa::DatabaseImpl::new();
+    let input = MyInput::new(&db, "value".to_owned());
+
+    assert!(maybe_input_to_tracked(&db, input).is_some());
+    input.set_field(&mut db).to(String::new());
+    assert!(maybe_input_to_tracked(&db, input).is_none());
+
+    let memory_usage = <dyn salsa::Database>::memory_usage(&db);
+    let tracked = memory_usage
+        .structs
+        .iter()
+        .find(|ingredient| ingredient.debug_name() == "MyTracked")
+        .unwrap();
+
+    assert_eq!(tracked.count(), 0);
+
+    let pages = tracked.page_info().unwrap();
+    assert_eq!(pages.page_count(), 1);
+    assert_eq!(pages.excess_capacity(), pages.page_capacity() - 1);
+    assert_eq!(pages.p25_fill(), 1);
+    assert_eq!(pages.p50_fill(), 1);
+    assert_eq!(pages.p75_fill(), 1);
+    assert_eq!(pages.p90_fill(), 1);
+    assert_eq!(pages.p99_fill(), 1);
 }
