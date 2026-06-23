@@ -520,12 +520,6 @@ where
             // SAFETY: We hold the lock for the shard containing the value.
             let old_hash = self.hasher.hash_one(unsafe { &*value.fields.get() });
 
-            // Ensure inserting the replacement cannot invoke user hashing after the slot has been
-            // modified.
-            // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
-            let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
-            shard.key_map.reserve(1, hasher);
-
             let index = self.database_key_index(new_id);
 
             // Record a dependency on the new value if its slot can be reused.
@@ -537,6 +531,13 @@ where
                 current_revision,
                 durability,
             );
+
+            // Insert the replacement while the old slot is still intact. `insert_unique`
+            // currently performs any rehashing before inserting, so a panic in user hashing
+            // leaves the old value reachable. Revisit this assumption when updating hashbrown.
+            // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
+            let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
+            shard.key_map.insert_unique(hash, new_id, hasher);
 
             // Remove the value from the LRU list.
             //
@@ -562,9 +563,6 @@ where
             // value has not been interned in the current revision, so no references to
             // it can exist.
             let old_fields = unsafe { std::mem::replace(&mut *value.fields.get(), new_fields) };
-
-            // Insert the new value into the ID map.
-            shard.key_map.insert_unique(hash, new_id, hasher);
 
             // Mark the slot as reused.
             *value_shared = ValueShared {

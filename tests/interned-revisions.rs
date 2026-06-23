@@ -31,10 +31,7 @@ impl std::hash::Hash for BadHash {
 }
 
 #[derive(Debug)]
-struct PanickingLookup {
-    value: usize,
-    should_panic: bool,
-}
+struct PanickingLookup(usize);
 
 impl std::hash::Hash for PanickingLookup {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -44,8 +41,8 @@ impl std::hash::Hash for PanickingLookup {
 
 impl Lookup<BadHash> for PanickingLookup {
     fn into_owned(self) -> BadHash {
-        assert!(!self.should_panic, "lookup panic");
-        BadHash(self.value)
+        assert_ne!(self.0, 2, "lookup panic");
+        BadHash(self.0)
     }
 }
 
@@ -55,14 +52,8 @@ impl HashEqLike<PanickingLookup> for BadHash {
     }
 
     fn eq(&self, data: &PanickingLookup) -> bool {
-        self.0 == data.value
+        self.0 == data.0
     }
-}
-
-#[salsa::input]
-struct PanickingInput {
-    value: usize,
-    should_panic: bool,
 }
 
 #[salsa::interned(revisions = 1)]
@@ -71,14 +62,8 @@ struct PanickingInterned<'db> {
 }
 
 #[salsa::tracked]
-fn intern_panicking(db: &dyn Database, input: PanickingInput) -> PanickingInterned<'_> {
-    PanickingInterned::new(
-        db,
-        PanickingLookup {
-            value: input.value(db),
-            should_panic: input.should_panic(db),
-        },
-    )
+fn intern_panicking(db: &dyn Database, input: Input) -> PanickingInterned<'_> {
+    PanickingInterned::new(db, PanickingLookup(input.field1(db)))
 }
 
 #[test]
@@ -88,19 +73,18 @@ fn panic_during_reuse_does_not_orphan_slot() {
     use salsa::plumbing::AsId;
 
     let mut db = common::LoggerDatabase::default();
-    let input = PanickingInput::new(&db, 0, false);
+    let input = Input::new(&db, 0);
 
     let first_id = intern_panicking(&db, input).as_id();
-    input.set_value(&mut db).to(1);
+    input.set_field1(&mut db).to(1);
     let second_id = intern_panicking(&db, input).as_id();
     assert_eq!(second_id, first_id.next_generation().unwrap());
 
-    input.set_value(&mut db).to(2);
-    input.set_should_panic(&mut db).to(true);
+    input.set_field1(&mut db).to(2);
     let result = catch_unwind(AssertUnwindSafe(|| intern_panicking(&db, input)));
     assert!(result.is_err());
 
-    input.set_should_panic(&mut db).to(false);
+    input.set_field1(&mut db).to(3);
     let recovered_id = intern_panicking(&db, input).as_id();
     assert_eq!(recovered_id, second_id.next_generation().unwrap());
 }
