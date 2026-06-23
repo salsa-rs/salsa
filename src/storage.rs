@@ -179,8 +179,9 @@ impl<Db: Database> Storage<Db> {
 
         // The ref count on the `Arc` should now be 1
         let zalsa = Arc::get_mut(&mut self.handle.zalsa_impl).unwrap();
-        // Advance the epoch only after cancelled workers have dropped their handles. Otherwise,
-        // a worker unwinding from cancellation could insert a provisional memo with the new epoch.
+        // Increment the cancellation count only after cancelled workers have dropped their
+        // handles. Otherwise, a worker unwinding from cancellation could insert a provisional
+        // memo with the new cancellation count.
         let overflow = zalsa.runtime_mut().bump_cancellation_count();
         if overflow {
             zalsa.new_revision();

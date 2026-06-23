@@ -128,6 +128,7 @@ impl AtomicRevision {
         }
     }
 
+    #[inline]
     pub fn load(&self) -> Revision {
         Revision {
             // SAFETY: We know that the value is non-zero because we only ever store `START` which 1, or a
