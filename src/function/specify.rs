@@ -93,10 +93,19 @@ where
                     QueryOriginRef::Assigned(owner) if owner == active_query_key
                 );
 
-                // A value produced by another query wins this revision. The active query can
-                // always replace its own assignment, including during fixpoint iteration.
+                // A value produced by another query wins this revision.
                 if !assigned_by_active_query {
                     return;
+                }
+
+                let first_assignment_in_execution = zalsa_local.add_output(database_key_index);
+                // Outputs from a prior provisional iteration are seeded into the active query,
+                // so they don't count as duplicate calls in this execution.
+                if cycle_heads.is_empty()
+                    && !old_memo.header.was_cycle_participant()
+                    && !first_assignment_in_execution
+                {
+                    panic!("cannot call `specify` twice for the same key in one query execution");
                 }
             }
         }

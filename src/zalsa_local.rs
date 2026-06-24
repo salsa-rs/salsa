@@ -293,14 +293,14 @@ impl ZalsaLocal {
         }
     }
 
-    /// Add an output to the current query's list of dependencies
-    pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) {
+    /// Add an output to the current query's list of dependencies, returning whether it was new.
+    pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) -> bool {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.add_output(entity)
-                }
+                stack
+                    .last_mut()
+                    .is_some_and(|top_query| top_query.add_output(entity))
             })
         }
     }
