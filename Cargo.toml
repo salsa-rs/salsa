@@ -106,6 +106,10 @@ name = "incremental"
 harness = false
 
 [[bench]]
+name = "interning"
+harness = false
+
+[[bench]]
 name = "accumulator"
 harness = false
 required-features = ["accumulator"]

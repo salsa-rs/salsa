@@ -1,11 +1,12 @@
 use std::any::TypeId;
 use std::borrow::Cow;
-use std::cell::{Cell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::ptr::NonNull;
 
 use crossbeam_utils::CachePadded;
 use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef, intrusive_adapter};
@@ -106,15 +107,44 @@ pub struct IngredientImpl<C: Configuration> {
 }
 
 struct IngredientShard {
-    /// Maps from data to the existing interned ID for that data.
+    /// Maps from data to the existing interned value for that data.
     ///
-    /// This doesn't hold the fields themselves to save memory, instead it points
-    /// to the slot ID.
-    key_map: hashbrown::HashTable<Id>,
+    /// The pointer is stable for the lifetime of the database and is the same size
+    /// as an `Id` on 64-bit targets. Storing it directly avoids a table lookup when
+    /// hashing or comparing an existing entry.
+    key_map: hashbrown::HashTable<ValueKey>,
 
     /// An intrusive linked list for LRU.
     lru: LinkedList<ValueHeaderAdapter>,
 }
+
+/// A stable pointer to an interned value allocated in the database table.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct ValueKey(NonNull<ValueHeader>);
+
+const _: () = assert!(std::mem::size_of::<NonNull<()>>() <= std::mem::size_of::<Id>());
+
+impl ValueKey {
+    fn new<C: Configuration>(value: &Value<C>) -> Self {
+        Self(NonNull::from(value).cast())
+    }
+
+    /// # Safety
+    ///
+    /// The database table containing this value must still be alive.
+    unsafe fn value<'db, C: Configuration>(&self) -> &'db Value<C> {
+        // SAFETY: Guaranteed by the caller. `Value<C>` has the C representation and its header is
+        // statically asserted to be at offset zero.
+        unsafe { &*self.0.as_ptr().cast::<Value<C>>() }
+    }
+}
+
+// SAFETY: Values remain allocated until after the ingredient and its key map are dropped.
+// Access to their mutable state is synchronized by the corresponding shard lock.
+unsafe impl Send for ValueKey {}
+// SAFETY: See the `Send` implementation above.
+unsafe impl Sync for ValueKey {}
 
 impl Default for IngredientShard {
     fn default() -> Self {
@@ -435,20 +465,19 @@ where
         // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.
         let shard = unsafe { &mut *self.shards.get_unchecked(shard_index).lock() };
 
-        let found_value = Cell::new(None);
         // SAFETY: We hold the lock for the shard containing the value.
-        let eq = |id: &_| unsafe { Self::value_eq(*id, &key, zalsa, &found_value) };
+        let eq = |value: &ValueKey| unsafe { Self::value_eq(value.value::<C>(), &key) };
 
         // Attempt a fast-path lookup of already interned data.
-        if let Some(&id) = shard.key_map.find(hash, eq) {
-            let value = found_value
-                .get()
-                .expect("found the interned value, so `found_value` should be set");
-
-            let index = self.database_key_index(id);
+        if let Some(value) = shard.key_map.find(hash, eq) {
+            // SAFETY: Values remain allocated for the lifetime of the database.
+            let value = unsafe { value.value::<C>() };
 
             // SAFETY: We hold the lock for the shard containing the value.
             let value_shared = unsafe { &mut *value.header.shared.get() };
+            let id = value_shared.id;
+
+            let index = self.database_key_index(id);
 
             // Validate the value in this revision to avoid reuse.
             if { value_shared.last_interned_at } < current_revision {
@@ -569,28 +598,27 @@ where
             durability,
         );
 
-        // Insert the replacement while the old slot is still intact. `insert_unique`
-        // currently performs any rehashing before inserting, so a panic in user hashing
-        // leaves the old value reachable. Revisit this assumption when updating hashbrown.
+        // Reserve space while the old slot is still intact. Resizing can invoke user hashing, so
+        // doing it before mutating the slot leaves the old value reachable if that panics. Once
+        // capacity is available, replacing the pointer entry cannot invoke user code.
         // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
-        let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
-        insert_unique_erased(shard, hash, slot.new_id, &hasher);
+        let hasher = |value: &ValueKey| unsafe { self.value_hash(value.value::<C>()) };
+        shard.key_map.reserve(1, hasher);
 
         // Remove the value from the LRU list.
         // SAFETY: We hold the shard lock and `value` is currently in the LRU.
         unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() };
 
-        // Remove the previous value from the ID map.
+        // Remove the previous value from the key map.
         //
-        // Note that while the ID stays the same when a slot is reused, the fields,
-        // and thus the hash, will change, so we need to re-insert the value into the
-        // map. Crucially, we know that the hashes for the old and new fields both map
-        // to the same shard, because we determined the initial shard based on the new
-        // fields and only accessed the LRU list for that shard.
+        // The pointer stays the same when a slot is reused, but the fields and thus the hash can
+        // change, so we need to re-insert it. The old and new hashes map to the same shard, because
+        // we selected the LRU list based on the new fields.
+        let value_key = ValueKey::new(value);
         shard
             .key_map
-            .find_entry(old_hash, |found_id: &Id| *found_id == slot.old_id)
-            .expect("interned value in LRU so must be in key_map")
+            .find_entry(old_hash, |found_value| found_value.0 == value_key.0)
+            .unwrap_or_else(|_| panic!("interned value in LRU so must be in key_map"))
             .remove();
 
         // Replace the fields without dropping the previous value until the slot is consistent.
@@ -605,6 +633,8 @@ where
             durability,
             last_interned_at,
         };
+
+        shard.key_map.insert_unique(hash, value_key, hasher);
 
         if value_shared.is_reusable::<C>() {
             // Move the value to the front of the LRU list.
@@ -685,10 +715,10 @@ where
             fields: UnsafeCell::new(unsafe { self.to_internal_data(assemble(id, key)) }),
         });
 
-        // Insert the newly allocated ID.
-        // SAFETY: We hold this ingredient's shard lock, and `value` is the live value identified by
-        // `id` that we just allocated in that shard.
-        unsafe { self.insert_id(id, zalsa, shard, hash, value) };
+        // Insert the newly allocated value.
+        // SAFETY: We hold this ingredient's shard lock, and `value` is the live, stable value that
+        // we just allocated in that shard.
+        unsafe { self.insert_value(shard, hash, value) };
 
         let index = self.database_key_index(id);
 
@@ -717,57 +747,59 @@ where
         id
     }
 
-    /// Inserts a newly interned value ID into the LRU list and key map.
+    /// Inserts a newly interned value into the LRU list and key map.
     ///
     /// # Safety
     ///
     /// `shard` must be a locked shard from this ingredient, and `value` must be the live, stable
-    /// `Value<C>` identified by `id` in that shard.
-    unsafe fn insert_id(
-        &self,
-        id: Id,
-        zalsa: &Zalsa,
-        shard: &mut IngredientShard,
-        hash: u64,
-        value: &Value<C>,
-    ) {
+    /// `Value<C>` allocated in that shard.
+    unsafe fn insert_value(&self, shard: &mut IngredientShard, hash: u64, value: &Value<C>) {
         /// Inserts a newly allocated value without depending on `C`.
         ///
         /// # Safety
         ///
         /// The caller must hold `shard`'s lock. `header` must have been produced by
-        /// `Value::header_ptr` for the live value identified by `id` in this shard, `reusable` must
-        /// reflect whether that value is reusable, and `hasher` must hash values while that lock is
-        /// held.
+        /// `value_key` and `header` must have been produced from the same live value in this shard,
+        /// `reusable` must reflect whether that value is reusable, and `hasher` must hash values
+        /// while that lock is held.
         unsafe fn inner(
-            id: Id,
             shard: &mut IngredientShard,
             hash: u64,
+            value_key: ValueKey,
             header: *const ValueHeader,
             reusable: bool,
-            hasher: &dyn Fn(&Id) -> u64,
+            hasher: &dyn Fn(&ValueKey) -> u64,
         ) {
             if reusable {
                 // SAFETY: Guaranteed by the caller, including full-value provenance.
                 unsafe { shard.lru.push_front(UnsafeRef::from_raw(header)) };
             }
 
-            insert_unique_erased(shard, hash, id, hasher);
+            insert_unique_erased(shard, hash, value_key, hasher);
 
-            debug_assert_eq!(hash, hasher(&id));
+            debug_assert_eq!(hash, hasher(&value_key));
         }
 
         // SAFETY: We hold the lock for the shard containing the value.
         let value_shared = unsafe { &mut *value.header.shared.get() };
         let reusable = value_shared.is_reusable::<C>();
+        let value_key = ValueKey::new(value);
 
         // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
-        let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
+        let hasher = |value: &ValueKey| unsafe { self.value_hash(value.value::<C>()) };
 
-        // SAFETY: We hold the lock for `shard`; `value` is the live value identified by `id` in
-        // that shard, `reusable` was read from the value, and `header_ptr` retains provenance for
-        // the complete value.
-        unsafe { inner(id, shard, hash, value.header_ptr(), reusable, &hasher) };
+        // SAFETY: We hold the lock for `shard`; `value_key` and `header_ptr` retain provenance for
+        // the same live value in that shard, and `reusable` was read from that value.
+        unsafe {
+            inner(
+                shard,
+                hash,
+                value_key,
+                value.header_ptr(),
+                reusable,
+                &hasher,
+            )
+        };
     }
 
     /// Finds a reusable slot and reconstructs its typed value.
@@ -928,11 +960,7 @@ where
     // # Safety
     //
     // The lock must be held for the shard containing the value.
-    unsafe fn value_hash<'db>(&'db self, id: Id, zalsa: &'db Zalsa) -> u64 {
-        // This closure is only called if the table is resized. So while it's expensive
-        // to lookup all values, it will only happen rarely.
-        let value = zalsa.table().get::<Value<C>>(id);
-
+    unsafe fn value_hash(&self, value: &Value<C>) -> u64 {
         // SAFETY: We hold the lock for the shard containing the value.
         unsafe { self.hasher.hash_one(&*value.fields.get()) }
     }
@@ -942,18 +970,10 @@ where
     // # Safety
     //
     // The lock must be held for the shard containing the value.
-    unsafe fn value_eq<'db, Key>(
-        id: Id,
-        key: &Key,
-        zalsa: &'db Zalsa,
-        found_value: &Cell<Option<&'db Value<C>>>,
-    ) -> bool
+    unsafe fn value_eq<'db, Key>(value: &'db Value<C>, key: &Key) -> bool
     where
         C::Fields<'db>: HashEqLike<Key>,
     {
-        let value = zalsa.table().get::<Value<C>>(id);
-        found_value.set(Some(value));
-
         // SAFETY: We hold the lock for the shard containing the value.
         let fields = unsafe { &*value.fields.get() };
 
@@ -1048,14 +1068,14 @@ where
     }
 }
 
-/// Inserts an ID while keeping the hasher and rehashing logic independent of `C`.
+/// Inserts a value pointer while keeping the hasher and rehashing logic independent of `C`.
 fn insert_unique_erased(
     shard: &mut IngredientShard,
     hash: u64,
-    id: Id,
-    hasher: &dyn Fn(&Id) -> u64,
+    value: ValueKey,
+    hasher: &dyn Fn(&ValueKey) -> u64,
 ) {
-    shard.key_map.insert_unique(hash, id, hasher);
+    shard.key_map.insert_unique(hash, value, hasher);
 }
 
 /// An interned struct entry.
@@ -1901,11 +1921,11 @@ mod persistence {
                     "values are serialized in allocation order"
                 );
 
-                // Insert the newly allocated ID into our ingredient.
+                // Insert the newly allocated value into our ingredient.
                 //
-                // SAFETY: We hold this ingredient's shard lock, and `value` is the live value
-                // identified by `id` that we just allocated in that shard.
-                unsafe { ingredient.insert_id(id, zalsa, shard, hash, value) };
+                // SAFETY: We hold this ingredient's shard lock, and `value` is the live, stable
+                // value that we just allocated in that shard.
+                unsafe { ingredient.insert_value(shard, hash, value) };
             }
 
             Ok(())
