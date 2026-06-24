@@ -19,6 +19,7 @@ struct MyTracked<'db> {
 fn tracked_fn(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("tracked_fn({input:?})"));
     let t = MyTracked::new(db, input.field(db) * 2);
+    tracked_fn_extra::specify(db, t, 1111);
     tracked_fn_extra::specify(db, t, 2222);
     tracked_fn_extra(db, t)
 }

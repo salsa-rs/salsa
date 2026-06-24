@@ -98,6 +98,10 @@ impl ActiveQuery {
         std::mem::take(&mut self.cycle_heads)
     }
 
+    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
+        &self.cycle_heads
+    }
+
     pub(crate) fn detach_input_outputs(&mut self) -> DetachedInputOutputs {
         DetachedInputOutputs(std::mem::take(&mut self.input_outputs))
     }

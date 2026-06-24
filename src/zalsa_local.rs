@@ -252,6 +252,25 @@ impl ZalsaLocal {
         }
     }
 
+    /// Returns the active query, its current dependencies, and any provisional cycle results it
+    /// depends on.
+    pub(crate) fn active_query_with_cycle_heads(
+        &self,
+    ) -> Option<(DatabaseKeyIndex, Stamp, CycleHeads)> {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.with_query_stack_unchecked(|stack| {
+                stack.last().map(|active_query| {
+                    (
+                        active_query.database_key_index,
+                        active_query.stamp(),
+                        active_query.cycle_heads().clone(),
+                    )
+                })
+            })
+        }
+    }
+
     /// Add an output to the current query's list of dependencies
     ///
     /// Returns `Err` if not in a query.
