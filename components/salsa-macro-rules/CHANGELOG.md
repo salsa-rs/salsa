@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.27.0...salsa-macro-rules-v0.27.1) - 2026-06-24
+
+### Fixed
+
+- avoid redundant captures in input setters ([#1144](https://github.com/salsa-rs/salsa/pull/1144))
+
+### Other
+
+- Revamp tracked attribute for methods and impls to better handle lifetimes ([#1111](https://github.com/salsa-rs/salsa/pull/1111))
+
 ## [0.26.2](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.26.1...salsa-macro-rules-v0.26.2) - 2026-05-03
 
 ### Other
