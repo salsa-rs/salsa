@@ -212,7 +212,12 @@ impl MemoHeader {
         revision: Revision,
         has_value: bool,
     ) -> Option<VerifyResult> {
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
+        let can_shallow_update = self.shallow_verify_memo(
+            zalsa,
+            #[cfg(feature = "detailed-trace")]
+            database_key_index,
+            has_value,
+        );
         if can_shallow_update.yes() && !self.may_be_provisional() {
             self.update_shallow(zalsa, database_key_index, can_shallow_update);
 
@@ -238,7 +243,12 @@ impl MemoHeader {
         let zalsa_local = claim_guard.zalsa_local();
         let database_key_index = claim_guard.database_key_index();
 
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
+        let can_shallow_update = self.shallow_verify_memo(
+            zalsa,
+            #[cfg(feature = "detailed-trace")]
+            database_key_index,
+            has_value,
+        );
         if can_shallow_update.yes()
             && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, has_value)
         {
@@ -286,16 +296,20 @@ impl MemoHeader {
     /// eagerly finalize all provisional memos in cycle iteration, we have to lazily check here
     /// (via `validate_provisional`) whether a may-be-provisional memo should actually be verified
     /// final, because its cycle heads are all now final.
+    ///
+    /// The key is only needed to populate detailed trace events. Gating it avoids constructing
+    /// trace-only data on every memo hit when detailed tracing is disabled.
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
         zalsa: &Zalsa,
-        database_key_index: DatabaseKeyIndex,
-        has_value: bool,
+        #[cfg(feature = "detailed-trace")] database_key_index: DatabaseKeyIndex,
+        _has_value: bool,
     ) -> ShallowUpdate {
+        #[cfg(feature = "detailed-trace")]
         crate::tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
-            memo = self.tracing_debug(has_value)
+            memo = self.tracing_debug(_has_value)
         );
         let verified_at = self.verified_at.load();
         let revision_now = zalsa.current_revision();
@@ -305,7 +319,12 @@ impl MemoHeader {
             return ShallowUpdate::Verified;
         }
 
-        self.shallow_verify_memo_cold(zalsa, database_key_index, verified_at)
+        self.shallow_verify_memo_cold(
+            zalsa,
+            #[cfg(feature = "detailed-trace")]
+            database_key_index,
+            verified_at,
+        )
     }
 
     #[cold]
@@ -313,10 +332,11 @@ impl MemoHeader {
     fn shallow_verify_memo_cold(
         &self,
         zalsa: &Zalsa,
-        database_key_index: DatabaseKeyIndex,
+        #[cfg(feature = "detailed-trace")] database_key_index: DatabaseKeyIndex,
         verified_at: Revision,
     ) -> ShallowUpdate {
         let last_changed = zalsa.last_changed_revision(self.revisions.durability);
+        #[cfg(feature = "detailed-trace")]
         crate::tracing::trace!(
             "{database_key_index:?}: check_durability({database_key_index:#?}, last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
