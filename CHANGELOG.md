@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.0...salsa-v0.27.1) - 2026-06-24
+
+### Added
+
+- make detailed tracing opt-in ([#1188](https://github.com/salsa-rs/salsa/pull/1188))
+
+### Changed
+
+- Update Rust crate hashlink to 0.12 ([#1131](https://github.com/salsa-rs/salsa/pull/1131))
+
+### Fixed
+
+- preserve current query values when specifying ([#1182](https://github.com/salsa-rs/salsa/pull/1182))
+- make interned slot reuse unwind-safe ([#1160](https://github.com/salsa-rs/salsa/pull/1160))
+- record each interned revision once ([#1163](https://github.com/salsa-rs/salsa/pull/1163))
+- preserve query revision for non-reusable interned values ([#1180](https://github.com/salsa-rs/salsa/pull/1180))
+- hold shard lock while reading interned entries ([#1159](https://github.com/salsa-rs/salsa/pull/1159))
+- discard tracked outputs overwritten by specify ([#1162](https://github.com/salsa-rs/salsa/pull/1162))
+- exclude deleted tracked structs from enumeration ([#1166](https://github.com/salsa-rs/salsa/pull/1166))
+- reset cancellation after event panic ([#1157](https://github.com/salsa-rs/salsa/pull/1157))
+- guarantee RawDatabase ABI transparency ([#1165](https://github.com/salsa-rs/salsa/pull/1165))
+- restore cancellation state after cycle panic ([#1156](https://github.com/salsa-rs/salsa/pull/1156))
+- preserve accumulators during shallow verification ([#1155](https://github.com/salsa-rs/salsa/pull/1155))
+- support updating empty arrays ([#1153](https://github.com/salsa-rs/salsa/pull/1153))
+- reject singleton on non-input structs ([#1154](https://github.com/salsa-rs/salsa/pull/1154))
+- preserve order when updating OrderMap ([#1152](https://github.com/salsa-rs/salsa/pull/1152))
+- reject zero atomic revisions during deserialization ([#1151](https://github.com/salsa-rs/salsa/pull/1151))
+- fix default interned GC configuration ([#1146](https://github.com/salsa-rs/salsa/pull/1146))
+- *(book)* update embedded diagrams.net source ([#1149](https://github.com/salsa-rs/salsa/pull/1149))
+- avoid redundant captures in input setters ([#1144](https://github.com/salsa-rs/salsa/pull/1144))
+
+### Other
+
+- allocate memo table slots lazily ([#1178](https://github.com/salsa-rs/salsa/pull/1178))
+- Add never-change durability and omit immutable query edges ([#1109](https://github.com/salsa-rs/salsa/pull/1109))
+- separate cached and cold fetch paths ([#1184](https://github.com/salsa-rs/salsa/pull/1184))
+- Introduce `MemoHeader` to reduce monomorphization ([#1142](https://github.com/salsa-rs/salsa/pull/1142))
+- store interned revisions inline ([#1175](https://github.com/salsa-rs/salsa/pull/1175))
+- skip empty cycle-head propagation ([#1176](https://github.com/salsa-rs/salsa/pull/1176))
+- Improve ergonomics of `Update` derive helpers ([#1168](https://github.com/salsa-rs/salsa/pull/1168))
+- Fix triomphe typos ([#1170](https://github.com/salsa-rs/salsa/pull/1170))
+- Revamp tracked attribute for methods and impls to better handle lifetimes ([#1111](https://github.com/salsa-rs/salsa/pull/1111))
+- fix typos ([#1132](https://github.com/salsa-rs/salsa/pull/1132))
+- Remove remaining mentions of `maybe_changed_since` ([#1145](https://github.com/salsa-rs/salsa/pull/1145))
+- Skip dependencies on non-reusable interned values ([#1108](https://github.com/salsa-rs/salsa/pull/1108))
+- separate LRU reads from collection ([#1138](https://github.com/salsa-rs/salsa/pull/1138))
+- LRU benches ([#1110](https://github.com/salsa-rs/salsa/pull/1110))
+- Avoid Miri cache save races ([#1125](https://github.com/salsa-rs/salsa/pull/1125))
+- Use single allocation to store origin and `QueryRevisionExtra` ([#1112](https://github.com/salsa-rs/salsa/pull/1112))
+- Shard Miri tests ([#1123](https://github.com/salsa-rs/salsa/pull/1123))
+- Update actions/upload-pages-artifact action to v5 ([#1122](https://github.com/salsa-rs/salsa/pull/1122))
+- Update actions/configure-pages action to v6 ([#1120](https://github.com/salsa-rs/salsa/pull/1120))
+- Update actions/deploy-pages action to v5 ([#1121](https://github.com/salsa-rs/salsa/pull/1121))
+- Pin the stable Rust toolchain ([#1119](https://github.com/salsa-rs/salsa/pull/1119))
+- Update taiki-e/install-action action to v2.81.3 ([#1117](https://github.com/salsa-rs/salsa/pull/1117))
+- Pin dependencies ([#1116](https://github.com/salsa-rs/salsa/pull/1116))
+- Configure Renovate dependency updates ([#1114](https://github.com/salsa-rs/salsa/pull/1114))
+- Reduce metadata per memo by packing `QueryRevisionsExtra` into `QueryOrigin` ([#1101](https://github.com/salsa-rs/salsa/pull/1101))
+- Add packed `QueryOrigin` ([#1103](https://github.com/salsa-rs/salsa/pull/1103))
+
 ## [0.27.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.26.2...salsa-v0.27.0) - 2026-06-04
 
 ### Fixed
