@@ -12,11 +12,14 @@ use crate::zalsa::Zalsa;
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
 pub struct MemoTable {
-    memos: Box<[MemoEntry]>,
+    memos: LazyMemoEntries,
 }
 
+#[cfg(not(feature = "shuttle"))]
+const _: [(); mem::size_of::<MemoTable>()] = [(); 2 * mem::size_of::<usize>()];
+
 impl MemoTable {
-    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.
+    /// Create a `MemoTable` that allocates slots on the first memo insertion.
     ///
     /// # Safety
     ///
@@ -26,7 +29,7 @@ impl MemoTable {
         // this table are also in-bounds for its `MemoTableTypes`, as `MemoTableTypes`
         // is append-only.
         Self {
-            memos: (0..types.len()).map(|_| MemoEntry::default()).collect(),
+            memos: LazyMemoEntries::new(types.len()),
         }
     }
 
@@ -34,9 +37,7 @@ impl MemoTable {
     ///
     /// Note that the memo entries should be freed manually before calling this function.
     pub fn reset(&mut self) {
-        for memo in &mut self.memos {
-            *memo = MemoEntry::default();
-        }
+        self.memos.clear();
     }
 }
 
@@ -71,6 +72,119 @@ pub trait Memo: Any + Send + Sync {
 struct MemoEntry {
     /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
     atomic_memo: AtomicPtr<DummyMemo>,
+}
+
+/// Lazily allocated, fixed-length memo entries.
+///
+/// The pointer and length have the same inline layout as an eager `Box<[MemoEntry]>`, but a null
+/// pointer represents an allocation that has not been created yet.
+struct LazyMemoEntries {
+    ptr: AtomicPtr<MemoEntry>,
+    len: usize,
+}
+
+impl LazyMemoEntries {
+    fn new(len: usize) -> Self {
+        Self {
+            ptr: AtomicPtr::new(ptr::null_mut()),
+            len,
+        }
+    }
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<&MemoEntry> {
+        self.as_slice()?.get(index)
+    }
+
+    #[inline]
+    fn get_or_init(&self, index: usize) -> Option<&MemoEntry> {
+        if index >= self.len {
+            return None;
+        }
+
+        let memos = self.as_slice().unwrap_or_else(|| self.initialize());
+        Some(&memos[index])
+    }
+
+    #[inline]
+    fn get_mut(&mut self, index: usize) -> Option<&mut MemoEntry> {
+        self.as_mut_slice()?.get_mut(index)
+    }
+
+    fn iter(&self) -> std::slice::Iter<'_, MemoEntry> {
+        self.as_slice().unwrap_or_default().iter()
+    }
+
+    fn iter_mut(&mut self) -> std::slice::IterMut<'_, MemoEntry> {
+        self.as_mut_slice().unwrap_or_default().iter_mut()
+    }
+
+    #[inline]
+    fn as_slice(&self) -> Option<&[MemoEntry]> {
+        let ptr = NonNull::new(self.ptr.load(Ordering::Acquire))?;
+
+        // The acquire load synchronizes with the release operation that published the pointer,
+        // ensuring that the memo entries are initialized before we create references to them.
+        //
+        // SAFETY: A non-null pointer comes from a boxed slice of length `self.len`. The allocation
+        // cannot be freed while `self` is shared.
+        Some(unsafe { std::slice::from_raw_parts(ptr.as_ptr(), self.len) })
+    }
+
+    #[inline]
+    fn as_mut_slice(&mut self) -> Option<&mut [MemoEntry]> {
+        let ptr = NonNull::new(*self.ptr.get_mut())?;
+
+        // SAFETY: A non-null pointer comes from a boxed slice of length `self.len`, and exclusive
+        // access guarantees that no other references exist.
+        Some(unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), self.len) })
+    }
+
+    #[cold]
+    fn initialize(&self) -> &[MemoEntry] {
+        let new_memos: Box<[MemoEntry]> = (0..self.len).map(|_| MemoEntry::default()).collect();
+        let new_memos = Box::into_raw(new_memos);
+        let new_memos_ptr = new_memos.cast::<MemoEntry>();
+
+        // Release publishes the initialized memo entries. If another thread won the race, acquire
+        // synchronizes with its release operation before we create references to its allocation.
+        let ptr = match self.ptr.compare_exchange(
+            ptr::null_mut(),
+            new_memos_ptr,
+            Ordering::Release,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => new_memos_ptr,
+            Err(ptr) => {
+                // SAFETY: The compare-exchange failed, so `new_memos` was not published and this
+                // thread retains ownership of the allocation.
+                unsafe { drop(Box::from_raw(new_memos)) };
+                ptr
+            }
+        };
+
+        // SAFETY: `ptr` is either the boxed slice allocated above or the boxed slice published by
+        // another thread. Both allocations have length `self.len` and cannot be freed while `self`
+        // is shared.
+        unsafe { std::slice::from_raw_parts(ptr, self.len) }
+    }
+
+    fn clear(&mut self) {
+        let ptr = mem::replace(self.ptr.get_mut(), ptr::null_mut());
+        if ptr.is_null() {
+            return;
+        }
+
+        // SAFETY: `ptr` came from a boxed slice of length `self.len`, and exclusive access
+        // guarantees that no references to the allocation remain.
+        unsafe { drop(Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.len))) };
+    }
+}
+
+impl Drop for LazyMemoEntries {
+    fn drop(&mut self) {
+        self.clear();
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -188,7 +302,10 @@ impl MemoTableWithTypes<'_> {
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
     ) -> Option<NonNull<M>> {
-        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+        let MemoEntry { atomic_memo } = self
+            .memos
+            .memos
+            .get_or_init(memo_ingredient_index.as_usize())?;
 
         // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
         // corresponding `MemoTableTypes`, by construction.
@@ -308,7 +425,7 @@ impl MemoTableWithTypesMut<'_> {
     #[inline]
     pub unsafe fn drop(&mut self) {
         let types = self.types.types.iter();
-        for (type_, memo) in std::iter::zip(types, &mut self.memos.memos) {
+        for (type_, memo) in std::iter::zip(types, self.memos.memos.iter_mut()) {
             // SAFETY: The types match as per our constructor invariant.
             unsafe { memo.take(type_) };
         }
