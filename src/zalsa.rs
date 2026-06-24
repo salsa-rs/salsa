@@ -436,6 +436,7 @@ impl Zalsa {
     #[doc(hidden)]
     pub fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
+        #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("new_revision", ?new_revision).entered();
 
         for ingredient in &self.ingredients_requiring_reset {
@@ -449,6 +450,7 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     pub fn evict_lru(&mut self) {
+        #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("evict_lru").entered();
         for ingredient in &self.ingredients_requiring_reset {
             self.ingredients_vec[ingredient.as_u32() as usize]
