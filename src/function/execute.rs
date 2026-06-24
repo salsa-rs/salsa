@@ -99,6 +99,9 @@ where
                 .diff_outputs(zalsa, database_key_index, &completed_query);
         }
 
+        #[cfg(not(feature = "persistence"))]
+        completed_query.revisions.discard_edges_if_never_change();
+
         let memo = self.insert_memo(
             zalsa,
             id,

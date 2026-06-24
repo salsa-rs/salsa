@@ -44,6 +44,25 @@ fn input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
     input.field(db).len()
 }
 
+#[salsa::tracked(cycle_fn = cycle_recover_length, cycle_initial = cycle_initial_length)]
+fn cycle_input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
+    cycle_input_to_length(db, input).max(input.field(db).len())
+}
+
+fn cycle_recover_length(
+    _db: &dyn salsa::Database,
+    _cycle: &salsa::Cycle,
+    _last_provisional_value: &usize,
+    value: usize,
+    _input: MyInput,
+) -> usize {
+    value
+}
+
+fn cycle_initial_length(_db: &dyn salsa::Database, _id: salsa::Id, _input: MyInput) -> usize {
+    0
+}
+
 fn string_size_of(x: &String) -> usize {
     x.capacity()
 }
@@ -215,4 +234,46 @@ fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
     let after = &after.queries["input_to_length"];
     assert_eq!(after.count(), 2);
     assert_eq!(after.size_of_metadata(), before.size_of_metadata() * 2);
+}
+
+#[test]
+#[cfg(not(feature = "persistence"))]
+fn never_change_query_discards_edges() {
+    let db = salsa::DatabaseImpl::new();
+    let never_change = MyInput::builder("a".repeat(50))
+        .durability(salsa::Durability::NEVER_CHANGE)
+        .new(&db);
+    let mutable = MyInput::new(&db, "a".repeat(150));
+
+    assert_eq!(input_to_length(&db, never_change), 50);
+    let before = <dyn salsa::Database>::memory_usage(&db);
+    let before = &before.queries["input_to_length"];
+    assert_eq!(before.count(), 1);
+
+    assert_eq!(input_to_length(&db, mutable), 150);
+    let after = <dyn salsa::Database>::memory_usage(&db);
+    let after = &after.queries["input_to_length"];
+    assert_eq!(after.count(), 2);
+    assert!(after.size_of_metadata() > before.size_of_metadata() * 2);
+}
+
+#[test]
+#[cfg(not(feature = "persistence"))]
+fn never_change_cycle_query_discards_edges_after_converging() {
+    let db = salsa::DatabaseImpl::new();
+    let never_change = MyInput::builder("a".repeat(50))
+        .durability(salsa::Durability::NEVER_CHANGE)
+        .new(&db);
+    let mutable = MyInput::new(&db, "a".repeat(150));
+
+    assert_eq!(cycle_input_to_length(&db, never_change), 50);
+    let before = <dyn salsa::Database>::memory_usage(&db);
+    let before = &before.queries["cycle_input_to_length"];
+    assert_eq!(before.count(), 1);
+
+    assert_eq!(cycle_input_to_length(&db, mutable), 150);
+    let after = <dyn salsa::Database>::memory_usage(&db);
+    let after = &after.queries["cycle_input_to_length"];
+    assert_eq!(after.count(), 2);
+    assert!(after.size_of_metadata() > before.size_of_metadata() * 2);
 }

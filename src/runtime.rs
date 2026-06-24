@@ -224,7 +224,16 @@ impl Runtime {
     /// Reports that an input with durability `durability` changed.
     /// This will update the 'last changed at' values for every durability
     /// less than or equal to `durability` to the current revision.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `durability` is [`Durability::NEVER_CHANGE`].
     pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
+        assert_ne!(
+            durability,
+            Durability::NEVER_CHANGE,
+            "never-changing inputs cannot be mutated"
+        );
         let new_revision = self.current_revision();
         self.revisions[1..=durability.index()].fill(new_revision);
     }
@@ -238,7 +247,10 @@ impl Runtime {
     /// dependencies.
     #[inline]
     pub(crate) fn last_changed_revision(&self, d: Durability) -> Revision {
-        self.revisions[d.index()]
+        match self.revisions.get(d.index()) {
+            Some(&revision) => revision,
+            None => never_changed_revision(),
+        }
     }
 
     pub(crate) fn load_cancellation_flag(&self) -> bool {
@@ -432,6 +444,12 @@ impl Runtime {
         // The only field that is serialized is `revisions`.
         self.revisions = other.revisions;
     }
+}
+
+#[cold]
+#[inline(never)]
+fn never_changed_revision() -> Revision {
+    Revision::start()
 }
 
 #[cfg(test)]
