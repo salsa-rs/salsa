@@ -2,6 +2,7 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::active_query::CompletedQuery;
 use crate::function::memo::{Memo, MemoHeader};
+use crate::function::sync::{ClaimResult, Reentrancy};
 use crate::function::{Configuration, IngredientImpl};
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
@@ -64,6 +65,44 @@ where
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
 
         let revision = zalsa.current_revision();
+        let database_key_index = self.database_key_index(key);
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
+
+        zalsa.unwind_if_revision_cancelled(zalsa_local);
+        let _claim_guard =
+            match self
+                .sync_table
+                .try_claim(zalsa, zalsa_local, key, Reentrancy::Deny)
+            {
+                ClaimResult::Claimed(guard) => guard,
+                ClaimResult::Running(_) | ClaimResult::Cycle { .. } => {
+                    // The one-shot query is already running and therefore wins this revision.
+                    return;
+                }
+            };
+
+        // Re-read the memo after claiming the query so that no concurrent execution or
+        // specification can replace it while we decide whether to keep or overwrite it.
+        let old_memo = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index);
+
+        if let Some(old_memo) = old_memo {
+            if old_memo.header.verified_at.load() == revision && old_memo.value.is_some() {
+                // The first value produced in a revision wins, so never overwrite a current memo.
+                let assigned_by_active_query = matches!(
+                    old_memo.header.origin(),
+                    QueryOriginRef::Assigned(owner) if owner == active_query_key
+                );
+
+                // The active query may be re-executing after its previously assigned memo was
+                // already validated. Its new execution still has to record that memo as one of its
+                // outputs.
+                if assigned_by_active_query {
+                    zalsa_local.add_output(database_key_index);
+                }
+                return;
+            }
+        }
+
         let mut completed_query = CompletedQuery {
             revisions: QueryRevisions {
                 changed_at: current_deps.changed_at,
@@ -76,9 +115,7 @@ where
             stale_tracked_structs: Vec::new(),
         };
 
-        let database_key_index = self.database_key_index(key);
-        let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
-        if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
+        if let Some(old_memo) = old_memo {
             completed_query
                 .stale_tracked_structs
                 .extend_from_slice(old_memo.header.revisions.tracked_struct_ids());
