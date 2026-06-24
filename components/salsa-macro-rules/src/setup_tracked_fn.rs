@@ -95,23 +95,23 @@ macro_rules! setup_tracked_fn {
         ) -> ::salsa::plumbing::return_mode_ty!(($return_mode, __), $db_lt, $output_ty) {
             use ::salsa::plumbing as $zalsa;
 
-            $zalsa::attach($db, || {
-                let (zalsa, zalsa_local) = $db.zalsas();
-                let result = $zalsa::macro_if! {
-                    if $needs_interner {
-                        {
-                            let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
-                        }
-                    } else {
-                        {
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
-                        }
-                    }
-                };
+            let (zalsa, zalsa_local) = $db.zalsas();
+            $zalsa::assert_current_database_or_attached($db, zalsa_local);
 
-                $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
-            })
+            let result = $zalsa::macro_if! {
+                if $needs_interner {
+                    {
+                        let key = $fn_name::intern_ingredient_(zalsa).intern_id($db, zalsa, zalsa_local, ($($input_id),*), |_, data| data);
+                        $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
+                    }
+                } else {
+                    {
+                        $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
+                    }
+                }
+            };
+
+            $zalsa::return_mode_expression!(($return_mode, __), $output_ty, result,)
         }
 
         // The module needs be last in the macro expansion in order to make the tracked
@@ -458,10 +458,11 @@ macro_rules! setup_tracked_fn {
                         $($input_id: $interned_input_ty,)*
                     ) -> Vec<&$db_lt A> {
                         use ::salsa::plumbing as $zalsa;
+                        $zalsa::assert_current_database($db);
                         let key = $zalsa::macro_if! {
                             if $needs_interner {{
                                 let (zalsa, zalsa_local) = $db.zalsas();
-                                $Configuration::intern_ingredient(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
+                                $Configuration::intern_ingredient(zalsa).intern_id($db, zalsa, zalsa_local, ($($input_id),*), |_, data| data)
                             }} else {
                                 $zalsa::AsId::as_id(&($($input_id),*))
                             }

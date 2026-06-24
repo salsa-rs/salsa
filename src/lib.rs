@@ -95,7 +95,10 @@ pub mod plumbing {
 
     #[cfg(feature = "accumulator")]
     pub use crate::accumulator::Accumulator;
-    pub use crate::attach::{attach, with_attached_database};
+    pub use crate::attach::{
+        assert_current_database, assert_current_database_or_attached, attach,
+        with_attached_database,
+    };
     pub use crate::cycle::CycleRecoveryStrategy;
     pub use crate::database::{Database, current_revision};
     pub use crate::durability::Durability;

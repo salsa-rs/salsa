@@ -1,6 +1,7 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
+use crate::database::AsDynDatabase;
 use crate::function::memo::{MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::{ClaimGuard, ClaimResult};
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
@@ -9,7 +10,7 @@ use std::sync::atomic::Ordering;
 use crate::key::DatabaseKeyIndex;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdgeKind, QueryEdges, QueryOriginRef, QueryRevisions, ZalsaLocal};
-use crate::{Id, Revision};
+use crate::{Database, Id, Revision};
 
 /// Result of memo validation.
 #[derive(Debug, Copy, Clone)]
@@ -92,12 +93,14 @@ where
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
-        zalsa.unwind_if_revision_cancelled(zalsa_local);
+        crate::attach::assert_current_database(db);
+        zalsa.unwind_if_revision_cancelled(db, zalsa_local);
 
         loop {
             let database_key_index = self.database_key_index(id);
 
-            crate::tracing::debug!(
+            crate::tracing::debug_with_db!(
+                db,
                 "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
             );
 
@@ -109,6 +112,7 @@ where
             };
 
             if let Some(result) = memo.header.maybe_changed_after_hot(
+                db.as_dyn_database(),
                 zalsa,
                 database_key_index,
                 revision,
@@ -117,14 +121,16 @@ where
                 return result;
             }
 
-            if let Some(mcs) = self.maybe_changed_after_cold(
-                zalsa,
-                zalsa_local,
-                db,
-                id,
-                revision,
-                memo_ingredient_index,
-            ) {
+            if let Some(mcs) = crate::attach::attach_if_needed(db, || {
+                self.maybe_changed_after_cold(
+                    zalsa,
+                    zalsa_local,
+                    db,
+                    id,
+                    revision,
+                    memo_ingredient_index,
+                )
+            }) {
                 return mcs;
             } else {
                 // We failed to claim, have to retry.
@@ -170,6 +176,7 @@ where
 
         if let Some(result) = old_memo.header.maybe_changed_after_cold(
             db.into(),
+            db.as_dyn_database(),
             &claim_guard,
             revision,
             C::CYCLE_STRATEGY,
@@ -207,14 +214,15 @@ where
 impl MemoHeader {
     fn maybe_changed_after_hot(
         &self,
+        db: &dyn Database,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         revision: Revision,
         has_value: bool,
     ) -> Option<VerifyResult> {
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
+        let can_shallow_update = self.shallow_verify_memo(db, zalsa, database_key_index, has_value);
         if can_shallow_update.yes() && !self.may_be_provisional() {
-            self.update_shallow(zalsa, database_key_index, can_shallow_update);
+            self.update_shallow(db, zalsa, database_key_index, can_shallow_update);
 
             Some(if self.revisions.changed_at > revision {
                 VerifyResult::changed()
@@ -230,6 +238,7 @@ impl MemoHeader {
     pub(super) fn verify_memo(
         &self,
         db: crate::database::RawDatabase<'_>,
+        attached_db: &dyn Database,
         claim_guard: &ClaimGuard<'_>,
         cycle_recovery_strategy: CycleRecoveryStrategy,
         has_value: bool,
@@ -238,11 +247,12 @@ impl MemoHeader {
         let zalsa_local = claim_guard.zalsa_local();
         let database_key_index = claim_guard.database_key_index();
 
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
+        let can_shallow_update =
+            self.shallow_verify_memo(attached_db, zalsa, database_key_index, has_value);
         if can_shallow_update.yes()
             && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, has_value)
         {
-            self.update_shallow(zalsa, database_key_index, can_shallow_update);
+            self.update_shallow(attached_db, zalsa, database_key_index, can_shallow_update);
             true
         } else {
             self.deep_verify_memo(db, claim_guard, cycle_recovery_strategy, has_value)
@@ -253,6 +263,7 @@ impl MemoHeader {
     pub(super) fn maybe_changed_after_cold(
         &self,
         db: crate::database::RawDatabase<'_>,
+        attached_db: &dyn Database,
         claim_guard: &ClaimGuard<'_>,
         revision: Revision,
         cycle_recovery_strategy: CycleRecoveryStrategy,
@@ -266,7 +277,13 @@ impl MemoHeader {
             old_memo = self.tracing_debug(has_value)
         );
 
-        let verified = self.verify_memo(db, claim_guard, cycle_recovery_strategy, has_value);
+        let verified = self.verify_memo(
+            db,
+            attached_db,
+            claim_guard,
+            cycle_recovery_strategy,
+            has_value,
+        );
 
         if verified {
             // Check if the inputs are still valid. We can just compare `changed_at`.
@@ -290,11 +307,13 @@ impl MemoHeader {
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
+        db: &dyn Database,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         has_value: bool,
     ) -> ShallowUpdate {
-        crate::tracing::debug!(
+        crate::tracing::debug_with_db!(
+            db,
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = self.tracing_debug(has_value)
         );
@@ -306,19 +325,21 @@ impl MemoHeader {
             return ShallowUpdate::Verified;
         }
 
-        self.shallow_verify_memo_cold(zalsa, database_key_index, verified_at)
+        self.shallow_verify_memo_cold(db, zalsa, database_key_index, verified_at)
     }
 
     #[cold]
     #[inline(never)]
     fn shallow_verify_memo_cold(
         &self,
+        db: &dyn Database,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         verified_at: Revision,
     ) -> ShallowUpdate {
         let last_changed = zalsa.last_changed_revision(self.revisions.durability);
-        crate::tracing::trace!(
+        crate::tracing::trace_with_db!(
+            db,
             "{database_key_index:?}: check_durability({database_key_index:#?}, last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
             verified_at,
@@ -335,13 +356,16 @@ impl MemoHeader {
     #[inline]
     pub(super) fn update_shallow(
         &self,
+        db: &dyn Database,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         update: ShallowUpdate,
     ) {
         if let ShallowUpdate::HigherDurability = update {
-            self.mark_as_verified(zalsa, database_key_index);
-            self.mark_outputs_as_verified(zalsa, database_key_index);
+            crate::attach::attach_if_needed(db, || {
+                self.mark_as_verified(zalsa, database_key_index);
+                self.mark_outputs_as_verified(zalsa, database_key_index);
+            });
         }
     }
 

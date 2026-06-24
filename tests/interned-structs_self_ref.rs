@@ -203,6 +203,7 @@ const _: () = {
             String: zalsa_::HashEqLike<T0>,
         {
             Configuration_::ingredient(db.zalsa()).intern(
+                db,
                 db.zalsa(),
                 db.zalsa_local(),
                 StructKey::<'db>(data, std::marker::PhantomData::default()),

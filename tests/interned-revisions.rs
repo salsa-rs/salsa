@@ -6,7 +6,9 @@
 mod common;
 use common::LogDatabase;
 use expect_test::expect;
-use salsa::{Database, Durability, HashEqLike, Lookup, Setter};
+use salsa::{Database, Durability, HashEqLike, Lookup, Setter, Storage};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use test_log::test;
 
 #[salsa::input]
@@ -61,6 +63,29 @@ struct PanickingInterned<'db> {
     value: BadHash,
 }
 
+#[salsa::db]
+struct ReuseEventPanicDatabase {
+    storage: Storage<Self>,
+}
+
+impl ReuseEventPanicDatabase {
+    fn new(panic_on_reuse: Arc<AtomicBool>) -> Self {
+        Self {
+            storage: Storage::new(Some(Box::new(move |event| {
+                if matches!(event.kind, salsa::EventKind::DidReuseInternedValue { .. })
+                    && panic_on_reuse.swap(false, Ordering::Relaxed)
+                {
+                    assert!(salsa::with_attached_database(|_| ()).is_some());
+                    panic!("reuse event panic");
+                }
+            }))),
+        }
+    }
+}
+
+#[salsa::db]
+impl Database for ReuseEventPanicDatabase {}
+
 #[salsa::tracked]
 fn intern_panicking(db: &dyn Database, input: Input) -> PanickingInterned<'_> {
     PanickingInterned::new(db, PanickingLookup(input.field1(db)))
@@ -87,6 +112,34 @@ fn panic_during_reuse_does_not_orphan_slot() {
     input.set_field1(&mut db).to(3);
     let recovered_id = intern_panicking(&db, input).as_id();
     assert_eq!(recovered_id, second_id.next_generation().unwrap());
+}
+
+#[test]
+fn panic_in_reuse_event_keeps_replacement_reachable() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    #[salsa::tracked]
+    fn function(db: &dyn Database, input: Input) -> Interned<'_> {
+        Interned::new(db, BadHash(input.field1(db)))
+    }
+
+    let panic_on_reuse = Arc::new(AtomicBool::new(false));
+    let mut db = ReuseEventPanicDatabase::new(panic_on_reuse.clone());
+    let input = Input::new(&db, 0);
+
+    assert_eq!(function(&db, input).field1(&db).0, 0);
+    input.set_field1(&mut db).to(1);
+    assert_eq!(function(&db, input).field1(&db).0, 1);
+    input.set_field1(&mut db).to(2);
+    assert_eq!(function(&db, input).field1(&db).0, 2);
+
+    input.set_field1(&mut db).to(3);
+    panic_on_reuse.store(true, Ordering::Relaxed);
+    let result = catch_unwind(AssertUnwindSafe(|| function(&db, input)));
+
+    assert!(result.is_err());
+    assert!(salsa::with_attached_database(|_| ()).is_none());
+    assert_eq!(function(&db, input).field1(&db).0, 3);
 }
 
 #[salsa::interned]
