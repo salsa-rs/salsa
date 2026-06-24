@@ -1,10 +1,15 @@
-//! Wrappers around `tracing` macros that avoid inlining debug machinery into the hot path,
-//! as tracing events are typically only enabled for debugging purposes.
+//! Wrappers around `tracing` macros.
+//!
+//! `DEBUG` and `TRACE` events are enabled only with the `detailed-trace` feature. This gating
+//! applies only to events; spans must be gated at their call sites. The wrappers also avoid
+//! inlining most tracing machinery into hot paths.
 
 macro_rules! trace {
-    ($($x:tt)*) => {
-        crate::tracing::event!(TRACE, $($x)*)
-    };
+    ($($x:tt)*) => {{
+        if cfg!(feature = "detailed-trace") {
+            crate::tracing::event!(TRACE, $($x)*)
+        }
+    }};
 }
 
 macro_rules! warn_event {
@@ -20,11 +25,14 @@ macro_rules! info {
 }
 
 macro_rules! debug {
-    ($($x:tt)*) => {
-        crate::tracing::event!(DEBUG, $($x)*)
-    };
+    ($($x:tt)*) => {{
+        if cfg!(feature = "detailed-trace") {
+            crate::tracing::event!(DEBUG, $($x)*)
+        }
+    }};
 }
 
+#[allow(unused_macros)]
 macro_rules! debug_span {
     ($($x:tt)*) => {
         crate::tracing::span!(DEBUG, $($x)*)
@@ -50,6 +58,7 @@ macro_rules! event {
     }};
 }
 
+#[allow(unused_macros)]
 macro_rules! span {
     ($level:ident, $($x:tt)*) => {{
         let span = {

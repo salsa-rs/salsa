@@ -519,8 +519,10 @@ where
 
         if let Some(id) = zalsa_local.tracked_struct_id(&identity) {
             // The struct already exists in the intern map.
-            let index = self.database_key_index(id);
-            crate::tracing::trace!("Reuse tracked struct {id:?}", id = index);
+            crate::tracing::trace!(
+                "Reuse tracked struct {id:?}",
+                id = self.database_key_index(id)
+            );
 
             // SAFETY: The `id` was present in the interned map, so the value must be initialized.
             let update_result = unsafe { self.update(zalsa, id, &current_deps, fields) };
@@ -543,8 +545,10 @@ where
         // We failed to perform the update, or this is a new tracked struct, so allocate a new entry
         // in the struct map.
         let id = self.allocate(zalsa, zalsa_local, &current_deps, fields);
-        let key = self.database_key_index(id);
-        crate::tracing::trace!("Allocated new tracked struct {key:?}");
+        crate::tracing::trace!(
+            "Allocated new tracked struct {key:?}",
+            key = self.database_key_index(id)
+        );
         zalsa_local.store_tracked_struct_id(identity, id);
         FromId::from_id(id)
     }

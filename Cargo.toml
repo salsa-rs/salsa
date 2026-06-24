@@ -57,6 +57,9 @@ ordermap = { version = "1", optional = true }
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
 inventory = ["dep:inventory"]
+
+# Enables Salsa's `DEBUG` and `TRACE` tracing events and spans. Disabled by default.
+detailed-trace = []
 persistence = [
     "dep:serde",
     "dep:erased-serde",

@@ -347,7 +347,7 @@ impl DependencyGraph {
             if current_thread != new_owner_thread
                 && !dg.depends_on(new_owner_thread, current_thread)
             {
-                crate::tracing::info!(
+                crate::tracing::debug!(
                     "block_on: thread {current_thread:?} is blocking on {new_owner:?} in thread {new_owner_thread:?}",
                 );
                 Self::block_on(me, current_thread, new_owner, new_owner_thread, guard);

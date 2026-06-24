@@ -13,14 +13,16 @@ pub struct DatabaseImpl {
 impl Default for DatabaseImpl {
     fn default() -> Self {
         Self {
-            // Default behavior: tracing debug log the event.
-            storage: Storage::new(if tracing::enabled!(Level::DEBUG) {
-                Some(Box::new(|event| {
-                    crate::tracing::debug!("salsa_event({:?})", event)
-                }))
-            } else {
-                None
-            }),
+            // Default behavior: trace events at DEBUG when detailed tracing is enabled.
+            storage: Storage::new(
+                if cfg!(feature = "detailed-trace") && tracing::enabled!(Level::DEBUG) {
+                    Some(Box::new(|event| {
+                        crate::tracing::debug!("salsa_event({:?})", event)
+                    }))
+                } else {
+                    None
+                },
+            ),
         }
     }
 }

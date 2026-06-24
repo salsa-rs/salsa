@@ -258,11 +258,10 @@ impl MemoHeader {
         cycle_recovery_strategy: CycleRecoveryStrategy,
         has_value: bool,
     ) -> Option<VerifyResult> {
-        let database_key_index = claim_guard.database_key_index();
-
         crate::tracing::debug!(
             "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
                 revision = {revision:?}, old_memo = {old_memo:#?}",
+            database_key_index = claim_guard.database_key_index(),
             old_memo = self.tracing_debug(has_value)
         );
 
