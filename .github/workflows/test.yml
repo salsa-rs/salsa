@@ -58,7 +58,7 @@ jobs:
       - name: Clippy / all-features
         run: cargo clippy --workspace --all-targets --features persistence -- -D warnings
       - name: Test
-        run: cargo nextest run --workspace --all-targets --features persistence --no-fail-fast
+        run: cargo nextest run --workspace --tests --examples --features persistence --no-fail-fast
       - name: Test Manual Registration / no-default-features
         run: cargo nextest run --workspace --tests --no-fail-fast --no-default-features --features macros
       - name: Test docs
