@@ -5,8 +5,11 @@
 use std::collections::BTreeSet;
 use std::iter::IntoIterator;
 
-use codspeed_criterion_compat::{BatchSize, Criterion, criterion_group, criterion_main};
 use salsa::{Database as Db, Setter};
+
+fn main() {
+    divan::main();
+}
 
 /// A Use of a symbol.
 #[salsa::input]
@@ -128,45 +131,42 @@ fn add(a: &Type, b: &Type) -> Type {
     }
 }
 
-fn dataflow(criterion: &mut Criterion) {
-    criterion.bench_function("converge_diverge", |b| {
-        b.iter_batched_ref(
-            || {
-                let mut db = salsa::DatabaseImpl::new();
+#[divan::bench(name = "benches::dataflow::converge_diverge")]
+fn converge_diverge(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let mut db = salsa::DatabaseImpl::new();
 
-                let defx0 = Definition::new(&db, None, 0);
-                let defy0 = Definition::new(&db, None, 0);
-                let defx1 = Definition::new(&db, None, 0);
-                let defy1 = Definition::new(&db, None, 0);
-                let use_x = Use::new(&db, vec![defx0, defx1]);
-                let use_y = Use::new(&db, vec![defy0, defy1]);
-                defx1.set_base(&mut db).to(Some(use_y));
-                defy1.set_base(&mut db).to(Some(use_x));
+            let defx0 = Definition::new(&db, None, 0);
+            let defy0 = Definition::new(&db, None, 0);
+            let defx1 = Definition::new(&db, None, 0);
+            let defy1 = Definition::new(&db, None, 0);
+            let use_x = Use::new(&db, vec![defx0, defx1]);
+            let use_y = Use::new(&db, vec![defy0, defy1]);
+            defx1.set_base(&mut db).to(Some(use_y));
+            defy1.set_base(&mut db).to(Some(use_x));
 
-                // prewarm cache
-                let _ = infer_use(&db, use_x);
-                let _ = infer_use(&db, use_y);
+            // prewarm cache
+            let _ = infer_use(&db, use_x);
+            let _ = infer_use(&db, use_y);
 
-                (db, defx1, use_x, use_y)
-            },
-            |(db, defx1, use_x, use_y)| {
-                // Set the increment on x to 0.
-                defx1.set_increment(db).to(0);
+            (db, defx1, use_x, use_y)
+        })
+        .bench_local_refs(|(db, defx1, use_x, use_y)| {
+            // Set the increment on x to 0.
+            defx1.set_increment(db).to(0);
 
-                // Both symbols converge on 0.
-                assert_eq!(infer_use(db, *use_x), Type::Values(Box::from([0])));
-                assert_eq!(infer_use(db, *use_y), Type::Values(Box::from([0])));
+            // Both symbols converge on 0.
+            assert_eq!(infer_use(db, *use_x), Type::Values(Box::from([0])));
+            assert_eq!(infer_use(db, *use_y), Type::Values(Box::from([0])));
 
-                // Set the increment on x to 1.
-                defx1.set_increment(db).to(1);
+            // Set the increment on x to 1.
+            defx1.set_increment(db).to(1);
 
-                // Now the loop diverges and we fall back to Top.
-                assert_eq!(infer_use(db, *use_x), Type::Top);
-                assert_eq!(infer_use(db, *use_y), Type::Top);
-            },
-            BatchSize::LargeInput,
-        );
-    });
+            // Now the loop diverges and we fall back to Top.
+            assert_eq!(infer_use(db, *use_x), Type::Top);
+            assert_eq!(infer_use(db, *use_y), Type::Top);
+        });
 }
 
 /// Emulates a data flow problem of the form:
@@ -177,38 +177,32 @@ fn dataflow(criterion: &mut Criterion) {
 /// self.x3 = self.x0 + self.x1 + self.x2 + self.x4
 /// self.x4 = 0
 /// ```
-fn nested(criterion: &mut Criterion) {
-    criterion.bench_function("converge_diverge_nested", |b| {
-        b.iter_batched_ref(
-            || {
-                let mut db = salsa::DatabaseImpl::new();
+#[divan::bench(name = "benches::nested::converge_diverge_nested")]
+fn converge_diverge_nested(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let mut db = salsa::DatabaseImpl::new();
 
-                let def_x0 = Definition::new(&db, None, 0);
-                let def_x1 = Definition::new(&db, None, 0);
-                let def_x2 = Definition::new(&db, None, 0);
-                let def_x3 = Definition::new(&db, None, 0);
-                let def_x4 = Definition::new(&db, None, 0);
+            let def_x0 = Definition::new(&db, None, 0);
+            let def_x1 = Definition::new(&db, None, 0);
+            let def_x2 = Definition::new(&db, None, 0);
+            let def_x3 = Definition::new(&db, None, 0);
+            let def_x4 = Definition::new(&db, None, 0);
 
-                let use_x0 = Use::new(&db, vec![def_x1, def_x2, def_x3, def_x4]);
-                let use_x1 = Use::new(&db, vec![def_x0, def_x2, def_x3, def_x4]);
-                let use_x2 = Use::new(&db, vec![def_x0, def_x1, def_x3, def_x4]);
-                let use_x3 = Use::new(&db, vec![def_x0, def_x1, def_x3, def_x4]);
+            let use_x0 = Use::new(&db, vec![def_x1, def_x2, def_x3, def_x4]);
+            let use_x1 = Use::new(&db, vec![def_x0, def_x2, def_x3, def_x4]);
+            let use_x2 = Use::new(&db, vec![def_x0, def_x1, def_x3, def_x4]);
+            let use_x3 = Use::new(&db, vec![def_x0, def_x1, def_x3, def_x4]);
 
-                def_x0.set_base(&mut db).to(Some(use_x0));
-                def_x1.set_base(&mut db).to(Some(use_x1));
-                def_x2.set_base(&mut db).to(Some(use_x2));
-                def_x3.set_base(&mut db).to(Some(use_x3));
+            def_x0.set_base(&mut db).to(Some(use_x0));
+            def_x1.set_base(&mut db).to(Some(use_x1));
+            def_x2.set_base(&mut db).to(Some(use_x2));
+            def_x3.set_base(&mut db).to(Some(use_x3));
 
-                (db, def_x0)
-            },
-            |(db, def_x0)| {
-                // All symbols converge on 0.
-                assert_eq!(infer_definition(db, *def_x0), Type::Values(Box::from([0])));
-            },
-            BatchSize::LargeInput,
-        );
-    });
+            (db, def_x0)
+        })
+        .bench_local_refs(|(db, def_x0)| {
+            // All symbols converge on 0.
+            assert_eq!(infer_definition(db, *def_x0), Type::Values(Box::from([0])));
+        });
 }
-
-criterion_group!(benches, dataflow, nested);
-criterion_main!(benches);

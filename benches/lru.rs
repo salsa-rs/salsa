@@ -1,10 +1,11 @@
 use std::hint::black_box;
 
-use codspeed_criterion_compat::{
-    BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main,
-};
 use rayon::prelude::*;
 use salsa::Database as _;
+
+fn main() {
+    divan::main();
+}
 
 const HOT_ITEMS: usize = 1_024;
 const CONCURRENT_WORKERS: usize = 4;
@@ -112,140 +113,123 @@ fn evenly_spaced_items(items: &[Item], count: usize) -> Vec<Item> {
     (0..count).map(|index| items[index * step]).collect()
 }
 
-fn lru(criterion: &mut Criterion) {
-    let mut group: codspeed_criterion_compat::BenchmarkGroup<
-        codspeed_criterion_compat::measurement::WallTime,
-    > = criterion.benchmark_group("LRU");
+#[divan::bench(name = "hot_cache_hits[1024]")]
+fn hot_cache_hits(bencher: divan::Bencher) {
+    let (db, items, expected) = hot_cache();
 
-    group.bench_function(BenchmarkId::new("hot_cache_hits", HOT_ITEMS), |b| {
-        let (db, items, expected) = hot_cache();
-
-        b.iter(|| {
-            let actual = access_all(black_box(&db), black_box(&items));
-            assert_eq!(black_box(actual), expected);
-        });
+    bencher.bench_local(|| {
+        let actual = access_all(black_box(&db), black_box(&items));
+        assert_eq!(black_box(actual), expected);
     });
-
-    group.bench_function(
-        BenchmarkId::new(
-            "concurrent_hot_cache_hits",
-            format!("{CONCURRENT_WORKERS}x{HOT_ITEMS}"),
-        ),
-        |b| {
-            let (db, items, expected) = hot_cache();
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(CONCURRENT_WORKERS)
-                .build()
-                .unwrap();
-
-            b.iter(|| {
-                for actual in access_all_concurrently(&pool, black_box(&db), black_box(&items)) {
-                    assert_eq!(black_box(actual), expected);
-                }
-            });
-        },
-    );
-
-    group.bench_function(
-        BenchmarkId::new("hot_cache_hits_and_sweep", HOT_ITEMS),
-        |b| {
-            b.iter_batched_ref(
-                hot_cache_for_sweep,
-                |(db, items, expected)| {
-                    let actual = access_all_and_collect(black_box(db), black_box(items));
-                    assert_eq!(black_box(actual), *expected);
-                },
-                BatchSize::LargeInput,
-            );
-        },
-    );
-
-    group.bench_function(
-        BenchmarkId::new(
-            "concurrent_hot_cache_hits_and_sweep",
-            format!("{CONCURRENT_WORKERS}x{HOT_ITEMS}"),
-        ),
-        |b| {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(CONCURRENT_WORKERS)
-                .build()
-                .unwrap();
-
-            b.iter_batched_ref(
-                hot_cache_for_sweep,
-                |(db, items, expected)| {
-                    for actual in access_all_concurrently(&pool, black_box(db), black_box(items)) {
-                        assert_eq!(black_box(actual), *expected);
-                    }
-                    db.trigger_lru_eviction();
-                },
-                BatchSize::LargeInput,
-            );
-        },
-    );
-
-    group.bench_function(BenchmarkId::new("disabled_capacity_hits", HOT_ITEMS), |b| {
-        let mut db = salsa::DatabaseImpl::new();
-        lru_value::set_lru_capacity(&mut db, 0);
-        let items = new_items(&db, HOT_ITEMS);
-        let expected = prewarm(&db, &items);
-
-        b.iter(|| {
-            let actual = access_all(black_box(&db), black_box(&items));
-            assert_eq!(black_box(actual), expected);
-        });
-    });
-
-    group.bench_function(
-        BenchmarkId::new("working_set_over_capacity", EVICTION_ITEMS),
-        |b| {
-            b.iter_batched_ref(
-                || {
-                    let mut db = salsa::DatabaseImpl::new();
-                    lru_value::set_lru_capacity(&mut db, EVICTION_CAPACITY);
-                    let items = new_items(&db, EVICTION_ITEMS);
-                    let expected = prewarm(&db, &items);
-                    let hot_items = &items[EVICTION_ITEMS - EVICTION_CAPACITY..];
-                    let actual = access_all(&db, hot_items);
-                    assert_eq!(black_box(actual), expected_sum(hot_items, &db));
-                    db.trigger_lru_eviction();
-                    (db, items, expected)
-                },
-                |(db, items, expected)| {
-                    let actual = access_all_and_collect(black_box(db), black_box(items));
-                    assert_eq!(black_box(actual), *expected);
-                },
-                BatchSize::LargeInput,
-            );
-        },
-    );
-
-    group.bench_function(
-        BenchmarkId::new("scattered_hot_set_over_capacity", EVICTION_ITEMS),
-        |b| {
-            b.iter_batched_ref(
-                || {
-                    let mut db = salsa::DatabaseImpl::new();
-                    lru_value::set_lru_capacity(&mut db, EVICTION_CAPACITY);
-                    let items = new_items(&db, EVICTION_ITEMS);
-                    let expected = prewarm(&db, &items);
-                    let hot_items = evenly_spaced_items(&items, SCATTERED_HOT_ITEMS);
-                    let actual = access_all(&db, &hot_items);
-                    assert_eq!(black_box(actual), expected_sum(&hot_items, &db));
-                    db.trigger_lru_eviction();
-                    (db, items, expected)
-                },
-                |(db, items, expected)| {
-                    let actual = access_all_and_collect(black_box(db), black_box(items));
-                    assert_eq!(black_box(actual), *expected);
-                },
-                BatchSize::LargeInput,
-            );
-        },
-    );
-
-    group.finish();
 }
 
-criterion_group!(benches, lru);
-criterion_main!(benches);
+#[divan::bench(name = "concurrent_hot_cache_hits[4x1024]")]
+fn concurrent_hot_cache_hits(bencher: divan::Bencher) {
+    let (db, items, expected) = hot_cache();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(CONCURRENT_WORKERS)
+        .build()
+        .unwrap();
+
+    bencher.bench_local(|| {
+        for actual in access_all_concurrently(&pool, black_box(&db), black_box(&items)) {
+            assert_eq!(black_box(actual), expected);
+        }
+    });
+}
+
+#[divan::bench(
+    name = "hot_cache_hits_and_sweep[1024]",
+    sample_count = 20,
+    sample_size = 1
+)]
+fn hot_cache_hits_and_sweep(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(hot_cache_for_sweep)
+        .bench_local_refs(|(db, items, expected)| {
+            let actual = access_all_and_collect(black_box(db), black_box(items));
+            assert_eq!(black_box(actual), *expected);
+        });
+}
+
+#[divan::bench(
+    name = "concurrent_hot_cache_hits_and_sweep[4x1024]",
+    sample_count = 20,
+    sample_size = 1
+)]
+fn concurrent_hot_cache_hits_and_sweep(bencher: divan::Bencher) {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(CONCURRENT_WORKERS)
+        .build()
+        .unwrap();
+
+    bencher
+        .with_inputs(hot_cache_for_sweep)
+        .bench_local_refs(|(db, items, expected)| {
+            for actual in access_all_concurrently(&pool, black_box(db), black_box(items)) {
+                assert_eq!(black_box(actual), *expected);
+            }
+            db.trigger_lru_eviction();
+        });
+}
+
+#[divan::bench(name = "disabled_capacity_hits[1024]")]
+fn disabled_capacity_hits(bencher: divan::Bencher) {
+    let mut db = salsa::DatabaseImpl::new();
+    lru_value::set_lru_capacity(&mut db, 0);
+    let items = new_items(&db, HOT_ITEMS);
+    let expected = prewarm(&db, &items);
+
+    bencher.bench_local(|| {
+        let actual = access_all(black_box(&db), black_box(&items));
+        assert_eq!(black_box(actual), expected);
+    });
+}
+
+#[divan::bench(
+    name = "working_set_over_capacity[4096]",
+    sample_count = 20,
+    sample_size = 1
+)]
+fn working_set_over_capacity(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let mut db = salsa::DatabaseImpl::new();
+            lru_value::set_lru_capacity(&mut db, EVICTION_CAPACITY);
+            let items = new_items(&db, EVICTION_ITEMS);
+            let expected = prewarm(&db, &items);
+            let hot_items = &items[EVICTION_ITEMS - EVICTION_CAPACITY..];
+            let actual = access_all(&db, hot_items);
+            assert_eq!(black_box(actual), expected_sum(hot_items, &db));
+            db.trigger_lru_eviction();
+            (db, items, expected)
+        })
+        .bench_local_refs(|(db, items, expected)| {
+            let actual = access_all_and_collect(black_box(db), black_box(items));
+            assert_eq!(black_box(actual), *expected);
+        });
+}
+
+#[divan::bench(
+    name = "scattered_hot_set_over_capacity[4096]",
+    sample_count = 20,
+    sample_size = 1
+)]
+fn scattered_hot_set_over_capacity(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let mut db = salsa::DatabaseImpl::new();
+            lru_value::set_lru_capacity(&mut db, EVICTION_CAPACITY);
+            let items = new_items(&db, EVICTION_ITEMS);
+            let expected = prewarm(&db, &items);
+            let hot_items = evenly_spaced_items(&items, SCATTERED_HOT_ITEMS);
+            let actual = access_all(&db, &hot_items);
+            assert_eq!(black_box(actual), expected_sum(&hot_items, &db));
+            db.trigger_lru_eviction();
+            (db, items, expected)
+        })
+        .bench_local_refs(|(db, items, expected)| {
+            let actual = access_all_and_collect(black_box(db), black_box(items));
+            assert_eq!(black_box(actual), *expected);
+        });
+}
