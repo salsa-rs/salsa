@@ -1,10 +1,11 @@
 use std::hint::black_box;
 use std::mem::transmute;
 
-use codspeed_criterion_compat::{
-    BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main,
-};
 use salsa::Setter;
+
+fn main() {
+    divan::main();
+}
 
 #[salsa::input]
 pub struct Input {
@@ -45,49 +46,37 @@ pub fn either_length<'db>(db: &'db dyn salsa::Database, input: SupertypeInput<'d
     }
 }
 
-fn mutating_inputs(c: &mut Criterion) {
-    let mut group: codspeed_criterion_compat::BenchmarkGroup<
-        codspeed_criterion_compat::measurement::WallTime,
-    > = c.benchmark_group("Mutating Inputs");
+mod mutating_inputs {
+    use super::*;
 
-    for n in &[10, 20, 30] {
-        group.bench_function(BenchmarkId::new("mutating", n), |b| {
-            b.iter_batched_ref(
-                || {
-                    let db = salsa::DatabaseImpl::default();
-                    let base_string = "hello, world!".to_owned();
-                    let base_len = base_string.len();
+    #[divan::bench(args = [10, 20, 30])]
+    fn mutating(bencher: divan::Bencher, n: usize) {
+        bencher
+            .with_inputs(move || {
+                let db = salsa::DatabaseImpl::default();
+                let base_string = "hello, world!".to_owned();
+                let base_len = base_string.len();
 
-                    let string = base_string.clone().repeat(*n);
-                    let new_len = string.len();
+                let string = base_string.clone().repeat(n);
+                let new_len = string.len();
 
-                    let input = Input::new(black_box(&db), black_box(base_string.clone()));
-                    let actual_len = length(&db, input);
-                    assert_eq!(black_box(actual_len), base_len);
+                let input = Input::new(black_box(&db), black_box(base_string.clone()));
+                let actual_len = length(&db, input);
+                assert_eq!(black_box(actual_len), base_len);
 
-                    (db, input, string, new_len)
-                },
-                |&mut (ref mut db, input, ref string, new_len)| {
-                    input.set_text(black_box(db)).to(black_box(string).clone());
-                    let actual_len = length(db, input);
-                    assert_eq!(black_box(actual_len), new_len);
-                },
-                BatchSize::SmallInput,
-            )
-        });
+                (db, input, string, new_len)
+            })
+            .bench_local_refs(|&mut (ref mut db, input, ref string, new_len)| {
+                input.set_text(black_box(db)).to(black_box(string).clone());
+                let actual_len = length(db, input);
+                assert_eq!(black_box(actual_len), new_len);
+            });
     }
 
-    group.finish();
-}
-
-fn inputs(c: &mut Criterion) {
-    let mut group: codspeed_criterion_compat::BenchmarkGroup<
-        codspeed_criterion_compat::measurement::WallTime,
-    > = c.benchmark_group("Mutating Inputs");
-
-    group.bench_function(BenchmarkId::new("new", "InternedInput"), |b| {
-        b.iter_batched_ref(
-            || {
+    #[divan::bench(name = "new[InternedInput]")]
+    fn new_interned_input(bencher: divan::Bencher) {
+        bencher
+            .with_inputs(|| {
                 let db = salsa::DatabaseImpl::default();
                 // Prepopulate ingredients.
                 let input =
@@ -95,20 +84,19 @@ fn inputs(c: &mut Criterion) {
                 let interned_len = interned_length(black_box(&db), black_box(input));
                 assert_eq!(black_box(interned_len), 13);
                 db
-            },
-            |db| {
+            })
+            .bench_local_refs(|db| {
                 let input =
                     InternedInput::new(black_box(db), black_box("hello, world!".to_owned()));
                 let interned_len = interned_length(black_box(db), black_box(input));
                 assert_eq!(black_box(interned_len), 13);
-            },
-            BatchSize::SmallInput,
-        )
-    });
+            });
+    }
 
-    group.bench_function(BenchmarkId::new("amortized", "InternedInput"), |b| {
-        b.iter_batched_ref(
-            || {
+    #[divan::bench(name = "amortized[InternedInput]")]
+    fn amortized_interned_input(bencher: divan::Bencher) {
+        bencher
+            .with_inputs(|| {
                 let db = salsa::DatabaseImpl::default();
                 // we can't pass this along otherwise, and the lifetime is generally informational
                 let input: InternedInput<'static> =
@@ -116,18 +104,17 @@ fn inputs(c: &mut Criterion) {
                 let interned_len = interned_length(black_box(&db), black_box(input));
                 assert_eq!(black_box(interned_len), 13);
                 (db, input)
-            },
-            |&mut (ref db, input)| {
-                let interned_len = interned_length(black_box(db), black_box(input));
+            })
+            .bench_local_refs(|(db, input)| {
+                let interned_len = interned_length(black_box(db), black_box(*input));
                 assert_eq!(black_box(interned_len), 13);
-            },
-            BatchSize::SmallInput,
-        )
-    });
+            });
+    }
 
-    group.bench_function(BenchmarkId::new("new", "Input"), |b| {
-        b.iter_batched_ref(
-            || {
+    #[divan::bench(name = "new[Input]")]
+    fn new_input(bencher: divan::Bencher) {
+        bencher
+            .with_inputs(|| {
                 let db = salsa::DatabaseImpl::default();
 
                 // Prepopulate ingredients.
@@ -136,19 +123,18 @@ fn inputs(c: &mut Criterion) {
                 assert_eq!(black_box(len), 13);
 
                 db
-            },
-            |db| {
+            })
+            .bench_local_refs(|db| {
                 let input = Input::new(black_box(db), black_box("hello, world!".to_owned()));
                 let len = length(black_box(db), black_box(input));
                 assert_eq!(black_box(len), 13);
-            },
-            BatchSize::SmallInput,
-        )
-    });
+            });
+    }
 
-    group.bench_function(BenchmarkId::new("amortized", "Input"), |b| {
-        b.iter_batched_ref(
-            || {
+    #[divan::bench(name = "amortized[Input]")]
+    fn amortized_input(bencher: divan::Bencher) {
+        bencher
+            .with_inputs(|| {
                 let db = salsa::DatabaseImpl::default();
 
                 let input = Input::new(black_box(&db), black_box("hello, world!".to_owned()));
@@ -156,16 +142,15 @@ fn inputs(c: &mut Criterion) {
                 assert_eq!(black_box(len), 13);
 
                 (db, input)
-            },
-            |&mut (ref db, input)| {
-                let len = length(black_box(db), black_box(input));
+            })
+            .bench_local_refs(|(db, input)| {
+                let len = length(black_box(db), black_box(*input));
                 assert_eq!(black_box(len), 13);
-            },
-            BatchSize::SmallInput,
-        )
-    });
+            });
+    }
 
-    group.bench_function(BenchmarkId::new("cached", "Input"), |b| {
+    #[divan::bench(name = "cached[Input]")]
+    fn cached_input(bencher: divan::Bencher) {
         let db = salsa::DatabaseImpl::default();
         let input = Input::new(&db, "hello, world!".to_owned());
 
@@ -173,12 +158,13 @@ fn inputs(c: &mut Criterion) {
         // the current revision.
         assert_eq!(length(&db, input), 13);
 
-        b.iter(|| length(black_box(&db), black_box(input)))
-    });
+        bencher.bench_local(|| length(black_box(&db), black_box(input)));
+    }
 
-    group.bench_function(BenchmarkId::new("new", "SupertypeInput"), |b| {
-        b.iter_batched_ref(
-            || {
+    #[divan::bench(name = "new[SupertypeInput]")]
+    fn new_supertype_input(bencher: divan::Bencher) {
+        bencher
+            .with_inputs(|| {
                 let db = salsa::DatabaseImpl::default();
 
                 // Prepopulate ingredients.
@@ -196,8 +182,8 @@ fn inputs(c: &mut Criterion) {
                 assert_eq!(black_box(len), 13);
 
                 db
-            },
-            |db| {
+            })
+            .bench_local_refs(|db| {
                 let input = SupertypeInput::Input(Input::new(
                     black_box(db),
                     black_box("hello, world!".to_owned()),
@@ -210,14 +196,13 @@ fn inputs(c: &mut Criterion) {
                 assert_eq!(black_box(len), 13);
                 let len = either_length(black_box(db), black_box(interned_input));
                 assert_eq!(black_box(len), 13);
-            },
-            BatchSize::SmallInput,
-        )
-    });
+            });
+    }
 
-    group.bench_function(BenchmarkId::new("amortized", "SupertypeInput"), |b| {
-        b.iter_batched_ref(
-            || {
+    #[divan::bench(name = "amortized[SupertypeInput]")]
+    fn amortized_supertype_input(bencher: divan::Bencher) {
+        bencher
+            .with_inputs(|| {
                 let db = salsa::DatabaseImpl::default();
 
                 let input = SupertypeInput::Input(Input::new(
@@ -236,19 +221,12 @@ fn inputs(c: &mut Criterion) {
                 assert_eq!(black_box(len), 13);
 
                 (db, input, interned_input)
-            },
-            |&mut (ref db, input, interned_input)| {
-                let len = either_length(black_box(db), black_box(input));
+            })
+            .bench_local_refs(|(db, input, interned_input)| {
+                let len = either_length(black_box(db), black_box(*input));
                 assert_eq!(black_box(len), 13);
-                let len = either_length(black_box(db), black_box(interned_input));
+                let len = either_length(black_box(db), black_box(*interned_input));
                 assert_eq!(black_box(len), 13);
-            },
-            BatchSize::SmallInput,
-        )
-    });
-
-    group.finish();
+            });
+    }
 }
-
-criterion_group!(benches, mutating_inputs, inputs);
-criterion_main!(benches);

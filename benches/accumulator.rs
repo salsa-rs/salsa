@@ -1,7 +1,10 @@
 use std::hint::black_box;
 
-use codspeed_criterion_compat::{BatchSize, Criterion, criterion_group, criterion_main};
 use salsa::Accumulator;
+
+fn main() {
+    divan::main();
+}
 
 #[salsa::input]
 struct Input {
@@ -42,31 +45,25 @@ fn infer_expression<'db>(db: &'db dyn salsa::Database, expression: Expression<'d
     number
 }
 
-fn accumulator(criterion: &mut Criterion) {
-    criterion.bench_function("accumulator", |b| {
-        b.iter_batched_ref(
-            || {
-                let db = salsa::DatabaseImpl::new();
+#[divan::bench]
+fn accumulator(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let db = salsa::DatabaseImpl::new();
 
-                let input = Input::new(black_box(&db), black_box(10_000));
+            let input = Input::new(black_box(&db), black_box(10_000));
 
-                // Pre-warm
-                let result = root(black_box(&db), black_box(input));
-                assert!(!black_box(result).is_empty());
+            // Pre-warm
+            let result = root(black_box(&db), black_box(input));
+            assert!(!black_box(result).is_empty());
 
-                (db, input)
-            },
-            |(db, input)| {
-                // Measure the cost of collecting accumulators ignoring the cost of running the
-                // query itself.
-                let diagnostics = root::accumulated::<Diagnostic>(black_box(db), *black_box(input));
+            (db, input)
+        })
+        .bench_local_refs(|(db, input)| {
+            // Measure the cost of collecting accumulators ignoring the cost of running the
+            // query itself.
+            let diagnostics = root::accumulated::<Diagnostic>(black_box(db), *black_box(input));
 
-                assert_eq!(black_box(diagnostics).len(), 1000);
-            },
-            BatchSize::SmallInput,
-        );
-    });
+            assert_eq!(black_box(diagnostics).len(), 1000);
+        });
 }
-
-criterion_group!(benches, accumulator);
-criterion_main!(benches);
