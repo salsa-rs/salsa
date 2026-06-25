@@ -97,6 +97,10 @@ impl ActiveQuery {
         std::mem::take(&mut self.cycle_heads)
     }
 
+    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
+        &self.cycle_heads
+    }
+
     pub(crate) fn detach_input_outputs(&mut self) -> DetachedInputOutputs {
         DetachedInputOutputs(std::mem::take(&mut self.input_outputs))
     }
@@ -166,9 +170,9 @@ impl ActiveQuery {
         self.accumulated.accumulate(index, value);
     }
 
-    /// Adds a key to our list of outputs.
-    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
-        self.input_outputs.insert(QueryEdge::output(key));
+    /// Adds a key to our list of outputs, returning whether it was newly inserted.
+    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) -> bool {
+        self.input_outputs.insert(QueryEdge::output(key))
     }
 
     /// True if the given key was output by this query.

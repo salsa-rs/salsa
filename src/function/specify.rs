@@ -23,10 +23,11 @@ where
     {
         let (zalsa, zalsa_local) = db.zalsas();
 
-        let (active_query_key, current_deps) = match zalsa_local.active_query() {
-            Some(v) => v,
-            None => panic!("can only use `specify` inside a tracked function"),
-        };
+        let (active_query_key, current_deps, cycle_heads) =
+            match zalsa_local.active_query_with_cycle_heads() {
+                Some(v) => v,
+                None => panic!("can only use `specify` inside a tracked function"),
+            };
 
         // `specify` only works if the key is a tracked struct created in the current query.
         //
@@ -87,22 +88,29 @@ where
 
         if let Some(old_memo) = old_memo {
             if old_memo.header.verified_at.load() == revision && old_memo.value.is_some() {
-                // The first value produced in a revision wins, so never overwrite a current memo.
                 let assigned_by_active_query = matches!(
                     old_memo.header.origin(),
                     QueryOriginRef::Assigned(owner) if owner == active_query_key
                 );
 
-                // The active query may be re-executing after its previously assigned memo was
-                // already validated. Its new execution still has to record that memo as one of its
-                // outputs.
-                if assigned_by_active_query {
-                    zalsa_local.add_output(database_key_index);
+                // A value produced by another query wins this revision.
+                if !assigned_by_active_query {
+                    return;
                 }
-                return;
+
+                let first_assignment_in_execution = zalsa_local.add_output(database_key_index);
+                // Outputs from a prior provisional iteration are seeded into the active query,
+                // so they don't count as duplicate calls in this execution.
+                if cycle_heads.is_empty()
+                    && !old_memo.header.was_cycle_participant()
+                    && !first_assignment_in_execution
+                {
+                    panic!("cannot call `specify` twice for the same key in one query execution");
+                }
             }
         }
 
+        let is_provisional = !cycle_heads.is_empty();
         let mut completed_query = CompletedQuery {
             revisions: QueryRevisions {
                 changed_at: current_deps.changed_at,
@@ -110,10 +118,16 @@ where
                 origin_and_extra: OriginAndExtra::assigned(active_query_key),
                 #[cfg(feature = "accumulator")]
                 accumulated_inputs: Default::default(),
-                verified_final: AtomicBool::new(true),
+                verified_final: AtomicBool::new(!is_provisional),
             },
             stale_tracked_structs: Vec::new(),
         };
+        if is_provisional {
+            // Assigned memos aren't cycle heads, so only their inherited head stamps matter.
+            completed_query
+                .revisions
+                .set_cycle_heads(cycle_heads, Default::default());
+        }
 
         if let Some(old_memo) = old_memo {
             completed_query
