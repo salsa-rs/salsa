@@ -191,9 +191,7 @@ jobs:
         uses: CodSpeedHQ/action@c145068895e045cc725ee76fcd2307624b65c3af # v4.17.5
         with:
           mode: "simulation,memory"
-          run: |
-            cargo codspeed run -m simulation
-            cargo codspeed run -m memory
+          run: cargo codspeed run
           token: ${{ secrets.CODSPEED_TOKEN }}
 
   benchmarks-walltime:
