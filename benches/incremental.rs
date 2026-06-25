@@ -29,7 +29,7 @@ fn root(db: &dyn salsa::Database, input: Input) -> usize {
     index.len()
 }
 
-#[divan::bench]
+#[divan::bench(name = "benches::many_tracked_structs::many_tracked_structs")]
 fn many_tracked_structs(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {

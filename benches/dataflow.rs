@@ -131,7 +131,7 @@ fn add(a: &Type, b: &Type) -> Type {
     }
 }
 
-#[divan::bench]
+#[divan::bench(name = "benches::dataflow::converge_diverge")]
 fn converge_diverge(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {
@@ -177,7 +177,7 @@ fn converge_diverge(bencher: divan::Bencher) {
 /// self.x3 = self.x0 + self.x1 + self.x2 + self.x4
 /// self.x4 = 0
 /// ```
-#[divan::bench]
+#[divan::bench(name = "benches::nested::converge_diverge_nested")]
 fn converge_diverge_nested(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {

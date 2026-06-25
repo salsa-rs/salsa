@@ -45,7 +45,7 @@ fn infer_expression<'db>(db: &'db dyn salsa::Database, expression: Expression<'d
     number
 }
 
-#[divan::bench]
+#[divan::bench(name = "benches::accumulator::accumulator")]
 fn accumulator(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {

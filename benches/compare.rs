@@ -46,10 +46,13 @@ pub fn either_length<'db>(db: &'db dyn salsa::Database, input: SupertypeInput<'d
     }
 }
 
-mod mutating_inputs {
+mod benches {
     use super::*;
 
-    #[divan::bench(args = [10, 20, 30])]
+    #[divan::bench(
+        name = "mutating_inputs::Mutating Inputs::mutating",
+        args = [10, 20, 30]
+    )]
     fn mutating(bencher: divan::Bencher, n: usize) {
         bencher
             .with_inputs(move || {
@@ -73,7 +76,7 @@ mod mutating_inputs {
             });
     }
 
-    #[divan::bench(name = "new[InternedInput]")]
+    #[divan::bench(name = "inputs::Mutating Inputs::new[InternedInput]")]
     fn new_interned_input(bencher: divan::Bencher) {
         bencher
             .with_inputs(|| {
@@ -93,7 +96,7 @@ mod mutating_inputs {
             });
     }
 
-    #[divan::bench(name = "amortized[InternedInput]")]
+    #[divan::bench(name = "inputs::Mutating Inputs::amortized[InternedInput]")]
     fn amortized_interned_input(bencher: divan::Bencher) {
         bencher
             .with_inputs(|| {
@@ -111,7 +114,7 @@ mod mutating_inputs {
             });
     }
 
-    #[divan::bench(name = "new[Input]")]
+    #[divan::bench(name = "inputs::Mutating Inputs::new[Input]")]
     fn new_input(bencher: divan::Bencher) {
         bencher
             .with_inputs(|| {
@@ -131,7 +134,7 @@ mod mutating_inputs {
             });
     }
 
-    #[divan::bench(name = "amortized[Input]")]
+    #[divan::bench(name = "inputs::Mutating Inputs::amortized[Input]")]
     fn amortized_input(bencher: divan::Bencher) {
         bencher
             .with_inputs(|| {
@@ -149,7 +152,7 @@ mod mutating_inputs {
             });
     }
 
-    #[divan::bench(name = "cached[Input]")]
+    #[divan::bench(name = "inputs::Mutating Inputs::cached[Input]")]
     fn cached_input(bencher: divan::Bencher) {
         let db = salsa::DatabaseImpl::default();
         let input = Input::new(&db, "hello, world!".to_owned());
@@ -161,7 +164,7 @@ mod mutating_inputs {
         bencher.bench_local(|| length(black_box(&db), black_box(input)));
     }
 
-    #[divan::bench(name = "new[SupertypeInput]")]
+    #[divan::bench(name = "inputs::Mutating Inputs::new[SupertypeInput]")]
     fn new_supertype_input(bencher: divan::Bencher) {
         bencher
             .with_inputs(|| {
@@ -199,7 +202,7 @@ mod mutating_inputs {
             });
     }
 
-    #[divan::bench(name = "amortized[SupertypeInput]")]
+    #[divan::bench(name = "inputs::Mutating Inputs::amortized[SupertypeInput]")]
     fn amortized_supertype_input(bencher: divan::Bencher) {
         bencher
             .with_inputs(|| {
