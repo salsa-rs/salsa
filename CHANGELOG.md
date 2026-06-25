@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.1...salsa-v0.27.2) - 2026-06-25
+
+### Fixed
+
+- propagate cycle heads through specify ([#1190](https://github.com/salsa-rs/salsa/pull/1190))
+- seed cycle disambiguators once ([#1191](https://github.com/salsa-rs/salsa/pull/1191))
+- omit never-change input edges ([#1193](https://github.com/salsa-rs/salsa/pull/1193))
+
 ## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.0...salsa-v0.27.1) - 2026-06-24
 
 ### Added
