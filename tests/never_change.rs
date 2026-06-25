@@ -24,6 +24,11 @@ fn mixed_value(db: &dyn Database, immutable_input: MyInput, mutable_input: MyInp
     immutable_value(db, immutable_input) + mutable_input.value(db)
 }
 
+#[salsa::tracked]
+fn mixed_input_value(db: &dyn Database, immutable_input: MyInput, mutable_input: MyInput) -> u32 {
+    immutable_input.value(db) + mutable_input.value(db)
+}
+
 #[salsa::tracked(lru = 1)]
 #[cfg(not(feature = "persistence"))]
 fn immutable_value_with_lru(db: &dyn LogDatabase, input: MyInput) -> u32 {
@@ -85,6 +90,25 @@ fn skip_dependency_edge_to_never_change_query() {
         [
             "salsa_event(DidValidateMemoizedValue { database_key: mixed_value(Id(400)) })",
         ]"#]]);
+}
+
+#[test]
+#[cfg(all(not(feature = "persistence"), feature = "salsa_unstable"))]
+fn skip_dependency_edge_to_never_change_input() {
+    let db = salsa::DatabaseImpl::default();
+    let immutable_input = MyInput::builder(10)
+        .durability(Durability::NEVER_CHANGE)
+        .new(&db);
+    let mutable_input = MyInput::new(&db, 20);
+
+    assert_eq!(mixed_value(&db, immutable_input, mutable_input), 30);
+    assert_eq!(mixed_input_value(&db, immutable_input, mutable_input), 30);
+
+    let memory_usage = <dyn Database>::memory_usage(&db);
+    assert_eq!(
+        memory_usage.queries["mixed_input_value"].size_of_metadata(),
+        memory_usage.queries["mixed_value"].size_of_metadata()
+    );
 }
 
 #[test]

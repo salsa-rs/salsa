@@ -146,7 +146,10 @@ impl ActiveQuery {
     ) {
         self.durability = self.durability.min(durability);
         self.add_changed_at(revision);
-        self.input_outputs.insert(QueryEdge::input(input));
+
+        if cfg!(feature = "persistence") || durability != Durability::NEVER_CHANGE {
+            self.input_outputs.insert(QueryEdge::input(input));
+        }
     }
 
     pub(super) fn add_changed_at(&mut self, revision: Revision) {
