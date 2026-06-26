@@ -179,7 +179,7 @@ pub struct Zalsa {
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
 
     #[cfg(not(feature = "shuttle"))]
-    memo_collector: seize::Collector,
+    memo_collector: Box<seize::Collector>,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
@@ -204,7 +204,7 @@ impl Zalsa {
             memo_ingredient_indices: Default::default(),
             event_callback,
             #[cfg(not(feature = "shuttle"))]
-            memo_collector: seize::Collector::new(),
+            memo_collector: Box::new(seize::Collector::new()),
             #[cfg(not(feature = "inventory"))]
             nonce: NONCE.nonce(),
         };
