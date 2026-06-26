@@ -19,7 +19,7 @@ jobs:
       MDBOOK_LINKCHECK_VERSION: "0.7.7"
       MDBOOK_MERMAID_VERSION: "0.13.0"
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install mdbook
         run: |
           curl -L https://github.com/rust-lang/mdBook/releases/download/v$MDBOOK_VERSION/mdbook-v$MDBOOK_VERSION-x86_64-unknown-linux-gnu.tar.gz | tar xz -C ~/.cargo/bin
