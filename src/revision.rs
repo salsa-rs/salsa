@@ -197,6 +197,7 @@ impl OptionalAtomicRevision {
         }
     }
 
+    #[inline]
     pub(crate) fn load(&self) -> Option<Revision> {
         Revision::from_opt(self.data.load(Ordering::Acquire))
     }
