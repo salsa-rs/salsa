@@ -248,6 +248,13 @@ impl Zalsa {
         unsafe { T::memo_table(self, id, self.current_revision()) }
     }
 
+    /// Returns the [`MemoTable`][] for `id` without requiring its concrete salsa struct type.
+    #[inline]
+    pub(crate) fn dyn_memo_table_for(&self, id: Id) -> MemoTableWithTypes<'_> {
+        // SAFETY: We are supplying the current revision for this database.
+        unsafe { self.table().dyn_memos(id, self.current_revision()) }
+    }
+
     /// Returns the ingredient at the given index, or panics if it is out-of-bounds.
     #[inline]
     pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {

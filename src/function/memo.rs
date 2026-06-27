@@ -74,9 +74,17 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 }
 
+/// A memoized query result, combining a configuration-independent [`MemoHeader`] with the
+/// configuration-specific output value.
+///
+/// The C representation and field order allow type-erased memo-table lookups to treat a pointer to
+/// any `Memo<C>` as a pointer to its header.
 #[derive(Debug)]
+#[repr(C)]
 pub struct Memo<'db, C: Configuration> {
     /// Configuration-independent state used to validate and manage this memo.
+    ///
+    /// This must remain the first field so that `Memo<C>` and `MemoHeader` have the same address.
     pub(super) header: MemoHeader,
 
     /// The result of the query, if we decide to memoize it.
@@ -84,7 +92,7 @@ pub struct Memo<'db, C: Configuration> {
 }
 
 #[derive(Debug)]
-pub(super) struct MemoHeader {
+pub(crate) struct MemoHeader {
     /// Last revision when this memo was verified; this begins
     /// as the current revision.
     pub(super) verified_at: AtomicRevision,
@@ -198,7 +206,7 @@ impl MemoHeader {
         }
     }
 
-    pub(super) fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
+    pub(crate) fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
         for stale_output in self.revisions.origin().outputs() {
             stale_output.remove_stale_output(zalsa, executor);
         }
@@ -238,10 +246,6 @@ impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
 where
     C::Output<'static>: Send + Sync + Any,
 {
-    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
-        self.header.remove_outputs(zalsa, executor);
-    }
-
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
         let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
@@ -488,6 +492,7 @@ mod _memory_usage {
         [(); std::mem::size_of::<[usize; 4]>()];
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 5]>()];
+    const _: [(); 0] = [(); std::mem::offset_of!(super::Memo<DummyConfiguration>, header)];
 
     struct DummyStruct;
 

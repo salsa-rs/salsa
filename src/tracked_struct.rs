@@ -840,7 +840,7 @@ where
         // SAFETY: We have `&mut MemoTable`, so no more references to these memos exist and we are good
         // to drop them.
         unsafe {
-            table_guard.0.take_memos(|memo_ingredient_index, memo| {
+            table_guard.0.take_memos(|memo_ingredient_index, header| {
                 let ingredient_index =
                     zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 
@@ -848,7 +848,7 @@ where
 
                 zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
-                memo.remove_outputs(zalsa, executor);
+                header.remove_outputs(zalsa, executor);
             })
         };
 

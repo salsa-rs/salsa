@@ -38,6 +38,7 @@ mod specify;
 mod sync;
 
 pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
+pub(crate) use memo::MemoHeader;
 
 pub type Memo<C> = memo::Memo<'static, C>;
 
@@ -390,14 +391,34 @@ where
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {
-        let memo_index = self.memo_ingredient_index(zalsa, id);
-        let Some(memo) = self.get_memo_from_table_for(zalsa, id, memo_index) else {
-            return;
-        };
+        fn inner(
+            zalsa: &Zalsa,
+            database_key_index: DatabaseKeyIndex,
+            memo_ingredient_index: MemoIngredientIndex,
+            cycle_recovery_strategy: CycleRecoveryStrategy,
+            flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+            seen: &mut FxHashSet<DatabaseKeyIndex>,
+        ) {
+            let Some(header) = zalsa
+                .dyn_memo_table_for(database_key_index.key_index())
+                .get_memo_header(memo_ingredient_index)
+            else {
+                return;
+            };
 
-        memo.header.flatten_cycle_head_dependencies(
+            header.flatten_cycle_head_dependencies(
+                zalsa,
+                database_key_index,
+                cycle_recovery_strategy,
+                flattened_input_outputs,
+                seen,
+            );
+        }
+
+        inner(
             zalsa,
             self.database_key_index(id),
+            self.memo_ingredient_index(zalsa, id),
             C::CYCLE_STRATEGY,
             flattened_input_outputs,
             seen,

@@ -3,10 +3,9 @@ use std::fmt::Debug;
 use std::mem;
 use std::ptr::{self, NonNull};
 
-use crate::DatabaseKeyIndex;
+use crate::function::MemoHeader;
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
-use crate::zalsa::Zalsa;
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -42,10 +41,6 @@ impl MemoTable {
 }
 
 pub trait Memo: Any + Send + Sync {
-    /// Removes the outputs that were created when this query ran. This includes
-    /// tracked structs and specified queries.
-    fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex);
-
     /// Returns memory usage information about the memoized value.
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo;
@@ -232,8 +227,6 @@ impl MemoEntryType {
 struct DummyMemo;
 
 impl Memo for DummyMemo {
-    fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
-
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
         crate::database::MemoInfo {
@@ -296,7 +289,7 @@ pub struct MemoTableWithTypes<'a> {
     memos: &'a MemoTable,
 }
 
-impl MemoTableWithTypes<'_> {
+impl<'a> MemoTableWithTypes<'a> {
     pub(crate) fn insert<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
@@ -350,6 +343,25 @@ impl MemoTableWithTypes<'_> {
         NonNull::new(atomic_memo.load(Ordering::Acquire))
             // SAFETY: We asserted that the type is correct above.
             .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
+    }
+
+    /// Returns the configuration-independent header of the memo at the given index.
+    ///
+    /// All memo-table entries are `Memo<C>` values, which use `#[repr(C)]` and store
+    /// `MemoHeader` as their first field. This makes the type-erased pointer valid to cast to a
+    /// header pointer without knowing `C`.
+    #[inline]
+    pub(crate) fn get_memo_header(
+        self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'a MemoHeader> {
+        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+        let memo = NonNull::new(atomic_memo.load(Ordering::Acquire))?;
+
+        // SAFETY: Every populated memo-table entry is a `#[repr(C)] Memo<C>` with `MemoHeader` as
+        // its first field, so both pointers have the same address. The memo allocation remains
+        // live for at least `'a`.
+        Some(unsafe { memo.cast::<MemoHeader>().as_ref() })
     }
 
     #[cfg(feature = "salsa_unstable")]
@@ -437,7 +449,7 @@ impl MemoTableWithTypesMut<'_> {
     /// the database exist as there may be outstanding borrows into the pointer contents.
     pub(crate) unsafe fn take_memos(
         &mut self,
-        mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>),
+        mut f: impl FnMut(MemoIngredientIndex, &MemoHeader),
     ) {
         self.memos
             .memos
@@ -449,7 +461,13 @@ impl MemoTableWithTypesMut<'_> {
                 let memo = unsafe { memo.take(type_)? };
                 Some((MemoIngredientIndex::from_usize(index), memo))
             })
-            .for_each(|(index, memo)| f(index, memo));
+            .for_each(|(index, memo)| {
+                // SAFETY: Every populated memo-table entry is a `#[repr(C)] Memo<C>` with
+                // `MemoHeader` as its first field. The erased trait object's data pointer and its
+                // header therefore have the same address.
+                let header = unsafe { &*(memo.as_ref() as *const dyn Memo as *const MemoHeader) };
+                f(index, header);
+            });
     }
 }
 
