@@ -86,8 +86,8 @@ impl<'db, C: Configuration> QueryStateImpl<'db, C> {
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> MemoSlot<'db> {
-        // SAFETY: Replaced memo allocations remain in deleted_entries until the next revision.
-        // The database is borrowed for 'db, so a new revision cannot begin while this state can
+        // SAFETY: Replaced memo allocations remain in `deleted_entries` until the next revision.
+        // The database is borrowed for `'db`, so a new revision cannot begin while this state can
         // still observe an allocation.
         unsafe {
             MemoSlot::new(
@@ -95,6 +95,33 @@ impl<'db, C: Configuration> QueryStateImpl<'db, C> {
                 memo_ingredient_index,
             )
         }
+    }
+}
+
+impl<C: Configuration> IngredientImpl<C> {
+    /// Executes this query through the shared query lifecycle and restores its typed memo.
+    pub(super) fn execute<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        claim_guard: ClaimGuard<'db>,
+        opt_old_memo: Option<&'db Memo<C>>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db Memo<C>> {
+        let id = claim_guard.database_key_index().key_index();
+        let mut state = QueryStateImpl::new(self, db);
+        let opt_old_memo = opt_old_memo.map(|_| {
+            state
+                .get_memo(claim_guard.zalsa(), id, memo_ingredient_index)
+                .expect("typed old memo came from this memo table")
+        });
+        let memo = execute_erased(
+            &mut state,
+            claim_guard,
+            opt_old_memo,
+            memo_ingredient_index,
+            C::CYCLE_STRATEGY,
+        )?;
+        Some(memo.downcast::<C>())
     }
 }
 
