@@ -46,8 +46,27 @@ pub fn either_length<'db>(db: &'db dyn salsa::Database, input: SupertypeInput<'d
     }
 }
 
+#[salsa::tracked]
+pub struct Tracked<'db> {
+    pub value: usize,
+}
+
+#[salsa::tracked]
+pub fn make_tracked(db: &dyn salsa::Database, input: Input) -> Tracked<'_> {
+    Tracked::new(db, input.text(db).len())
+}
+
 mod benches {
     use super::*;
+
+    #[divan::bench(name = "tracked_struct::read_field")]
+    fn read_tracked_field(bencher: divan::Bencher) {
+        let db = salsa::DatabaseImpl::default();
+        let input = Input::new(&db, "hello, world!".to_owned());
+        let tracked = make_tracked(&db, input);
+
+        bencher.bench_local(|| tracked.value(black_box(&db)));
+    }
 
     #[divan::bench(
         name = "mutating_inputs::Mutating Inputs::mutating",
