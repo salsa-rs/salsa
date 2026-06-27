@@ -86,13 +86,14 @@ mod benches {
                     InternedInput::new(black_box(&db), black_box("hello, world!".to_owned()));
                 let interned_len = interned_length(black_box(&db), black_box(input));
                 assert_eq!(black_box(interned_len), 13);
-                db
+                // Allocate the payload outside the measured region. Otherwise, changes to the
+                // allocator's state from unrelated benchmarks can dominate this benchmark.
+                (db, "hello, world!".to_owned())
             })
-            .bench_local_refs(|db| {
-                let input =
-                    InternedInput::new(black_box(db), black_box("hello, world!".to_owned()));
-                let interned_len = interned_length(black_box(db), black_box(input));
-                assert_eq!(black_box(interned_len), 13);
+            .bench_local_refs(|(db, text)| {
+                let input = InternedInput::new(black_box(&*db), black_box(std::mem::take(text)));
+                let interned_len = interned_length(black_box(&*db), black_box(input));
+                black_box(interned_len);
             });
     }
 
