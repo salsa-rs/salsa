@@ -255,6 +255,12 @@ impl<C> Value<C>
 where
     C: Configuration,
 {
+    /// Returns a pointer to the header that retains provenance for the complete value.
+    #[inline]
+    fn header_ptr(&self) -> *const ValueHeader {
+        std::ptr::from_ref(self).cast()
+    }
+
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
     pub fn fields(&self) -> &C::Fields<'static> {
@@ -456,7 +462,11 @@ where
 
                     // SAFETY: The value pointer is valid for the lifetime of the database
                     // and never accessed mutably directly.
-                    unsafe { shard.lru.push_front(UnsafeRef::from_raw(&value.header)) };
+                    unsafe {
+                        shard
+                            .lru
+                            .push_front(UnsafeRef::from_raw(value.header_ptr()))
+                    };
                 }
             }
 
@@ -507,9 +517,16 @@ where
         // Otherwise, try to reuse a stale slot.
         let mut cursor = shard.lru.back_mut();
 
-        while let Some(header) = cursor.get() {
+        while let Some(header) = cursor.as_cursor().clone_pointer() {
+            let header = UnsafeRef::into_raw(header);
+
+            // SAFETY: LRU pointers are created from `Value::header_ptr`, which retains provenance
+            // for the complete `Value<C>`. `Value<C>` uses the C representation and `header` is
+            // its first field, so both pointers have the same address.
+            let value = unsafe { &*header.cast::<Value<C>>() };
+
             // SAFETY: We hold the lock for the shard containing the value.
-            let value_shared = unsafe { &mut *header.shared.get() };
+            let value_shared = unsafe { &mut *value.header.shared.get() };
 
             // The value must not have been read in the current revision to be collected
             // soundly, but we also do not want to collect values that have been read recently.
@@ -532,11 +549,6 @@ where
                 .unwrap_or((Durability::MAX, Revision::max()));
 
             let old_id = value_shared.id;
-            // SAFETY: `Value<C>` uses the C representation and `header` is its first field, so
-            // both pointers have the same address. Every header in this LRU belongs to a
-            // `Value<C>` allocated by this ingredient.
-            let value = unsafe { &*std::ptr::from_ref(header).cast::<Value<C>>() };
-
             // Increment the generation of the ID, as if we allocated a new slot.
             //
             // If the ID is at its maximum generation, we are forced to leak the slot.
@@ -616,7 +628,11 @@ where
                 //
                 // SAFETY: The value pointer is valid for the lifetime of the database
                 // and is never accessed mutably directly.
-                unsafe { shard.lru.push_front(UnsafeRef::from_raw(&value.header)) };
+                unsafe {
+                    shard
+                        .lru
+                        .push_front(UnsafeRef::from_raw(value.header_ptr()))
+                };
             }
 
             // SAFETY: We hold the lock for the shard containing the value, and the
@@ -740,7 +756,11 @@ where
             //
             // SAFETY: The value pointer is valid for the lifetime of the database
             // and is never accessed mutably directly.
-            unsafe { shard.lru.push_front(UnsafeRef::from_raw(&value.header)) };
+            unsafe {
+                shard
+                    .lru
+                    .push_front(UnsafeRef::from_raw(value.header_ptr()))
+            };
         }
 
         // SAFETY: We hold the lock for the shard containing the value.
@@ -907,9 +927,9 @@ where
         // TODO: Grab all locks eagerly.
         zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
             let id = if should_lock {
+                let shard_index = value.header.shard as usize;
                 // SAFETY: `value.header.shard` is guaranteed to be in-bounds for `self.shards`.
-                let _shard =
-                    unsafe { self.shards.get_unchecked(value.header.shard as usize) }.lock();
+                let _shard = unsafe { self.shards.get_unchecked(shard_index) }.lock();
 
                 // SAFETY: We hold the lock for the shard containing the value.
                 unsafe { (*value.header.shared.get()).id }
@@ -1183,7 +1203,10 @@ impl RevisionQueue {
     /// Record the given revision as active.
     #[inline]
     fn record(&self, revision: Revision) {
-        debug_assert!(!self.revisions.is_empty());
+        debug_assert!(
+            !self.revisions.is_empty(),
+            "cannot record revisions when interned garbage collection is disabled"
+        );
 
         // Fast-path: We already recorded this revision.
         if self.revisions[0].load() >= revision {
