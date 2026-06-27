@@ -93,7 +93,7 @@ mod benches {
             .bench_local_refs(|(db, text)| {
                 let input = InternedInput::new(black_box(&*db), black_box(std::mem::take(text)));
                 let interned_len = interned_length(black_box(&*db), black_box(input));
-                black_box(interned_len);
+                assert_eq!(black_box(interned_len), 13);
             });
     }
 
