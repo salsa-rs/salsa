@@ -1837,8 +1837,17 @@ mod persistence {
                     "values are serialized in allocation order"
                 );
 
+                // SAFETY: We hold the lock for the shard containing the value.
+                let reusable = unsafe { (*value.header.shared.get()).is_reusable::<C>() };
+
                 // Insert the newly allocated ID into our ingredient.
-                ingredient.insert_id(id, zalsa, shard, hash, value);
+                // SAFETY: We hold the lock for the shard containing every value passed to
+                // `hasher`.
+                let hasher = |id: &_| unsafe { ingredient.value_hash(zalsa, *id) };
+                // SAFETY: We hold the lock for `shard`; `value` is the live value identified by
+                // `id` in that shard, `reusable` was read from the value, and `header_ptr` retains
+                // provenance for the complete value.
+                unsafe { super::insert_id(id, shard, hash, value.header_ptr(), reusable, &hasher) };
             }
 
             Ok(())
