@@ -643,10 +643,21 @@ impl memo::MemoHeader {
         let inputs = self.origin().inputs();
 
         match cycle_recovery_strategy {
-            // For queries with cycle handling, simply extend the input/outputs, because
-            // they already flattened their own dependencies when completing the query.
+            // Queries with cycle handling already flattened their own dependencies when completing
+            // the query. Cycle participants commonly share most of those inputs, often in long
+            // contiguous runs, so compare by ordered index to avoid a hash-table lookup for every
+            // edge. On a mismatch, `insert_full` preserves insertion order and resynchronizes the
+            // expected index.
             CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                flattened_input_outputs.extend(inputs.map(QueryEdge::input));
+                let mut expected_index = 0;
+                for input in inputs.map(QueryEdge::input) {
+                    if flattened_input_outputs.get_index(expected_index) == Some(&input) {
+                        expected_index += 1;
+                    } else {
+                        let (index, _) = flattened_input_outputs.insert_full(input);
+                        expected_index = index + 1;
+                    }
+                }
             }
             // For regular queries, recurse
             CycleRecoveryStrategy::Panic => {
