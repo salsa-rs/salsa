@@ -214,14 +214,17 @@ struct ValueShared {
 
 impl ValueShared {
     /// Returns `true` if this value slot can be reused when interning, and should be added to the LRU.
-    fn is_reusable(&self, revisions: NonZeroUsize) -> bool {
-        Self::is_reusable_with_durability(self.durability, revisions)
+    fn is_reusable<C: Configuration>(&self) -> bool {
+        Self::is_reusable_with_durability::<C>(self.durability)
     }
 
     /// Returns `true` if a value slot with the given durability can be reused when interning.
-    fn is_reusable_with_durability(durability: Durability, revisions: NonZeroUsize) -> bool {
+    ///
+    /// This intentionally remains generic so the compiler specializes the immortal and reusable
+    /// configurations instead of branching on `REVISIONS` at runtime.
+    fn is_reusable_with_durability<C: Configuration>(durability: Durability) -> bool {
         // Garbage collection is disabled.
-        if revisions == IMMORTAL {
+        if C::REVISIONS == IMMORTAL {
             return false;
         }
 
@@ -235,14 +238,13 @@ impl ValueShared {
     }
 
     /// Record a dependency on this value if its slot can be reused.
-    fn report_tracked_read_if_reusable(
+    fn report_tracked_read_if_reusable<C: Configuration>(
         zalsa_local: &ZalsaLocal,
         index: DatabaseKeyIndex,
         current_revision: Revision,
         durability: Durability,
-        revisions: NonZeroUsize,
     ) {
-        if Self::is_reusable_with_durability(durability, revisions) {
+        if Self::is_reusable_with_durability::<C>(durability) {
             zalsa_local.report_tracked_read_simple(index, durability, current_revision);
         } else {
             // The value cannot be reused, so the dependency edge is unnecessary. Its durability
@@ -363,20 +365,17 @@ fn insert_unique(shard: &mut IngredientShard, hash: u64, id: Id, hasher: &dyn Fn
 /// # Safety
 ///
 /// The caller must hold `shard`'s lock. `header` must have been produced by `Value::header_ptr`
-/// for the live value identified by `id` in this shard, and `hasher` must hash values while that
-/// lock is held.
+/// for the live value identified by `id` in this shard, `reusable` must reflect whether that value
+/// is reusable, and `hasher` must hash values while that lock is held.
 unsafe fn insert_id(
     id: Id,
     shard: &mut IngredientShard,
     hash: u64,
     header: *const ValueHeader,
-    revisions: NonZeroUsize,
+    reusable: bool,
     hasher: &dyn Fn(&Id) -> u64,
 ) {
-    // SAFETY: Guaranteed by the caller.
-    let value_shared = unsafe { &mut *(*header).shared.get() };
-
-    if value_shared.is_reusable(revisions) {
+    if reusable {
         // SAFETY: Guaranteed by the caller, including full-value provenance.
         unsafe { shard.lru.push_front(UnsafeRef::from_raw(header)) };
     }
@@ -588,7 +587,7 @@ where
                     })
                 });
 
-                if value_shared.is_reusable(C::REVISIONS) {
+                if value_shared.is_reusable::<C>() {
                     // Move the value to the front of the LRU list.
                     //
                     // SAFETY: We hold the lock for the shard containing the value, and `value` is
@@ -606,14 +605,14 @@ where
             }
 
             if let Some((_, stamp)) = zalsa_local.active_query() {
-                let was_reusable = value_shared.is_reusable(C::REVISIONS);
+                let was_reusable = value_shared.is_reusable::<C>();
 
                 // Record the maximum durability across all queries that intern this value.
                 value_shared.durability = std::cmp::max(value_shared.durability, stamp.durability);
 
                 // If the value is no longer reusable, i.e. the durability increased, remove it
                 // from the LRU.
-                if was_reusable && !value_shared.is_reusable(C::REVISIONS) {
+                if was_reusable && !value_shared.is_reusable::<C>() {
                     // SAFETY: We hold the lock for the shard containing the value, and `value`
                     // was previously reusable, so is in the list.
                     unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() };
@@ -625,12 +624,11 @@ where
             // See `intern_id_cold` for why we need to use `current_revision` here. Note that just
             // because this value was previously interned does not mean it was previously interned
             // by *our query*, so the same considerations apply.
-            ValueShared::report_tracked_read_if_reusable(
+            ValueShared::report_tracked_read_if_reusable::<C>(
                 zalsa_local,
                 index,
                 current_revision,
                 value_shared.durability,
-                C::REVISIONS,
             );
 
             return value_shared.id;
@@ -696,12 +694,11 @@ where
         // Record a dependency on the new value if its slot can be reused.
         //
         // See `intern_id_cold` for why we need to use `current_revision` here.
-        ValueShared::report_tracked_read_if_reusable(
+        ValueShared::report_tracked_read_if_reusable::<C>(
             zalsa_local,
             index,
             current_revision,
             durability,
-            C::REVISIONS,
         );
 
         // Insert the replacement while the old slot is still intact. `insert_unique`
@@ -745,7 +742,7 @@ where
             last_interned_at,
         };
 
-        if value_shared.is_reusable(C::REVISIONS) {
+        if value_shared.is_reusable::<C>() {
             // Move the value to the front of the LRU list.
             //
             // SAFETY: The value pointer is valid for the lifetime of the database
@@ -834,11 +831,16 @@ where
             fields: UnsafeCell::new(unsafe { self.to_internal_data(assemble(id, key)) }),
         });
 
+        // SAFETY: We hold the lock for the shard containing the value.
+        let reusable = unsafe { (&*value.header.shared.get()).is_reusable::<C>() };
+
         // Insert the newly allocated ID.
-        // SAFETY: We hold the lock for `shard`; `value` is the live value identified by `id` in
-        // that shard, and `header_ptr` retains provenance for the complete value.
+        // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
         let hasher = |id: &_| unsafe { self.value_hash(zalsa, *id) };
-        unsafe { insert_id(id, shard, hash, value.header_ptr(), C::REVISIONS, &hasher) };
+        // SAFETY: We hold the lock for `shard`; `value` is the live value identified by `id` in
+        // that shard, `reusable` was read from the value, and `header_ptr` retains provenance for
+        // the complete value.
+        unsafe { insert_id(id, shard, hash, value.header_ptr(), reusable, &hasher) };
 
         let index = self.database_key_index(id);
 
@@ -850,12 +852,11 @@ where
         // the query has changed without a corresponding input changing. Using `current_revision`
         // for dependencies on interned values encodes the fact that interned IDs are not stable
         // across revisions.
-        ValueShared::report_tracked_read_if_reusable(
+        ValueShared::report_tracked_read_if_reusable::<C>(
             zalsa_local,
             index,
             current_revision,
             durability,
-            C::REVISIONS,
         );
 
         zalsa.event(&|| {
@@ -922,7 +923,7 @@ where
                 // SAFETY: We hold the lock for the shard containing the value.
                 let value_shared = unsafe { &mut *value.header.shared.get() };
 
-                !value_shared.is_reusable(C::REVISIONS) || {
+                !value_shared.is_reusable::<C>() || {
                     let last_changed_revision =
                         zalsa.last_changed_revision(value_shared.durability);
                     ({ value_shared.last_interned_at }) >= last_changed_revision
