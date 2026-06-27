@@ -79,6 +79,33 @@ impl<'db, C: Configuration> QueryStateImpl<'db, C> {
     }
 }
 
+impl<C: Configuration> IngredientImpl<C> {
+    /// Executes this query through the shared query lifecycle and restores its typed memo.
+    pub(super) fn execute<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        claim_guard: ClaimGuard<'db>,
+        opt_old_memo: Option<&'db Memo<'db, C>>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db Memo<'db, C>> {
+        let id = claim_guard.database_key_index().key_index();
+        let opt_old_memo = opt_old_memo.map(|_| {
+            self.memo_table_for(claim_guard.zalsa(), id)
+                .get_erased(memo_ingredient_index)
+                .expect("typed old memo came from this memo table")
+        });
+        let mut state = QueryStateImpl::new(self, db);
+        let memo = execute_erased(
+            &mut state,
+            claim_guard,
+            opt_old_memo,
+            memo_ingredient_index,
+            C::CYCLE_STRATEGY,
+        )?;
+        Some(memo.downcast::<C>())
+    }
+}
+
 impl<'db, C: Configuration> QueryState<'db> for QueryStateImpl<'db, C> {
     fn execute_query(&mut self, zalsa: &'db Zalsa, id: Id) {
         self.value = Some(C::execute(self.db, C::id_to_input(zalsa, id)));

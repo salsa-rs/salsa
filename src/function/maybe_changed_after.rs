@@ -248,7 +248,7 @@ where
                     return Some(VerifyResult::changed());
                 }
 
-                let memo = self.execute(db, claim_guard, Some(old_memo))?;
+                let memo = self.execute(db, claim_guard, Some(old_memo), memo_ingredient_index)?;
                 let changed_at = memo.header.revisions.changed_at;
 
                 // Always assume that a provisional value has changed.

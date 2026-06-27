@@ -1,9 +1,8 @@
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
-use crate::database::RawDatabase;
 use crate::function::eviction::EvictionPolicy;
-use crate::function::execute::{QueryState, QueryStateImpl, execute_erased};
+use crate::function::execute::{QueryState, QueryStateImpl};
 use crate::function::memo::{ErasedMemo, Memo};
-use crate::function::sync::{ClaimResult, SyncTable};
+use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
@@ -115,146 +114,140 @@ where
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<'db, C>> {
         let database_key_index = self.database_key_index(id);
-        let mut state = QueryStateImpl::new(self, db);
-        let memo = fetch_cold_erased(
-            &mut state,
-            &self.sync_table,
-            zalsa,
-            zalsa_local,
-            db.into(),
-            database_key_index,
-            memo_ingredient_index,
-            C::CYCLE_STRATEGY,
-        )?;
-        Some(memo.downcast::<C>())
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn fetch_cold_erased<'db>(
-    state: &mut dyn QueryState<'db>,
-    sync_table: &'db SyncTable,
-    zalsa: &'db Zalsa,
-    zalsa_local: &'db ZalsaLocal,
-    db: RawDatabase<'db>,
-    database_key_index: DatabaseKeyIndex,
-    memo_ingredient_index: MemoIngredientIndex,
-    strategy: CycleRecoveryStrategy,
-) -> Option<ErasedMemo<'db>> {
-    let id = database_key_index.key_index();
-
-    // Try to claim this query: if someone else has claimed it already, go back and start again.
-    let claim_guard = match sync_table.try_claim(zalsa, zalsa_local, id, Reentrancy::Allow) {
-        ClaimResult::Claimed(guard) => guard,
-        ClaimResult::Running(blocked_on) => {
-            let _ = blocked_on.block_on(zalsa);
-            return None;
-        }
-        ClaimResult::Cycle { .. } => {
-            return Some(fetch_cold_cycle_erased(
-                state,
-                zalsa,
-                zalsa_local,
-                database_key_index,
-                memo_ingredient_index,
-                strategy,
-            ));
-        }
-    };
-
-    // Now that we've claimed the item, check again to see if there's a hot value.
-    let opt_old_memo = state.get_memo(zalsa, id, memo_ingredient_index);
-
-    if let Some(old_memo) = opt_old_memo {
-        if old_memo.has_value()
-            && old_memo.header().verify_memo(
-                db,
-                &claim_guard,
-                strategy,
-                #[cfg(feature = "detailed-trace")]
-                true,
-            )
+        // Try to claim this query: if someone else has claimed it already, go back and start again.
+        let claim_guard = match self
+            .sync_table
+            .try_claim(zalsa, zalsa_local, id, Reentrancy::Allow)
         {
-            return Some(old_memo);
+            ClaimResult::Claimed(guard) => guard,
+            ClaimResult::Running(blocked_on) => {
+                let _ = blocked_on.block_on(zalsa);
+                return None;
+            }
+            ClaimResult::Cycle { .. } => {
+                return Some(self.fetch_cold_cycle(
+                    db,
+                    zalsa,
+                    zalsa_local,
+                    database_key_index,
+                    memo_ingredient_index,
+                ));
+            }
+        };
+
+        // Now that we've claimed the item, check again to see if there's a hot value.
+        let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+
+        if let Some(old_memo) = opt_old_memo {
+            if old_memo.value.is_some()
+                && old_memo.header.verify_memo(
+                    db.into(),
+                    &claim_guard,
+                    C::CYCLE_STRATEGY,
+                    #[cfg(feature = "detailed-trace")]
+                    true,
+                )
+            {
+                // SAFETY: The memo is present in the memo table, and we verified that it is valid
+                // for the current revision.
+                return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+            }
         }
+
+        self.execute(db, claim_guard, opt_old_memo, memo_ingredient_index)
     }
 
-    execute_erased(
-        state,
-        claim_guard,
-        opt_old_memo,
-        memo_ingredient_index,
-        strategy,
-    )
+    #[cold]
+    #[inline(never)]
+    fn fetch_cold_cycle<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        database_key_index: DatabaseKeyIndex,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> &'db Memo<'db, C> {
+        match C::CYCLE_STRATEGY {
+            CycleRecoveryStrategy::Panic => fetch_cold_cycle_panic(zalsa_local, database_key_index),
+            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
+                let mut state = QueryStateImpl::new(self, db);
+                let memo = fetch_cold_cycle_recoverable_erased(
+                    &mut state,
+                    zalsa,
+                    database_key_index,
+                    memo_ingredient_index,
+                );
+                memo.downcast::<C>()
+            }
+        }
+    }
 }
 
 #[cold]
-fn fetch_cold_cycle_erased<'db>(
+fn fetch_cold_cycle_panic(zalsa_local: &ZalsaLocal, database_key_index: DatabaseKeyIndex) -> ! {
+    // SAFETY: We do not access the query stack reentrantly.
+    unsafe {
+        zalsa_local.with_query_stack_unchecked(|stack| {
+            panic!(
+                "dependency graph cycle when querying {database_key_index:#?}, \
+                set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                Query stack:\n{stack:#?}",
+            );
+        })
+    }
+}
+
+#[cold]
+fn fetch_cold_cycle_recoverable_erased<'db>(
     state: &mut dyn QueryState<'db>,
     zalsa: &'db Zalsa,
-    zalsa_local: &'db ZalsaLocal,
     database_key_index: DatabaseKeyIndex,
     memo_ingredient_index: MemoIngredientIndex,
-    strategy: CycleRecoveryStrategy,
 ) -> ErasedMemo<'db> {
     let id = database_key_index.key_index();
 
-    match strategy {
-        // SAFETY: We do not access the query stack reentrantly.
-        CycleRecoveryStrategy::Panic => unsafe {
-            zalsa_local.with_query_stack_unchecked(|stack| {
-                panic!(
-                    "dependency graph cycle when querying {database_key_index:#?}, \
-                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                    Query stack:\n{stack:#?}",
-                );
-            })
-        },
-        CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
-            let cancellation_count = zalsa.runtime().cancellation_count();
-            // Don't validate provisional memos here: an existing value should be reused.
-            let current_memo = state
-                .get_memo(zalsa, id, memo_ingredient_index)
-                .filter(|memo| {
-                    let header = memo.header();
-                    header.verified_at.load() == zalsa.current_revision()
-                        && memo.has_value()
-                        && header.revisions.iteration().cancellation_count() == cancellation_count
-                });
+    let cancellation_count = zalsa.runtime().cancellation_count();
+    // Don't validate provisional memos here: an existing value should be reused.
+    let current_memo = state
+        .get_memo(zalsa, id, memo_ingredient_index)
+        .filter(|memo| {
+            let header = memo.header();
+            header.verified_at.load() == zalsa.current_revision()
+                && memo.has_value()
+                && header.revisions.iteration().cancellation_count() == cancellation_count
+        });
 
-            // Ideally, any current provisional value could be reused. Reusing a value that was
-            // not a cycle head in the last iteration would require inserting itself as a head,
-            // which in turn requires cloning the value or making the cycle-head list concurrent.
-            if let Some(memo) = current_memo.filter(|memo| {
-                memo.header()
-                    .revisions
-                    .cycle_heads()
-                    .contains(&database_key_index)
-            }) {
-                memo.header()
-                    .revisions
-                    .cycle_heads()
-                    .remove_all_except(database_key_index);
+    // Ideally, any current provisional value could be reused. Reusing a value that was not a
+    // cycle head in the last iteration would require inserting itself as a head, which in turn
+    // requires cloning the value or making the cycle-head list concurrent.
+    if let Some(memo) = current_memo.filter(|memo| {
+        memo.header()
+            .revisions
+            .cycle_heads()
+            .contains(&database_key_index)
+    }) {
+        memo.header()
+            .revisions
+            .cycle_heads()
+            .remove_all_except(database_key_index);
 
-                crate::tracing::debug!(
-                    "hit cycle at {database_key_index:#?}, \
-                            returning last provisional value: {:#?}",
-                    memo.header().revisions
-                );
-                return memo;
-            }
-
-            crate::tracing::debug!(
-                "hit cycle at {database_key_index:#?}, \
-                inserting and returning fixpoint initial value"
-            );
-
-            let iteration = current_memo
-                .map(|memo| memo.header().revisions.iteration())
-                .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
-            let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
-            state.use_fallback(zalsa, id);
-            state.insert_memo(zalsa, id, revisions, memo_ingredient_index)
-        }
+        crate::tracing::debug!(
+            "hit cycle at {database_key_index:#?}, \
+                    returning last provisional value: {:#?}",
+            memo.header().revisions
+        );
+        return memo;
     }
+
+    crate::tracing::debug!(
+        "hit cycle at {database_key_index:#?}, \
+        inserting and returning fixpoint initial value"
+    );
+
+    let iteration = current_memo
+        .map(|memo| memo.header().revisions.iteration())
+        .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
+    let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
+    state.use_fallback(zalsa, id);
+    state.insert_memo(zalsa, id, revisions, memo_ingredient_index)
 }
