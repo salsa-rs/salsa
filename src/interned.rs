@@ -136,11 +136,21 @@ unsafe impl Sync for ValueHeader {}
 intrusive_adapter!(ValueHeaderAdapter = UnsafeRef<ValueHeader>: ValueHeader { link => LinkedListLink });
 
 /// Struct storing the interned fields.
+///
+/// # Layout
+///
+/// This type uses the C representation because the intrusive LRU stores pointers to `header`,
+/// and the stale-slot reuse path casts those pointers back to `Value<C>`.
+/// Therefore, `header` must remain the first field so that it has the same address as the
+/// containing `Value<C>`.
+#[repr(C)]
 pub struct Value<C>
 where
     C: Configuration,
 {
     /// Configuration-independent state used to manage this value.
+    ///
+    /// This must remain the first field; see the type's layout documentation.
     header: ValueHeader,
 
     /// The interned fields for this value.
@@ -522,8 +532,10 @@ where
                 .unwrap_or((Durability::MAX, Revision::max()));
 
             let old_id = value_shared.id;
-            let value = zalsa.table().get::<Value<C>>(old_id);
-            debug_assert!(std::ptr::eq(header, &value.header));
+            // SAFETY: `Value<C>` uses the C representation and `header` is its first field, so
+            // both pointers have the same address. Every header in this LRU belongs to a
+            // `Value<C>` allocated by this ingredient.
+            let value = unsafe { &*std::ptr::from_ref(header).cast::<Value<C>>() };
 
             // Increment the generation of the ID, as if we allocated a new slot.
             //
@@ -1823,7 +1835,7 @@ mod tests {
 
     #[test]
     fn revision_queue_records_each_revision_once() {
-        let queue = RevisionQueue::<TestConfiguration>::default();
+        let queue = RevisionQueue::new(TestConfiguration::REVISIONS);
         let revision = Revision::start().next();
 
         // Simulate two threads that both passed the fast-path check before taking the lock.
