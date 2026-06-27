@@ -709,8 +709,8 @@ where
         insert_unique(shard, hash, slot.new_id, &hasher);
 
         // Remove the value from the LRU list.
-        // SAFETY: We hold the shard lock and `value` is currently in the LRU.
         let removed_header = UnsafeRef::into_raw(
+            // SAFETY: We hold the shard lock and `value` is currently in the LRU.
             unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() }.unwrap(),
         );
         debug_assert!(std::ptr::eq(removed_header, &value.header));
@@ -832,7 +832,7 @@ where
         });
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let reusable = unsafe { (&*value.header.shared.get()).is_reusable::<C>() };
+        let reusable = unsafe { (*value.header.shared.get()).is_reusable::<C>() };
 
         // Insert the newly allocated ID.
         // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
