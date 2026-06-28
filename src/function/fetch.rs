@@ -4,7 +4,7 @@ use crate::function::eviction::EvictionPolicy;
 use crate::function::execute::CycleState;
 use crate::function::memo::{ErasedMemo, Memo};
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::function::{Configuration, FunctionIngredient, IngredientImpl, Reentrancy};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
@@ -196,6 +196,7 @@ pub(super) fn fetch_cold_cycle_panic(
 
 pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
     state: &mut dyn CycleState<'db>,
+    ingredient: &'db dyn FunctionIngredient,
     zalsa: &'db Zalsa,
     database_key_index: DatabaseKeyIndex,
 ) -> ErasedMemo<'db> {
@@ -203,7 +204,7 @@ pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
 
     let cancellation_count = zalsa.runtime().cancellation_count();
     // Don't validate provisional memos here: an existing value should be reused.
-    let current_memo = state.provisional_memo(zalsa, id).filter(|memo| {
+    let current_memo = ingredient.memo(zalsa, id).filter(|memo| {
         let header = memo.header();
         header.verified_at.load() == zalsa.current_revision()
             && memo.has_value()
