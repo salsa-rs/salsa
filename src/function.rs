@@ -196,13 +196,12 @@ pub struct IngredientImpl<C: Configuration> {
 
     sync_table: SyncTable,
 
-    /// When `fetch` and friends executes, they return a reference to the
-    /// value stored in the memo that is extended to live as long as the `&self`
-    /// reference we start with. This means that whenever we remove something
-    /// from `memo_map` with an `&self` reference, there *could* be references to its
-    /// internals still in use. Therefore we push the memo into this queue and
-    /// only *actually* free up memory when a new revision starts (which means
-    /// we have an `&mut` reference to self).
+    /// Retains every memo allocation loaded while this ingredient is shared.
+    ///
+    /// `fetch` and related operations return references into memo allocations with the lifetime
+    /// of their `&self` borrow. Replacing a table entry while the ingredient is shared may leave
+    /// references into the old allocation, so the old memo is moved into this queue. The queue is
+    /// cleared only when a new revision provides exclusive access to the ingredient.
     ///
     /// You might think that we could do this only if the memo was verified in the
     /// current revision: you would be right, but we are being defensive, because

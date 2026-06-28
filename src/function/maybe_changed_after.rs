@@ -2,13 +2,14 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
 use crate::database::RawDatabase;
-use crate::function::memo::{ErasedMemo, MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
+use crate::function::memo::{
+    ErasedMemo, FunctionMemoTable, MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult,
+};
 use crate::function::sync::{ClaimGuard, ClaimResult};
 use crate::function::{Configuration, IngredientImpl, Reentrancy, SyncTable};
 use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
-use crate::table::memo::MemoTableWithTypes;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdgeKind, QueryEdges, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{Id, Revision};
@@ -94,11 +95,10 @@ where
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        let database_key_index = self.database_key_index(id);
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         loop {
-            let database_key_index = self.database_key_index(id);
-
             crate::tracing::debug!(
                 "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
             );
@@ -133,11 +133,11 @@ where
         }
     }
 
-    fn maybe_changed_after_cold<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        db: &'db C::DbView,
+    fn maybe_changed_after_cold(
+        &self,
+        zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
+        db: &C::DbView,
         database_key_index: DatabaseKeyIndex,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
@@ -157,7 +157,7 @@ where
             zalsa: &'db Zalsa,
             zalsa_local: &'db ZalsaLocal,
             db: RawDatabase<'db>,
-            memo_table: MemoTableWithTypes<'db>,
+            memo_table: FunctionMemoTable<'db>,
             database_key_index: DatabaseKeyIndex,
             revision: Revision,
             memo_ingredient_index: MemoIngredientIndex,
@@ -185,13 +185,7 @@ where
 
             // Load the current memo after claiming the query because it may have changed while
             // this query was blocked on another thread.
-            // SAFETY: `IngredientImpl::insert_memo` moves every replaced allocation into
-            // `deleted_entries`, which is cleared only while starting a new revision with
-            // exclusive access to the ingredient. The database is borrowed for `'db` here, so
-            // that reset cannot occur and the loaded allocation remains immovable and valid for
-            // shared access for `'db`, even if another thread replaces the table entry during this
-            // revision.
-            let Some(old_memo) = (unsafe { memo_table.get_erased(memo_ingredient_index) }) else {
+            let Some(old_memo) = memo_table.get_erased(memo_ingredient_index) else {
                 return ColdResult::Verified(VerifyResult::changed());
             };
 
@@ -236,7 +230,7 @@ where
             zalsa,
             zalsa_local,
             db.into(),
-            zalsa.memo_table_for::<C::SalsaStruct<'_>>(database_key_index.key_index()),
+            self.memo_table_for(zalsa, database_key_index.key_index()),
             database_key_index,
             revision,
             memo_ingredient_index,
