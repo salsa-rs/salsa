@@ -202,6 +202,31 @@ impl Table {
         self.pages.count()
     }
 
+    #[cfg(feature = "salsa_unstable")]
+    pub(crate) fn page_capacity(&self) -> usize {
+        PAGE_LEN
+    }
+
+    #[cfg(feature = "salsa_unstable")]
+    pub(crate) fn page_infos(&self) -> FxHashMap<IngredientIndex, crate::database::PageInfo> {
+        let mut page_fills: FxHashMap<IngredientIndex, Vec<usize>> = FxHashMap::default();
+
+        for (_, page) in self.pages.iter() {
+            let fill = page.allocated.load(Ordering::Acquire);
+            if fill > 0 {
+                page_fills.entry(page.ingredient).or_default().push(fill);
+            }
+        }
+
+        page_fills
+            .into_iter()
+            .filter_map(|(ingredient, fills)| {
+                crate::database::PageInfo::from_page_fills(PAGE_LEN, fills)
+                    .map(|page_info| (ingredient, page_info))
+            })
+            .collect()
+    }
+
     /// Gets a reference to the page which has slots of type `T`
     ///
     /// # Panics

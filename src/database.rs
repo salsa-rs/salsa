@@ -398,7 +398,7 @@ mod persistence {
 }
 
 #[cfg(feature = "salsa_unstable")]
-pub use memory_usage::IngredientInfo;
+pub use memory_usage::{IngredientInfo, PageInfo};
 
 #[cfg(feature = "salsa_unstable")]
 pub(crate) use memory_usage::{MemoInfo, SlotInfo};
@@ -414,6 +414,8 @@ mod memory_usage {
         pub fn memory_usage(&self) -> DatabaseInfo {
             let mut queries = HashMap::new();
             let mut structs = Vec::new();
+            let mut page_infos = self.zalsa().table().page_infos();
+            let page_capacity = self.zalsa().table().page_capacity();
 
             for input_ingredient in self.zalsa().ingredients() {
                 let Some(input_info) = input_ingredient.memory_usage(self) else {
@@ -458,6 +460,11 @@ mod memory_usage {
                     size_of_metadata,
                     heap_size_of_fields,
                     debug_name: input_ingredient.debug_name(),
+                    page_info: Some(
+                        page_infos
+                            .remove(&input_ingredient.ingredient_index())
+                            .unwrap_or_else(|| PageInfo::empty(page_capacity)),
+                    ),
                 });
             }
 
@@ -483,6 +490,7 @@ mod memory_usage {
         size_of_metadata: usize,
         size_of_fields: usize,
         heap_size_of_fields: Option<usize>,
+        page_info: Option<PageInfo>,
     }
 
     impl IngredientInfo {
@@ -512,6 +520,118 @@ mod memory_usage {
         pub fn count(&self) -> usize {
             self.count
         }
+
+        /// Returns page occupancy information for this ingredient.
+        ///
+        /// Returns `None` for query summaries. Struct ingredients without any non-empty pages
+        /// return page information with zero counts.
+        pub fn page_info(&self) -> Option<&PageInfo> {
+            self.page_info.as_ref()
+        }
+    }
+
+    /// Page occupancy information for a Salsa struct ingredient.
+    ///
+    /// Empty pages are excluded. Page fill is the number of slots that have been initialized, so
+    /// slots remain included after their values are deleted or made available for reuse.
+    /// Percentiles use the nearest-rank method across the ingredient's non-empty pages.
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct PageInfo {
+        page_count: usize,
+        page_capacity: usize,
+        excess_capacity: usize,
+        p25_fill: usize,
+        p50_fill: usize,
+        p75_fill: usize,
+        p90_fill: usize,
+        p99_fill: usize,
+    }
+
+    impl PageInfo {
+        pub(crate) fn from_page_fills(
+            page_capacity: usize,
+            mut page_fills: Vec<usize>,
+        ) -> Option<Self> {
+            if page_fills.is_empty() {
+                return None;
+            }
+
+            debug_assert!(
+                page_fills
+                    .iter()
+                    .all(|&fill| fill > 0 && fill <= page_capacity)
+            );
+            page_fills.sort_unstable();
+
+            let percentile = |percentile: usize| {
+                let rank = (page_fills.len() * percentile).div_ceil(100);
+                page_fills[rank - 1]
+            };
+
+            Some(Self {
+                page_count: page_fills.len(),
+                page_capacity,
+                excess_capacity: page_fills.iter().map(|&fill| page_capacity - fill).sum(),
+                p25_fill: percentile(25),
+                p50_fill: percentile(50),
+                p75_fill: percentile(75),
+                p90_fill: percentile(90),
+                p99_fill: percentile(99),
+            })
+        }
+
+        fn empty(page_capacity: usize) -> Self {
+            Self {
+                page_count: 0,
+                page_capacity,
+                excess_capacity: 0,
+                p25_fill: 0,
+                p50_fill: 0,
+                p75_fill: 0,
+                p90_fill: 0,
+                p99_fill: 0,
+            }
+        }
+
+        /// Returns the number of non-empty pages allocated for this ingredient.
+        pub fn page_count(&self) -> usize {
+            self.page_count
+        }
+
+        /// Returns the number of slots that can be stored in each page.
+        pub fn page_capacity(&self) -> usize {
+            self.page_capacity
+        }
+
+        /// Returns the number of unused slots across all non-empty pages.
+        pub fn excess_capacity(&self) -> usize {
+            self.excess_capacity
+        }
+
+        /// Returns the 25th percentile of initialized slots per non-empty page.
+        pub fn p25_fill(&self) -> usize {
+            self.p25_fill
+        }
+
+        /// Returns the 50th percentile of initialized slots per non-empty page.
+        pub fn p50_fill(&self) -> usize {
+            self.p50_fill
+        }
+
+        /// Returns the 75th percentile of initialized slots per non-empty page.
+        pub fn p75_fill(&self) -> usize {
+            self.p75_fill
+        }
+
+        /// Returns the 90th percentile of initialized slots per non-empty page.
+        pub fn p90_fill(&self) -> usize {
+            self.p90_fill
+        }
+
+        /// Returns the 99th percentile of initialized slots per non-empty page.
+        pub fn p99_fill(&self) -> usize {
+            self.p99_fill
+        }
     }
 
     /// Memory usage information about a particular instance of struct, input or output.
@@ -527,5 +647,29 @@ mod memory_usage {
     pub struct MemoInfo {
         pub(crate) debug_name: &'static str,
         pub(crate) output: SlotInfo,
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::PageInfo;
+
+        #[test]
+        fn page_info_uses_nearest_rank_percentiles() {
+            let page_info = PageInfo::from_page_fills(128, (1..=100).collect()).unwrap();
+
+            assert_eq!(page_info.page_count(), 100);
+            assert_eq!(page_info.page_capacity(), 128);
+            assert_eq!(page_info.excess_capacity(), 7_750);
+            assert_eq!(page_info.p25_fill(), 25);
+            assert_eq!(page_info.p50_fill(), 50);
+            assert_eq!(page_info.p75_fill(), 75);
+            assert_eq!(page_info.p90_fill(), 90);
+            assert_eq!(page_info.p99_fill(), 99);
+        }
+
+        #[test]
+        fn page_info_is_none_without_page_fills() {
+            assert_eq!(PageInfo::from_page_fills(128, Vec::new()), None);
+        }
     }
 }

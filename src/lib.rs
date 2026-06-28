@@ -41,7 +41,7 @@ mod nonce;
 pub use salsa_macros::{Supertype, Update, accumulator, db, input, interned, tracked};
 
 #[cfg(feature = "salsa_unstable")]
-pub use self::database::IngredientInfo;
+pub use self::database::{IngredientInfo, PageInfo};
 
 #[cfg(feature = "accumulator")]
 pub use self::accumulator::Accumulator;
