@@ -1,4 +1,5 @@
 pub(crate) use maybe_changed_after::VerifyResult;
+pub(crate) use memo::ErasedMemo;
 pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrancy, SyncGuard, SyncOwner, SyncTable};
 
 use std::any::Any;
