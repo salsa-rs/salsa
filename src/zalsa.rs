@@ -103,6 +103,11 @@ impl IngredientIndex {
         IngredientIndex(self.0 + 1 + index as u32)
     }
 
+    #[inline(always)]
+    pub(crate) fn at_offset(self, offset: usize) -> Self {
+        IngredientIndex(self.0 + offset as u32)
+    }
+
     /// Returns a new `IngredientIndex` with the tag bit set to the provided value.
     pub(crate) const fn with_tag(mut self, tag: bool) -> IngredientIndex {
         self.0 &= Self::MAX_INDEX;
@@ -353,6 +358,18 @@ impl Zalsa {
                 std::any::type_name::<J>()
             )
         })
+    }
+
+    /// Type-erased jar lookup used by shared ingredient cache initialization.
+    pub(crate) fn lookup_jar_by_type_id(
+        &self,
+        jar_type_id: TypeId,
+        jar_type_name: &'static str,
+    ) -> IngredientIndex {
+        *self
+            .jar_map
+            .get(&jar_type_id)
+            .unwrap_or_else(|| panic!("ingredient `{jar_type_name}` was not registered"))
     }
 
     fn insert_jar(&mut self, jar: ErasedJar) {

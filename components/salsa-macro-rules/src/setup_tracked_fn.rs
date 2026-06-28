@@ -265,7 +265,7 @@ macro_rules! setup_tracked_fn {
                     // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the first
                     // ingredient created by our jar is the function ingredient.
                     unsafe {
-                        $FN_CACHE.get_or_create(zalsa, || zalsa.lookup_jar_by_type::<$fn_name>())
+                        $FN_CACHE.get_or_create::<$fn_name, 0>(zalsa)
                     }
                     .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_downcaster(db))
                 }
@@ -294,9 +294,7 @@ macro_rules! setup_tracked_fn {
                         // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the second
                         // ingredient created by our jar is the interned ingredient (given `needs_interner`).
                         unsafe {
-                            $INTERN_CACHE.get_or_create(zalsa, || {
-                                zalsa.lookup_jar_by_type::<$fn_name>().successor(0)
-                            })
+                            $INTERN_CACHE.get_or_create::<$fn_name, 1>(zalsa)
                         }
                     }
                 }
