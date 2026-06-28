@@ -179,38 +179,12 @@ impl<'db> FunctionIngredientRef<'db> {
     pub(crate) fn sync_table(&self) -> &'db SyncTable {
         self.ingredient.sync_table()
     }
-
-    /// Returns information about the current provisional status of `input`.
-    ///
-    /// Is it a provisional value, a poisoned provisional memo, or has it been finalized and in
-    /// which iteration.
-    ///
-    /// Returns `None` if `input` doesn't exist.
-    pub(crate) fn provisional_status(
-        &self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        self.ingredient.provisional_status(zalsa, input)
-    }
 }
 
 pub(crate) trait FunctionIngredient: Send + Sync {
     fn memo<'db>(&'db self, zalsa: &'db Zalsa, input: Id) -> Option<ErasedMemo<'db>>;
 
     fn sync_table(&self) -> &SyncTable;
-
-    /// Returns information about the current provisional status of `input`.
-    ///
-    /// Is it a provisional value, a poisoned provisional memo, or has it been finalized and in
-    /// which iteration.
-    ///
-    /// Returns `None` if `input` doesn't exist.
-    fn provisional_status<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -386,29 +360,6 @@ where
 
     fn sync_table(&self) -> &SyncTable {
         &self.sync_table
-    }
-
-    /// Returns `final` if the memo has the `verified_final` flag set.
-    ///
-    /// Otherwise, the value is still provisional or the provisional memo has been poisoned. It
-    /// also returns the iteration in which this memo was created (always 0 except for cycle
-    /// heads).
-    fn provisional_status<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        let memo =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
-
-        if memo.value.is_none() && memo.header.may_be_provisional() {
-            return Some(ProvisionalStatus::Poisoned {
-                iteration: memo.header.revisions.iteration(),
-                verified_at: memo.header.verified_at.load(),
-            });
-        }
-
-        Some(memo.header.provisional_status())
     }
 }
 

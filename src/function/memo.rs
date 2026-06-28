@@ -105,7 +105,7 @@ pub struct Memo<C: Configuration> {
 /// covering the entire allocation, which remains valid for shared access for `'db`, even after
 /// replacement. `to_dyn_fn` and `type_id` describe the same `C`.
 #[derive(Clone, Copy)]
-pub(crate) struct ErasedMemo<'db> {
+pub struct ErasedMemo<'db> {
     /// A pointer to the base address of the [`Memo`] allocation, with spatial provenance covering
     /// the entire allocation.
     data: NonNull<DummyMemo>,
@@ -157,6 +157,21 @@ impl<'memo> ErasedMemo<'memo> {
         // SAFETY: `to_dyn_fn` matches the concrete memo allocation, which is valid for shared
         // access for `'memo`.
         unsafe { (self.to_dyn_fn)(self.data).as_ref() }.has_value()
+    }
+
+    /// Returns whether this memo is provisional, finalized, or poisoned.
+    #[inline]
+    pub(super) fn provisional_status(self) -> ProvisionalStatus<'memo> {
+        let header = self.header();
+
+        if !self.has_value() && header.may_be_provisional() {
+            return ProvisionalStatus::Poisoned {
+                iteration: header.revisions.iteration(),
+                verified_at: header.verified_at.load(),
+            };
+        }
+
+        header.provisional_status()
     }
 
     /// Returns the concrete memo after asserting that it uses configuration `C`.
@@ -547,7 +562,8 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                 crate::tracing::trace!("Waiting for {head_database_key:?} results in a cycle");
 
                 let provisional_status = function
-                    .provisional_status(self.zalsa, head_key_index)
+                    .memo(self.zalsa, head_key_index)
+                    .map(|memo| memo.provisional_status())
                     .expect("cycle head memo to exist");
                 let (current_iteration, verified_at) = match provisional_status {
                     ProvisionalStatus::Provisional {

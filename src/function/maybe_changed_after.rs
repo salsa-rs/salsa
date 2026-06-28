@@ -663,9 +663,8 @@ fn validate_provisional(
         let Some(provisional_status) = zalsa
             .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
             .as_function()
-            .and_then(|function| {
-                function.provisional_status(zalsa, cycle_head.database_key_index.key_index())
-            })
+            .and_then(|function| function.memo(zalsa, cycle_head.database_key_index.key_index()))
+            .map(|memo| memo.provisional_status())
         else {
             return false;
         };

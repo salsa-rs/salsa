@@ -656,7 +656,8 @@ fn collect_all_cycle_heads(
             .expect("cycle heads must be function ingredients");
 
         let provisional_status = function
-            .provisional_status(zalsa, current_head.key_index())
+            .memo(zalsa, current_head.key_index())
+            .map(|memo| memo.provisional_status())
             .expect("cycle head memo must have been created during the execution");
 
         if let ProvisionalStatus::Poisoned {
