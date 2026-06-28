@@ -35,17 +35,17 @@ pub type FetchCycleResult<'db, C> = &'db Memo<'db, C>;
 pub trait CycleStrategy<C: Configuration>: 'static {
     const RECOVERY_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
 
-    fn execute<'db>(context: ExecuteContext<'db, C>) -> ExecuteResult<'db, C>;
+    fn execute(context: ExecuteContext<'_, C>) -> ExecuteResult<'_, C>;
 
-    fn fetch_cold_cycle<'db>(context: FetchCycleContext<'db, C>) -> FetchCycleResult<'db, C>;
+    fn fetch_cold_cycle(context: FetchCycleContext<'_, C>) -> FetchCycleResult<'_, C>;
 }
 
 impl<C: Configuration> CycleStrategy<C> for Panic {
-    fn execute<'db>(context: ExecuteContext<'db, C>) -> ExecuteResult<'db, C> {
+    fn execute(context: ExecuteContext<'_, C>) -> ExecuteResult<'_, C> {
         IngredientImpl::execute_panic(context)
     }
 
-    fn fetch_cold_cycle<'db>(context: FetchCycleContext<'db, C>) -> FetchCycleResult<'db, C> {
+    fn fetch_cold_cycle(context: FetchCycleContext<'_, C>) -> FetchCycleResult<'_, C> {
         fetch_cold_cycle_panic(context.zalsa_local, context.database_key_index)
     }
 }
@@ -53,11 +53,11 @@ impl<C: Configuration> CycleStrategy<C> for Panic {
 impl<C: Configuration> CycleStrategy<C> for FallbackImmediate {
     const RECOVERY_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::FallbackImmediate;
 
-    fn execute<'db>(context: ExecuteContext<'db, C>) -> ExecuteResult<'db, C> {
+    fn execute(context: ExecuteContext<'_, C>) -> ExecuteResult<'_, C> {
         IngredientImpl::execute_cycle(context, CyclePolicy::FallbackImmediate)
     }
 
-    fn fetch_cold_cycle<'db>(context: FetchCycleContext<'db, C>) -> FetchCycleResult<'db, C> {
+    fn fetch_cold_cycle(context: FetchCycleContext<'_, C>) -> FetchCycleResult<'_, C> {
         fetch_cold_cycle_recoverable(context)
     }
 }
@@ -65,18 +65,18 @@ impl<C: Configuration> CycleStrategy<C> for FallbackImmediate {
 impl<C: Configuration> CycleStrategy<C> for Fixpoint {
     const RECOVERY_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Fixpoint;
 
-    fn execute<'db>(context: ExecuteContext<'db, C>) -> ExecuteResult<'db, C> {
+    fn execute(context: ExecuteContext<'_, C>) -> ExecuteResult<'_, C> {
         IngredientImpl::execute_cycle(context, CyclePolicy::Fixpoint)
     }
 
-    fn fetch_cold_cycle<'db>(context: FetchCycleContext<'db, C>) -> FetchCycleResult<'db, C> {
+    fn fetch_cold_cycle(context: FetchCycleContext<'_, C>) -> FetchCycleResult<'_, C> {
         fetch_cold_cycle_recoverable(context)
     }
 }
 
-fn fetch_cold_cycle_recoverable<'db, C: Configuration>(
-    context: FetchCycleContext<'db, C>,
-) -> FetchCycleResult<'db, C> {
+fn fetch_cold_cycle_recoverable<C: Configuration>(
+    context: FetchCycleContext<'_, C>,
+) -> FetchCycleResult<'_, C> {
     let mut state = CycleStateImpl::new(
         context.ingredient,
         context.db,
