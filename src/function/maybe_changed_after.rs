@@ -662,7 +662,10 @@ fn validate_provisional(
     for cycle_head in cycle_heads {
         let Some(provisional_status) = zalsa
             .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-            .provisional_status(zalsa, cycle_head.database_key_index.key_index())
+            .as_function()
+            .and_then(|function| {
+                function.provisional_status(zalsa, cycle_head.database_key_index.key_index())
+            })
         else {
             return false;
         };

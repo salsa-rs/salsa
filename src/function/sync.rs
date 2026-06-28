@@ -391,13 +391,16 @@ impl<'me> ClaimGuard<'me> {
     #[cold]
     #[inline(never)]
     pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) -> bool {
-        let owner_ingredient = self.zalsa.lookup_ingredient(new_owner.ingredient_index());
-
         // Get the owning thread of `new_owner`.
         // The thread id is guaranteed to not be stale because `new_owner` must be blocked on `self_key`
         // or `transfer_lock` will panic (at least in debug builds).
-        let Some(new_owner_thread_id) =
-            owner_ingredient.mark_as_transfer_target(new_owner.key_index())
+        let Some(new_owner_thread_id) = self
+            .zalsa
+            .lookup_ingredient(new_owner.ingredient_index())
+            .as_function()
+            .expect("lock owners must be function ingredients")
+            .sync_table()
+            .mark_as_transfer_target(new_owner.key_index())
         else {
             self.release(
                 self.sync_table
