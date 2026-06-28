@@ -27,6 +27,8 @@ use crate::{Cycle, Id, Revision};
 #[cfg(feature = "accumulator")]
 mod accumulated;
 mod backdate;
+#[doc(hidden)]
+pub mod cycle_strategy;
 mod delete;
 mod diff_outputs;
 mod eviction;
@@ -49,7 +51,7 @@ pub type Memo<C> = memo::Memo<C>;
 /// after erasing `'db` and to use after rebranding it with a later database
 /// lifetime. This is guaranteed when the output implements [`crate::SalsaValue`]
 /// or when it is the same `'static` type for every `'db`.
-pub unsafe trait Configuration: Any {
+pub unsafe trait Configuration: Any + Sized {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
     const PERSIST: bool;
@@ -73,7 +75,7 @@ pub unsafe trait Configuration: Any {
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
-    const CYCLE_STRATEGY: CycleRecoveryStrategy;
+    type CycleStrategy: cycle_strategy::CycleStrategy<Self>;
 
     /// Invokes after a new result `new_value` has been computed for which an older memoized value
     /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
@@ -412,7 +414,7 @@ where
             self,
             zalsa,
             self.database_key_index(id),
-            C::CYCLE_STRATEGY,
+            cycle_strategy::recovery_strategy::<C>(),
             flattened_input_outputs,
             seen,
         );

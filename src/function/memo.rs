@@ -10,7 +10,7 @@ use crate::function::{ClaimResult, Configuration, IngredientImpl, Reentrancy};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
-use crate::table::memo::{DummyMemo, MemoTableWithTypesMut, ToDynMemo};
+use crate::table::memo::{DummyMemo, MemoEntryType, MemoTableWithTypesMut, ToDynMemo};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
@@ -307,10 +307,26 @@ impl<C: Configuration> Memo<C> {
 
     pub(super) fn value(&self) -> Option<&C::Output<'_>> {
         self.value.as_ref().map(|value| {
-            // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
-            // bounded by the borrow of this memo.
+            // SAFETY: Guaranteed by Configuration; the restored lifetime is bounded by the
+            // borrow of this memo.
             unsafe { std::mem::transmute::<&C::Output<'static>, &C::Output<'_>>(value) }
         })
+    }
+
+    /// Returns a type-erased handle to this memo.
+    #[inline]
+    pub(super) fn erase(&self) -> ErasedMemo<'_> {
+        let data = NonNull::from(self).cast::<DummyMemo>();
+
+        // SAFETY: `data` retains the provenance of this complete memo allocation and remains
+        // valid for the lifetime of the shared borrow. Both metadata values describe `C`.
+        unsafe {
+            ErasedMemo::from_raw_parts(
+                data,
+                MemoEntryType::to_dyn_fn::<Memo<C>>(),
+                TypeId::of::<Memo<C>>(),
+            )
+        }
     }
 
     /// Returns `true` if this memo should be serialized.
@@ -564,7 +580,6 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
 
 #[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
 mod _memory_usage {
-    use crate::cycle::CycleRecoveryStrategy;
     use crate::ingredient::Location;
     use crate::plumbing::{self, IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
     use crate::table::memo::MemoTableWithTypes;
@@ -619,13 +634,13 @@ mod _memory_usage {
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
         const PERSIST: bool = false;
-        const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
 
         type DbView = dyn Database;
         type SalsaStruct<'db> = DummyStruct;
         type Input<'db> = ();
         type Output<'db> = NonZeroUsize;
         type Eviction = crate::function::eviction::NoopEviction;
+        type CycleStrategy = crate::function::cycle_strategy::Panic;
 
         fn values_equal<'db>(_: &Self::Output<'db>, _: &Self::Output<'db>) -> bool {
             unimplemented!()
