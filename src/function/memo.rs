@@ -12,10 +12,34 @@ use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
-use crate::table::memo::{DummyMemo, MemoTableWithTypesMut, ToDynMemo};
+use crate::table::memo::{DummyMemo, MemoTableWithTypes, MemoTableWithTypesMut, ToDynMemo};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
+
+/// A function memo table whose allocations remain valid for `'db`.
+///
+/// The private field ensures that this type can only be constructed by
+/// [`IngredientImpl::memo_table_for`], which ties `'db` to a shared borrow of the function
+/// ingredient and its memo-retention invariant.
+pub(super) struct FunctionMemoTable<'db> {
+    table: MemoTableWithTypes<'db>,
+}
+
+impl<'db> FunctionMemoTable<'db> {
+    /// Loads an erased memo that remains valid for `'db`.
+    #[inline]
+    pub(super) fn get_erased(
+        self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<ErasedMemo<'db>> {
+        // SAFETY: `FunctionMemoTable` can only be created while holding a shared borrow of the
+        // function ingredient for `'db`. The ingredient's memo-retention invariant guarantees
+        // that every allocation loaded from this table remains valid for that borrow, even if its
+        // entry is replaced.
+        unsafe { self.table.get_erased(memo_ingredient_index) }
+    }
+}
 
 impl<C: Configuration> IngredientImpl<C> {
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
@@ -55,6 +79,17 @@ impl<C: Configuration> IngredientImpl<C> {
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
+    }
+
+    /// Returns this function ingredient's memo table with its allocation-lifetime guarantee.
+    pub(super) fn memo_table_for<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        id: Id,
+    ) -> FunctionMemoTable<'db> {
+        FunctionMemoTable {
+            table: zalsa.memo_table_for::<C::SalsaStruct<'_>>(id),
+        }
     }
 
     /// Evicts the existing memo for the given key, replacing it
