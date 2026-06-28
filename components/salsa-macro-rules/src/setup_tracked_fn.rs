@@ -320,7 +320,7 @@ macro_rules! setup_tracked_fn {
 
                 type Eviction = $Eviction;
 
-                const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
+                type CycleStrategy = $zalsa::function::cycle_strategy::$cycle_recovery_strategy;
 
                 $($values_equal)+
 

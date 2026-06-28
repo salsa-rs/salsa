@@ -1,6 +1,7 @@
-use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
+use crate::cycle::IterationStamp;
+use crate::function::cycle_strategy::{CycleStrategy, FetchCycleContext};
 use crate::function::eviction::EvictionPolicy;
-use crate::function::execute::{QueryState, QueryStateImpl};
+use crate::function::execute::CycleState;
 use crate::function::memo::{ErasedMemo, Memo};
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
@@ -143,7 +144,7 @@ where
                 && old_memo.header.verify_memo(
                     db.into(),
                     &claim_guard,
-                    C::CYCLE_STRATEGY,
+                    crate::function::cycle_strategy::recovery_strategy::<C>(),
                     #[cfg(feature = "detailed-trace")]
                     true,
                 )
@@ -158,7 +159,6 @@ where
     }
 
     #[cold]
-    #[inline(never)]
     fn fetch_cold_cycle<'db>(
         &'db self,
         db: &'db C::DbView,
@@ -167,24 +167,23 @@ where
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db Memo<'db, C> {
-        match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Panic => fetch_cold_cycle_panic(zalsa_local, database_key_index),
-            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                let mut state = QueryStateImpl::new(self, db);
-                let memo = fetch_cold_cycle_recoverable_erased(
-                    &mut state,
-                    zalsa,
-                    database_key_index,
-                    memo_ingredient_index,
-                );
-                memo.downcast::<C>()
-            }
-        }
+        <C::CycleStrategy as CycleStrategy<C>>::fetch_cold_cycle(FetchCycleContext {
+            ingredient: self,
+            db,
+            zalsa,
+            zalsa_local,
+            database_key_index,
+            memo_ingredient_index,
+        })
+        .0
     }
 }
 
 #[cold]
-fn fetch_cold_cycle_panic(zalsa_local: &ZalsaLocal, database_key_index: DatabaseKeyIndex) -> ! {
+pub(super) fn fetch_cold_cycle_panic(
+    zalsa_local: &ZalsaLocal,
+    database_key_index: DatabaseKeyIndex,
+) -> ! {
     // SAFETY: We do not access the query stack reentrantly.
     unsafe {
         zalsa_local.with_query_stack_unchecked(|stack| {
@@ -198,8 +197,8 @@ fn fetch_cold_cycle_panic(zalsa_local: &ZalsaLocal, database_key_index: Database
 }
 
 #[cold]
-fn fetch_cold_cycle_recoverable_erased<'db>(
-    state: &mut dyn QueryState<'db>,
+pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
+    state: &mut dyn CycleState<'db>,
     zalsa: &'db Zalsa,
     database_key_index: DatabaseKeyIndex,
     memo_ingredient_index: MemoIngredientIndex,
@@ -209,7 +208,7 @@ fn fetch_cold_cycle_recoverable_erased<'db>(
     let cancellation_count = zalsa.runtime().cancellation_count();
     // Don't validate provisional memos here: an existing value should be reused.
     let current_memo = state
-        .get_memo(zalsa, id, memo_ingredient_index)
+        .provisional_memo(zalsa, id, memo_ingredient_index)
         .filter(|memo| {
             let header = memo.header();
             header.verified_at.load() == zalsa.current_revision()
@@ -249,5 +248,5 @@ fn fetch_cold_cycle_recoverable_erased<'db>(
         .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
     let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
     state.use_fallback(zalsa, id);
-    state.insert_memo(zalsa, id, revisions, memo_ingredient_index)
+    state.insert_provisional_memo(zalsa, id, revisions, memo_ingredient_index)
 }

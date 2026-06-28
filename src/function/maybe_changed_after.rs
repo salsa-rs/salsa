@@ -134,6 +134,7 @@ where
         }
     }
 
+    #[inline]
     fn maybe_changed_after_cold(
         &self,
         zalsa: &Zalsa,
@@ -153,6 +154,7 @@ where
         }
 
         #[allow(clippy::too_many_arguments)]
+        #[inline(never)]
         fn inner<'db>(
             sync_table: &'db SyncTable,
             zalsa: &'db Zalsa,
@@ -234,7 +236,7 @@ where
             database_key_index,
             revision,
             memo_ingredient_index,
-            C::CYCLE_STRATEGY,
+            crate::function::cycle_strategy::recovery_strategy::<C>(),
         ) {
             ColdResult::Retry => None,
             ColdResult::Verified(result) => Some(result),
