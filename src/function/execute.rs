@@ -5,7 +5,9 @@ use crate::cycle::{CycleHeads, IterationStamp};
 use crate::function::cycle_strategy::{CycleStrategy, ExecuteContext};
 use crate::function::memo::{ErasedMemo, Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
-use crate::function::{ClaimGuard, ClaimResult, Configuration, IngredientImpl, Reentrancy};
+use crate::function::{
+    ClaimGuard, ClaimResult, Configuration, FunctionIngredient, IngredientImpl, Reentrancy,
+};
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
@@ -97,6 +99,7 @@ impl<C: Configuration> IngredientImpl<C> {
         let mut state = CycleStateImpl::new(ingredient, db, memo_ingredient_index);
         let completed_query = execute_maybe_iterate_erased(
             &mut state,
+            ingredient,
             zalsa,
             opt_old_memo_erased,
             &mut claim_guard,
@@ -175,6 +178,7 @@ fn report_will_execute(claim_guard: &ClaimGuard<'_>) {
 
 fn execute_maybe_iterate_erased<'db>(
     state: &mut dyn CycleState<'db>,
+    ingredient: &'db dyn FunctionIngredient,
     zalsa: &'db Zalsa,
     opt_old_memo: Option<ErasedMemo<'db>>,
     claim_guard: &mut ClaimGuard<'db>,
@@ -256,7 +260,7 @@ fn execute_maybe_iterate_erased<'db>(
             // This is our first time around the loop; a provisional value must have been
             // inserted into the memo table when the cycle was hit, so let's pull our
             // initial provisional value from there.
-            let memo = state.provisional_memo(zalsa, id).unwrap_or_else(|| {
+            let memo = ingredient.memo(zalsa, id).unwrap_or_else(|| {
                 unreachable!(
                     "{database_key_index:#?} is a cycle head, \
                                         but no provisional memo found"
@@ -372,8 +376,6 @@ pub(super) trait CycleState<'db> {
         last_provisional_memo: ErasedMemo<'db>,
     ) -> bool;
 
-    fn provisional_memo(&self, zalsa: &'db Zalsa, id: Id) -> Option<ErasedMemo<'db>>;
-
     fn insert_provisional_memo(
         &mut self,
         zalsa: &'db Zalsa,
@@ -437,12 +439,6 @@ impl<'db, C: Configuration> CycleState<'db> for CycleStateImpl<'db, C> {
         let converged = C::values_equal(&value, last_provisional_value);
         self.value = Some(value);
         converged
-    }
-
-    fn provisional_memo(&self, zalsa: &'db Zalsa, id: Id) -> Option<ErasedMemo<'db>> {
-        self.ingredient
-            .memo_table_for(zalsa, id)
-            .get_erased(self.memo_ingredient_index)
     }
 
     fn insert_provisional_memo(

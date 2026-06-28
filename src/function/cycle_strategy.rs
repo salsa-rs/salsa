@@ -82,6 +82,11 @@ fn fetch_cold_cycle_recoverable<C: Configuration>(
         context.db,
         context.memo_ingredient_index,
     );
-    fetch_cold_cycle_recoverable_erased(&mut state, context.zalsa, context.database_key_index)
-        .downcast::<C>()
+    fetch_cold_cycle_recoverable_erased(
+        &mut state,
+        context.ingredient,
+        context.zalsa,
+        context.database_key_index,
+    )
+    .downcast::<C>()
 }
