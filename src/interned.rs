@@ -259,11 +259,6 @@ struct ReusableSlot {
     new_id: Id,
 }
 
-/// Keeps `HashTable::insert_unique` and its rehashing logic independent of `C`.
-fn insert_unique(shard: &mut IngredientShard, hash: u64, id: Id, hasher: &dyn Fn(&Id) -> u64) {
-    shard.key_map.insert_unique(hash, id, hasher);
-}
-
 impl<C> Value<C>
 where
     C: Configuration,
@@ -442,7 +437,7 @@ where
 
         let found_value = Cell::new(None);
         // SAFETY: We hold the lock for the shard containing the value.
-        let eq = |id: &_| unsafe { Self::value_eq(zalsa, *id, &key, &found_value) };
+        let eq = |id: &_| unsafe { Self::value_eq(*id, &key, zalsa, &found_value) };
 
         // Attempt a fast-path lookup of already interned data.
         if let Some(&id) = shard.key_map.find(hash, eq) {
@@ -551,8 +546,7 @@ where
             .active_query()
             .map(|(_, stamp)| (stamp.durability, current_revision))
             // If there is no active query this durability does not actually matter.
-            // `last_interned_at` needs to be `Revision::MAX`, see the
-            // `intern_access_in_different_revision` test.
+            // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
             .unwrap_or((Durability::MAX, Revision::max()));
 
         // Assemble and hash the replacement before mutating the existing slot. Both operations
@@ -579,8 +573,8 @@ where
         // currently performs any rehashing before inserting, so a panic in user hashing
         // leaves the old value reachable. Revisit this assumption when updating hashbrown.
         // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
-        let hasher = |id: &_| unsafe { self.value_hash(zalsa, *id) };
-        insert_unique(shard, hash, slot.new_id, &hasher);
+        let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
+        insert_unique_erased(shard, hash, slot.new_id, &hasher);
 
         // Remove the value from the LRU list.
         // SAFETY: We hold the shard lock and `value` is currently in the LRU.
@@ -670,8 +664,7 @@ where
             .active_query()
             .map(|(_, stamp)| (stamp.durability, current_revision))
             // If there is no active query this durability does not actually matter.
-            // `last_interned_at` needs to be `Revision::MAX`, see the
-            // `intern_access_in_different_revision` test.
+            // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
             .unwrap_or((Durability::MAX, Revision::max()));
 
         // Allocate the value slot.
@@ -693,7 +686,9 @@ where
         });
 
         // Insert the newly allocated ID.
-        self.insert_id(id, zalsa, shard, hash, value);
+        // SAFETY: We hold this ingredient's shard lock, and `value` is the live value identified by
+        // `id` that we just allocated in that shard.
+        unsafe { self.insert_id(id, zalsa, shard, hash, value) };
 
         let index = self.database_key_index(id);
 
@@ -723,7 +718,12 @@ where
     }
 
     /// Inserts a newly interned value ID into the LRU list and key map.
-    fn insert_id(
+    ///
+    /// # Safety
+    ///
+    /// `shard` must be a locked shard from this ingredient, and `value` must be the live, stable
+    /// `Value<C>` identified by `id` in that shard.
+    unsafe fn insert_id(
         &self,
         id: Id,
         zalsa: &Zalsa,
@@ -752,16 +752,17 @@ where
                 unsafe { shard.lru.push_front(UnsafeRef::from_raw(header)) };
             }
 
-            insert_unique(shard, hash, id, hasher);
+            insert_unique_erased(shard, hash, id, hasher);
 
             debug_assert_eq!(hash, hasher(&id));
         }
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let reusable = unsafe { (*value.header.shared.get()).is_reusable::<C>() };
+        let value_shared = unsafe { &mut *value.header.shared.get() };
+        let reusable = value_shared.is_reusable::<C>();
 
         // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
-        let hasher = |id: &_| unsafe { self.value_hash(zalsa, *id) };
+        let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
 
         // SAFETY: We hold the lock for `shard`; `value` is the live value identified by `id` in
         // that shard, `reusable` was read from the value, and `header_ptr` retains provenance for
@@ -918,7 +919,7 @@ where
     // # Safety
     //
     // The lock must be held for the shard containing the value.
-    unsafe fn value_hash<'db>(&'db self, zalsa: &'db Zalsa, id: Id) -> u64 {
+    unsafe fn value_hash<'db>(&'db self, id: Id, zalsa: &'db Zalsa) -> u64 {
         // This closure is only called if the table is resized. So while it's expensive
         // to lookup all values, it will only happen rarely.
         let value = zalsa.table().get::<Value<C>>(id);
@@ -933,9 +934,9 @@ where
     //
     // The lock must be held for the shard containing the value.
     unsafe fn value_eq<'db, Key>(
-        zalsa: &'db Zalsa,
         id: Id,
         key: &Key,
+        zalsa: &'db Zalsa,
         found_value: &Cell<Option<&'db Value<C>>>,
     ) -> bool
     where
@@ -1036,6 +1037,16 @@ where
             }
         })
     }
+}
+
+/// Inserts an ID while keeping the hasher and rehashing logic independent of `C`.
+fn insert_unique_erased(
+    shard: &mut IngredientShard,
+    hash: u64,
+    id: Id,
+    hasher: &dyn Fn(&Id) -> u64,
+) {
+    shard.key_map.insert_unique(hash, id, hasher);
 }
 
 /// An interned struct entry.
@@ -1882,7 +1893,10 @@ mod persistence {
                 );
 
                 // Insert the newly allocated ID into our ingredient.
-                ingredient.insert_id(id, zalsa, shard, hash, value);
+                //
+                // SAFETY: We hold this ingredient's shard lock, and `value` is the live value
+                // identified by `id` that we just allocated in that shard.
+                unsafe { ingredient.insert_id(id, zalsa, shard, hash, value) };
             }
 
             Ok(())
