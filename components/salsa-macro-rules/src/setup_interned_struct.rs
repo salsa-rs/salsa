@@ -204,9 +204,7 @@ macro_rules! setup_interned_struct {
                     // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
                     // ingredient created by our jar is the struct ingredient.
                     unsafe {
-                        CACHE.get_or_create(zalsa, || {
-                            zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
-                        })
+                        CACHE.get_or_create::<$zalsa_struct::JarImpl<$Configuration>, 0>(zalsa)
                     }
                 }
             }

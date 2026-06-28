@@ -3,10 +3,11 @@ pub use imp::IngredientCache;
 #[cfg(feature = "inventory")]
 mod imp {
     use crate::IngredientIndex;
-    use crate::plumbing::Ingredient;
+    use crate::plumbing::{Ingredient, Jar};
     use crate::sync::atomic::{self, AtomicU32, Ordering};
     use crate::zalsa::Zalsa;
 
+    use std::any::{TypeId, type_name};
     use std::marker::PhantomData;
 
     /// Caches an ingredient index.
@@ -50,24 +51,29 @@ mod imp {
         ///
         /// # Safety
         ///
-        /// The `IngredientIndex` returned by the closure must reference a valid ingredient of
-        /// type `I` in the provided zalsa database.
-        pub unsafe fn get_or_create<'db>(
+        /// Ingredient `OFFSET` in `J` must have type `I`.
+        pub unsafe fn get_or_create<'db, J: Jar, const OFFSET: usize>(
             &self,
             zalsa: &'db Zalsa,
-            load_index: impl Fn() -> IngredientIndex,
         ) -> &'db I {
             let mut ingredient_index = self.ingredient_index.load(Ordering::Acquire);
             if ingredient_index == Self::UNINITIALIZED {
-                ingredient_index = self.get_or_create_index_slow(load_index).as_u32();
+                ingredient_index = get_or_create_index_slow(
+                    &self.ingredient_index,
+                    zalsa,
+                    TypeId::of::<J>(),
+                    type_name::<J>(),
+                    OFFSET,
+                )
+                .as_u32();
             };
 
             // SAFETY: `ingredient_index` is initialized from a valid `IngredientIndex`.
             let ingredient_index = unsafe { IngredientIndex::new_unchecked(ingredient_index) };
 
             // SAFETY: There are a two cases here:
-            // - The `create_index` closure was called due to the data being uncached. In this
-            //   case, the caller guarantees the index is in-bounds and has the correct type.
+            // - The jar was looked up because the data was uncached. In this case, the caller
+            //   guarantees the index is in-bounds and has the correct type.
             // - The index was cached. While the current database might not be the same database
             //   the ingredient was initially loaded from, the `inventory` feature is enabled, so
             //   ingredient indices are stable across databases. Thus the index is still in-bounds
@@ -78,22 +84,26 @@ mod imp {
                     .assert_type_unchecked()
             }
         }
+    }
 
-        #[cold]
-        #[inline(never)]
-        fn get_or_create_index_slow(
-            &self,
-            load_index: impl Fn() -> IngredientIndex,
-        ) -> IngredientIndex {
-            let ingredient_index = load_index();
+    #[cold]
+    #[inline(never)]
+    fn get_or_create_index_slow(
+        cached_index: &AtomicU32,
+        zalsa: &Zalsa,
+        jar_type_id: TypeId,
+        jar_type_name: &'static str,
+        ingredient_offset: usize,
+    ) -> IngredientIndex {
+        let ingredient_index = zalsa
+            .lookup_jar_by_type_id(jar_type_id, jar_type_name)
+            .at_offset(ingredient_offset);
 
-            // It doesn't matter if we overwrite any stores, as `create_index` should
-            // always return the same index when the `inventory` feature is enabled.
-            self.ingredient_index
-                .store(ingredient_index.as_u32(), Ordering::Release);
+        // It doesn't matter if we overwrite any stores, as the jar lookup should
+        // always return the same index when the `inventory` feature is enabled.
+        cached_index.store(ingredient_index.as_u32(), Ordering::Release);
 
-            ingredient_index
-        }
+        ingredient_index
     }
 }
 
@@ -101,12 +111,15 @@ mod imp {
 mod imp {
     use crate::IngredientIndex;
     use crate::nonce::Nonce;
-    use crate::plumbing::Ingredient;
+    use crate::plumbing::{Ingredient, Jar};
     use crate::sync::atomic::{AtomicU64, Ordering};
     use crate::zalsa::{StorageNonce, Zalsa};
 
+    use std::any::{TypeId, type_name};
     use std::marker::PhantomData;
     use std::mem;
+
+    const UNINITIALIZED: u64 = 0;
 
     /// Caches an ingredient index.
     ///
@@ -138,12 +151,10 @@ mod imp {
     where
         I: Ingredient,
     {
-        const UNINITIALIZED: u64 = 0;
-
         /// Create a new cache
         pub const fn new() -> Self {
             Self {
-                cached_data: AtomicU64::new(Self::UNINITIALIZED),
+                cached_data: AtomicU64::new(UNINITIALIZED),
                 phantom: PhantomData,
             }
         }
@@ -154,20 +165,18 @@ mod imp {
         ///
         /// # Safety
         ///
-        /// The `IngredientIndex` returned by the closure must reference a valid ingredient of
-        /// type `I` in the provided zalsa database.
+        /// Ingredient `OFFSET` in `J` must have type `I`.
         #[inline(always)]
-        pub unsafe fn get_or_create<'db>(
+        pub unsafe fn get_or_create<'db, J: Jar, const OFFSET: usize>(
             &self,
             zalsa: &'db Zalsa,
-            create_index: impl Fn() -> IngredientIndex,
         ) -> &'db I {
-            let index = self.get_or_create_index(zalsa, create_index);
+            let index = self.get_or_create_index::<J, OFFSET>(zalsa);
 
             // SAFETY: There are a two cases here:
-            // - The `create_index` closure was called due to the data being uncached for the
-            //   provided database. In this case, the caller guarantees the index is in-bounds
-            //   and has the correct type.
+            // - The jar was looked up because the data was uncached for the provided database.
+            //   In this case, the caller guarantees the index is in-bounds and has the correct
+            //   type.
             // - We verified the index was cached for the same database, by the nonce check.
             //   Thus the initial safety argument still applies.
             unsafe {
@@ -177,18 +186,23 @@ mod imp {
             }
         }
 
-        pub fn get_or_create_index(
+        fn get_or_create_index<J: Jar, const OFFSET: usize>(
             &self,
             zalsa: &Zalsa,
-            create_index: impl Fn() -> IngredientIndex,
         ) -> IngredientIndex {
             const _: () = assert!(
                 mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
             );
 
             let cached_data = self.cached_data.load(Ordering::Acquire);
-            if cached_data == Self::UNINITIALIZED {
-                return self.get_or_create_index_slow(zalsa, create_index);
+            if cached_data == UNINITIALIZED {
+                return get_or_create_index_slow(
+                    &self.cached_data,
+                    zalsa,
+                    TypeId::of::<J>(),
+                    type_name::<J>(),
+                    OFFSET,
+                );
             };
 
             // Unpack our `u64` into the nonce and index.
@@ -202,36 +216,36 @@ mod imp {
             });
 
             // The data was cached for a different database, we have to ensure the ingredient was
-            // created in ours.
+            // created in ours. Keep this call statically dispatched because this is the hot path
+            // for programs that use multiple databases.
             if zalsa.nonce() != nonce {
-                return create_index();
+                return zalsa.lookup_jar_by_type::<J>().at_offset(OFFSET);
             }
 
             index
         }
+    }
 
-        #[cold]
-        #[inline(never)]
-        fn get_or_create_index_slow(
-            &self,
-            zalsa: &Zalsa,
-            create_index: impl Fn() -> IngredientIndex,
-        ) -> IngredientIndex {
-            let index = create_index();
-            let nonce = zalsa.nonce().into_u32().get() as u64;
-            let packed = (nonce << u32::BITS) | (index.as_u32() as u64);
-            debug_assert_ne!(packed, IngredientCache::<I>::UNINITIALIZED);
+    #[cold]
+    #[inline(never)]
+    fn get_or_create_index_slow(
+        cache: &AtomicU64,
+        zalsa: &Zalsa,
+        jar_type_id: TypeId,
+        jar_type_name: &'static str,
+        ingredient_offset: usize,
+    ) -> IngredientIndex {
+        let index = zalsa
+            .lookup_jar_by_type_id(jar_type_id, jar_type_name)
+            .at_offset(ingredient_offset);
+        let nonce = zalsa.nonce().into_u32().get() as u64;
+        let packed = (nonce << u32::BITS) | (index.as_u32() as u64);
+        debug_assert_ne!(packed, UNINITIALIZED);
 
-            // Discard the result, whether we won over the cache or not doesn't matter.
-            _ = self.cached_data.compare_exchange(
-                IngredientCache::<I>::UNINITIALIZED,
-                packed,
-                Ordering::Release,
-                Ordering::Relaxed,
-            );
+        // Discard the result, whether we won over the cache or not doesn't matter.
+        _ = cache.compare_exchange(UNINITIALIZED, packed, Ordering::Release, Ordering::Relaxed);
 
-            // Use our locally computed index regardless of which one was cached.
-            index
-        }
+        // Use our locally computed index regardless of which one was cached.
+        index
     }
 }

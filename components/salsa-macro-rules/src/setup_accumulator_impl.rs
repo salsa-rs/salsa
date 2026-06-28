@@ -36,11 +36,7 @@ macro_rules! setup_accumulator_impl {
 
                 // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
                 // ingredient created by our jar is the struct ingredient.
-                unsafe {
-                    $CACHE.get_or_create(zalsa, || {
-                        zalsa.lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
-                    })
-                }
+                unsafe { $CACHE.get_or_create::<$zalsa_struct::JarImpl<$Struct>, 0>(zalsa) }
             }
 
             impl $zalsa::Accumulator for $Struct {
