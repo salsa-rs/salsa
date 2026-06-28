@@ -511,9 +511,9 @@ where
         // Fill up the table for the first few revisions without attempting garbage collection.
         if !self.revision_queue.is_primed() {
             return self.intern_id_cold(
+                key,
                 zalsa,
                 zalsa_local,
-                key,
                 assemble,
                 shard,
                 shard_index,
@@ -528,9 +528,9 @@ where
         else {
             // If we could not find a stale slot, we are forced to allocate a new one.
             return self.intern_id_cold(
+                key,
                 zalsa,
                 zalsa_local,
-                key,
                 assemble,
                 shard,
                 shard_index,
@@ -645,9 +645,9 @@ where
     #[allow(clippy::too_many_arguments)]
     fn intern_id_cold<'db, Key>(
         &'db self,
+        key: Key,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
-        key: Key,
         assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
         shard: &mut IngredientShard,
         shard_index: usize,
@@ -802,10 +802,15 @@ where
             while let Some(header) = cursor.as_cursor().clone_pointer() {
                 let header = UnsafeRef::into_raw(header);
 
-                // SAFETY: Guaranteed by the caller.
+                // SAFETY: The caller guarantees that `header` points to a live value in this shard
+                // and that we hold the shard lock, which grants exclusive access to `shared`.
                 let value_shared = unsafe { &mut *(*header).shared.get() };
 
-                // The list is sorted by LRU, so if the tail is not stale, no slot is stale.
+                // The value must not have been read in the current revision to be collected
+                // soundly, but we also do not want to collect values that have been read recently.
+                //
+                // Note that the list is sorted by LRU, so if the tail of the list is not stale, we
+                // will not find any stale slots.
                 if !revision_queue.is_stale(value_shared.last_interned_at) {
                     return None;
                 }
@@ -814,6 +819,10 @@ where
                 debug_assert!({ value_shared.last_interned_at } < current_revision);
 
                 let old_id = value_shared.id;
+
+                // Increment the generation of the ID, as if we allocated a new slot.
+                //
+                // If the ID is at its maximum generation, we are forced to leak the slot.
                 if let Some(new_id) = old_id.next_generation() {
                     return Some(ReusableSlot {
                         header,
