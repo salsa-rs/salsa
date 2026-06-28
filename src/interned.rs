@@ -125,15 +125,16 @@ impl Default for IngredientShard {
     }
 }
 
-// SAFETY: `LinkedListLink` is `!Sync`, however, the linked list is only accessed through the
-// ingredient lock, and values are only ever linked to a single list on the ingredient.
-unsafe impl<C: Configuration> Sync for Value<C> {}
+// SAFETY: `IngredientShard` is only accessed through its mutex. Its LRU contains pointers to live,
+// stable values from this ingredient, and those pointers and their links are accessed only while
+// holding that mutex.
+unsafe impl Send for IngredientShard {}
 
-// SAFETY: `LinkedListLink` and `shared` are only accessed while holding the ingredient shard
-// lock. `memos` can also be accessed without that lock through `Slot::memos`, but those accesses
-// are shared and `MemoTable` supports concurrent shared access internally. Mutable access to
-// `memos` requires exclusive access to the value.
-unsafe impl Sync for ValueHeader {}
+// SAFETY: `fields`, `header.link`, and `header.shared` are mutated only while holding the ingredient
+// shard lock. `fields` is read only while holding that lock or after validation in the current
+// revision. `header.memos` supports concurrent shared access, and is mutated only with exclusive
+// access or after stale-slot reuse guarantees no shared references remain.
+unsafe impl<C: Configuration> Sync for Value<C> {}
 
 intrusive_adapter!(ValueHeaderAdapter = UnsafeRef<ValueHeader>: ValueHeader { link => LinkedListLink });
 
@@ -179,9 +180,6 @@ struct ValueHeader {
     /// `key_map` shard containing the value ID.
     shared: UnsafeCell<ValueShared>,
 }
-
-#[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
-const _: [(); std::mem::size_of::<ValueHeader>()] = [(); std::mem::size_of::<[usize; 7]>()];
 
 /// Shared value data can only be read through the lock.
 #[repr(Rust, packed)] // Avoid padding around `durability` inside `ValueHeader`.
@@ -255,134 +253,15 @@ impl ValueShared {
     }
 }
 
-/// Clears the given memo table.
-///
-/// # Safety
-///
-/// `memo_table` must belong to the value identified by `id` in `ingredient_index` and must have
-/// been created with `memo_table_types`. The caller must have exclusive access to the table.
-unsafe fn clear_memos(
-    zalsa: &Zalsa,
-    ingredient_index: IngredientIndex,
-    memo_table_types: &MemoTableTypes,
-    memo_table: &mut MemoTable,
-    id: Id,
-) {
-    // SAFETY: The caller guarantees this is the correct types table.
-    let table = unsafe { memo_table_types.attach_memos_mut(memo_table) };
-
-    // `Database::salsa_event` is a user supplied callback which may panic
-    // in that case we need a drop guard to free the memo table
-    struct TableDropGuard<'a>(MemoTableWithTypesMut<'a>);
-
-    impl Drop for TableDropGuard<'_> {
-        fn drop(&mut self) {
-            // SAFETY: We have `&mut MemoTable`, so no more references to these memos exist and we are good
-            // to drop them.
-            unsafe { self.0.drop() };
-        }
-    }
-
-    let mut table_guard = TableDropGuard(table);
-
-    // SAFETY: We have `&mut MemoTable`, so no more references to these memos exist and we are good
-    // to drop them.
-    unsafe {
-        table_guard.0.take_memos(|memo_ingredient_index, memo| {
-            let ingredient_index =
-                zalsa.ingredient_index_for_memo(ingredient_index, memo_ingredient_index);
-
-            let executor = DatabaseKeyIndex::new(ingredient_index, id);
-
-            zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
-
-            memo.remove_outputs(zalsa, executor);
-        })
-    };
-
-    std::mem::forget(table_guard);
-
-    // Reset the table after having dropped any memos.
-    memo_table.reset();
-}
-
 struct ReusableSlot {
     header: *const ValueHeader,
     old_id: Id,
     new_id: Id,
 }
 
-/// Finds the least-recently-used stale slot whose generation can be incremented.
-///
-/// # Safety
-///
-/// The caller must hold `shard`'s lock, and every pointer in its LRU must refer to a live
-/// `ValueHeader` belonging to the shard.
-unsafe fn find_reusable_slot(
-    revision_queue: &RevisionQueue,
-    current_revision: Revision,
-    shard: &mut IngredientShard,
-) -> Option<ReusableSlot> {
-    let mut cursor = shard.lru.back_mut();
-
-    while let Some(header) = cursor.as_cursor().clone_pointer() {
-        let header = UnsafeRef::into_raw(header);
-
-        // SAFETY: Guaranteed by the caller.
-        let value_shared = unsafe { &mut *(*header).shared.get() };
-
-        // The list is sorted by LRU, so if the tail is not stale, no slot is stale.
-        if !revision_queue.is_stale(value_shared.last_interned_at) {
-            return None;
-        }
-
-        // We should never reuse a value that was accessed in the current revision.
-        debug_assert!({ value_shared.last_interned_at } < current_revision);
-
-        let old_id = value_shared.id;
-        if let Some(new_id) = old_id.next_generation() {
-            return Some(ReusableSlot {
-                header,
-                old_id,
-                new_id,
-            });
-        }
-
-        // This slot can never be reused. Remove it and retry with the previous element.
-        cursor.remove().unwrap();
-        cursor = shard.lru.back_mut();
-    }
-
-    None
-}
-
+/// Keeps `HashTable::insert_unique` and its rehashing logic independent of `C`.
 fn insert_unique(shard: &mut IngredientShard, hash: u64, id: Id, hasher: &dyn Fn(&Id) -> u64) {
     shard.key_map.insert_unique(hash, id, hasher);
-}
-
-/// Inserts a newly allocated value into the LRU and key map.
-///
-/// # Safety
-///
-/// The caller must hold `shard`'s lock. `header` must have been produced by `Value::header_ptr`
-/// for the live value identified by `id` in this shard, `reusable` must reflect whether that value
-/// is reusable, and `hasher` must hash values while that lock is held.
-unsafe fn insert_id(
-    id: Id,
-    shard: &mut IngredientShard,
-    hash: u64,
-    header: *const ValueHeader,
-    reusable: bool,
-    hasher: &dyn Fn(&Id) -> u64,
-) {
-    if reusable {
-        // SAFETY: Guaranteed by the caller, including full-value provenance.
-        unsafe { shard.lru.push_front(UnsafeRef::from_raw(header)) };
-    }
-
-    insert_unique(shard, hash, id, hasher);
-
-    debug_assert_eq!(hash, hasher(&id));
 }
 
 impl<C> Value<C>
@@ -648,9 +527,9 @@ where
         }
 
         // Otherwise, try to reuse a stale slot.
-        // SAFETY: We hold the shard lock and all LRU pointers refer to live values in this shard.
-        let Some(slot) =
-            (unsafe { find_reusable_slot(&self.revision_queue, current_revision, shard) })
+        // SAFETY: We hold the lock for this ingredient's shard, and `current_revision` is the
+        // database's current revision.
+        let Some((slot, value)) = (unsafe { self.find_reusable_slot(current_revision, shard) })
         else {
             // If we could not find a stale slot, we are forced to allocate a new one.
             return self.intern_id_cold(
@@ -663,11 +542,6 @@ where
                 hash,
             );
         };
-
-        // SAFETY: Each shard belongs to a single `IngredientImpl<C>`, and only `Value<C>`s from
-        // that ingredient are inserted into its LRU. The pointer retains complete-value
-        // provenance, and `Value<C>` uses the C representation with `header` as its first field.
-        let value = unsafe { &*slot.header.cast::<Value<C>>() };
 
         // SAFETY: We hold the lock for the shard containing the value.
         let value_shared = unsafe { &mut *value.header.shared.get() };
@@ -709,11 +583,8 @@ where
         insert_unique(shard, hash, slot.new_id, &hasher);
 
         // Remove the value from the LRU list.
-        let removed_header = UnsafeRef::into_raw(
-            // SAFETY: We hold the shard lock and `value` is currently in the LRU.
-            unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() }.unwrap(),
-        );
-        debug_assert!(std::ptr::eq(removed_header, &value.header));
+        // SAFETY: We hold the shard lock and `value` is currently in the LRU.
+        unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() };
 
         // Remove the previous value from the ID map.
         //
@@ -730,9 +601,8 @@ where
 
         // Replace the fields without dropping the previous value until the slot is consistent.
         //
-        // SAFETY: We hold the lock for the shard containing the value, and the
-        // value has not been interned in the current revision, so no references to
-        // it can exist.
+        // SAFETY: `find_reusable_slot` guarantees that the value is reusable and stale, so no
+        // references to its fields remain. We still hold the shard lock.
         let old_fields = unsafe { std::mem::replace(&mut *value.fields.get(), new_fields) };
 
         // Mark the slot as reused.
@@ -754,23 +624,14 @@ where
             };
         }
 
-        // SAFETY: We hold the lock for the shard containing the value, and the
-        // value has not been interned in the current revision, so no references to
-        // it can exist.
+        // SAFETY: `find_reusable_slot` guarantees that the value is reusable and stale, so no
+        // references to its memos remain. We still hold the shard lock.
         let memo_table = unsafe { &mut *value.header.memos.get() };
 
         // Free the memos associated with the previous interned value.
         //
         // SAFETY: The memo table belongs to a value allocated with these memo-table types.
-        unsafe {
-            clear_memos(
-                zalsa,
-                self.ingredient_index,
-                &self.memo_table_types,
-                memo_table,
-                slot.old_id,
-            )
-        };
+        unsafe { self.clear_memos(zalsa, memo_table, slot.old_id) };
 
         drop(old_fields);
 
@@ -831,16 +692,8 @@ where
             fields: UnsafeCell::new(unsafe { self.to_internal_data(assemble(id, key)) }),
         });
 
-        // SAFETY: We hold the lock for the shard containing the value.
-        let reusable = unsafe { (*value.header.shared.get()).is_reusable::<C>() };
-
         // Insert the newly allocated ID.
-        // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
-        let hasher = |id: &_| unsafe { self.value_hash(zalsa, *id) };
-        // SAFETY: We hold the lock for `shard`; `value` is the live value identified by `id` in
-        // that shard, `reusable` was read from the value, and `header_ptr` retains provenance for
-        // the complete value.
-        unsafe { insert_id(id, shard, hash, value.header_ptr(), reusable, &hasher) };
+        self.insert_id(id, zalsa, shard, hash, value);
 
         let index = self.database_key_index(id);
 
@@ -867,6 +720,197 @@ where
         });
 
         id
+    }
+
+    /// Inserts a newly interned value ID into the LRU list and key map.
+    fn insert_id(
+        &self,
+        id: Id,
+        zalsa: &Zalsa,
+        shard: &mut IngredientShard,
+        hash: u64,
+        value: &Value<C>,
+    ) {
+        /// Inserts a newly allocated value without depending on `C`.
+        ///
+        /// # Safety
+        ///
+        /// The caller must hold `shard`'s lock. `header` must have been produced by
+        /// `Value::header_ptr` for the live value identified by `id` in this shard, `reusable` must
+        /// reflect whether that value is reusable, and `hasher` must hash values while that lock is
+        /// held.
+        unsafe fn inner(
+            id: Id,
+            shard: &mut IngredientShard,
+            hash: u64,
+            header: *const ValueHeader,
+            reusable: bool,
+            hasher: &dyn Fn(&Id) -> u64,
+        ) {
+            if reusable {
+                // SAFETY: Guaranteed by the caller, including full-value provenance.
+                unsafe { shard.lru.push_front(UnsafeRef::from_raw(header)) };
+            }
+
+            insert_unique(shard, hash, id, hasher);
+
+            debug_assert_eq!(hash, hasher(&id));
+        }
+
+        // SAFETY: We hold the lock for the shard containing the value.
+        let reusable = unsafe { (*value.header.shared.get()).is_reusable::<C>() };
+
+        // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
+        let hasher = |id: &_| unsafe { self.value_hash(zalsa, *id) };
+
+        // SAFETY: We hold the lock for `shard`; `value` is the live value identified by `id` in
+        // that shard, `reusable` was read from the value, and `header_ptr` retains provenance for
+        // the complete value.
+        unsafe { inner(id, shard, hash, value.header_ptr(), reusable, &hasher) };
+    }
+
+    /// Finds a reusable slot and reconstructs its typed value.
+    ///
+    /// # Safety
+    ///
+    /// `shard` must be a locked shard from this ingredient, and `current_revision` must be the
+    /// database's current revision. Every LRU entry must have been inserted from a live `Value<C>`
+    /// allocated for this ingredient using `Value::header_ptr`, which retains full-allocation
+    /// provenance. Those allocations must remain stable for the ingredient's lifetime.
+    ///
+    /// The LRU contains only reusable values. Therefore, a slot returned as stale has no
+    /// outstanding references to its fields or memos and may be mutated while the lock is held.
+    unsafe fn find_reusable_slot(
+        &self,
+        current_revision: Revision,
+        shard: &mut IngredientShard,
+    ) -> Option<(ReusableSlot, &Value<C>)> {
+        /// Finds the least-recently-used stale slot whose generation can be incremented.
+        ///
+        /// # Safety
+        ///
+        /// The caller must hold `shard`'s lock, and every pointer in its LRU must refer to a live
+        /// `ValueHeader` belonging to the shard.
+        unsafe fn inner(
+            revision_queue: &RevisionQueue,
+            current_revision: Revision,
+            shard: &mut IngredientShard,
+        ) -> Option<ReusableSlot> {
+            let mut cursor = shard.lru.back_mut();
+
+            while let Some(header) = cursor.as_cursor().clone_pointer() {
+                let header = UnsafeRef::into_raw(header);
+
+                // SAFETY: Guaranteed by the caller.
+                let value_shared = unsafe { &mut *(*header).shared.get() };
+
+                // The list is sorted by LRU, so if the tail is not stale, no slot is stale.
+                if !revision_queue.is_stale(value_shared.last_interned_at) {
+                    return None;
+                }
+
+                // We should never reuse a value that was accessed in the current revision.
+                debug_assert!({ value_shared.last_interned_at } < current_revision);
+
+                let old_id = value_shared.id;
+                if let Some(new_id) = old_id.next_generation() {
+                    return Some(ReusableSlot {
+                        header,
+                        old_id,
+                        new_id,
+                    });
+                }
+
+                // This slot can never be reused. Remove it and retry with the previous element.
+                cursor.remove().unwrap();
+                cursor = shard.lru.back_mut();
+            }
+
+            None
+        }
+
+        // SAFETY: Guaranteed by the caller.
+        let slot = unsafe { inner(&self.revision_queue, current_revision, shard) }?;
+
+        // SAFETY: The caller guarantees that this is a shard from `self`. Its LRU contains only
+        // header pointers produced by `Value<C>::header_ptr` for stable values allocated by this
+        // ingredient. `Value<C>` has the C representation and `header` is statically asserted to
+        // be at offset zero.
+        let value = unsafe { &*slot.header.cast::<Value<C>>() };
+
+        Some((slot, value))
+    }
+
+    /// Clears the given memo table.
+    ///
+    /// # Safety
+    ///
+    /// `memo_table` must belong to the value identified by `id` in this ingredient. The caller
+    /// must have exclusive access to the table.
+    pub(crate) unsafe fn clear_memos(&self, zalsa: &Zalsa, memo_table: &mut MemoTable, id: Id) {
+        /// Clears the given memo table without depending on `C`.
+        ///
+        /// # Safety
+        ///
+        /// `memo_table` must belong to the value identified by `id` in `ingredient_index` and must
+        /// have been created with `memo_table_types`. The caller must have exclusive access to the
+        /// table.
+        unsafe fn inner(
+            zalsa: &Zalsa,
+            ingredient_index: IngredientIndex,
+            memo_table_types: &MemoTableTypes,
+            memo_table: &mut MemoTable,
+            id: Id,
+        ) {
+            // SAFETY: The caller guarantees this is the correct types table.
+            let table = unsafe { memo_table_types.attach_memos_mut(memo_table) };
+
+            // `Database::salsa_event` is a user supplied callback which may panic
+            // in that case we need a drop guard to free the memo table
+            struct TableDropGuard<'a>(MemoTableWithTypesMut<'a>);
+
+            impl Drop for TableDropGuard<'_> {
+                fn drop(&mut self) {
+                    // SAFETY: We have `&mut MemoTable`, so no more references to these memos exist and we are good
+                    // to drop them.
+                    unsafe { self.0.drop() };
+                }
+            }
+
+            let mut table_guard = TableDropGuard(table);
+
+            // SAFETY: We have `&mut MemoTable`, so no more references to these memos exist and we are good
+            // to drop them.
+            unsafe {
+                table_guard.0.take_memos(|memo_ingredient_index, memo| {
+                    let ingredient_index =
+                        zalsa.ingredient_index_for_memo(ingredient_index, memo_ingredient_index);
+
+                    let executor = DatabaseKeyIndex::new(ingredient_index, id);
+
+                    zalsa.event(&|| Event::new(EventKind::DidDiscard { key: executor }));
+
+                    memo.remove_outputs(zalsa, executor);
+                })
+            };
+
+            std::mem::forget(table_guard);
+
+            // Reset the table after having dropped any memos.
+            memo_table.reset();
+        }
+
+        // SAFETY: The caller guarantees the table belongs to this ingredient's value, so these are
+        // the correct ingredient index and memo-table types.
+        unsafe {
+            inner(
+                zalsa,
+                self.ingredient_index,
+                &self.memo_table_types,
+                memo_table,
+                id,
+            )
+        }
     }
 
     // Hashes the value by its fields.
@@ -975,9 +1019,9 @@ where
         // TODO: Grab all locks eagerly.
         zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
             let id = if should_lock {
-                let shard_index = value.header.shard as usize;
-                // SAFETY: `value.header.shard` is guaranteed to be in-bounds for `self.shards`.
-                let _shard = unsafe { self.shards.get_unchecked(shard_index) }.lock();
+                let _shard =
+                    // SAFETY: `value.header.shard` is guaranteed to be in-bounds for `self.shards`.
+                    unsafe { self.shards.get_unchecked(value.header.shard as usize) }.lock();
 
                 // SAFETY: We hold the lock for the shard containing the value.
                 unsafe { (*value.header.shared.get()).id }
@@ -1837,17 +1881,8 @@ mod persistence {
                     "values are serialized in allocation order"
                 );
 
-                // SAFETY: We hold the lock for the shard containing the value.
-                let reusable = unsafe { (*value.header.shared.get()).is_reusable::<C>() };
-
                 // Insert the newly allocated ID into our ingredient.
-                // SAFETY: We hold the lock for the shard containing every value passed to
-                // `hasher`.
-                let hasher = |id: &_| unsafe { ingredient.value_hash(zalsa, *id) };
-                // SAFETY: We hold the lock for `shard`; `value` is the live value identified by
-                // `id` in that shard, `reusable` was read from the value, and `header_ptr` retains
-                // provenance for the complete value.
-                unsafe { super::insert_id(id, shard, hash, value.header_ptr(), reusable, &hasher) };
+                ingredient.insert_id(id, zalsa, shard, hash, value);
             }
 
             Ok(())
@@ -1876,6 +1911,46 @@ mod persistence {
             C::deserialize(deserializer)
                 .map(DeserializeFields)
                 .map_err(de::Error::custom)
+        }
+    }
+}
+
+mod _static_assertions {
+    use std::mem;
+
+    #[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
+    use super::ValueHeader;
+    use super::{Configuration, Value};
+    use crate::{Id, plumbing};
+
+    const _: [(); 0] = [(); mem::offset_of!(Value<DummyConfiguration>, header)];
+
+    #[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
+    const _: [(); mem::size_of::<ValueHeader>()] = [(); mem::size_of::<[usize; 7]>()];
+
+    struct DummyConfiguration;
+
+    impl Configuration for DummyConfiguration {
+        const LOCATION: crate::ingredient::Location =
+            crate::ingredient::Location { file: "", line: 0 };
+        const DEBUG_NAME: &'static str = "";
+        const PERSIST: bool = false;
+
+        type Fields<'db> = ();
+        type Struct<'db> = Id;
+
+        fn serialize<S>(_: &Self::Fields<'_>, _: S) -> Result<S::Ok, S::Error>
+        where
+            S: plumbing::serde::Serializer,
+        {
+            unimplemented!()
+        }
+
+        fn deserialize<'de, D>(_: D) -> Result<Self::Fields<'static>, D::Error>
+        where
+            D: plumbing::serde::Deserializer<'de>,
+        {
+            unimplemented!()
         }
     }
 }
