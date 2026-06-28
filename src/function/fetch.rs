@@ -144,7 +144,7 @@ where
                 && old_memo.header.verify_memo(
                     db.into(),
                     &claim_guard,
-                    crate::function::cycle_strategy::recovery_strategy::<C>(),
+                    C::CYCLE_RECOVERY_STRATEGY,
                     #[cfg(feature = "detailed-trace")]
                     true,
                 )
@@ -175,11 +175,9 @@ where
             database_key_index,
             memo_ingredient_index,
         })
-        .0
     }
 }
 
-#[cold]
 pub(super) fn fetch_cold_cycle_panic(
     zalsa_local: &ZalsaLocal,
     database_key_index: DatabaseKeyIndex,
@@ -196,18 +194,16 @@ pub(super) fn fetch_cold_cycle_panic(
     }
 }
 
-#[cold]
 pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
     state: &mut dyn CycleState<'db>,
     zalsa: &'db Zalsa,
     database_key_index: DatabaseKeyIndex,
-    memo_ingredient_index: MemoIngredientIndex,
 ) -> ErasedMemo<'db> {
     let id = database_key_index.key_index();
 
     let cancellation_count = zalsa.runtime().cancellation_count();
     // Don't validate provisional memos here: an existing value should be reused.
-    let current_memo = state.provisional_memo(zalsa, id, memo_ingredient_index);
+    let current_memo = state.provisional_memo(zalsa, id);
 
     if let Some(memo) = current_memo {
         let header = memo.header();
@@ -261,11 +257,5 @@ pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
         .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
     let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
     state.use_fallback(zalsa, id);
-    state.insert_provisional_memo(
-        zalsa,
-        id,
-        zalsa.current_revision(),
-        revisions,
-        memo_ingredient_index,
-    )
+    state.insert_provisional_memo(zalsa, id, zalsa.current_revision(), revisions)
 }

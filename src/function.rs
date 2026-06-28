@@ -8,6 +8,7 @@ use std::ptr::NonNull;
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
+use self::cycle_strategy::CycleStrategy as _;
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
@@ -76,6 +77,8 @@ pub unsafe trait Configuration: Any + Sized {
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
     type CycleStrategy: cycle_strategy::CycleStrategy<Self>;
+
+    const CYCLE_RECOVERY_STRATEGY: CycleRecoveryStrategy = Self::CycleStrategy::RECOVERY_STRATEGY;
 
     /// Invokes after a new result `new_value` has been computed for which an older memoized value
     /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
@@ -414,7 +417,7 @@ where
             self,
             zalsa,
             self.database_key_index(id),
-            cycle_strategy::recovery_strategy::<C>(),
+            C::CYCLE_RECOVERY_STRATEGY,
             flattened_input_outputs,
             seen,
         );
