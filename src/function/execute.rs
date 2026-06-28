@@ -4,9 +4,8 @@ use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp};
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
-use crate::function::{ClaimGuard, Configuration, IngredientImpl};
+use crate::function::{ClaimGuard, ClaimResult, Configuration, IngredientImpl, Reentrancy};
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::WaitForResult;
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
@@ -590,11 +589,18 @@ fn outer_cycle(
     cycle_heads
         .iter_not_eq(current_key)
         .rfind(|head| {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
+            let function = zalsa
+                .lookup_ingredient(head.database_key_index.ingredient_index())
+                .as_function()
+                .expect("cycle heads must be function ingredients");
 
             matches!(
-                ingredient.wait_for(zalsa, head.database_key_index.key_index()),
-                WaitForResult::Cycle { inner: false }
+                function.sync_table().peek_claim(
+                    zalsa,
+                    head.database_key_index.key_index(),
+                    Reentrancy::Deny,
+                ),
+                ClaimResult::Cycle { inner: false }
             )
         })
         .map(|head| head.database_key_index)
@@ -641,10 +647,14 @@ fn collect_all_cycle_heads(
         let mut max_iteration = IterationStamp::default();
         let mut depends_on_self = false;
 
-        let ingredient = zalsa.lookup_ingredient(current_head.ingredient_index());
+        let function = zalsa
+            .lookup_ingredient(current_head.ingredient_index())
+            .as_function()
+            .expect("cycle heads must be function ingredients");
 
-        let provisional_status = ingredient
-            .provisional_status(zalsa, current_head.key_index())
+        let provisional_status = function
+            .memo(zalsa, current_head.key_index())
+            .map(|memo| memo.header().provisional_status())
             .expect("cycle head memo must have been created during the execution");
 
         // A query should only ever depend on other heads that are provisional.
@@ -794,9 +804,14 @@ fn try_complete_cycle_head(
     let converged = this_converged
         && cycle_heads.iter_not_eq(me).all(|head| {
             let database_key_index = head.database_key_index;
-            let ingredient = zalsa.lookup_ingredient(database_key_index.ingredient_index());
+            let function = zalsa
+                .lookup_ingredient(database_key_index.ingredient_index())
+                .as_function()
+                .expect("cycle heads must be function ingredients");
 
-            let converged = ingredient.cycle_converged(zalsa, database_key_index.key_index());
+            let converged = function
+                .memo(zalsa, database_key_index.key_index())
+                .is_none_or(|memo| memo.header().cycle_converged());
 
             if !converged {
                 tracing::debug!("inner cycle {database_key_index:?} has not converged",);
@@ -814,8 +829,13 @@ fn try_complete_cycle_head(
         // Set the nested cycles as verified. This is necessary because
         // `validate_provisional` doesn't follow cycle heads recursively (and the memos now depend on all cycle heads).
         for head in cycle_heads.iter_not_eq(me) {
-            let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-            ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
+            let function = zalsa
+                .lookup_ingredient(head.database_key_index.ingredient_index())
+                .as_function()
+                .expect("cycle heads must be function ingredients");
+            if let Some(memo) = function.memo(zalsa, head.database_key_index.key_index()) {
+                memo.header().finalize_cycle_head();
+            }
         }
 
         *completed_query.revisions.verified_final.get_mut() = true;
@@ -850,9 +870,14 @@ fn try_complete_cycle_head(
 
     // Update the iteration count of nested cycles.
     for head in cycle_heads.iter_not_eq(me) {
-        let ingredient = zalsa.lookup_ingredient(head.database_key_index.ingredient_index());
-
-        ingredient.set_cycle_iteration_count(zalsa, head.database_key_index.key_index(), iteration);
+        let function = zalsa
+            .lookup_ingredient(head.database_key_index.ingredient_index())
+            .as_function()
+            .expect("cycle heads must be function ingredients");
+        if let Some(memo) = function.memo(zalsa, head.database_key_index.key_index()) {
+            memo.header()
+                .set_cycle_iteration_count(head.database_key_index, iteration);
+        }
     }
 
     debug_assert!(completed_query.revisions.cycle_heads().is_empty());

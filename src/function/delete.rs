@@ -5,7 +5,7 @@ use crate::function::memo::Memo;
 
 /// Stores the list of memos that have been deleted so they can be freed
 /// once the next revision starts. See the comment on the field
-/// `deleted_entries` of [`FunctionIngredient`][] for more details.
+/// `deleted_entries` of [`IngredientImpl`](super::IngredientImpl) for more details.
 pub(super) struct DeletedEntries<C: Configuration> {
     memos: boxcar::Vec<SharedBox<Memo<'static, C>>>,
 }

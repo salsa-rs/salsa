@@ -7,8 +7,7 @@ use std::ptr::NonNull;
 use crate::cycle::{
     CycleHeads, CycleHeadsIterator, IterationStamp, ProvisionalStatus, empty_cycle_heads,
 };
-use crate::function::{Configuration, IngredientImpl};
-use crate::ingredient::WaitForResult;
+use crate::function::{ClaimResult, Configuration, IngredientImpl, Reentrancy};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
@@ -111,7 +110,7 @@ pub struct Memo<'db, C: Configuration> {
 /// shared access for `'db`, even after replacement. `to_dyn_fn` and `type_id` describe the same
 /// `C`.
 #[derive(Clone, Copy)]
-pub struct ErasedMemo<'db> {
+pub(crate) struct ErasedMemo<'db> {
     /// A pointer to the complete [`Memo`] allocation.
     data: NonNull<DummyMemo>,
 
@@ -556,15 +555,22 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
         let ingredient = self
             .zalsa
             .lookup_ingredient(head_database_key.ingredient_index());
+        let function = ingredient
+            .as_function()
+            .expect("cycle heads must be function ingredients");
 
-        match ingredient.wait_for(self.zalsa, head_key_index) {
-            WaitForResult::Cycle { .. } => {
+        match function
+            .sync_table()
+            .peek_claim(self.zalsa, head_key_index, Reentrancy::Deny)
+        {
+            ClaimResult::Cycle { .. } => {
                 // We hit a cycle blocking on the cycle head; this means this query actively
                 // participates in the cycle and some other query is blocked on this thread.
                 crate::tracing::trace!("Waiting for {head_database_key:?} results in a cycle");
 
-                let provisional_status = ingredient
-                    .provisional_status(self.zalsa, head_key_index)
+                let provisional_status = function
+                    .memo(self.zalsa, head_key_index)
+                    .map(|memo| memo.header().provisional_status())
                     .expect("cycle head memo to exist");
                 let (current_iteration, verified_at) = match provisional_status {
                     ProvisionalStatus::Provisional {
@@ -584,12 +590,12 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                     verified_at,
                 })
             }
-            WaitForResult::Running(running) => {
+            ClaimResult::Running(running) => {
                 crate::tracing::trace!("Ingredient {head_database_key:?} is running: {running:?}");
 
                 Some(TryClaimHeadsResult::Running)
             }
-            WaitForResult::Available => Some(TryClaimHeadsResult::Available),
+            ClaimResult::Claimed(()) => Some(TryClaimHeadsResult::Available),
         }
     }
 }
