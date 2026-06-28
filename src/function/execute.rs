@@ -38,7 +38,7 @@ impl<C: Configuration> IngredientImpl<C> {
         })
     }
 
-    pub(super) fn execute_panic<'db>(context: ExecuteContext<'db, C>) -> Option<&'db Memo<C>> {
+    pub(super) fn execute_panic(context: ExecuteContext<'_, C>) -> Option<&Memo<C>> {
         let ExecuteContext {
             ingredient,
             db,
@@ -72,10 +72,10 @@ impl<C: Configuration> IngredientImpl<C> {
         if claim_guard.drop() { None } else { Some(memo) }
     }
 
-    pub(super) fn execute_cycle<'db>(
-        context: ExecuteContext<'db, C>,
+    pub(super) fn execute_cycle(
+        context: ExecuteContext<'_, C>,
         policy: CyclePolicy,
-    ) -> Option<&'db Memo<C>> {
+    ) -> Option<&Memo<C>> {
         let ExecuteContext {
             ingredient,
             db,
@@ -888,7 +888,9 @@ fn complete_cycle_participant(
 ///
 /// Returns `Ok` if the cycle head has converged or if it is part of an outer cycle.
 /// Returns `Err` if the cycle head needs to keep iterating.
-#[allow(clippy::too_many_arguments)]
+// Both variants carry `CompletedQuery`; boxing only the error would add an allocation without
+// reducing the caller's stack requirements.
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
 fn try_complete_cycle_head(
     active_query: ActiveQueryGuard,
     claim_guard: &mut ClaimGuard,
