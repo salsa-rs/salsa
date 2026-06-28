@@ -223,14 +223,8 @@ where
             }
         }
 
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        let memo_slot = unsafe {
-            MemoSlot::new(
-                zalsa.memo_table_for::<C::SalsaStruct<'_>>(database_key_index.key_index()),
-                memo_ingredient_index,
-            )
-        };
+        let memo_slot =
+            self.memo_slot(zalsa, database_key_index.key_index(), memo_ingredient_index);
 
         match inner(
             &self.sync_table,
