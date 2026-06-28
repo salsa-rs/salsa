@@ -9,14 +9,16 @@ use crate::function::{ClaimGuard, ClaimResult, Configuration, IngredientImpl, Re
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
-use crate::tracked_struct::Identity;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryEdgeKind, QueryRevisions};
 use crate::{Cancelled, Cycle, tracing};
 use crate::{DatabaseKeyIndex, Event, EventKind, Id};
 
 impl<C: Configuration> IngredientImpl<C> {
-    /// Executes this query through the shared query lifecycle and restores its typed memo.
+    /// Executes the query function and stores a new memo with the result, backdated if possible.
+    ///
+    /// Returns `None` if this query is part of a larger cycle and blocked on a cycle head running
+    /// on another thread. The caller must refetch the potentially outdated memo in that case.
     pub(super) fn execute<'db>(
         &'db self,
         db: &'db C::DbView,
@@ -33,61 +35,16 @@ impl<C: Configuration> IngredientImpl<C> {
             opt_old_memo,
             memo_ingredient_index,
         })
-        .0
     }
 
-    pub(super) fn execute_cycle<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        mut claim_guard: ClaimGuard<'db>,
-        opt_old_memo: Option<&'db Memo<'db, C>>,
-        memo_ingredient_index: MemoIngredientIndex,
-        policy: CyclePolicy,
-    ) -> Option<&'db Memo<'db, C>> {
-        let database_key_index = claim_guard.database_key_index();
-        let zalsa = claim_guard.zalsa();
-        let id = database_key_index.key_index();
-
-        let _cancellation_guard = DisableLocalCancellationGuard::new(claim_guard.zalsa_local());
-        let _poison_guard = PoisonProvisionalIfPanicking {
-            ingredient: self,
-            zalsa,
-            id,
-            memo_ingredient_index,
-        };
-        let opt_old_memo_erased = opt_old_memo.map(Memo::erase);
-        let mut state = CycleStateImpl::new(self, db);
-        let completed_query = execute_maybe_iterate_erased(
-            &mut state,
-            zalsa,
-            opt_old_memo_erased,
-            &mut claim_guard,
-            memo_ingredient_index,
-            policy,
-        );
-        let value = state
-            .value
-            .take()
-            .expect("query execution must produce a value");
-        let memo = self.finish_memo(
-            zalsa,
-            database_key_index,
+    pub(super) fn execute_panic<'db>(context: ExecuteContext<'db, C>) -> Option<&'db Memo<'db, C>> {
+        let ExecuteContext {
+            ingredient,
+            db,
+            claim_guard,
             opt_old_memo,
-            value,
-            completed_query,
             memo_ingredient_index,
-        );
-
-        if claim_guard.drop() { None } else { Some(memo) }
-    }
-
-    pub(super) fn execute_panic<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        claim_guard: ClaimGuard<'db>,
-        opt_old_memo: Option<&'db Memo<'db, C>>,
-        memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
+        } = context;
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
         let id = database_key_index.key_index();
@@ -97,13 +54,63 @@ impl<C: Configuration> IngredientImpl<C> {
             old_memo.header.seed_active_query(zalsa, &active_query);
         }
         let new_value = C::execute(db, C::id_to_input(zalsa, id));
+
+        // Ordinary queries don't need a cycle iteration stamp. Keeping the default avoids
+        // allocating `QueryRevisionsExtra` after a revision-preserving cancellation.
         let completed_query = active_query.pop(IterationStamp::default());
 
-        let memo = self.finish_memo(
+        let memo = ingredient.finish_memo(
             zalsa,
             database_key_index,
             opt_old_memo,
             new_value,
+            completed_query,
+            memo_ingredient_index,
+        );
+
+        if claim_guard.drop() { None } else { Some(memo) }
+    }
+
+    pub(super) fn execute_cycle<'db>(
+        context: ExecuteContext<'db, C>,
+        policy: CyclePolicy,
+    ) -> Option<&'db Memo<'db, C>> {
+        let ExecuteContext {
+            ingredient,
+            db,
+            mut claim_guard,
+            opt_old_memo,
+            memo_ingredient_index,
+        } = context;
+        let database_key_index = claim_guard.database_key_index();
+        let zalsa = claim_guard.zalsa();
+        let id = database_key_index.key_index();
+
+        let _cancellation_guard = DisableLocalCancellationGuard::new(claim_guard.zalsa_local());
+        let _poison_guard = PoisonProvisionalIfPanicking {
+            ingredient,
+            zalsa,
+            id,
+            memo_ingredient_index,
+        };
+        let opt_old_memo_erased = opt_old_memo.map(Memo::erase);
+        let mut state = CycleStateImpl::new(ingredient, db, memo_ingredient_index);
+        let completed_query = execute_maybe_iterate_erased(
+            &mut state,
+            zalsa,
+            opt_old_memo_erased,
+            &mut claim_guard,
+            policy,
+        );
+        let value = state
+            .value
+            .take()
+            .expect("query execution must produce a value");
+        let memo = ingredient.finish_memo(
+            zalsa,
+            database_key_index,
+            opt_old_memo,
+            value,
             completed_query,
             memo_ingredient_index,
         );
@@ -171,20 +178,18 @@ fn execute_maybe_iterate_erased<'db>(
     zalsa: &'db Zalsa,
     opt_old_memo: Option<ErasedMemo<'db>>,
     claim_guard: &mut ClaimGuard<'db>,
-    memo_ingredient_index: MemoIngredientIndex,
     policy: CyclePolicy,
 ) -> CompletedQuery {
     claim_guard.set_release_mode(ReleaseMode::Default);
 
     let database_key_index = claim_guard.database_key_index();
-
     let id = database_key_index.key_index();
 
     // Our provisional value from the previous iteration, when doing fixpoint iteration.
     // This is different from `opt_old_memo` which might be from a different revision.
     let mut last_provisional_memo_opt = None;
 
-    let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
+    let mut last_stale_tracked_ids = Vec::new();
     let cancellation_count = zalsa.runtime().cancellation_count();
     let mut iteration = IterationStamp::initial(cancellation_count);
 
@@ -214,11 +219,9 @@ fn execute_maybe_iterate_erased<'db>(
         // if they aren't recreated when reaching the final iteration.
         active_query.seed_tracked_struct_ids(&last_stale_tracked_ids);
 
-        seed_query_from_old_memo(
-            zalsa,
-            &active_query,
-            last_provisional_memo_opt.or(opt_old_memo),
-        );
+        if let Some(old_memo) = last_provisional_memo_opt.or(opt_old_memo) {
+            old_memo.header().seed_active_query(zalsa, &active_query);
+        }
 
         state.execute_query(zalsa, id);
         let (mut active_query, cycle_heads, outer_cycle, cycle_iteration) =
@@ -253,22 +256,14 @@ fn execute_maybe_iterate_erased<'db>(
             // This is our first time around the loop; a provisional value must have been
             // inserted into the memo table when the cycle was hit, so let's pull our
             // initial provisional value from there.
-            let memo = state
-                .provisional_memo(zalsa, id, memo_ingredient_index)
-                .unwrap_or_else(|| {
-                    unreachable!(
-                        "{database_key_index:#?} is a cycle head, \
+            let memo = state.provisional_memo(zalsa, id).unwrap_or_else(|| {
+                unreachable!(
+                    "{database_key_index:#?} is a cycle head, \
                                         but no provisional memo found"
-                    )
-                });
+                )
+            });
 
-            debug_assert!(
-                !memo
-                    .header()
-                    .revisions
-                    .verified_final
-                    .load(std::sync::atomic::Ordering::Relaxed)
-            );
+            debug_assert!(memo.header().may_be_provisional());
             memo
         });
         crate::tracing::debug!(
@@ -306,12 +301,7 @@ fn execute_maybe_iterate_erased<'db>(
             }
         };
 
-        let new_memo = state.insert_provisional_memo(
-            zalsa,
-            id,
-            completed_query.revisions,
-            memo_ingredient_index,
-        );
+        let new_memo = state.insert_provisional_memo(zalsa, id, completed_query.revisions);
 
         last_provisional_memo_opt = Some(new_memo);
 
@@ -335,8 +325,9 @@ pub(super) enum CyclePolicy {
 impl CyclePolicy {
     /// Adjusts the query value before completing a non-head cycle participant.
     ///
-    /// Fallback recovery replaces the computed value with the fallback. Fixpoint recovery keeps
-    /// the computed value unchanged.
+    /// Fallback recovery replaces the computed value with the fallback so that results don't
+    /// depend on query call order. Fixpoint recovery keeps the computed value unchanged. See
+    /// <https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285>.
     fn complete_participant<'db>(self, state: &mut dyn CycleState<'db>, zalsa: &'db Zalsa, id: Id) {
         if matches!(self, Self::FallbackImmediate) {
             state.use_fallback(zalsa, id);
@@ -381,33 +372,33 @@ pub(super) trait CycleState<'db> {
         last_provisional_memo: ErasedMemo<'db>,
     ) -> bool;
 
-    fn provisional_memo(
-        &self,
-        zalsa: &'db Zalsa,
-        id: Id,
-        memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<ErasedMemo<'db>>;
+    fn provisional_memo(&self, zalsa: &'db Zalsa, id: Id) -> Option<ErasedMemo<'db>>;
 
     fn insert_provisional_memo(
         &mut self,
         zalsa: &'db Zalsa,
         id: Id,
         revisions: QueryRevisions,
-        memo_ingredient_index: MemoIngredientIndex,
     ) -> ErasedMemo<'db>;
 }
 
 pub(super) struct CycleStateImpl<'db, C: Configuration> {
     ingredient: &'db IngredientImpl<C>,
     db: &'db C::DbView,
+    memo_ingredient_index: MemoIngredientIndex,
     value: Option<C::Output<'db>>,
 }
 
 impl<'db, C: Configuration> CycleStateImpl<'db, C> {
-    pub(super) fn new(ingredient: &'db IngredientImpl<C>, db: &'db C::DbView) -> Self {
+    pub(super) fn new(
+        ingredient: &'db IngredientImpl<C>,
+        db: &'db C::DbView,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Self {
         Self {
             ingredient,
             db,
+            memo_ingredient_index,
             value: None,
         }
     }
@@ -448,15 +439,10 @@ impl<'db, C: Configuration> CycleState<'db> for CycleStateImpl<'db, C> {
         converged
     }
 
-    fn provisional_memo(
-        &self,
-        zalsa: &'db Zalsa,
-        id: Id,
-        memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<ErasedMemo<'db>> {
+    fn provisional_memo(&self, zalsa: &'db Zalsa, id: Id) -> Option<ErasedMemo<'db>> {
         self.ingredient
             .memo_table_for(zalsa, id)
-            .get_erased(memo_ingredient_index)
+            .get_erased(self.memo_ingredient_index)
     }
 
     fn insert_provisional_memo(
@@ -464,7 +450,6 @@ impl<'db, C: Configuration> CycleState<'db> for CycleStateImpl<'db, C> {
         zalsa: &'db Zalsa,
         id: Id,
         revisions: QueryRevisions,
-        memo_ingredient_index: MemoIngredientIndex,
     ) -> ErasedMemo<'db> {
         let value = self
             .value
@@ -475,22 +460,10 @@ impl<'db, C: Configuration> CycleState<'db> for CycleStateImpl<'db, C> {
                 zalsa,
                 id,
                 Memo::new(Some(value), zalsa.current_revision(), revisions),
-                memo_ingredient_index,
+                self.memo_ingredient_index,
             )
             .erase()
     }
-}
-
-fn seed_query_from_old_memo(
-    zalsa: &Zalsa,
-    active_query: &ActiveQueryGuard<'_>,
-    old_memo: Option<ErasedMemo<'_>>,
-) {
-    let Some(old_memo) = old_memo else {
-        return;
-    };
-
-    old_memo.header().seed_active_query(zalsa, active_query);
 }
 
 struct PreviousIteration {
