@@ -9,13 +9,9 @@ use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
 
-/// Coerces an erased thin pointer to a `dyn Memo` pointer with the registered concrete type's
-/// vtable.
+/// Adds the registered concrete memo type's vtable without dereferencing the pointer.
 ///
-/// `MemoEntryType::of::<M>` creates this function together with the `TypeId` for `M`. The function
-/// does not dereference its argument. A caller that dereferences the result must first guarantee
-/// that the argument retains the provenance of a complete, live, aligned `M` allocation for the
-/// same `M` used to create the function.
+/// Dereferencing the result requires a live, aligned allocation of the same concrete type.
 pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
 
 /// The "memo table" stores the memoized results of tracked function calls.
@@ -52,7 +48,6 @@ impl MemoTable {
 }
 
 pub trait Memo: Any + Send + Sync {
-    /// Returns whether this memo contains a value.
     fn has_value(&self) -> bool;
 
     /// Removes the outputs that were created when this query ran. This includes
@@ -200,11 +195,9 @@ impl Drop for LazyMemoEntries {
     }
 }
 
-/// Runtime type information and pointer operations for one memo-table slot.
+/// Type metadata for one memo-table slot.
 ///
-/// All fields describe the same concrete memo type `M` and are initialized together by
-/// [`MemoEntryType::of`]. A `MemoEntryType` may only be paired with a slot containing `M`; insertion
-/// checks that invariant before publishing a pointer.
+/// Both fields describe the slot's concrete memo type, and the slot stores only that type.
 #[derive(Clone, Copy, Debug)]
 pub struct MemoEntryType {
     /// The `type_id` of the erased memo type `M`
@@ -231,8 +224,7 @@ impl MemoEntryType {
     ///
     /// # Safety
     ///
-    /// `memo` must point to a live, aligned `M` allocation and must have been erased without
-    /// changing its address or provenance.
+    /// `memo` must have been produced by [`MemoEntryType::to_dummy`] from a live, aligned `M`.
     unsafe fn from_dummy<M: Memo>(memo: NonNull<DummyMemo>) -> NonNull<M> {
         memo.cast()
     }
@@ -247,9 +239,7 @@ impl MemoEntryType {
     }
 }
 
-/// A pointee marker for thin memo pointers whose concrete type is stored in [`MemoEntryType`].
-///
-/// The table never constructs a `DummyMemo` value or dereferences a pointer as `DummyMemo`.
+/// Pointee marker for erased memo pointers; never instantiated or dereferenced.
 #[derive(Debug)]
 pub(crate) struct DummyMemo;
 
@@ -378,17 +368,12 @@ impl<'a> MemoTableWithTypes<'a> {
             .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
     }
 
-    /// Returns a type-erased view of the memo at the given index, if one has been inserted.
+    /// Returns a type-erased view with the slot's registered type metadata.
     ///
     /// # Safety
     ///
-    /// Every allocation that the acquire load can observe in the table entry must remain
-    /// allocated, immovable, and valid for shared access for all of `'a`, even if another thread
-    /// replaces the entry. `MemoTable` does not itself guarantee the lifetime of an allocation
-    /// after replacement.
-    ///
-    /// If this function returns `Some`, the returned handle retains the complete allocation
-    /// pointer's provenance and uses the type metadata registered for this slot.
+    /// Any allocation observed in the table entry must remain at the same address and valid for
+    /// shared access for `'a`, even if another thread replaces the entry.
     #[inline]
     pub(crate) unsafe fn get_erased(
         self,
@@ -404,16 +389,11 @@ impl<'a> MemoTableWithTypes<'a> {
                 .get_unchecked(memo_ingredient_index.as_usize())
         };
 
-        // The acquire load observes the fully initialized allocation published by `insert`'s
-        // release operation before the pointer is converted into a shared handle.
         let memo = NonNull::new(atomic_memo.load(Ordering::Acquire))?;
 
-        // SAFETY: The `MemoTableWithTypes` construction invariant pairs this slot with `type_`, and
-        // `insert` checks the concrete type before publishing a pointer produced by
-        // `MemoEntryType::to_dummy`, which preserves the complete allocation's provenance. The
-        // caller guarantees that the loaded allocation remains live, aligned, immovable, and valid
-        // for shared access for `'a`. The metadata fields were initialized together for that same
-        // concrete slot type.
+        // SAFETY: `insert` type-checks and release-publishes a complete-allocation pointer paired
+        // with `type_`; the acquire load observes its initialization. The caller guarantees that
+        // the allocation remains valid for `'a`.
         Some(unsafe { ErasedMemo::from_raw_parts(memo, type_.to_dyn_fn, type_.type_id) })
     }
 

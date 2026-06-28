@@ -95,10 +95,11 @@ where
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
-        let database_key_index = self.database_key_index(id);
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         loop {
+            let database_key_index = self.database_key_index(id);
+
             crate::tracing::debug!(
                 "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
             );
@@ -220,7 +221,6 @@ where
                     old_memo,
                 }
             } else {
-                // Otherwise, nothing for it: have to consider the value to have changed.
                 ColdResult::Verified(VerifyResult::changed())
             }
         }
