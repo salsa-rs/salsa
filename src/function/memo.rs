@@ -314,7 +314,6 @@ impl<C: Configuration> Memo<C> {
     }
 
     /// Returns a type-erased handle to this memo.
-    #[inline]
     pub(super) fn erase(&self) -> ErasedMemo<'_> {
         let data = NonNull::from(self).cast::<DummyMemo>();
 

@@ -144,7 +144,7 @@ where
                 && old_memo.header.verify_memo(
                     db.into(),
                     &claim_guard,
-                    crate::function::cycle_strategy::recovery_strategy::<C>(),
+                    C::CYCLE_RECOVERY_STRATEGY,
                     #[cfg(feature = "detailed-trace")]
                     true,
                 )
@@ -175,11 +175,9 @@ where
             database_key_index,
             memo_ingredient_index,
         })
-        .0
     }
 }
 
-#[cold]
 pub(super) fn fetch_cold_cycle_panic(
     zalsa_local: &ZalsaLocal,
     database_key_index: DatabaseKeyIndex,
@@ -196,25 +194,21 @@ pub(super) fn fetch_cold_cycle_panic(
     }
 }
 
-#[cold]
 pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
     state: &mut dyn CycleState<'db>,
     zalsa: &'db Zalsa,
     database_key_index: DatabaseKeyIndex,
-    memo_ingredient_index: MemoIngredientIndex,
 ) -> ErasedMemo<'db> {
     let id = database_key_index.key_index();
 
     let cancellation_count = zalsa.runtime().cancellation_count();
     // Don't validate provisional memos here: an existing value should be reused.
-    let current_memo = state
-        .provisional_memo(zalsa, id, memo_ingredient_index)
-        .filter(|memo| {
-            let header = memo.header();
-            header.verified_at.load() == zalsa.current_revision()
-                && memo.has_value()
-                && header.revisions.iteration().cancellation_count() == cancellation_count
-        });
+    let current_memo = state.provisional_memo(zalsa, id).filter(|memo| {
+        let header = memo.header();
+        header.verified_at.load() == zalsa.current_revision()
+            && memo.has_value()
+            && header.revisions.iteration().cancellation_count() == cancellation_count
+    });
 
     // Ideally, any current provisional value could be reused. Reusing a value that was not a
     // cycle head in the last iteration would require inserting itself as a head, which in turn
@@ -248,11 +242,5 @@ pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
         .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
     let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
     state.use_fallback(zalsa, id);
-    state.insert_provisional_memo(
-        zalsa,
-        id,
-        zalsa.current_revision(),
-        revisions,
-        memo_ingredient_index,
-    )
+    state.insert_provisional_memo(zalsa, id, zalsa.current_revision(), revisions)
 }
