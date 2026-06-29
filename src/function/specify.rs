@@ -88,15 +88,11 @@ where
 
         if let Some(old_memo) = old_memo {
             if old_memo.header.verified_at.load() == revision && old_memo.value.is_some() {
-                let assigned_by_active_query = matches!(
-                    old_memo.header.origin(),
-                    QueryOriginRef::Assigned(owner) if owner == active_query_key
-                );
-
                 // A value produced by another query wins this revision.
-                if !assigned_by_active_query {
+                let QueryOriginRef::Assigned(owner) = old_memo.header.origin() else {
                     return;
-                }
+                };
+                debug_assert_eq!(owner, active_query_key);
 
                 let first_assignment_in_execution = zalsa_local.add_output(database_key_index);
                 // Outputs from a prior provisional iteration are seeded into the active query,
