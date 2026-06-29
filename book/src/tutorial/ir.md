@@ -123,13 +123,10 @@ Apart from having no setters, the API for working with a tracked struct is quite
 
 ### Identity fields and tracked fields
 
-To get better reuse across revisions, particularly when things are reordered, Salsa uses identity fields to match structs created in one revision with structs created in another.
-All fields that are not annotated with `#[tracked]` are **identity fields**.
+To get better reuse across revisions, particularly when things are reordered, Salsa treats all fields not annotated with `#[tracked]` as **identity fields**.
 Normally, identity fields represent the "name" of an entity.
-If two functions are created with the same values for their identity fields in two revisions, Salsa considers them the same entity and can compare their other fields to determine what needs to be re-executed.
-Fields annotated with `#[tracked]` do not affect the struct's identity, so their values can change when the struct is recreated in a later revision.
-Salsa tracks reads of each `#[tracked]` field separately.
-The choice of identity fields affects reuse, not correctness.
+This indicates that, across two revisions R1 and R2, if two functions are created with the same values for their identity fields, they refer to the same entity, so Salsa can compare their `#[tracked]` fields to determine what needs to be re-executed.
+Choosing which fields are identity fields affects reuse, not correctness.
 For more details, see the [algorithm](../reference/algorithm.md) page of the reference.
 
 ## Interned structs
