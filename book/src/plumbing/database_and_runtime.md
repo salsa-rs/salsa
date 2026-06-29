@@ -18,36 +18,32 @@ This data is divided into two categories:
 
 ## Parallel handles
 
-When used across parallel threads, the database type defined by the user must support a "snapshot" operation.
-This snapshot should create a clone of the database that can be used by the parallel threads.
-The `Storage` operation itself supports `snapshot`.
-The `Snapshot` method returns a `Snapshot<DB>` type, which prevents these clones from being accessed via an `&mut` reference.
+When used across parallel threads, the database type defined by the user must implement `Clone`.
+Each clone can be used by the parallel threads.
+The `Storage` type shares the ingredients, runtime, and memoized values between clones.
+Each clone has its own active query stack.
 
 ## The Storage struct
 
 The salsa `Storage` struct contains all the data that salsa itself will use and work with.
-There are three key bits of data:
+There are two key parts:
 
-- The `Shared` struct, which contains the data stored across all snapshots, such as synchronization information (a cond var). This is used for cancellation, as described below.
-  - The data in the `Shared` struct is only shared across threads when other threads are active. Some operations, like mutating an input, require an `&mut` handle to the `Shared` struct. This is obtained by using the `Arc::get_mut` methods; obviously this is only possible when all snapshots and threads have ceased executing, since there must be a single handle to the `Arc`.
-- The `Routes` struct, which contains the information to find any particular ingredient -- this is also shared across all handles. The routes are separated out from the `Shared` struct because they are truly immutable at all times, and we want to be able to hold a handle to them while getting `&mut` access to the `Shared` struct.
-- The `Runtime` struct, which is specific to a particular database instance. It contains the data for a single active thread, along with some links to shared data of its own.
+- The shared `Zalsa` data, which contains the ingredients, runtime, memoized values, and synchronization information. Some operations, like mutating an input, require an `&mut` handle to this data. This is obtained by using `Arc::get_mut`, which is only possible once all clones and parallel threads have ceased executing.
+- The per-handle `ZalsaLocal` data, which is specific to a particular database instance. It contains the data for a single active thread, including the active query stack.
 
 ## Incrementing the revision counter
 
-Salsa's general model is that there is a single "master" copy of the database and, potentially, multiple snapshots.
-The snapshots are not directly owned, they are instead enclosed in a `Snapshot<DB>` type that permits only `&`-deref,
-and so the only database that can be accessed with an `&mut`-ref is the master database.
-Each of the snapshots however onlys another handle on the `Arc` in `Storage` that stores the ingredients.
+Salsa's general model is that there is a database and, potentially, multiple cloned handles.
+Each clone owns another handle on the `Arc` in `Storage` that stores the ingredients.
 
-Whenever the user attempts to do an `&mut`-operation, such as modifying an input field, that needs to
-first cancel any parallel snapshots and wait for those parallel threads to finish.
-Once the snapshots have completed, we can use `Arc::get_mut` to get an `&mut` reference to the ingredient data.
-This allows us to get `&mut` access without any unsafe code and
-guarantees that we have successfully managed to cancel the other worker threads
-(or gotten ourselves into a deadlock).
+Whenever the user attempts to do an `&mut` operation, such as modifying an input field, Salsa must
+first cancel any parallel handles and wait for those threads to finish.
+Once the other handles have completed, Salsa can use `Arc::get_mut` to get an `&mut` reference to the shared data.
+This allows Salsa to get `&mut` access without unsafe code and
+guarantees that it has successfully cancelled the other worker threads
+(or gotten itself into a deadlock).
 
-The key initial point is that it invokes `cancel_other_workers` before proceeding:
+The key point is that Salsa cancels other workers before proceeding:
 
 ```rust
 {{#include ../../../src/storage.rs:cancel_other_workers}}

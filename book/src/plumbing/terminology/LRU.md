@@ -1,6 +1,6 @@
 # LRU
 
-The [`set_lru_capacity`](https://docs.rs/salsa/0.16.1/salsa/struct.QueryTableMut.html#method.set_lru_capacity) method can be used to fix the maximum capacity for a query at a specific number of values. If more values are added after that point, then salsa will drop the values from older [memos] to conserve memory (we always retain the [dependency] information for those memos, however, so that we can still compute whether values may have changed, even if we don't know what that value is).
+The `lru` option on `#[salsa::tracked]` fixes the maximum number of values retained for that function. Functions with `lru` also generate [`function_name::set_lru_capacity(&mut db, capacity)`](https://docs.rs/salsa/latest/salsa/attr.tracked.html) to adjust the capacity. Salsa drops values from older [memos] to conserve memory, but retains their [dependency] information so that it can still compute whether values may have changed. See [cache eviction](../../tuning.md#cache-eviction-lru) for examples.
 
 [memos]: ./memo.md
 [dependency]: ./dependency.md

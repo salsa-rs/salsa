@@ -44,7 +44,7 @@ In the case of `#[salsa::input]`, the struct contains a `salsa::Id`, which is a 
 Therefore, the generated `SourceProgram` struct looks something like this:
 
 ```rust
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct SourceProgram(salsa::Id);
 ```
 
@@ -52,11 +52,13 @@ It will also generate a method `new` that lets you create a `SourceProgram` in t
 For an input, a `&db` reference is required, along with the values for each field:
 
 ```rust
+use salsa::Setter as _;
+
 let source = SourceProgram::new(&db, "print 11 + 11".to_string());
 ```
 
 You can read the value of the field with `source.text(&db)`,
-and you can set the value of the field with `source.set_text(&mut db, "print 11 * 2".to_string())`.
+and you can set the value of the field with `source.set_text(&mut db).to("print 11 * 2".to_string())`.
 
 ### Database revisions
 
@@ -79,13 +81,14 @@ In this case, the parser is going to take in the `SourceProgram` struct that we 
 ```
 
 Like with an input, the fields of a tracked struct are also stored in the database.
-Unlike an input, those fields are immutable (they cannot be "set"), and Salsa compares them across revisions to know when they have changed.
+Unlike an input, those fields have no setters.
+Fields marked `#[tracked]` can be updated when Salsa recreates the struct in a later revision, and Salsa tracks reads of each of those fields independently.
 In this case, if parsing the input produced the same `Program` result
 (e.g., because the only change to the input was some trailing whitespace, perhaps),
 then subsequent parts of the computation won't need to re-execute.
 (We'll revisit the role of tracked structs in reuse more in future parts of the IR.)
 
-Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
+Apart from having no setters, the API for working with a tracked struct is quite similar to an input:
 
 - You can create a new value by using `new`: e.g., `Program::new(&db, some_statements)`
 - You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
@@ -97,12 +100,7 @@ Unlike inputs, tracked structs carry a `'db` lifetime.
 This lifetime is tied to the `&db` used to create them and
 ensures that, so long as you are using the struct,
 the database remains immutable:
-in other words, you cannot change the values of a `salsa::Input`.
-
-The `'db` lifetime also allows tracked structs to be implemented
-using a pointer (versus the numeric id found in `salsa::input` structs).
-This doesn't really effect you as a user except that it allows accessing fields from tracked structs—
-a very common operation—to be optimized.
+in other words, you cannot change the values of an input struct.
 
 ## Representing functions
 
@@ -118,17 +116,20 @@ because the user changed the definition of `f`.
 This would mean that we have to re-execute those parts of the code that depended on `f.body`
 (but not those parts of the code that depended on the body of _other_ functions).
 
-Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
+Apart from having no setters, the API for working with a tracked struct is quite similar to an input:
 
-- You can create a new value by using `new`: e.g., `Function::new(&db, some_name, some_args, some_body)`
+- You can create a new value by using `new`: e.g., `Function::new(&db, some_name, some_name_span, some_args, some_body)`
 - You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
 
-### id fields
+### Identity fields and tracked fields
 
-To get better reuse across revisions, particularly when things are reordered, you can mark some entity fields with `#[id]`.
-Normally, you would do this on fields that represent the "name" of an entity.
-This indicates that, across two revisions R1 and R2, if two functions are created with the same name, they refer to the same entity, so we can compare their other fields for equality to determine what needs to be re-executed.
-Adding `#[id]` attributes is an optimization and never affects correctness.
+To get better reuse across revisions, particularly when things are reordered, Salsa uses identity fields to match structs created in one revision with structs created in another.
+Fields without an annotation are **identity fields**.
+Normally, identity fields represent the "name" of an entity.
+If two functions are created with the same values for their identity fields in two revisions, Salsa considers them the same entity and can compare their other fields to determine what needs to be re-executed.
+Fields annotated with `#[tracked]` do not affect the struct's identity, so their values can change when the struct is recreated in a later revision.
+Salsa tracks reads of each `#[tracked]` field separately.
+The choice of identity fields affects reuse, not correctness.
 For more details, see the [algorithm](../reference/algorithm.md) page of the reference.
 
 ## Interned structs
@@ -158,7 +159,6 @@ assert_eq!(f1, f2);
 ### Interned values carry a `'db` lifetime
 
 Like tracked structs, interned values carry a `'db` lifetime that prevents them from being used across salsa revisions.
-It also permits them to be implemented using a pointer "under the hood", permitting efficient field access.
 Interned values are guaranteed to be consistent within a single revision.
 Across revisions, they may be cleared, reallocated, or reassigned -- but you cannot generally observe this,
 since the `'db` lifetime prevents you from changing inputs (and hence creating a new revision)

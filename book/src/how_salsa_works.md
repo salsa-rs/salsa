@@ -29,21 +29,15 @@ varieties:
 
 Using Salsa is as easy as 1, 2, 3...
 
-1. Define one or more **query groups** that contain the inputs
-   and queries you will need. We'll start with one such group, but
-   later on you can use more than one to break up your system into
-   components (or spread your code across crates).
-2. Define the **query functions** where appropriate.
-3. Define the **database**, which contains the storage for all
-   the inputs/queries you will be using. The query struct will contain
-   the storage for all of the inputs/queries and may also contain
-   anything else that your code needs (e.g., configuration data).
+1. Define the **Salsa structs** you will need with `#[salsa::input]`,
+   `#[salsa::tracked]`, or `#[salsa::interned]`.
+2. Define your memoized **query functions** with `#[salsa::tracked]`.
+3. Define the **database**, which contains a `salsa::Storage<Self>` field
+   and may also contain anything else that your code needs.
 
-To see an example of this in action, check out [the `hello_world`
-example][hello_world], which has a number of comments explaining how
-things work.
+To see an example of this in action, check out [the `calc` example][calc].
 
-[hello_world]: https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs
+[calc]: https://github.com/salsa-rs/salsa/tree/master/examples/calc
 
 ## Digging into the plumbing
 
