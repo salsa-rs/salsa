@@ -398,10 +398,12 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// The first parameter must be an immutable `&dyn DatabaseTrait`; the remaining parameters form
 /// the query key. The function may declare one database lifetime but no type or const parameters.
-/// With no key parameters, the function has one memoized query per database. A single key parameter
-/// must be a Salsa struct and uses its ID directly. With multiple key parameters, Salsa first
-/// interns their tuple to obtain an ID, adding an interning step to every call; their [`Eq`] and
-/// [`Hash`] implementations determine whether calls use the same memo.
+/// Every key parameter and the output must implement [`Send`] + [`Sync`]. With no key parameters,
+/// the function has one memoized query per database. A single key parameter must be a Salsa struct
+/// and uses its ID directly. With multiple key parameters, Salsa first interns their tuple to
+/// obtain an ID, adding an interning step to every call. Each key parameter must additionally
+/// implement [`Clone`] + [`Eq`] + [`Hash`]. Equality and hashing determine whether calls use the
+/// same memo, and Salsa always clones the stored tuple when materializing the function arguments.
 ///
 /// See [tracked functions in the `salsa` crate documentation] for query identity, dependency
 /// tracking, result equality, and memo lifecycle.
@@ -553,11 +555,12 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 ///     marker: std::marker::PhantomData<U>,
 /// }
 ///
-/// unsafe fn custom_update<T>(old: *mut T, new: T) -> bool
+/// unsafe fn custom_update<T>(_old: *mut T, _new: T) -> bool
 /// where
 ///     T: 'static + PartialEq,
 /// {
-///     salsa::update_fallback(old, new)
+///     // Custom update logic that upholds `Update::maybe_update`'s safety contract...
+///     todo!()
 /// }
 /// ```
 ///
