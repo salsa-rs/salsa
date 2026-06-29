@@ -2,35 +2,38 @@
 
 As the final part of the parser, we need to write some tests.
 To do so, we will create a database, set the input source text, run the parser, and check the result.
-Before we can do that, though, we have to address one question: how do we inspect the value of an interned type like `Expression`?
+Before we can do that, though, we have to address one question: how do we inspect Salsa structs whose fields live in the database?
 
-## The `DebugWithDb` trait
+## Generated `Debug` implementations
 
-Because an interned type like `Expression` just stores an integer, the traditional `Debug` trait is not very useful.
-To properly print a `Expression`, you need to access the Salsa database to find out what its value is.
-To solve this, `salsa` provides a `DebugWithDb` trait that acts like the regular `Debug`, but takes a database as argument.
-For types that implement this trait, you can invoke the `debug` method.
-This returns a temporary that implements the ordinary `Debug` trait, allowing you to write something like
+The `debug` option on Salsa struct attributes generates an ordinary `Debug` implementation.
+Tracked functions attach the database automatically; other code can use `salsa::Database::attach` to include field values:
 
 ```rust
-eprintln!("Expression = {:?}", expr.debug(db));
+use salsa::Database as _;
+
+db.attach(|db| {
+    let function = FunctionId::new(db, "area_circle".to_string());
+    eprintln!("Function = {function:?}");
+});
 ```
 
-and get back the output you expect.
+Without an attached database, the generated formatter displays only the Salsa ID.
 
-The `DebugWithDb` trait is automatically derived for all `#[input]`, `#[interned]`, and `#[tracked]` structs.
+## Debug for ordinary Rust types
 
-## Forwarding to the ordinary `Debug` trait
-
-For consistency, it is sometimes useful to have a `DebugWithDb` implementation even for types, like `Op`, that are just ordinary enums. You can do that like so:
+Types such as `Op` that are not Salsa structs can use the ordinary `Debug` derive:
 
 ```rust
-{{#include ../../../examples/calc/ir.rs:op_debug_impl}}
+#[derive(Debug)]
+pub enum Op {
+    Add, Subtract, Multiply, Divide,
+}
 ```
 
 ## Writing the unit test
 
-Now that we have our `DebugWithDb` impls in place, we can write a simple unit test harness.
+Now that we have our `Debug` implementations in place, we can write a simple unit test harness.
 The `parse_string` function below creates a database, sets the source text, and then invokes the parser:
 
 ```rust

@@ -1,12 +1,12 @@
 # Defining the parser: memoized functions and inputs
 
 The next step in the `calc` compiler is to define the parser.
-The role of the parser will be to take the `ProgramSource` input,
+The role of the parser will be to take the `SourceProgram` input,
 read the string from the `text` field,
 and create the `Statement`, `Function`, and `Expression` structures that [we defined in the `ir` module](./ir.md).
 
 To minimize dependencies, we are going to write a [recursive descent parser][rd].
-Another option would be to use a [Rust parsing framework](https://rustrepo.com/catalog/rust-parsing_newest_1).
+Another option would be to use a [Rust parsing framework](https://crates.io/categories/parsing).
 We won't cover the parsing itself in this tutorial -- you can read the code if you want to see how it works.
 We're going to focus only on the Salsa-related aspects.
 
@@ -33,7 +33,7 @@ The goal of the framework is to avoid re-executing tracked functions and instead
 Salsa uses the [red-green algorithm](../reference/algorithm.md) to decide when to re-execute a function.
 The short version is that a tracked function is re-executed if either (a) it directly reads an input, and that input has changed,
 or (b) it directly invokes another tracked function and that function's return value has changed.
-In the case of `parse_statements`, it directly reads `ProgramSource::text`, so if the text changes, then the parser will re-execute.
+In the case of `parse_statements`, it directly reads `SourceProgram::text`, so if the text changes, then the parser will re-execute.
 
 By choosing which functions to mark as `#[tracked]`, you control how much reuse you get.
 In our case, we're opting to mark the outermost parsing function as tracked, but not the inner ones.
@@ -51,18 +51,28 @@ Setting up a scheme like this is relatively easy in Salsa and uses the same prin
 
 The **first** parameter to a tracked function is **always** the database, `db: &dyn crate::Db`.
 
-The **second** parameter to a tracked function is **always** some kind of Salsa struct.
-
-Tracked functions may take other arguments as well, though our examples here do not.
-Functions that take additional arguments are less efficient and flexible.
-It's generally better to structure tracked functions as functions of a single Salsa struct if possible.
+Tracked functions may have no other parameters, one Salsa struct parameter, or multiple parameters that implement `Eq` and `Hash`.
+A single Salsa struct can be used directly as the query key.
+When a function has multiple parameters, Salsa interns their tuple to obtain a key, adding an interning step to each call.
+Our `parse_statements` function takes one Salsa struct, the `SourceProgram` input.
 
 ### The `returns(ref)` annotation
 
-You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(returns(ref))]`.
-Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
-The `returns(ref)` attribute means that a reference into the database is returned instead.
-So, when called, `parse_statements` will return an `&Vec<Statement>` rather than cloning the `Vec`.
-This is useful as a performance optimization.
+By default, when you call a tracked function, its result is cloned out of the database.
+Adding the `returns(ref)` option to the tracked attribute returns a reference into the database instead.
+For return types that implement `Deref`, `returns(deref)` returns a reference to the dereferenced target.
+For example, it can return a slice instead of a reference to a vector:
+
+```rust
+#[salsa::tracked(returns(deref))]
+fn source_lines(db: &dyn crate::Db, source: SourceProgram) -> Vec<String> {
+    source.text(db).lines().map(str::to_owned).collect()
+}
+```
+
+Calling `source_lines` returns an `&[String]` rather than cloning the `Vec`.
+Using `returns(ref)` would return an `&Vec<String>` instead.
+That reference is tied to the database borrow and cannot be held across a new revision.
+The current `parse_statements` function returns the `Copy` `Program` handle, so it does not need this option.
 (You may recall the `returns(ref)` annotation from the [ir](./ir.md) section of the tutorial,
 where it was placed on struct fields, with roughly the same meaning.)

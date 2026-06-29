@@ -34,7 +34,7 @@ fn my_query(db: &dyn Db, input: MyInput) -> Output {
 }
 
 // Later, adjust the capacity:
-my_query::set_lru_capacity(db, 256);
+my_query::set_lru_capacity(&mut db, 256);
 ```
 
 **Note:** The `set_lru_capacity` method is only generated for functions that have
@@ -42,9 +42,9 @@ an `lru` attribute. Functions without LRU enabled do not have this method.
 
 ### Memory Management
 
-There is no garbage collection for keys and results of old queries, so LRU caches
-are currently the primary mechanism for avoiding unbounded memory usage in
-long-running applications built on Salsa.
+LRU evicts memoized values, not query keys or dependency metadata. Salsa also
+reclaims stale tracked outputs and unused low-durability interned values. Input
+identities remain until the database is dropped.
 
 ## Intern Queries
 
@@ -56,7 +56,7 @@ tree-like data structures.
 
 See:
 
-- The [`compiler` example](https://github.com/salsa-rs/salsa/blob/master/examples/compiler/main.rs),
+- The [`calc` example](https://github.com/salsa-rs/salsa/tree/master/examples/calc),
   which uses interning.
 
 ## Cancellation
@@ -67,6 +67,6 @@ implemented via panicking, and Salsa internals are intended to be panic-safe.
 
 If you have a query that contains a long loop which does not execute any intermediate queries,
 salsa won't be able to cancel it automatically. You may wish to check for cancellation yourself
-by invoking `db.unwind_if_cancelled()`.
+by invoking `db.unwind_if_revision_cancelled()`.
 
 For more details on cancellation, see the tests for cancellation behavior in the Salsa repo.

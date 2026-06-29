@@ -8,28 +8,28 @@ Tracked structs are created via a `new` operation.
 
 For a single tracked struct we create multiple ingredients.
 The **tracked struct ingredient** is the ingredient created first.
-It offers methods to create new instances of the struct and therefore
-has unique access to the interner and hashtables used to create the struct id.
-It also shares access to a hashtable that stores the `ValueStruct` that
-contains the field data.
+It creates new instances of the struct and assigns their ids.
+The corresponding `ValueStruct` data is stored in Salsa's paged table.
 
-For each field, we create a **tracked field ingredient** that moderates access
-to a particular field. All of these ingredients use that same shared hashtable
+For each `#[tracked]` field, we create a **tracked field ingredient** that moderates access
+to a particular field. All of these ingredients use the same paged table
 to access the `ValueStruct` instance for a given id. The `ValueStruct`
 contains both the field values but also the revisions when they last changed value.
 
-## Each tracked struct has a globally unique id
+## Each tracked struct has an id
 
-This will begin by creating a _globally unique, 32-bit id_ for the tracked struct. It is created by interning a combination of
+This begins by creating a database-local `salsa::Id` for the tracked struct.
+The ID contains a table index and a generation used when slots are reused.
+Its identity is derived from a combination of
 
 - the currently executing query;
-- a u64 hash of the `#[id]` fields;
+- a u64 hash of the fields not marked `#[tracked]`;
 - a _disambiguator_ that makes this hash unique within the current query. i.e., when a query starts executing, it creates an empty map, and the first time a tracked struct with a given hash is created, it gets disambiguator 0. The next one will be given 1, etc.
 
 ## Each tracked struct has a `ValueStruct` storing its data
 
-The struct and field ingredients share access to a hashmap that maps
-each field id to a value struct:
+The struct and field ingredients use the paged table to find the value struct
+for a given id:
 
 ```rust,ignore
 {{#include ../../../src/tracked_struct.rs:ValueStruct}}
@@ -37,7 +37,7 @@ each field id to a value struct:
 
 The value struct stores the values of the fields but also the revisions when
 that field last changed. Each time the struct is recreated in a new revision,
-the old and new values for its fields are compared and a new revision is created.
+the old and new values for its fields are compared and changed field revisions are updated.
 
 ## The macro generates the tracked struct `Configuration`
 

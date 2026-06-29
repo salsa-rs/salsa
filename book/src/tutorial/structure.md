@@ -19,7 +19,7 @@ print z
 The calc compiler takes as input a program, represented by a string:
 
 ```rust
-struct ProgramSource {
+struct SourceProgram {
     text: String
 }
 ```
