@@ -4,7 +4,7 @@
 
 The interface for blocking across threads now works as follows:
 
-* When one thread `T1` wishes to block on a query `Q` being executed by another thread `T2`, it invokes `Runtime::block`. This will check for cycles. Assuming no cycle is detected, it will block `T1` until `T2` has completed with `Q`. At that point, `T1` reawakens. However, we don't know the result of executing `Q`, so `T1` now has to "retry". Typically, this will result in successfully reading the cached value.
+* When one thread `T1` wishes to block on a query `Q` being executed by another thread `T2`, it invokes `Runtime::block`. This checks for cycles and, assuming no cycle is detected, returns `BlockResult::Running`. Calling `Running::block_on` then blocks `T1` until `T2` has completed with `Q`. At that point, `T1` reawakens. However, we don't know the result of executing `Q`, so `T1` now has to "retry". Typically, this will result in successfully reading the cached value.
 * While `T1` is blocking, its active query stack remains with the database handle.
 
 ## Cycle detection
