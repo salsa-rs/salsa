@@ -378,7 +378,9 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
 /// - `#[get(IDENT)]` renames the generated getter.
 /// - `#[no_eq]` replaces the stored value and treats the field as changed whenever the struct is
-///   recreated, avoiding equality and [`salsa::Update`] requirements.
+///   recreated, avoiding equality and [`salsa::Update`] requirements. It is most useful together
+///   with `#[tracked]` for a non-identity field that should always invalidate its readers when the
+///   entity is recreated.
 /// - `#[maybe_update(EXPR)]` uses `EXPR` to update the stored field. The expression must have type
 ///   `unsafe fn(*mut FieldTy, FieldTy) -> bool` and return whether the value changed. The caller is
 ///   responsible for upholding the [`salsa::Update`] safety contract.
