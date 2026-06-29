@@ -366,18 +366,16 @@ impl Table {
     }
 
     pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = (Id, &T)> + '_ {
-        self.pages
-            .iter()
-            .filter_map(|(page_index, page)| Some((page_index, page.cast_type::<T>()?)))
-            .flat_map(move |(page_index, view)| {
-                view.data()
-                    .iter()
-                    .enumerate()
-                    .map(move |(slot_index, value)| {
-                        let id = make_id(PageIndex::new(page_index), SlotIndex::new(slot_index));
-                        (id, value)
-                    })
-            })
+        ErasedSlots {
+            pages: self.pages.iter(),
+            current_page: None,
+            slot_type_id: TypeId::of::<T>(),
+        }
+        .map(|(id, slot)| {
+            // SAFETY: `ErasedSlots` only visits pages whose `TypeId` matches `T` and only returns
+            // pointers to initialized slots.
+            (id, unsafe { &*slot.cast::<T>() })
+        })
     }
 
     #[cold]
@@ -387,23 +385,68 @@ impl Table {
         ingredient: IngredientIndex,
         memo_types: impl FnOnce() -> Arc<MemoTableTypes>,
     ) -> PageIndex {
-        if let Some(page) = self
-            .non_full_pages
-            .lock()
-            .get_mut(&ingredient)
-            .and_then(Vec::pop)
-        {
+        if let Some(page) = self.take_non_full_page(ingredient) {
             return page;
         }
 
         self.push_page::<T>(ingredient, memo_types())
     }
+
+    fn take_non_full_page(&self, ingredient: IngredientIndex) -> Option<PageIndex> {
+        self.non_full_pages
+            .lock()
+            .get_mut(&ingredient)
+            .and_then(Vec::pop)
+    }
+
     pub(crate) fn record_unfilled_page(&self, ingredient: IngredientIndex, page: PageIndex) {
         self.non_full_pages
             .lock()
             .entry(ingredient)
             .or_default()
             .push(page);
+    }
+}
+
+struct ErasedSlots<'db> {
+    pages: boxcar::vec::Iter<'db, Page>,
+    current_page: Option<(PageIndex, &'db Page, std::ops::Range<usize>)>,
+    slot_type_id: TypeId,
+}
+
+impl Iterator for ErasedSlots<'_> {
+    type Item = (Id, *mut ());
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((page_index, page, slots)) = &mut self.current_page {
+                if let Some(slot_index) = slots.next() {
+                    let slot_index = SlotIndex::new(slot_index);
+                    let id = make_id(*page_index, slot_index);
+
+                    // SAFETY: `slot_index` is below the initialized length captured when the page
+                    // became current, so the resulting pointer is within the page allocation.
+                    let slot = unsafe {
+                        page.data
+                            .as_ptr()
+                            .byte_add(slot_index.0 * page.slot_vtable.layout.size())
+                    };
+
+                    return Some((id, slot));
+                }
+            }
+
+            self.current_page = self.pages.find_map(|(page_index, page)| {
+                (page.slot_type_id == self.slot_type_id).then(|| {
+                    (
+                        PageIndex::new(page_index),
+                        page,
+                        0..page.allocated.load(Ordering::Acquire),
+                    )
+                })
+            });
+            self.current_page.as_ref()?;
+        }
     }
 }
 
@@ -516,14 +559,6 @@ impl Page {
         }
 
         PageView(self, PhantomData)
-    }
-
-    fn cast_type<T: Slot>(&self) -> Option<PageView<'_, T>> {
-        if self.slot_type_id == TypeId::of::<T>() {
-            Some(PageView(self, PhantomData))
-        } else {
-            None
-        }
     }
 }
 
