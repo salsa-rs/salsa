@@ -40,8 +40,9 @@
 //!
 //! Dependencies are recorded per field. If a query reads only `file.text(db)`, changing another
 //! field does not invalidate that query. A setter always records its field as changed; Salsa does
-//! not compare the old and new values first. Each field also has a [`Durability`], which lets Salsa
-//! skip validation when only more durable inputs could have changed.
+//! not compare the old and new values first. Each field also has a [`Durability`]. If a revision
+//! changes only lower-durability inputs, Salsa can skip validating queries that depend exclusively
+//! on higher-durability inputs.
 //!
 //! ### Lifecycle
 //!
@@ -229,7 +230,7 @@
 //! [backdating]: https://salsa-rs.github.io/salsa/reference/algorithm.html#backdating-sometimes-we-can-be-smarter
 //! [cache tuning]: https://salsa-rs.github.io/salsa/tuning.html#cache-eviction-lru
 //! [durability reference]: https://salsa-rs.github.io/salsa/reference/durability.html
-//! [input structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#input-structs
+//! [input structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#inputs
 //! [interned structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#interned-structs
 //! [red-green algorithm]: https://salsa-rs.github.io/salsa/reference/algorithm.html
 //! [returning references in the Salsa book]: https://salsa-rs.github.io/salsa/tutorial/parser.html#the-returnsref-annotation

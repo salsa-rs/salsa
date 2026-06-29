@@ -1,9 +1,11 @@
 //! Procedural macros for defining Salsa databases, ingredients, and queries.
 //!
-//! This crate is an implementation detail of [`salsa`](../salsa/index.html). Its macros are
-//! re-exported from that crate and should normally be invoked through the `salsa::` path.
+//! This crate is an implementation detail of [`salsa`](https://docs.rs/salsa/latest/salsa/). Its
+//! macros are re-exported from that crate and should normally be invoked through the `salsa::`
+//! path.
 //!
-//! See the [`salsa` crate documentation](../salsa/index.html) for the concepts behind each macro.
+//! See the [`salsa` crate documentation](https://docs.rs/salsa/latest/salsa/) for the concepts
+//! behind each macro.
 
 #![recursion_limit = "256"]
 
@@ -80,9 +82,9 @@ mod xform;
 /// }
 /// ```
 ///
-/// [`salsa::Accumulator`]: ../salsa/trait.Accumulator.html
+/// [`salsa::Accumulator`]: https://docs.rs/salsa/latest/salsa/trait.Accumulator.html
 /// [`UnwindSafe`]: std::panic::UnwindSafe
-/// [accumulators in the `salsa` crate documentation]: ../salsa/index.html#accumulators
+/// [accumulators in the `salsa` crate documentation]: https://docs.rs/salsa/latest/salsa/#accumulators
 #[proc_macro_attribute]
 pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
     accumulator::accumulator(args, input)
@@ -121,8 +123,8 @@ pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
 /// impl salsa::Database for MyDatabase {}
 /// ```
 ///
-/// [`salsa::Database`]: ../salsa/trait.Database.html
-/// [`salsa::Storage<Self>`]: ../salsa/struct.Storage.html
+/// [`salsa::Database`]: https://docs.rs/salsa/latest/salsa/trait.Database.html
+/// [`salsa::Storage<Self>`]: https://docs.rs/salsa/latest/salsa/struct.Storage.html
 #[proc_macro_attribute]
 pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
     db::db(args, input)
@@ -166,7 +168,8 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// [`salsa::Update`].
 ///
 /// - `id = PATH` uses `PATH` as a legacy ID adapter instead of [`salsa::Id`]. The custom type must
-///   implement `salsa::plumbing::AsId` and `salsa::plumbing::FromId`.
+///   implement [`Copy`] + [`Clone`] + [`PartialEq`] + [`Eq`] + [`Hash`] as well as
+///   `salsa::plumbing::AsId` and `salsa::plumbing::FromId`.
 /// - **Unsafe: `no_lifetime` is strongly discouraged.** It adapts code that cannot carry the
 ///   database lifetime by generating a struct without one. This bypasses the compile-time
 ///   guarantee that an interned handle cannot outlive its database revision. The caller becomes
@@ -208,13 +211,13 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// [`Debug`]: std::fmt::Debug
 /// [`Deref`]: std::ops::Deref
 /// [`Hash`]: std::hash::Hash
-/// [`salsa::Id`]: ../salsa/struct.Id.html
-/// [`salsa::SalsaAsDeref`]: ../salsa/trait.SalsaAsDeref.html
-/// [`salsa::SalsaAsRef`]: ../salsa/trait.SalsaAsRef.html
-/// [`salsa::Update`]: ../salsa/trait.Update.html
+/// [`salsa::Id`]: https://docs.rs/salsa/latest/salsa/struct.Id.html
+/// [`salsa::SalsaAsDeref`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsDeref.html
+/// [`salsa::SalsaAsRef`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsRef.html
+/// [`salsa::Update`]: https://docs.rs/salsa/latest/salsa/trait.Update.html
 /// [`serde`]: https://docs.rs/serde/latest/serde/
-/// [interned structs in the `salsa` crate documentation]: ../salsa/index.html#interned-structs
-/// [return mode]: ../salsa/index.html#return-modes
+/// [interned structs in the `salsa` crate documentation]: https://docs.rs/salsa/latest/salsa/#interned-structs
+/// [return mode]: https://docs.rs/salsa/latest/salsa/#return-modes
 #[proc_macro_attribute]
 pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
     interned::interned(args, input)
@@ -264,7 +267,7 @@ pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// [supertypes in the `salsa` crate documentation]: ../salsa/index.html#supertypes
+/// [supertypes in the `salsa` crate documentation]: https://docs.rs/salsa/latest/salsa/#supertypes
 #[proc_macro_derive(Supertype)]
 pub fn supertype(input: TokenStream) -> TokenStream {
     supertype::supertype(input)
@@ -322,11 +325,11 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 ///
 /// [`Debug`]: std::fmt::Debug
 /// [`Deref`]: std::ops::Deref
-/// [`salsa::SalsaAsDeref`]: ../salsa/trait.SalsaAsDeref.html
-/// [`salsa::SalsaAsRef`]: ../salsa/trait.SalsaAsRef.html
+/// [`salsa::SalsaAsDeref`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsDeref.html
+/// [`salsa::SalsaAsRef`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsRef.html
 /// [`serde`]: https://docs.rs/serde/latest/serde/
-/// [input structs in the `salsa` crate documentation]: ../salsa/index.html#input-structs
-/// [return mode]: ../salsa/index.html#return-modes
+/// [input structs in the `salsa` crate documentation]: https://docs.rs/salsa/latest/salsa/#input-structs
+/// [return mode]: https://docs.rs/salsa/latest/salsa/#return-modes
 #[proc_macro_attribute]
 pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
     input::input(args, input)
@@ -481,17 +484,17 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// [`Deref`]: std::ops::Deref
 /// [`Eq`]: std::cmp::Eq
 /// [`Hash`]: std::hash::Hash
-/// [`salsa::SalsaAsDeref`]: ../salsa/trait.SalsaAsDeref.html
-/// [`salsa::SalsaAsRef`]: ../salsa/trait.SalsaAsRef.html
-/// [`salsa::Update`]: ../salsa/trait.Update.html
+/// [`salsa::SalsaAsDeref`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsDeref.html
+/// [`salsa::SalsaAsRef`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsRef.html
+/// [`salsa::Update`]: https://docs.rs/salsa/latest/salsa/trait.Update.html
 /// [`serde`]: https://docs.rs/serde/latest/serde/
 /// [`serde::Deserialize`]: https://docs.rs/serde/latest/serde/trait.Deserialize.html
 /// [`serde::Serialize`]: https://docs.rs/serde/latest/serde/trait.Serialize.html
 /// [fixed-point cycle recovery in the Salsa book]: https://salsa-rs.github.io/salsa/cycles.html#fixed-point-iteration
-/// [return mode]: ../salsa/index.html#return-modes
+/// [return mode]: https://docs.rs/salsa/latest/salsa/#return-modes
 /// [specifying query results in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#specify-the-result-of-tracked-functions-for-particular-structs
-/// [tracked functions in the `salsa` crate documentation]: ../salsa/index.html#tracked-functions-and-memoized-values
-/// [tracked structs in the `salsa` crate documentation]: ../salsa/index.html#tracked-structs
+/// [tracked functions in the `salsa` crate documentation]: https://docs.rs/salsa/latest/salsa/#tracked-functions-and-memoized-values
+/// [tracked structs in the `salsa` crate documentation]: https://docs.rs/salsa/latest/salsa/#tracked-structs
 #[proc_macro_attribute]
 pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
     tracked::tracked(args, input)
@@ -559,8 +562,8 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// [`PartialEq`]: std::cmp::PartialEq
-/// [`salsa::Update`]: ../salsa/trait.Update.html
-/// [`salsa::update_fallback`]: ../salsa/fn.update_fallback.html
+/// [`salsa::Update`]: https://docs.rs/salsa/latest/salsa/trait.Update.html
+/// [`salsa::update_fallback`]: https://docs.rs/salsa/latest/salsa/fn.update_fallback.html
 #[proc_macro_derive(Update, attributes(update))]
 pub fn update(input: TokenStream) -> TokenStream {
     let item = parse_macro_input!(input as syn::DeriveInput);
