@@ -8,7 +8,7 @@ struct Name<'db> {
     name: String,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn tracked_fn<'db>(db: &'db dyn salsa::Database, name: Name<'db>) -> String {
     name.name(db).clone()
 }

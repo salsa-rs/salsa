@@ -92,7 +92,7 @@ Apart from having no setters, the API for working with a tracked struct is quite
 
 - You can create a new value by using `new`: e.g., `Program::new(&db, some_statements)`
 - You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
-  - In this case, the field is tagged as `#[returns(ref)]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
+    - In this case, the field is tagged as `#[returns(deref)]`, which means that the getter will return a `&[Statement]`, instead of a `&Vec<Statement>`.
 
 ### The `'db` lifetime
 
@@ -120,6 +120,7 @@ Apart from having no setters, the API for working with a tracked struct is quite
 
 - You can create a new value by using `new`: e.g., `Function::new(&db, some_name, some_name_span, some_args, some_body)`
 - You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
+    - The `#[returns(deref)]` annotation makes this getter return a `&[VariableId]`.
 
 ### Identity fields and tracked fields
 

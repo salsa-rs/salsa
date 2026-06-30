@@ -25,7 +25,7 @@ impl MyInput {
     }
 
     pub fn field(self, db: &dyn Db) -> String {
-        self.text(db)
+        self.text(db).clone()
     }
 
     pub fn set_field(self, db: &mut dyn Db, id: String) {
@@ -62,7 +62,7 @@ impl<'db> MyTracked<'db> {
     }
 
     pub fn field(self, db: &'db dyn Db) -> String {
-        self.text(db)
+        self.text(db).clone()
     }
 }
 

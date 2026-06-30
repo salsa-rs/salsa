@@ -18,12 +18,12 @@ struct File {
 #[derive(Debug)]
 struct Log(#[allow(dead_code)] String);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn compile(db: &dyn LogDatabase, input: File) -> u32 {
     parse(db, input)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn parse(db: &dyn LogDatabase, input: File) -> u32 {
     let value: Result<u32, _> = input.content(db).parse();
 

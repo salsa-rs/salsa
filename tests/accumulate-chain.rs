@@ -13,30 +13,30 @@ use test_log::test;
 #[derive(Debug)]
 struct Log(#[allow(dead_code)] String);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_logs(db: &dyn Database) {
     push_a_logs(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_a_logs(db: &dyn Database) {
     Log("log a".to_string()).accumulate(db);
     push_b_logs(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_b_logs(db: &dyn Database) {
     // No logs
     push_c_logs(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_c_logs(db: &dyn Database) {
     // No logs
     push_d_logs(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_d_logs(db: &dyn Database) {
     Log("log d".to_string()).accumulate(db);
 }

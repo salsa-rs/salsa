@@ -10,7 +10,9 @@ use test_log::test;
 
 #[salsa::input(debug)]
 struct List {
+    #[returns(copy)]
     value: u32,
+    #[returns(copy)]
     next: Option<List>,
 }
 
@@ -18,7 +20,7 @@ struct List {
 #[derive(Copy, Clone, Debug)]
 struct Integers(u32);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn compute(db: &dyn salsa::Database, input: List) {
     eprintln!(
         "{:?}(value={:?}, next={:?})",

@@ -7,21 +7,39 @@ struct DefaultInput {
     text: String,
 }
 
+#[salsa::interned]
+struct DefaultInterned<'db> {
+    text: String,
+}
+
+#[salsa::tracked]
+struct DefaultTracked<'db> {
+    text: String,
+}
+
 #[salsa::tracked]
 fn default_fn(db: &dyn Database, input: DefaultInput) -> String {
-    let input: String = input.text(db);
-    input
+    let input: &String = input.text(db);
+
+    let interned = DefaultInterned::new(db, input.clone());
+    let _: &String = interned.text(db);
+
+    let tracked = DefaultTracked::new(db, input.clone());
+    let _: &String = tracked.text(db);
+
+    input.clone()
 }
 
 #[test]
 fn default_test() {
     salsa::DatabaseImpl::new().attach(|db| {
         let input = DefaultInput::new(db, "Test".into());
-        let x: String = default_fn(db, input);
+        let _: &String = input.text(db);
+        let x: &String = default_fn(db, input);
         expect_test::expect![[r#"
             "Test"
         "#]]
-        .assert_debug_eq(&x);
+        .assert_debug_eq(x);
     })
 }
 

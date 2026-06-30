@@ -21,6 +21,7 @@ fn low_durability_cycle_enter_from_different_head() {
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
@@ -46,7 +47,7 @@ impl MyDb for MyDbImpl {
     }
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_a(db: &dyn MyDb) -> u32 {
     query_b(db);
     db.input().value(db)
@@ -58,15 +59,16 @@ fn cycle_initial(_db: &dyn MyDb, _id: salsa::Id) -> u32 {
 
 #[salsa::interned]
 struct Interned {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_b(db: &dyn MyDb) -> u32 {
     query_c(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_c(db: &dyn MyDb) -> u32 {
     query_a(db)
 }

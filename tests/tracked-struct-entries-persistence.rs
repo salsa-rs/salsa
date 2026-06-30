@@ -6,6 +6,7 @@ const DELETED_VALUE: &str = "deleted tracked entry sentinel";
 
 #[salsa::input(persist)]
 struct Input {
+    #[returns(copy)]
     enabled: bool,
 }
 
@@ -14,14 +15,14 @@ struct Entity<'db> {
     value: String,
 }
 
-#[salsa::tracked(persist)]
+#[salsa::tracked(returns(copy), persist)]
 fn maybe_entity(db: &dyn salsa::Database, input: Input) -> Option<Entity<'_>> {
     input
         .enabled(db)
         .then(|| Entity::new(db, DELETED_VALUE.to_owned()))
 }
 
-#[salsa::tracked(persist)]
+#[salsa::tracked(returns(copy), persist)]
 fn consume(db: &dyn salsa::Database, entity: Entity<'_>) -> usize {
     entity.value(db).len()
 }

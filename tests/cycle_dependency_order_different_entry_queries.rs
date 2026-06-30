@@ -6,7 +6,7 @@ use salsa::{Database, Durability};
 
 mod common;
 
-#[salsa::tracked(cycle_initial=a_cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=a_cycle_initial)]
 fn query_a(db: &dyn Database) {
     let b = query_b(db);
     query_d(db, b);
@@ -16,15 +16,17 @@ fn a_cycle_initial(_db: &dyn Database, _id: salsa::Id) {}
 
 #[salsa::interned]
 struct Interned {
+    #[returns(copy)]
     value: u32,
 }
 
 #[salsa::input(singleton)]
 struct StableInput {
+    #[returns(copy)]
     value: (),
 }
 
-#[salsa::tracked(cycle_initial=|db, _| Interned::new(db, 0))]
+#[salsa::tracked(returns(copy), cycle_initial=|db, _| Interned::new(db, 0))]
 fn query_b(db: &dyn Database) -> Interned<'_> {
     query_c(db);
     // Keep this value reusable so the test still covers validation ordering.
@@ -32,12 +34,12 @@ fn query_b(db: &dyn Database) -> Interned<'_> {
     Interned::new(db, 2)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_c(db: &dyn Database) {
     query_a(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_d<'db>(db: &'db dyn Database, _i: Interned<'db>) {
     StableInput::get(db).value(db);
 }

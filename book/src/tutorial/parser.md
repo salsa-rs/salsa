@@ -24,12 +24,12 @@ This function is annotated as `#[salsa::tracked]`.
 That means that, when it is called, Salsa will track what inputs it reads as well as what value it returns.
 The return value is _memoized_,
 which means that if you call this function again without changing the inputs,
-Salsa will just clone the result rather than re-execute it.
+Salsa will reuse the result rather than re-execute it.
 
 ### Tracked functions are the unit of reuse
 
 Tracked functions are the core part of how Salsa enables incremental reuse.
-The goal of the framework is to avoid re-executing tracked functions and instead to clone their result.
+The goal of the framework is to avoid re-executing tracked functions and instead to reuse their result.
 Salsa uses the [red-green algorithm](../reference/algorithm.md) to decide when to re-execute a function.
 The short version is that a tracked function is re-executed if either (a) it directly reads an input, and that input has changed,
 or (b) it directly invokes another tracked function and that function's return value has changed.
@@ -56,12 +56,15 @@ A single Salsa struct can be used directly as the query key.
 When a function has multiple parameters, Salsa interns their tuple to obtain a key, adding an interning step to each call.
 Our `parse_statements` function takes one Salsa struct, the `SourceProgram` input.
 
-### The `returns(ref)` annotation
+### The `returns(copy)` annotation
 
-By default, when you call a tracked function, its result is cloned out of the database.
-Adding the `returns(ref)` option to the tracked attribute returns a reference into the database instead.
-For return types that implement `Deref`, `returns(deref)` returns a reference to the dereferenced target.
-For example, it can return a slice instead of a reference to a vector:
+You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(returns(copy))]`.
+Tracked functions ordinarily return a reference to their memoized value. The `returns(copy)`
+attribute copies the value out of the database instead. This is a good fit for `Program`, which is
+a small `Copy` handle to a tracked struct.
+
+For return types that implement `Deref`, `returns(deref)` returns a reference to the dereferenced
+target. For example, it can return a slice instead of a reference to a vector:
 
 ```rust
 #[salsa::tracked(returns(deref))]
@@ -70,9 +73,11 @@ fn source_lines(db: &dyn crate::Db, source: SourceProgram) -> Vec<String> {
 }
 ```
 
-Calling `source_lines` returns an `&[String]` rather than cloning the `Vec`.
-Using `returns(ref)` would return an `&Vec<String>` instead.
+Calling `source_lines` returns an `&[String]` rather than the default `&Vec<String>`.
 That reference is tied to the database borrow and cannot be held across a new revision.
-The current `parse_statements` function returns the `Copy` `Program` handle, so it does not need this option.
-(You may recall the `returns(ref)` annotation from the [ir](./ir.md) section of the tutorial,
-where it was placed on struct fields, with roughly the same meaning.)
+Use `returns(clone)` when returning an owned clone is more convenient and the clone is known to be
+inexpensive.
+
+(You may recall the `returns(deref)` annotation from the [IR](./ir.md) section of the tutorial,
+where it was placed on struct fields. Return-mode annotations work the same way for fields and
+tracked functions.)

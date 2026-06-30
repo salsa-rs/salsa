@@ -8,11 +8,13 @@ fn main() {
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     field: usize,
 }
 
 #[salsa::tracked]
 struct Tracked<'db> {
+    #[returns(copy)]
     number: usize,
 }
 
@@ -22,7 +24,7 @@ fn index(db: &dyn salsa::Database, input: Input) -> Vec<Tracked<'_>> {
     (0..input.field(db)).map(|i| Tracked::new(db, i)).collect()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 #[inline(never)]
 fn root(db: &dyn salsa::Database, input: Input) -> usize {
     let index = index(db, input);

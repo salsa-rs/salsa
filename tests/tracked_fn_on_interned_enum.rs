@@ -15,6 +15,7 @@ struct NameAndAge<'db> {
 
 #[salsa::interned(no_lifetime, debug)]
 struct Age {
+    #[returns(copy)]
     age: u32,
 }
 
@@ -36,20 +37,20 @@ enum EnumOfEnum<'db> {
     Input(Input),
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn tracked_fn<'db>(db: &'db dyn salsa::Database, enum_: Enum<'db>) -> String {
     match enum_ {
-        Enum::Name(name) => name.name(db),
-        Enum::NameAndAge(name_and_age) => name_and_age.name_and_age(db),
+        Enum::Name(name) => name.name(db).clone(),
+        Enum::NameAndAge(name_and_age) => name_and_age.name_and_age(db).clone(),
         Enum::Age(age) => age.age(db).to_string(),
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn tracked_fn2<'db>(db: &'db dyn salsa::Database, enum_: EnumOfEnum<'db>) -> String {
     match enum_ {
         EnumOfEnum::Enum(enum_) => tracked_fn(db, enum_),
-        EnumOfEnum::Input(input) => input.value(db),
+        EnumOfEnum::Input(input) => input.value(db).clone(),
     }
 }
 

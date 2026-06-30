@@ -12,7 +12,7 @@ pub struct Input {
 
 #[salsa::tracked]
 impl Input {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     pub fn source_tree(self, db: &dyn Database) -> SourceTree<'_> {
         SourceTree::new(db, self.name(db).clone())
     }
@@ -27,7 +27,7 @@ pub struct SourceTree<'db> {
 impl<'db1> SourceTree<'db1> {
     #[salsa::tracked(returns(ref))]
     pub fn inherent_item_name(self, db: &'db1 dyn Database) -> String {
-        self.name(db)
+        self.name(db).clone()
     }
 }
 
@@ -39,7 +39,7 @@ trait ItemName<'db1> {
 impl<'db1> ItemName<'db1> for SourceTree<'db1> {
     #[salsa::tracked(returns(ref))]
     fn trait_item_name(self, db: &'db1 dyn Database) -> String {
-        self.name(db)
+        self.name(db).clone()
     }
 }
 

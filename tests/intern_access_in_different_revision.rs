@@ -4,11 +4,13 @@ use salsa::{Durability, Setter};
 
 #[salsa::interned(no_lifetime)]
 struct Interned {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     field: i32,
 }
 

@@ -8,15 +8,17 @@ use salsa::Setter;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked(debug)]
 struct TrackedStruct<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> Option<TrackedStruct<'_>> {
     if input.field(db) == 1 {
         Some(TrackedStruct::new(db, 1))

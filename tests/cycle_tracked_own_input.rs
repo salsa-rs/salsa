@@ -16,24 +16,28 @@ use salsa::{Database, Setter};
 #[salsa::input(debug)]
 struct ClassNode {
     name: String,
+    #[returns(copy)]
     type_params: Option<TypeParamNode>,
 }
 
 #[salsa::input(debug)]
 struct TypeParamNode {
     name: String,
+    #[returns(copy)]
     constraint: Option<ClassNode>,
 }
 
 #[salsa::interned(debug)]
 struct Class<'db> {
     name: String,
+    #[returns(copy)]
     type_params: Option<TypeParam<'db>>,
 }
 
 #[salsa::tracked(debug)]
 struct TypeParam<'db> {
     name: String,
+    #[returns(copy)]
     constraint: Option<Type<'db>>,
 }
 
@@ -52,7 +56,7 @@ impl Type<'_> {
     }
 }
 
-#[salsa::tracked(cycle_initial=infer_class_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=infer_class_initial)]
 fn infer_class(db: &dyn salsa::Database, node: ClassNode) -> Type<'_> {
     Type::Class(Class::new(
         db,
@@ -61,7 +65,7 @@ fn infer_class(db: &dyn salsa::Database, node: ClassNode) -> Type<'_> {
     ))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn infer_type_param(db: &dyn salsa::Database, node: TypeParamNode) -> TypeParam<'_> {
     if let Some(constraint) = node.constraint(db) {
         // Reuse the type param from the class if any.
@@ -73,11 +77,11 @@ fn infer_type_param(db: &dyn salsa::Database, node: TypeParamNode) -> TypeParam<
         match infer_class(db, constraint) {
             Type::Class(class) => class
                 .type_params(db)
-                .unwrap_or_else(|| TypeParam::new(db, node.name(db), Some(Type::Unknown))),
-            Type::Unknown => TypeParam::new(db, node.name(db), Some(Type::Unknown)),
+                .unwrap_or_else(|| TypeParam::new(db, node.name(db).clone(), Some(Type::Unknown))),
+            Type::Unknown => TypeParam::new(db, node.name(db).clone(), Some(Type::Unknown)),
         }
     } else {
-        TypeParam::new(db, node.name(db), None)
+        TypeParam::new(db, node.name(db).clone(), None)
     }
 }
 

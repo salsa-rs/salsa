@@ -10,11 +10,13 @@ struct Name {
 
 #[salsa::interned(no_lifetime, debug)]
 struct Age {
+    #[returns(copy)]
     value: u32,
 }
 
 #[salsa::input(debug)]
 struct Input {
+    #[returns(copy)]
     data: u32,
 }
 

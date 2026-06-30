@@ -6,6 +6,7 @@ use salsa::Setter;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     value: usize,
 }
 
@@ -14,12 +15,12 @@ struct Tracked<'db> {
     value: String,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_tracked(db: &dyn salsa::Database, input: MyInput) -> Tracked<'_> {
     Tracked::new(db, format!("{value}", value = input.value(db)))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn join<'db>(db: &'db dyn salsa::Database, tracked: Tracked<'db>, with: String) -> String {
     format!("{}{}", tracked.value(db), with)
 }

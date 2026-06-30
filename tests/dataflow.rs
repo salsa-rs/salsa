@@ -18,7 +18,9 @@ struct Use {
 /// A Definition of a symbol, either of the form `base + increment` or `0 + increment`.
 #[salsa::input]
 struct Definition {
+    #[returns(copy)]
     base: Option<Use>,
+    #[returns(copy)]
     increment: usize,
 }
 
@@ -50,7 +52,7 @@ impl Type {
     }
 }
 
-#[salsa::tracked(cycle_fn=use_cycle_recover, cycle_initial=use_cycle_initial)]
+#[salsa::tracked(returns(clone), cycle_fn=use_cycle_recover, cycle_initial=use_cycle_initial)]
 fn infer_use(db: &dyn Db, u: Use) -> Type {
     let defs = u.reaching_definitions(db);
     match defs[..] {
@@ -60,7 +62,7 @@ fn infer_use(db: &dyn Db, u: Use) -> Type {
     }
 }
 
-#[salsa::tracked(cycle_fn=def_cycle_recover, cycle_initial=def_cycle_initial)]
+#[salsa::tracked(returns(clone), cycle_fn=def_cycle_recover, cycle_initial=def_cycle_initial)]
 fn infer_definition(db: &dyn Db, def: Definition) -> Type {
     let increment_ty = Type::Values(Box::from([def.increment(db)]));
     if let Some(base) = def.base(db) {

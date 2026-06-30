@@ -8,7 +8,9 @@ use test_log::test;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     field_a: u32,
+    #[returns(copy)]
     field_b: u32,
 }
 
@@ -16,13 +18,13 @@ struct MyInput {
 #[derive(Debug)]
 struct Log(#[allow(dead_code)] String);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_logs(db: &dyn Database, input: MyInput) {
     push_a_logs(db, input);
     push_b_logs(db, input);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_a_logs(db: &dyn Database, input: MyInput) {
     let count = input.field_a(db);
     for i in 0..count {
@@ -30,7 +32,7 @@ fn push_a_logs(db: &dyn Database, input: MyInput) {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_b_logs(db: &dyn Database, input: MyInput) {
     // Note that b calls a
     push_a_logs(db, input);

@@ -22,6 +22,7 @@ struct InternedString<'db> {
 
 #[salsa::interned(debug)]
 struct InternedPair<'db> {
+    #[returns(copy)]
     data: (InternedString<'db>, InternedString<'db>),
 }
 
@@ -92,7 +93,7 @@ struct InternedOverGeneric {
     value: Generic<String>,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn intern_stuff(db: &dyn salsa::Database) -> String {
     let s1 = InternedString::new(db, "Hello, ".to_string());
     let s2 = InternedString::new(db, "World, ");

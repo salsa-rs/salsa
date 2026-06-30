@@ -17,17 +17,20 @@ thread_local! {
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field1: u32,
+    #[returns(copy)]
     field2: u32,
 }
 
 #[salsa::tracked]
 struct MyTracked<'db> {
     #[tracked]
+    #[returns(copy)]
     counter: usize,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn function(db: &dyn Database, input: MyInput) -> (usize, usize) {
     // Read input 1
     let _field1 = input.field1(db);
@@ -48,7 +51,7 @@ fn function(db: &dyn Database, input: MyInput) -> (usize, usize) {
     (result, tracked.counter(db))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn counter_field<'db>(db: &'db dyn Database, input: MyInput, tracked: MyTracked<'db>) -> usize {
     // Read input 2. This will cause us to re-execute on revision 2.
     let _field2 = input.field2(db);

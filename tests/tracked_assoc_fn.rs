@@ -17,17 +17,19 @@ trait TrackedTrait<'db> {
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked]
 struct MyOutput<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked]
 impl MyInput {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> Self {
         Self::new(db, 2 * input.field(db))
     }
@@ -42,7 +44,7 @@ impl MyInput {
 impl<'db> TrackedTrait<'db> for MyOutput<'db> {
     type Output = Self;
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn tracked_trait_fn(db: &'db dyn salsa::Database, input: MyInput) -> Self::Output {
         Self::new(db, 4 * input.field(db))
     }
@@ -55,7 +57,7 @@ struct UntrackedHelper;
 impl<'db> TrackedTrait<'db> for UntrackedHelper {
     type Output = MyOutput<'db>;
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn tracked_trait_fn(db: &'db dyn salsa::Database, input: MyInput) -> Self::Output {
         MyOutput::tracked_trait_fn(db, input)
     }

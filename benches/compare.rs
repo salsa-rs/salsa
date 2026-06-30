@@ -13,7 +13,7 @@ pub struct Input {
     pub text: String,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 #[inline(never)]
 pub fn length(db: &dyn salsa::Database, input: Input) -> usize {
     input.text(db).len()
@@ -31,13 +31,13 @@ enum SupertypeInput<'db> {
     Input(Input),
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 #[inline(never)]
 pub fn interned_length<'db>(db: &'db dyn salsa::Database, input: InternedInput<'db>) -> usize {
     input.text(db).len()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 #[inline(never)]
 pub fn either_length<'db>(db: &'db dyn salsa::Database, input: SupertypeInput<'db>) -> usize {
     match input {
@@ -48,10 +48,11 @@ pub fn either_length<'db>(db: &'db dyn salsa::Database, input: SupertypeInput<'d
 
 #[salsa::tracked]
 pub struct Tracked<'db> {
+    #[returns(copy)]
     pub value: usize,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 pub fn make_tracked(db: &dyn salsa::Database, input: Input) -> Tracked<'_> {
     Tracked::new(db, input.text(db).len())
 }

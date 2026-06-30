@@ -14,6 +14,7 @@ struct MyInput {
 #[salsa::tracked(debug)]
 struct MyTracked<'db> {
     #[tracked]
+    #[returns(copy)]
     data: MyInput,
     #[tracked]
     next: MyList<'db>,
@@ -25,7 +26,7 @@ enum MyList<'db> {
     Next(MyTracked<'db>),
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn create_tracked_list(db: &dyn Database, input: MyInput) -> MyTracked<'_> {
     let t0 = MyTracked::new(db, input, MyList::None);
     MyTracked::new(db, input, MyList::Next(t0))

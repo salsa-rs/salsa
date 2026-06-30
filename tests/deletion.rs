@@ -12,10 +12,11 @@ use test_log::test;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn final_result(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("final_result({input:?})"));
     let mut sum = 0;
@@ -27,10 +28,11 @@ fn final_result(db: &dyn LogDatabase, input: MyInput) -> u32 {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn create_tracked_structs(db: &dyn LogDatabase, input: MyInput) -> Vec<MyTracked<'_>> {
     db.push_log(format!("intermediate_result({input:?})"));
     (0..input.field(db))
@@ -38,7 +40,7 @@ fn create_tracked_structs(db: &dyn LogDatabase, input: MyInput) -> Vec<MyTracked
         .collect()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn contribution_from_struct<'db>(db: &'db dyn LogDatabase, tracked: MyTracked<'db>) -> u32 {
     tracked.field(db) * 2
 }

@@ -15,19 +15,14 @@ const SCATTERED_HOT_ITEMS: usize = EVICTION_CAPACITY * 2;
 
 #[salsa::input]
 struct Item {
+    #[returns(copy)]
     value: usize,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 struct Value(usize);
 
-impl Drop for Value {
-    fn drop(&mut self) {
-        black_box(self);
-    }
-}
-
-#[salsa::tracked(lru = 4096)]
+#[salsa::tracked(returns(copy), lru = 4096)]
 #[inline(never)]
 fn lru_value(db: &dyn salsa::Database, item: Item) -> Value {
     value(item.value(db))
@@ -64,7 +59,7 @@ fn expected_sum(items: &[Item], db: &dyn salsa::Database) -> Value {
 fn prewarm(db: &dyn salsa::Database, items: &[Item]) -> Value {
     let actual = access_all(db, items);
     let expected = expected_sum(items, db);
-    assert_eq!(black_box(actual.clone()), expected);
+    assert_eq!(black_box(actual), expected);
     actual
 }
 

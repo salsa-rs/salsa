@@ -28,12 +28,12 @@ struct CycleValue(u32);
 const MIN: CycleValue = CycleValue(0);
 const MAX: CycleValue = CycleValue(1);
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     query_b(db)
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     // Wait for thread 2 to have entered `query_c`.
     tracing::debug!("Wait for signal 1 from thread 2");
@@ -54,7 +54,7 @@ fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     CycleValue(a_value.0 + 1).min(MAX)
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     tracing::debug!("query_c: signaling thread1 to call c");
     db.signal(1);

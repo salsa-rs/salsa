@@ -2,6 +2,7 @@
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     field: u32,
 }
 

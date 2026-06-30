@@ -1,23 +1,23 @@
 error: `singleton` option not allowed here
-  --> tests/compile-fail/singleton_only_for_input.rs:10:18
+  --> tests/compile-fail/singleton_only_for_input.rs:11:18
    |
-10 | #[salsa::tracked(singleton)]
+11 | #[salsa::tracked(singleton)]
    |                  ^^^^^^^^^
 
 error: `singleton` option not allowed here
-  --> tests/compile-fail/singleton_only_for_input.rs:15:19
+  --> tests/compile-fail/singleton_only_for_input.rs:16:19
    |
-15 | #[salsa::interned(singleton)]
+16 | #[salsa::interned(singleton)]
    |                   ^^^^^^^^^
 
 error: `singleton` option not allowed here
-  --> tests/compile-fail/singleton_only_for_input.rs:20:18
+  --> tests/compile-fail/singleton_only_for_input.rs:21:18
    |
-20 | #[salsa::tracked(singleton)]
+21 | #[salsa::tracked(singleton)]
    |                  ^^^^^^^^^
 
 error: `singleton` option not allowed here
-  --> tests/compile-fail/singleton_only_for_input.rs:25:22
+  --> tests/compile-fail/singleton_only_for_input.rs:26:22
    |
-25 | #[salsa::accumulator(singleton)]
+26 | #[salsa::accumulator(singleton)]
    |                      ^^^^^^^^^

@@ -8,6 +8,7 @@ fn hello() {
 
     #[salsa::input]
     struct Bool {
+        #[returns(copy)]
         value: bool,
     }
 
@@ -17,7 +18,7 @@ fn hello() {
     #[salsa::tracked]
     struct False<'db> {}
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn hello(db: &dyn Database, bool: Bool) {
         if bool.value(db) {
             True::new(db);

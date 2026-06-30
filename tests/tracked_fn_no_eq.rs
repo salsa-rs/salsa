@@ -8,10 +8,11 @@ use salsa::Setter as _;
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     number: i16,
 }
 
-#[salsa::tracked(no_eq)]
+#[salsa::tracked(returns(copy), no_eq)]
 fn abs_float(db: &dyn LogDatabase, input: Input) -> f32 {
     let number = input.number(db);
 
@@ -19,7 +20,7 @@ fn abs_float(db: &dyn LogDatabase, input: Input) -> f32 {
     number.abs() as f32
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn derived(db: &dyn LogDatabase, input: Input) -> u32 {
     let x = abs_float(db, input);
     db.push_log("derived".to_string());

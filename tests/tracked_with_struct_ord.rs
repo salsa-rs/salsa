@@ -8,16 +8,18 @@ use test_log::test;
 #[salsa::input]
 #[derive(PartialOrd, Ord)]
 struct Input {
+    #[returns(copy)]
     value: usize,
 }
 
 #[salsa::tracked(debug)]
 #[derive(Ord, PartialOrd)]
 struct MyTracked<'db> {
+    #[returns(copy)]
     value: usize,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn create_tracked(db: &dyn Database, input: Input) -> MyTracked<'_> {
     MyTracked::new(db, input.value(db))
 }

@@ -5,6 +5,7 @@
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[returns(copy)]
     field: u32,
 }
 

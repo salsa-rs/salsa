@@ -6,6 +6,7 @@ use salsa::{Database as _, Setter as _};
 
 #[salsa::input(heap_size = string_tuple_size_of)]
 struct MyInput {
+    #[returns(clone)]
     field: String,
 }
 
@@ -19,38 +20,38 @@ struct MyInterned<'db> {
     field: String,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn input_to_interned(db: &dyn salsa::Database, input: MyInput) -> MyInterned<'_> {
     MyInterned::new(db, input.field(db))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn input_to_tracked(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn maybe_input_to_tracked(db: &dyn salsa::Database, input: MyInput) -> Option<MyTracked<'_>> {
     let field = input.field(db);
     (!field.is_empty()).then(|| MyTracked::new(db, field))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn input_to_string(_db: &dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
-#[salsa::tracked(heap_size = string_size_of)]
+#[salsa::tracked(returns(clone), heap_size = string_size_of)]
 fn input_to_string_get_size(_db: &dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
     input.field(db).len()
 }
 
-#[salsa::tracked(cycle_fn = cycle_recover_length, cycle_initial = cycle_initial_length)]
+#[salsa::tracked(returns(copy), cycle_fn = cycle_recover_length, cycle_initial = cycle_initial_length)]
 fn cycle_input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
     cycle_input_to_length(db, input).max(input.field(db).len())
 }
@@ -77,7 +78,7 @@ fn string_tuple_size_of((x,): &(String,)) -> usize {
     x.capacity()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn input_to_tracked_tuple(
     db: &dyn salsa::Database,
     input: MyInput,

@@ -6,12 +6,12 @@
 mod common;
 use common::{DatabaseWithValue, ValueDatabase};
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn fallback_value(db: &dyn ValueDatabase) -> u32 {
     query(db) + db.get_value()
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
 fn query(db: &dyn ValueDatabase) -> u32 {
     let val = query(db);
     if val < 5 { val + 1 } else { val }

@@ -20,7 +20,7 @@ impl std::ops::Add for CycleValue {
 
 const MIN: CycleValue = CycleValue(0);
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_a(db: &dyn salsa::Database) -> CycleValue {
     let b = query_b(db);
 
@@ -28,12 +28,12 @@ fn query_a(db: &dyn salsa::Database) -> CycleValue {
     if b < CycleValue(1) { query_c(db) } else { b }
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_b(db: &dyn salsa::Database) -> CycleValue {
     query_a(db)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_c(db: &dyn salsa::Database) -> CycleValue {
     let a_value = query_a(db);
     let d_value = query_d(db);
@@ -41,7 +41,7 @@ fn query_c(db: &dyn salsa::Database) -> CycleValue {
     a_value + d_value + CycleValue(1)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_d(db: &dyn salsa::Database) -> CycleValue {
     query_c(db)
 }

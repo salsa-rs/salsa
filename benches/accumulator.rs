@@ -8,6 +8,7 @@ fn main() {
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     expressions: usize,
 }
 
@@ -17,10 +18,11 @@ struct Diagnostic(String);
 
 #[salsa::interned]
 struct Expression<'db> {
+    #[returns(copy)]
     number: usize,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(deref))]
 #[inline(never)]
 fn root(db: &dyn salsa::Database, input: Input) -> Vec<usize> {
     (0..input.expressions(db))
@@ -28,7 +30,7 @@ fn root(db: &dyn salsa::Database, input: Input) -> Vec<usize> {
         .collect()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 #[inline(never)]
 fn infer_expression<'db>(db: &'db dyn salsa::Database, expression: Expression<'db>) -> usize {
     let number = expression.number(db);

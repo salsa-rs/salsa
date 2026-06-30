@@ -23,21 +23,22 @@ const MAX: CycleValue = CycleValue(3);
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_a(db: &dyn salsa::Database, input: Input) -> CycleValue {
     query_b(db, input)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_b(db: &dyn salsa::Database, input: Input) -> CycleValue {
     let c_value = query_c(db, input);
     CycleValue(c_value.0 + input.value(db).max(1)).min(MAX)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_c(db: &dyn salsa::Database, input: Input) -> CycleValue {
     let d_value = query_d(db, input);
 
@@ -51,12 +52,12 @@ fn query_c(db: &dyn salsa::Database, input: Input) -> CycleValue {
     }
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_d(db: &dyn salsa::Database, input: Input) -> CycleValue {
     query_c(db, input)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_e(db: &dyn salsa::Database, input: Input) -> CycleValue {
     query_c(db, input)
 }

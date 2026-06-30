@@ -7,6 +7,7 @@ use salsa::{Database, Setter};
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
@@ -17,6 +18,7 @@ struct NotSalsa {
 
 #[salsa::input(debug)]
 struct ComplexStruct {
+    #[returns(copy)]
     my_input: MyInput,
     not_salsa: NotSalsa,
 }
@@ -37,7 +39,7 @@ fn input() {
     })
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn leak_debug_string(_db: &dyn salsa::Database, input: MyInput) -> String {
     format!("{input:?}")
 }
@@ -65,17 +67,17 @@ fn untracked_dependencies() {
     assert!(s.contains(", field: 22 }"));
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn dep_a(db: &dyn salsa::Database, input: MyInput) -> u32 {
     input.field(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn dep_b(db: &dyn salsa::Database, input: MyInput) -> u32 {
     input.field(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn debug_branch_query(db: &dyn salsa::Database, selector: MyInput, a: MyInput, b: MyInput) -> u32 {
     // `Debug` for salsa structs is explicitly untracked; branching on it is unsound.
     // This test demonstrates it can break the backdate invariant.
@@ -119,7 +121,9 @@ fn debug_branch_can_trip_backdate_assertion() {
 
 #[salsa::tracked]
 struct DerivedCustom<'db> {
+    #[returns(copy)]
     my_input: MyInput,
+    #[returns(copy)]
     value: u32,
 }
 
@@ -132,7 +136,7 @@ impl std::fmt::Debug for DerivedCustom<'_> {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn leak_derived_custom(db: &dyn salsa::Database, input: MyInput, value: u32) -> String {
     let c = DerivedCustom::new(db, input, value);
     format!("{c:?}")

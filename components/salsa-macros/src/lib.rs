@@ -185,9 +185,9 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// Every field generates a getter with the same name and visibility as the field. These helper
 /// attributes configure that getter:
 ///
-/// - `#[returns(MODE)]` selects how the getter returns the field. `clone` (the default) returns an
-///   owned `FieldTy` using [`Clone`]; `copy` returns an owned `FieldTy` using [`Copy`]; `ref`
-///   returns `&FieldTy`; and `deref` uses [`Deref`] to return
+/// - `#[returns(MODE)]` selects how the getter returns the field. `ref` (the default) returns
+///   `&FieldTy`; `clone` returns an owned `FieldTy` using [`Clone`]; `copy` returns an owned
+///   `FieldTy` using [`Copy`]; and `deref` uses [`Deref`] to return
 ///   `&<FieldTy as Deref>::Target`. `as_ref` and `as_deref` use [`salsa::SalsaAsRef`] and
 ///   [`salsa::SalsaAsDeref`] to return borrowed forms such as `Option<&T>` and
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
@@ -201,8 +201,9 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[salsa::interned(debug)]
 /// struct Name<'db> {
-///     #[returns(ref)]
+///     #[returns(deref)]
 ///     text: String,
+///     #[returns(copy)]
 ///     #[get(disambiguator)]
 ///     index: u32,
 /// }
@@ -241,13 +242,13 @@ pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[salsa::input]
 /// struct File {
-///     #[returns(ref)]
+///     #[returns(deref)]
 ///     path: String,
 /// }
 ///
 /// #[salsa::interned]
 /// struct Symbol<'db> {
-///     #[returns(ref)]
+///     #[returns(deref)]
 ///     name: String,
 /// }
 ///
@@ -257,13 +258,13 @@ pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
 ///     Symbol(Symbol<'db>),
 /// }
 ///
-/// #[salsa::tracked(returns(ref))]
+/// #[salsa::tracked(returns(deref))]
 /// fn display_name<'db>(db: &'db dyn salsa::Database, source: Source<'db>) -> String {
 ///     let name = match source {
 ///         Source::File(file) => file.path(db),
 ///         Source::Symbol(symbol) => symbol.name(db),
 ///     };
-///     name.clone()
+///     name.to_owned()
 /// }
 /// ```
 ///
@@ -309,9 +310,9 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 /// Every field generates getter and setter methods with the same name and visibility as the field.
 /// These helper attributes configure those methods:
 ///
-/// - `#[returns(MODE)]` selects how the getter returns the field. `clone` (the default) returns an
-///   owned `FieldTy` using [`Clone`]; `copy` returns an owned `FieldTy` using [`Copy`]; `ref`
-///   returns `&FieldTy`; and `deref` uses [`Deref`] to return
+/// - `#[returns(MODE)]` selects how the getter returns the field. `ref` (the default) returns
+///   `&FieldTy`; `clone` returns an owned `FieldTy` using [`Clone`]; `copy` returns an owned
+///   `FieldTy` using [`Copy`]; and `deref` uses [`Deref`] to return
 ///   `&<FieldTy as Deref>::Target`. `as_ref` and `as_deref` use [`salsa::SalsaAsRef`] and
 ///   [`salsa::SalsaAsDeref`] to return borrowed forms such as `Option<&T>` and
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
@@ -373,9 +374,9 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   creating a new one. Reads of the field are tracked separately, so changing it invalidates only
 ///   queries that read that field. Use this for properties that may change while the conceptual
 ///   entity remains the same.
-/// - `#[returns(MODE)]` selects how the getter returns the field. `clone` (the default) returns an
-///   owned `FieldTy` using [`Clone`]; `copy` returns an owned `FieldTy` using [`Copy`]; `ref`
-///   returns `&FieldTy`; and `deref` uses [`Deref`] to return
+/// - `#[returns(MODE)]` selects how the getter returns the field. `ref` (the default) returns
+///   `&FieldTy`; `clone` returns an owned `FieldTy` using [`Clone`]; `copy` returns an owned
+///   `FieldTy` using [`Copy`]; and `deref` uses [`Deref`] to return
 ///   `&<FieldTy as Deref>::Target`. `as_ref` and `as_deref` use [`salsa::SalsaAsRef`] and
 ///   [`salsa::SalsaAsDeref`] to return borrowed forms such as `Option<&T>` and
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
@@ -410,9 +411,9 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// ## Function options
 ///
-/// - `returns(MODE)` selects how callers receive the memoized result. `clone` (the default) returns
-///   an owned `Output` using [`Clone`]; `copy` returns an owned `Output` using [`Copy`]; `ref`
-///   returns `&Output`; and `deref` uses [`Deref`] to return `&<Output as Deref>::Target`.
+/// - `returns(MODE)` selects how callers receive the memoized result. `ref` (the default) returns
+///   `&Output`; `clone` returns an owned `Output` using [`Clone`]; `copy` returns an owned `Output`
+///   using [`Copy`]; and `deref` uses [`Deref`] to return `&<Output as Deref>::Target`.
 ///   `as_ref` and `as_deref` use [`salsa::SalsaAsRef`] and [`salsa::SalsaAsDeref`] to return
 ///   borrowed forms such as `Option<&T>` and `Option<&T::Target>`. Every borrowed result is tied to
 ///   the database borrow and remains stored in the query's memo.
@@ -464,18 +465,18 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[salsa::input]
 /// struct File {
-///     #[returns(ref)]
+///     #[returns(deref)]
 ///     text: String,
 /// }
 ///
-/// #[salsa::tracked]
+/// #[salsa::tracked(returns(copy))]
 /// fn word_count(db: &dyn salsa::Database, file: File) -> usize {
 ///     file.text(db).split_whitespace().count()
 /// }
 ///
 /// #[salsa::tracked]
 /// impl File {
-///     #[salsa::tracked]
+///     #[salsa::tracked(returns(copy))]
 ///     fn line_count(self, db: &dyn salsa::Database) -> usize {
 ///         self.text(db).lines().count()
 ///     }

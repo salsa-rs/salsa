@@ -29,6 +29,7 @@ const MAX: CycleValue = CycleValue(3);
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
@@ -36,18 +37,18 @@ struct Input {
 // Signal 2: T2 has entered `query_b`
 // Signal 3: T3 has entered `query_c`
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_a(db: &dyn salsa::Database, input: Input) -> CycleValue {
     query_b(db, input)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_b(db: &dyn salsa::Database, input: Input) -> CycleValue {
     let c_value = query_c(db, input);
     CycleValue(c_value.0 + input.value(db)).min(MAX)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_c(db: &dyn salsa::Database, input: Input) -> CycleValue {
     let a_value = query_a(db, input);
     let b_value = query_b(db, input);

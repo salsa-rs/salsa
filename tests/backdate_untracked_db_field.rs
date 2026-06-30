@@ -4,6 +4,7 @@ use salsa::Setter;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
@@ -36,17 +37,17 @@ impl ExtraFieldDatabase {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn dep_a_db(db: &dyn Db, input: MyInput) -> u32 {
     input.field(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn dep_b_db(db: &dyn Db, input: MyInput) -> u32 {
     input.field(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn db_field_branch_query(db: &dyn Db, a: MyInput, b: MyInput) -> u32 {
     if db.extra() == 0 {
         dep_a_db(db, a)

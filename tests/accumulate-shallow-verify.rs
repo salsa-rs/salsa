@@ -7,19 +7,21 @@ use salsa::{Accumulator, Setter};
 
 #[salsa::input]
 struct List {
+    #[returns(copy)]
     value: u32,
+    #[returns(copy)]
     next: Option<List>,
 }
 
 #[salsa::accumulator]
 struct Values(u32);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn compute_single(db: &dyn LogDatabase, input: List) {
     Values(input.value(db)).accumulate(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn compute(db: &dyn LogDatabase, input: List) {
     compute_single(db, input);
     if let Some(next) = input.next(db) {

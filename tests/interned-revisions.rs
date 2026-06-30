@@ -11,6 +11,7 @@ use test_log::test;
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     field1: usize,
 }
 
@@ -61,7 +62,7 @@ struct PanickingInterned<'db> {
     value: BadHash,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn intern_panicking(db: &dyn Database, input: Input) -> PanickingInterned<'_> {
     PanickingInterned::new(db, PanickingLookup(input.field1(db)))
 }
@@ -92,12 +93,13 @@ fn panic_during_reuse_does_not_orphan_slot() {
 #[salsa::interned]
 #[derive(Debug)]
 struct NestedInterned<'db> {
+    #[returns(copy)]
     interned: Interned<'db>,
 }
 
 #[test]
 fn test_intern_new() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
@@ -128,7 +130,7 @@ fn test_intern_new() {
 
 #[test]
 fn test_reintern() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         let _ = input.field1(db);
         Interned::new(db, BadHash(0))
@@ -164,7 +166,7 @@ fn test_reintern() {
 
 #[test]
 fn test_durability() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, _input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(0))
     }
@@ -195,7 +197,7 @@ fn test_durability() {
 
 #[test]
 fn test_non_reusable_new_value_does_not_record_dependency() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         let _ = input.field1(db);
         Interned::new(db, BadHash(0))
@@ -222,7 +224,7 @@ fn test_non_reusable_new_value_does_not_record_dependency() {
 
 #[test]
 fn test_non_reusable_existing_value_does_not_record_dependency() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         let _ = input.field1(db);
         Interned::new(db, BadHash(0))
@@ -251,14 +253,14 @@ fn test_non_reusable_existing_value_does_not_record_dependency() {
 
 #[test]
 fn test_non_reusable_value_still_updates_query_stamp() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn outer(db: &dyn Database, input: Input) -> bool {
         let _ = input.field1(db);
         let _ = Interned::new(db, BadHash(0));
         true
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn intern_from_input(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
@@ -299,7 +301,7 @@ struct SpilledInterned<'db> {
 
 #[test]
 fn test_revisions_above_inline_capacity() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, input: Input) -> SpilledInterned<'_> {
         SpilledInterned::new(db, BadHash(input.field1(db)))
     }
@@ -327,7 +329,7 @@ fn test_revisions_above_inline_capacity() {
 
 #[test]
 fn test_immortal() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, input: Input) -> Immortal<'_> {
         Immortal::new(db, BadHash(input.field1(db)))
     }
@@ -351,7 +353,7 @@ fn test_immortal() {
 
 #[test]
 fn test_reuse() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
@@ -453,12 +455,12 @@ fn test_reuse() {
 fn reuse_discards_memos_for_old_generation() {
     use salsa::plumbing::AsId;
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn intern(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn read(db: &dyn Database, interned: Interned<'_>) -> usize {
         interned.field1(db).0
     }
@@ -488,12 +490,12 @@ fn reuse_discards_memos_for_old_generation() {
 
 #[test]
 fn test_reuse_indirect() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn intern(db: &dyn Database, input: Input, value: usize) -> Interned<'_> {
         intern_inner(db, input, value)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn intern_inner(db: &dyn Database, input: Input, value: usize) -> Interned<'_> {
         let _i = input.field1(db); // Only low durability interned values are garbage collected.
         Interned::new(db, BadHash(value))
@@ -534,12 +536,12 @@ fn test_reuse_indirect() {
 #[test]
 fn test_reuse_interned_input() {
     // A query that creates an interned value.
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn create_interned(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn use_interned<'db>(db: &'db dyn Database, interned: Interned<'db>) -> usize {
         interned.field1(db).0
     }
@@ -576,13 +578,13 @@ fn test_reuse_interned_input() {
 #[test]
 fn test_reuse_multiple_interned_input() {
     // A query that creates an interned value.
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn create_interned(db: &dyn Database, input: Input) -> Interned<'_> {
         Interned::new(db, BadHash(input.field1(db)))
     }
 
     // A query that creates an interned value.
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn create_nested_interned<'db>(
         db: &'db dyn Database,
         interned: Interned<'db>,
@@ -590,13 +592,13 @@ fn test_reuse_multiple_interned_input() {
         NestedInterned::new(db, interned)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn use_interned<'db>(db: &'db dyn Database, interned: Interned<'db>) -> usize {
         interned.field1(db).0
     }
 
     // A query that reads an interned value.
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn use_nested_interned<'db>(
         db: &'db dyn Database,
         nested_interned: NestedInterned<'db>,
@@ -643,7 +645,7 @@ fn test_reuse_multiple_interned_input() {
 
 #[test]
 fn test_durability_increase() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn intern(db: &dyn Database, input: Input, value: usize) -> Interned<'_> {
         let _f = input.field1(db);
         Interned::new(db, BadHash(value))

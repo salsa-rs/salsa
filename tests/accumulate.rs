@@ -8,7 +8,9 @@ use test_log::test;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     field_a: u32,
+    #[returns(copy)]
     field_b: u32,
 }
 
@@ -16,7 +18,7 @@ struct MyInput {
 #[derive(Debug)]
 struct Log(#[allow(dead_code)] String);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_logs(db: &dyn LogDatabase, input: MyInput) {
     db.push_log(format!(
         "push_logs(a = {}, b = {})",
@@ -35,7 +37,7 @@ fn push_logs(db: &dyn LogDatabase, input: MyInput) {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_a_logs(db: &dyn LogDatabase, input: MyInput) {
     let field_a = input.field_a(db);
     db.push_log(format!("push_a_logs({field_a})"));
@@ -45,7 +47,7 @@ fn push_a_logs(db: &dyn LogDatabase, input: MyInput) {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_b_logs(db: &dyn LogDatabase, input: MyInput) {
     let field_a = input.field_b(db);
     db.push_log(format!("push_b_logs({field_a})"));

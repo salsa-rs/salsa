@@ -31,10 +31,11 @@ impl Database for TestDatabase {}
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn read(db: &dyn Database, input: Input) -> u32 {
     input.value(db)
 }

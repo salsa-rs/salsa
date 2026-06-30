@@ -11,11 +11,13 @@ use salsa::Setter;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::input]
 struct MyInputs {
+    #[returns(clone)]
     field: Vec<MyInput>,
 }
 
@@ -70,7 +72,7 @@ fn alternate(
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn batch(
     db: &dyn salsa::Database,
     inputs: MyInputs,

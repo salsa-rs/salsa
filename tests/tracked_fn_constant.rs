@@ -8,12 +8,12 @@ use crate::common::LogDatabase;
 
 mod common;
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_fn(db: &dyn salsa::Database) -> u32 {
     44
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_custom_db(db: &dyn LogDatabase) -> u32 {
     44
 }

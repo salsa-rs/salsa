@@ -7,15 +7,16 @@ use test_log::test;
 
 #[salsa::input]
 struct N {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn add3(db: &dyn Database, a: N, b: N, c: N) -> u32 {
     add(db, a, b) + c.value(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn add(db: &dyn Database, a: N, b: N) -> u32 {
     a.value(db) + b.value(db)
 }

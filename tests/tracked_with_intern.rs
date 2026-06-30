@@ -13,6 +13,7 @@ struct MyInput {
 #[salsa::tracked]
 struct MyTracked<'db> {
     #[tracked]
+    #[returns(copy)]
     field: MyInterned<'db>,
 }
 

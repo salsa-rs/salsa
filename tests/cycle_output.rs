@@ -8,26 +8,29 @@ use salsa::{Setter, Storage};
 
 #[salsa::tracked]
 struct Output<'db> {
+    #[returns(copy)]
     value: u32,
 }
 
 #[salsa::input]
 struct InputValue {
+    #[returns(copy)]
     value: u32,
 }
 
 #[salsa::input(singleton)]
 struct StableInput {
+    #[returns(copy)]
     value: (),
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn read_value<'db>(db: &'db dyn Db, output: Output<'db>) -> u32 {
     StableInput::get(db).value(db);
     output.value(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_a(db: &dyn Db, input: InputValue) -> u32 {
     let val = query_b(db, input);
     let output = Output::new(db, val);
@@ -37,7 +40,7 @@ fn query_a(db: &dyn Db, input: InputValue) -> u32 {
     if val > 2 { val } else { val + input.value(db) }
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_b(db: &dyn Db, input: InputValue) -> u32 {
     query_a(db, input)
 }
@@ -46,12 +49,12 @@ fn cycle_initial(_db: &dyn Db, _id: salsa::Id, _input: InputValue) -> u32 {
     0
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_c(db: &dyn Db, input: InputValue) -> u32 {
     input.value(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_d(db: &dyn Db) -> u32 {
     StableInput::get(db).value(db);
     db.get_input().map(|input| input.value(db)).unwrap_or(0)

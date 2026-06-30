@@ -5,7 +5,7 @@
 
 type Result<T> = std::result::Result<T, String>;
 
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 fn example_query(_db: &dyn salsa::Database) -> Result<()> {
     Ok(())
 }

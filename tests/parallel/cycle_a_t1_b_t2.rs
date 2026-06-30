@@ -24,7 +24,7 @@ const MAX: CycleValue = CycleValue(3);
 // Signal 1: T1 has entered `query_a`
 // Signal 2: T2 has entered `query_b`
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     db.signal(1);
 
@@ -34,7 +34,7 @@ fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     query_b(db)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     // Wait for Thread T1 to enter `query_a` before we continue.
     db.wait_for(1);

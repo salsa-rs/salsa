@@ -16,7 +16,7 @@ Here is a simple example, where the `parse_module` function reads the module's t
 ```rust
 #[salsa::input]
 struct Module {
-    #[returns(ref)]
+    #[returns(deref)]
     text: String,
 }
 
@@ -75,4 +75,3 @@ module
 ```
 
 For each durability, we track the revision in which _some input_ with that durability changed. If a tracked function depends (transitively) only on high durability inputs, and you change a low durability input, then we can very easily determine that the tracked function result is still valid, avoiding the need to traverse the input edges one by one.
-

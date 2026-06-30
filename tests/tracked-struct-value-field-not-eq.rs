@@ -9,6 +9,7 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: bool,
 }
 
@@ -30,7 +31,7 @@ struct MyTracked<'db> {
     field: NotEq,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn the_fn(db: &dyn Database, input: MyInput) {
     let tracked0 = MyTracked::new(db, NotEq::from(input.field(db)));
     assert_eq!(tracked0.field(db).field, input.field(db));

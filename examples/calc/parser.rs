@@ -7,7 +7,7 @@ use crate::ir::{
 };
 
 // ANCHOR: parse_statements
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_> {
     // Get the source text from the database
     let source_text = source.text(db);

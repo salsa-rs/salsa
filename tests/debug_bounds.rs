@@ -9,41 +9,49 @@ struct Debug;
 
 #[salsa::input(debug)]
 struct DebugInput {
+    #[returns(copy)]
     field: Debug,
 }
 
 #[salsa::input]
 struct NotDebugInput {
+    #[returns(copy)]
     field: NotDebug,
 }
 
 #[salsa::interned(debug)]
 struct DebugInterned {
+    #[returns(copy)]
     field: Debug,
 }
 
 #[salsa::interned]
 struct NotDebugInterned {
+    #[returns(copy)]
     field: NotDebug,
 }
 
 #[salsa::interned(no_lifetime, debug)]
 struct DebugInternedNoLifetime {
+    #[returns(copy)]
     field: Debug,
 }
 
 #[salsa::interned(no_lifetime)]
 struct NotDebugInternedNoLifetime {
+    #[returns(copy)]
     field: NotDebug,
 }
 
 #[salsa::tracked(debug)]
 struct DebugTracked<'db> {
+    #[returns(copy)]
     field: Debug,
 }
 
 #[salsa::tracked]
 struct NotDebugTracked<'db> {
+    #[returns(copy)]
     field: NotDebug,
 }
 
