@@ -199,20 +199,22 @@ impl MemoHeader {
 }
 
 impl<C: Configuration> Memo<C> {
-    pub(super) fn new<'db>(
-        value: Option<C::Output<'db>>,
+    pub(super) fn new(
+        value: Option<C::Output<'_>>,
         revision_now: Revision,
         revisions: QueryRevisions,
     ) -> Self {
         Self {
-            // SAFETY: Query outputs are erased only while retained in this
-            // memo and are rebound to the lifetime of a database borrow.
-            value: value.map(|value| unsafe { crate::salsa_value::erase::<C::OutputValue>(value) }),
+            value: value.map(|value| {
+                // SAFETY: Query outputs are erased only while retained in this
+                // memo and are rebound to the lifetime of a database borrow.
+                unsafe { crate::salsa_value::erase::<C::OutputValue>(value) }
+            }),
             header: MemoHeader::new(revision_now, revisions),
         }
     }
 
-    pub(super) fn value<'db>(&'db self) -> Option<&'db C::Output<'db>> {
+    pub(super) fn value(&self) -> Option<&C::Output<'_>> {
         self.value
             .as_ref()
             .map(crate::salsa_value::rebind::<C::OutputValue>)

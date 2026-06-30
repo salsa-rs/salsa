@@ -73,7 +73,7 @@ pub mod helper {
         PhantomData<fn() -> Output>,
     );
 
-    impl<'db, T, Output> Dispatch<'db, T, Output> {
+    impl<T, Output> Dispatch<'_, T, Output> {
         pub const VALUE: Self = Self(PhantomData, PhantomData, PhantomData);
     }
 
@@ -88,7 +88,7 @@ pub mod helper {
         fn assert_salsa_value(self) {}
     }
 
-    impl<'db, T: 'static + Send + Sync> Fallback for &Dispatch<'db, T, T> {
+    impl<T: 'static + Send + Sync> Fallback for &Dispatch<'_, T, T> {
         fn assert_salsa_value(self) {}
     }
 
@@ -183,7 +183,7 @@ identity_salsa_values! {
 identity_salsa_values!(compact_str::CompactString);
 
 // SAFETY: A genuinely `'static` reference is unchanged by rebinding.
-unsafe impl<'db, T: ?Sized + Sync + 'static> SalsaValue<'db> for &'static T {
+unsafe impl<T: ?Sized + Sync + 'static> SalsaValue<'_> for &'static T {
     type Output = Self;
 }
 
@@ -198,7 +198,7 @@ unsafe impl<'db, T: ?Sized + Sync + 'static> SalsaValue<'db> for PhantomData<fn(
 }
 
 // SAFETY: The representation is unchanged for every `'db`.
-unsafe impl<'db, T: 'static + Send + Sync> SalsaValue<'db> for std::hash::BuildHasherDefault<T> {
+unsafe impl<T: 'static + Send + Sync> SalsaValue<'_> for std::hash::BuildHasherDefault<T> {
     type Output = Self;
 }
 

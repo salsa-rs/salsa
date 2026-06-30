@@ -289,8 +289,12 @@ fn assert_salsa_value_or_static_expr(
         return assert_salsa_value_expr(db_lt, zalsa, ty, static_ty);
     }
 
+    // The second reference selects the explicit implementation before method
+    // autoderef considers the static fallback. `identity` keeps Rust 1.85
+    // Clippy from mistaking that reference for a needless borrow.
     quote_spanned! {ty.span() =>
-        (&&SalsaValueDispatch::<#db_lt, #static_ty, #ty>::VALUE).assert_salsa_value();
+        let dispatch = &SalsaValueDispatch::<#db_lt, #static_ty, #ty>::VALUE;
+        ::core::convert::identity(&dispatch).assert_salsa_value();
     }
 }
 
