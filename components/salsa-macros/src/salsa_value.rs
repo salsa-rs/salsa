@@ -1,7 +1,5 @@
-use std::collections::HashSet;
-
 use proc_macro2::TokenStream;
-use syn::{Attribute, spanned::Spanned, visit::Visit};
+use syn::{Attribute, spanned::Spanned};
 
 use crate::kw;
 use crate::xform::{ChangeLt, ChangeSelfPath};
@@ -35,10 +33,6 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
             "`derive(SalsaValue)` supports at most one lifetime parameter",
         ));
     }
-    let salsa_lifetime = declared_lifetime
-        .cloned()
-        .unwrap_or_else(|| fresh_lifetime(&input, "'__salsa_db"));
-
     let mut checked_field_types = Vec::new();
 
     match &input.data {
@@ -54,8 +48,20 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         syn::Data::Union(_) => unreachable!(),
     }
 
-    let static_type = derived_type(&input, None);
-    let output_type = derived_type(&input, Some(&salsa_lifetime));
+    let Some(salsa_lifetime) = declared_lifetime else {
+        let ident = &input.ident;
+        let tokens = quote! {
+            #[automatically_derived]
+            unsafe impl ::salsa::SalsaValue<'_> for #ident {
+                type Output = Self;
+            }
+        };
+        return Ok(crate::debug::dump_tokens(&input.ident, tokens));
+    };
+
+    let static_lifetime = syn::Lifetime::new("'static", input.ident.span());
+    let static_type = derived_type(&input.ident, &static_lifetime);
+    let output_type = derived_type(&input.ident, salsa_lifetime);
     let zalsa = quote::format_ident!("__salsa_plumbing");
 
     let field_assertions =
@@ -63,17 +69,12 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
             .iter()
             .map(|(field_type, has_manual_retention_proof)| {
                 let static_field_type = replace_self_type(field_type, &static_type);
-                let static_field_type = replace_declared_lifetime(
-                    &static_field_type,
-                    declared_lifetime,
-                    &syn::Lifetime::new("'static", field_type.span()),
-                );
-                let output_field_type =
-                    replace_declared_lifetime(field_type, declared_lifetime, &salsa_lifetime);
-                let output_field_type = replace_self_type(&output_field_type, &output_type);
+                let static_field_type =
+                    replace_declared_lifetime(&static_field_type, salsa_lifetime, &static_lifetime);
+                let output_field_type = replace_self_type(field_type, &output_type);
 
                 assert_salsa_value_field(
-                    &salsa_lifetime,
+                    salsa_lifetime,
                     &zalsa,
                     &output_field_type,
                     &static_field_type,
@@ -162,16 +163,8 @@ fn reject_salsa_value_attributes(attrs: &[Attribute], target: &str) -> syn::Resu
     }
 }
 
-fn derived_type(input: &syn::DeriveInput, output_lifetime: Option<&syn::Lifetime>) -> syn::Type {
-    let ident = &input.ident;
-    let tokens = if input.generics.lifetimes().next().is_some() {
-        let lifetime = output_lifetime
-            .map_or_else(|| syn::Lifetime::new("'static", ident.span()), Clone::clone);
-        quote!(#ident<#lifetime>)
-    } else {
-        quote!(#ident)
-    };
-    syn::parse2(tokens).expect("generated SalsaValue type should parse")
+fn derived_type(ident: &syn::Ident, lifetime: &syn::Lifetime) -> syn::Type {
+    syn::parse_quote!(#ident<#lifetime>)
 }
 
 fn replace_self_type(ty: &syn::Type, self_type: &syn::Type) -> syn::Type {
@@ -182,35 +175,10 @@ fn replace_self_type(ty: &syn::Type, self_type: &syn::Type) -> syn::Type {
 
 fn replace_declared_lifetime(
     ty: &syn::Type,
-    declared_lifetime: Option<&syn::Lifetime>,
+    declared_lifetime: &syn::Lifetime,
     replacement: &syn::Lifetime,
 ) -> syn::Type {
-    match declared_lifetime {
-        Some(declared_lifetime) => ChangeLt::named_to(declared_lifetime, replacement).in_type(ty),
-        None => ty.clone(),
-    }
-}
-
-fn fresh_lifetime(input: &syn::DeriveInput, candidate: &str) -> syn::Lifetime {
-    let mut lifetimes = LifetimeNames::default();
-    lifetimes.visit_derive_input(input);
-
-    let mut candidate = candidate.to_owned();
-    while lifetimes.used.contains(candidate.trim_start_matches('\'')) {
-        candidate.insert(1, '_');
-    }
-    syn::Lifetime::new(&candidate, input.ident.span())
-}
-
-#[derive(Default)]
-struct LifetimeNames {
-    used: HashSet<String>,
-}
-
-impl<'ast> Visit<'ast> for LifetimeNames {
-    fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
-        self.used.insert(lifetime.ident.to_string());
-    }
+    ChangeLt::named_to(declared_lifetime, replacement).in_type(ty)
 }
 
 pub(crate) fn assert_salsa_value_or_static(
@@ -265,7 +233,6 @@ fn assert_tracked_output_is_salsa_value(
 
     let assertion_lifetime = syn::Lifetime::new(&format!("'{}", db_lt.ident), ty.span());
     let ty = ChangeLt::named_to(db_lt, &assertion_lifetime).in_type(ty);
-    let static_ty = ChangeLt::named_to(db_lt, &assertion_lifetime).in_type(static_ty);
     let assertion = quote_spanned! {ty.span() =>
         #zalsa::assert_salsa_value_output::<#static_ty, #ty>(
             ::core::marker::PhantomData::<&#assertion_lifetime ()>,
@@ -286,7 +253,19 @@ fn assert_salsa_value_or_static_expr(
     static_ty: &syn::Type,
 ) -> TokenStream {
     if crate::xform::uses_lifetime(ty, db_lt) {
-        return assert_salsa_value_expr(db_lt, zalsa, ty, static_ty);
+        if is_db_reference(ty, db_lt) {
+            return syn::Error::new_spanned(
+                ty,
+                "a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa handle instead",
+            )
+            .into_compile_error();
+        }
+
+        return quote_spanned! {ty.span() =>
+            #zalsa::assert_salsa_value::<#static_ty, #ty>(
+                ::core::marker::PhantomData::<&#db_lt ()>,
+            );
+        };
     }
 
     // The second reference selects the explicit implementation before method
@@ -295,27 +274,6 @@ fn assert_salsa_value_or_static_expr(
     quote_spanned! {ty.span() =>
         let dispatch = &SalsaValueDispatch::<#db_lt, #static_ty, #ty>::VALUE;
         ::core::convert::identity(&dispatch).assert_salsa_value();
-    }
-}
-
-fn assert_salsa_value_expr(
-    db_lt: &syn::Lifetime,
-    zalsa: &syn::Ident,
-    ty: &syn::Type,
-    static_ty: &syn::Type,
-) -> TokenStream {
-    if is_db_reference(ty, db_lt) {
-        return syn::Error::new_spanned(
-            ty,
-            "a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa handle instead",
-        )
-        .into_compile_error();
-    }
-
-    quote_spanned! {ty.span() =>
-        #zalsa::assert_salsa_value::<#static_ty, #ty>(
-            ::core::marker::PhantomData::<&#db_lt ()>,
-        );
     }
 }
 
@@ -333,7 +291,7 @@ fn is_db_reference(ty: &syn::Type, db_lt: &syn::Lifetime) -> bool {
 pub(crate) fn static_type(ty: &syn::Type, db_lifetime: &syn::Lifetime) -> syn::Type {
     replace_declared_lifetime(
         ty,
-        Some(db_lifetime),
+        db_lifetime,
         &syn::Lifetime::new("'static", db_lifetime.span()),
     )
 }
