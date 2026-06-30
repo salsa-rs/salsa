@@ -73,19 +73,23 @@ pub mod helper {
         PhantomData<fn() -> Output>,
     );
 
-    impl<'db, T, Output> Dispatch<'db, T, Output>
-    where
-        T: SalsaValue<'db, Output = Output>,
-    {
-        pub fn assert_salsa_value() {}
+    impl<'db, T, Output> Dispatch<'db, T, Output> {
+        pub const VALUE: Self = Self(PhantomData, PhantomData, PhantomData);
     }
 
     pub trait Fallback {
-        fn assert_salsa_value();
+        fn assert_salsa_value(self);
     }
 
-    impl<'db, T: 'static + Send + Sync> Fallback for Dispatch<'db, T, T> {
-        fn assert_salsa_value() {}
+    impl<'db, T, Output> Fallback for &&Dispatch<'db, T, Output>
+    where
+        T: SalsaValue<'db, Output = Output>,
+    {
+        fn assert_salsa_value(self) {}
+    }
+
+    impl<'db, T: 'static + Send + Sync> Fallback for &Dispatch<'db, T, T> {
+        fn assert_salsa_value(self) {}
     }
 
     #[diagnostic::on_unimplemented(
