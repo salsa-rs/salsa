@@ -9,7 +9,6 @@ use syn::{parenthesized, token};
 /// are required and trailing commas are permitted. The options accepted
 /// for any particular location are configured via the `AllowedOptions`
 /// trait.
-#[derive(Debug)]
 pub(crate) struct Options<A: AllowedOptions> {
     /// The `returns` option is used to configure the "return mode" for the field/function.
     /// Fields and tracked functions default to `ref`.
@@ -127,7 +126,7 @@ impl<A: AllowedOptions> Options<A> {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct PersistOptions {
     /// Path to a custom serialize function.
     pub serialize_fn: Option<syn::Path>,
