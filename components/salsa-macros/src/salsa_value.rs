@@ -459,7 +459,9 @@ pub(crate) fn assert_salsa_value_or_static_expr(
     }
 
     quote_spanned! {ty.span() =>
-        let _ = SalsaValueDispatch::<#db_lt, #static_ty, #ty>::assert_salsa_value;
+        let _ = || {
+            (&&SalsaValueDispatch::<#db_lt, #static_ty, #ty>::VALUE).assert_salsa_value();
+        };
     }
 }
 

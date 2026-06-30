@@ -21,6 +21,9 @@ struct StaticValue;
 struct ContainsStaticValue(StaticValue);
 
 #[derive(salsa::SalsaValue)]
+struct ContainsStaticPhantom(std::marker::PhantomData<&'static str>);
+
+#[derive(salsa::SalsaValue)]
 struct ContainsPhantomRef<'db> {
     marker: std::marker::PhantomData<&'db ()>,
 }
@@ -96,6 +99,7 @@ fn derives_salsa_value() {
     assert_salsa_value::<Generic<String>>();
     assert_salsa_value::<Bounded<String>>();
     assert_salsa_value::<ContainsPhantomRef<'static>>();
+    assert_salsa_value::<ContainsStaticPhantom>();
     assert_salsa_value::<ContainsStaticValue>();
     assert_salsa_value::<Recursive>();
     assert_salsa_value::<std::num::NonZeroU32>();
