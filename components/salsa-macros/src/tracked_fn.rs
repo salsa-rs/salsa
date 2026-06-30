@@ -95,9 +95,6 @@ impl Macro {
             .map(|&ty| with_db_lifetime(ty))
             .collect::<Vec<_>>();
         let output_ty = with_db_lifetime(&self.output_ty(&db_lt, &item)?);
-        let output_static_ty =
-            ChangeLt::named_to(&db_lt, &syn::Lifetime::new("'static", output_ty.span()))
-                .in_type(&output_ty);
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
@@ -134,7 +131,6 @@ impl Macro {
 
         let zalsa = self.hygiene.ident("zalsa");
         let Configuration = self.hygiene.scoped_ident(fn_name, "Configuration");
-        let Output = self.hygiene.scoped_ident(fn_name, "Output");
         let InternedData = self.hygiene.scoped_ident(fn_name, "InternedData");
         let InternedFields = self.hygiene.scoped_ident(fn_name, "InternedFields");
         let assemble_interned_fields = self
@@ -199,12 +195,7 @@ impl Macro {
         let persist = self.args.persist();
 
         let assert_output_is_salsa_value_or_static = if requires_salsa_value {
-            crate::salsa_value::assert_salsa_value_or_static(
-                &db_lt,
-                &zalsa,
-                &output_ty,
-                &output_static_ty,
-            )
+            crate::salsa_value::assert_salsa_value_or_static(&db_lt, &zalsa, &output_ty)
         } else {
             quote! {}
         };
@@ -212,14 +203,7 @@ impl Macro {
             interned_input_tys
                 .iter()
                 .map(|input_ty| {
-                    let static_input_ty = crate::salsa_value::static_type(input_ty, &db_lt);
-                    crate::salsa_value::assert_salsa_value_field(
-                        &db_lt,
-                        &zalsa,
-                        input_ty,
-                        &static_input_ty,
-                        false,
-                    )
+                    crate::salsa_value::assert_salsa_value_field(&db_lt, &zalsa, input_ty, false)
                 })
                 .collect()
         } else {
@@ -243,7 +227,6 @@ impl Macro {
                 input_tys: [#(#input_tys),*],
                 interned_input_tys: [#(#interned_input_tys),*],
                 output_ty: #output_ty,
-                output_static_ty: #output_static_ty,
                 inner_fn: { #inner_fn },
                 cycle_recovery_fn: #cycle_recovery_fn,
                 cycle_recovery_initial: #cycle_recovery_initial,
@@ -262,7 +245,6 @@ impl Macro {
                 unused_names: [
                     #zalsa,
                     #Configuration,
-                    #Output,
                     #InternedData,
                     #InternedFields,
                     #assemble_interned_fields,

@@ -129,14 +129,6 @@ macro_rules! setup_interned_struct {
                 marker: ::std::marker::PhantomData<fn() -> &$db_lt ()>,
             }
 
-            // SAFETY: The generated assertions above prove each retained field
-            // can be exposed with the current database lifetime.
-            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt>
-                for $StructDataIdent<'static>
-            {
-                type Output = $StructDataIdent<$db_lt>;
-            }
-
             // Public ingredient APIs expose their field tuple through this wrapper.
             impl<$db_lt> ::std::ops::Deref for $StructDataIdent<$db_lt> {
                 type Target = ($($field_ty,)*);
@@ -181,7 +173,9 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl $zalsa::interned::Configuration for $StructWithStatic {
+            // SAFETY: The generated assertions above prove every field can be
+            // retained after erasing the database lifetime.
+            unsafe impl $zalsa::interned::Configuration for $StructWithStatic {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
@@ -194,7 +188,6 @@ macro_rules! setup_interned_struct {
                 )?
 
                 type Fields<'a> = $StructDataIdent<'a>;
-                type FieldsValue = $StructDataIdent<'static>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
 
                 $(
@@ -326,11 +319,7 @@ macro_rules! setup_interned_struct {
             }
 
 
-            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt>
-                for $StructWithStatic
-            {
-                type Output = $Struct<$($db_lt_arg)?>;
-            }
+            unsafe impl< $($db_lt_arg)? > $zalsa::SalsaValue for $Struct< $($db_lt_arg)? > {}
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
                 pub fn $new_fn<$Db, $($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self

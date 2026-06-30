@@ -32,9 +32,6 @@ macro_rules! setup_tracked_struct {
         // Field types, may reference `db_lt`.
         field_tys: [$($field_ty:ty),*],
 
-        // Field types with `db_lt` replaced by `'static`.
-        static_field_tys: [$($static_field_ty:ty),*],
-
         assert_fields_are_salsa_values: {$($assert_fields_are_salsa_values:tt)*},
 
         // Tracked field types.
@@ -105,7 +102,6 @@ macro_rules! setup_tracked_struct {
             $zalsa:ident,
             $zalsa_struct:ident,
             $Configuration:ident,
-            $Fields:ident,
             $CACHE:ident,
             $Db:ident,
             $Revision:ident,
@@ -133,15 +129,6 @@ macro_rules! setup_tracked_struct {
             }
             let _ = _assert_fields_are_salsa_values;
 
-            #[repr(transparent)]
-            $vis struct $Fields(($($static_field_ty,)*));
-
-            // SAFETY: The generated assertions above prove each retained field
-            // can be exposed with the current database lifetime.
-            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Fields {
-                type Output = ($($field_ty,)*);
-            }
-
             impl<$db_lt> $zalsa::HasJar for $Struct<$db_lt> {
                 type Jar = $zalsa_struct::JarImpl<$Configuration>;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
@@ -151,7 +138,9 @@ macro_rules! setup_tracked_struct {
                 $zalsa::ErasedJar::erase::<$Struct<'static>>()
             }
 
-            impl $zalsa_struct::Configuration for $Configuration {
+            // SAFETY: The generated assertions above prove every field can be
+            // retained after erasing the database lifetime.
+            unsafe impl $zalsa_struct::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
@@ -169,7 +158,6 @@ macro_rules! setup_tracked_struct {
                 const PERSIST: bool = $persist;
 
                 type Fields<$db_lt> = ($($field_ty,)*);
-                type FieldsValue = $Fields;
 
                 type Revisions = [$zalsa::AtomicRevision; $N];
 
@@ -349,9 +337,7 @@ macro_rules! setup_tracked_struct {
                 }
             }
 
-            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Struct<'static> {
-                type Output = $Struct<$db_lt>;
-            }
+            unsafe impl $zalsa::SalsaValue for $Struct<'_> {}
 
             impl<$db_lt> $Struct<$db_lt> {
                 pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self

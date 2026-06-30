@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::marker::PhantomData;
-use std::mem::{ManuallyDrop, align_of, size_of};
 use std::path::PathBuf;
 
 #[cfg(feature = "rayon")]
@@ -10,19 +9,21 @@ use rayon::iter::Either;
 
 use crate::sync::Arc;
 
-/// A value Salsa can expose with the database lifetime `'db`.
+/// A value Salsa can safely retain across revisions.
 ///
-/// `Self` is the `'static` representation retained in Salsa's storage and
-/// [`Output`](SalsaValue::Output) is the representation exposed while the
-/// database is borrowed for `'db`.
+/// Salsa values can be stored in interned and tracked structs or used as
+/// tracked query results. Ordinary `'static` values are accepted directly at
+/// those storage boundaries; types carrying the database lifetime must
+/// implement this trait.
 ///
 /// # Safety
 ///
-/// `Self` and `Output` must have identical layouts and validity invariants.
-/// Reinterpreting a shared `Self` reference as `Output` must be sound for `'db`,
-/// and an `Output` value must remain valid when Salsa retains it as `Self`.
-/// This includes calling safe trait methods such as [`PartialEq::eq`] in a
-/// later revision.
+/// Implementing this trait asserts that the type is effectively `'static`
+/// from Salsa's perspective: an instance produced in an older revision must
+/// remain safe to retain and use in a newer revision. This includes calling
+/// safe trait methods such as [`PartialEq::eq`] on the old value. In particular,
+/// `SalsaValue` must not be implemented for a database-lifetime reference such
+/// as `&'db T`, which may point to storage changed or freed in a newer revision.
 ///
 /// `#[derive(SalsaValue)]` checks this requirement structurally. It cannot
 /// account for additional invariants maintained by unsafe code in the type's
@@ -55,10 +56,11 @@ use crate::sync::Arc;
 /// The author of that unsafe abstraction is responsible for not deriving
 /// `SalsaValue`: Salsa may retain `InvalidValue` after the pointed-to memoized
 /// result has been replaced.
-pub unsafe trait SalsaValue<'db>: Sized + 'static + Send + Sync {
-    /// The representation exposed during the database borrow.
-    type Output: 'db + Send + Sync;
-}
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` doesn't implement `SalsaValue`",
+    note = "add `#[derive(salsa::SalsaValue)]` to `{Self}`"
+)]
+pub unsafe trait SalsaValue {}
 
 /// Selects an explicit [`SalsaValue`] implementation or an unchanged `'static` value.
 #[doc(hidden)]
@@ -67,82 +69,33 @@ pub mod helper {
 
     use super::SalsaValue;
 
-    pub struct Dispatch<'db, T, Output>(
-        PhantomData<&'db ()>,
-        PhantomData<fn() -> T>,
-        PhantomData<fn() -> Output>,
-    );
+    pub struct Dispatch<T>(PhantomData<T>);
 
-    impl<T, Output> Dispatch<'_, T, Output> {
-        pub const VALUE: Self = Self(PhantomData, PhantomData, PhantomData);
+    impl<T: SalsaValue> Dispatch<T> {
+        pub fn assert_salsa_value() {}
     }
 
-    pub trait Fallback {
-        fn assert_salsa_value(self);
+    pub trait Fallback<T> {
+        fn assert_salsa_value();
     }
 
-    impl<'db, T, Output> Fallback for &&Dispatch<'db, T, Output>
-    where
-        T: SalsaValue<'db, Output = Output>,
-    {
-        fn assert_salsa_value(self) {}
+    impl<T: 'static> Fallback<T> for Dispatch<T> {
+        fn assert_salsa_value() {}
     }
 
-    impl<T: 'static + Send + Sync> Fallback for &Dispatch<'_, T, T> {
-        fn assert_salsa_value(self) {}
-    }
-
-    #[diagnostic::on_unimplemented(
-        message = "the field type `{Self}` does not implement `SalsaValue`",
-        label = "does not implement `SalsaValue`",
-        note = "derive `salsa::SalsaValue` for local field types; for foreign types, use `#[salsa_value(prove_safe_to_retain_manually)]` only after verifying retention is safe"
-    )]
-    pub trait SalsaValueField<'db, Static> {}
-
-    #[diagnostic::do_not_recommend]
-    impl<'db, Static, Output> SalsaValueField<'db, Static> for Output where
-        Static: SalsaValue<'db, Output = Output>
-    {
-    }
-
-    pub const fn assert_salsa_value<'db, Static, Output>(_: PhantomData<&'db ()>)
-    where
-        Output: SalsaValueField<'db, Static>,
-    {
-    }
-
-    #[diagnostic::on_unimplemented(
-        message = "the tracked function's return type `{Self}` does not implement `SalsaValue`",
-        label = "does not implement `SalsaValue`",
-        note = "consider deriving `salsa::SalsaValue` for the tracked function's return type if it is safe to retain across revisions"
-    )]
-    pub trait SalsaValueOutput<'db, Static> {}
-
-    #[diagnostic::do_not_recommend]
-    impl<'db, Static, Output> SalsaValueOutput<'db, Static> for Output where
-        Static: SalsaValue<'db, Output = Output>
-    {
-    }
-
-    pub const fn assert_salsa_value_output<'db, Static, Output>(_: PhantomData<&'db ()>)
-    where
-        Output: SalsaValueOutput<'db, Static>,
-    {
-    }
+    pub const fn assert_salsa_value<T: SalsaValue>() {}
 }
 
-macro_rules! identity_salsa_values {
+macro_rules! salsa_values {
     ($($ty:ty),* $(,)?) => {
         $(
-            // SAFETY: The representation is unchanged for every `'db`.
-            unsafe impl<'db> SalsaValue<'db> for $ty {
-                type Output = Self;
-            }
+            // SAFETY: Values of this type contain no database-lifetime references.
+            unsafe impl SalsaValue for $ty {}
         )*
     };
 }
 
-identity_salsa_values! {
+salsa_values! {
     (),
     bool,
     char,
@@ -177,54 +130,38 @@ identity_salsa_values! {
     std::num::NonZeroU128,
     std::num::NonZeroUsize,
     crate::Id,
+    Box<str>,
 }
 
 #[cfg(feature = "compact_str")]
-identity_salsa_values!(compact_str::CompactString);
+salsa_values!(compact_str::CompactString);
 
-// SAFETY: A genuinely `'static` reference is unchanged by rebinding.
-unsafe impl<T: ?Sized + Sync + 'static> SalsaValue<'_> for &'static T {
-    type Output = Self;
-}
+// SAFETY: A genuinely `'static` reference remains valid across revisions.
+unsafe impl<T: ?Sized> SalsaValue for &'static T {}
 
-// SAFETY: `PhantomData` contains no data. These implementations preserve the
-// lifetime branding used by generated and user-defined Salsa values.
-unsafe impl<'db, T: ?Sized + Sync + 'static> SalsaValue<'db> for PhantomData<&'static T> {
-    type Output = PhantomData<&'db T>;
-}
+// SAFETY: `PhantomData` contains no data.
+unsafe impl<T: ?Sized> SalsaValue for PhantomData<T> {}
 
-unsafe impl<'db, T: ?Sized + Sync + 'static> SalsaValue<'db> for PhantomData<fn() -> &'static T> {
-    type Output = PhantomData<fn() -> &'db T>;
-}
-
-// SAFETY: The representation is unchanged for every `'db`.
-unsafe impl<T: 'static + Send + Sync> SalsaValue<'_> for std::hash::BuildHasherDefault<T> {
-    type Output = Self;
-}
+// SAFETY: The parameter is `'static` and therefore contains no database-lifetime references.
+unsafe impl<T: 'static> SalsaValue for std::hash::BuildHasherDefault<T> {}
 
 macro_rules! container_salsa_value {
     ($($container:ident)::+ < $($parameter:ident),+ >; unchanged $state:ident) => {
-        // SAFETY: The container preserves its layout when its parameters are rebound.
-        unsafe impl<'db, $($parameter),+, $state> SalsaValue<'db>
+        // SAFETY: Every retained parameter is a `SalsaValue`; the state is `'static`.
+        unsafe impl<$($parameter),+, $state> SalsaValue
             for $($container)::+<$($parameter),+, $state>
         where
-            $($parameter: SalsaValue<'db>),+,
-            $state: 'static + Send + Sync,
+            $($parameter: SalsaValue),+,
+            $state: 'static,
         {
-            type Output = $($container)::+<
-                $(<$parameter as SalsaValue<'db>>::Output),+,
-                $state,
-            >;
         }
     };
     ($($container:ident)::+ < $($parameter:ident),+ >) => {
-        // SAFETY: The container preserves its layout when its parameters are rebound.
-        unsafe impl<'db, $($parameter),+> SalsaValue<'db>
-            for $($container)::+<$($parameter),+>
+        // SAFETY: Every retained parameter is a `SalsaValue`.
+        unsafe impl<$($parameter),+> SalsaValue for $($container)::+<$($parameter),+>
         where
-            $($parameter: SalsaValue<'db>),+
+            $($parameter: SalsaValue),+
         {
-            type Output = $($container)::+<$(<$parameter as SalsaValue<'db>>::Output),+>;
         }
     };
 }
@@ -235,37 +172,19 @@ container_salsa_value!(Result<T, E>);
 container_salsa_value!(Box<T>);
 container_salsa_value!(Arc<T>);
 container_salsa_value!(thin_vec::ThinVec<T>);
+container_salsa_value!(std::ops::Range<T>);
+container_salsa_value!(std::ops::RangeInclusive<T>);
 
 #[cfg(feature = "triomphe")]
 container_salsa_value!(triomphe::Arc<T>);
 
-unsafe impl<'db, T, const N: usize> SalsaValue<'db> for [T; N]
-where
-    T: SalsaValue<'db>,
+// SAFETY: Every retained element is a `SalsaValue`.
+unsafe impl<T: SalsaValue, const N: usize> SalsaValue for [T; N] {}
+unsafe impl<T: SalsaValue> SalsaValue for Box<[T]> {}
+unsafe impl<T: SalsaValue, const N: usize> SalsaValue for smallvec::SmallVec<[T; N]> where
+    [T; N]: smallvec::Array<Item = T>
 {
-    type Output = [<T as SalsaValue<'db>>::Output; N];
 }
-
-unsafe impl<'db, T> SalsaValue<'db> for Box<[T]>
-where
-    T: SalsaValue<'db>,
-{
-    type Output = Box<[<T as SalsaValue<'db>>::Output]>;
-}
-
-unsafe impl<'db, T, const N: usize> SalsaValue<'db> for smallvec::SmallVec<[T; N]>
-where
-    T: SalsaValue<'db>,
-    [T; N]: smallvec::Array<Item = T>,
-    [<T as SalsaValue<'db>>::Output; N]: smallvec::Array<Item = <T as SalsaValue<'db>>::Output>,
-{
-    type Output = smallvec::SmallVec<[<T as SalsaValue<'db>>::Output; N]>;
-}
-
-identity_salsa_values!(Box<str>);
-
-container_salsa_value!(std::ops::Range<T>);
-container_salsa_value!(std::ops::RangeInclusive<T>);
 
 container_salsa_value!(HashMap<K, V>; unchanged S);
 container_salsa_value!(HashSet<K>; unchanged S);
@@ -287,12 +206,11 @@ container_salsa_value!(Either<L, R>);
 
 macro_rules! tuple_salsa_value {
     ($($t:ident),*) => {
-        // SAFETY: Tuples preserve their layout when their elements are rebound.
-        unsafe impl<'db, $($t),*> SalsaValue<'db> for ($($t,)*)
+        // SAFETY: Every retained tuple element is a `SalsaValue`.
+        unsafe impl<$($t),*> SalsaValue for ($($t,)*)
         where
-            $($t: SalsaValue<'db>),*
+            $($t: SalsaValue),*
         {
-            type Output = ($(<$t as SalsaValue<'db>>::Output,)*);
         }
     };
 }
@@ -309,53 +227,3 @@ tuple_salsa_value!(A, B, C, D, E, F, G, H, I);
 tuple_salsa_value!(A, B, C, D, E, F, G, H, I, J);
 tuple_salsa_value!(A, B, C, D, E, F, G, H, I, J, K);
 tuple_salsa_value!(A, B, C, D, E, F, G, H, I, J, K, L);
-
-/// Erases the database lifetime before retaining a value in Salsa storage.
-///
-/// # Safety
-///
-/// The returned value must only be rebound while used with the database from
-/// which `value` originated.
-pub(crate) unsafe fn erase<'db, F>(value: <F as SalsaValue<'db>>::Output) -> F
-where
-    F: SalsaValue<'db>,
-{
-    const {
-        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::Output>());
-        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::Output>());
-    }
-
-    let value = ManuallyDrop::new(value);
-    // SAFETY: Guaranteed by `F`'s `SalsaValue` implementation.
-    unsafe { std::mem::transmute_copy(&value) }
-}
-
-/// Restores the database lifetime for a retained value.
-pub(crate) fn rebind<'db, F>(value: &'db F) -> &'db <F as SalsaValue<'db>>::Output
-where
-    F: SalsaValue<'db>,
-{
-    const {
-        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::Output>());
-        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::Output>());
-    }
-
-    // SAFETY: Guaranteed by `F`'s `SalsaValue` implementation. The restored
-    // lifetime cannot outlive the shared borrow of the retained value.
-    unsafe { std::mem::transmute(value) }
-}
-
-/// Restores the database lifetime for an exclusively borrowed retained value.
-pub(crate) fn rebind_mut<'db, F>(value: &'db mut F) -> &'db mut <F as SalsaValue<'db>>::Output
-where
-    F: SalsaValue<'db>,
-{
-    const {
-        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::Output>());
-        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::Output>());
-    }
-
-    // SAFETY: Guaranteed by `F`'s `SalsaValue` implementation. The restored
-    // lifetime cannot outlive the exclusive borrow of the retained value.
-    unsafe { std::mem::transmute(value) }
-}

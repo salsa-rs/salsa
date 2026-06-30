@@ -81,14 +81,14 @@ const _: () = {
             (zalsa_::HashEqLike::<T0>::eq(&self.0, &data.0) && true)
         }
     }
-    impl zalsa_struct_::Configuration for Configuration_ {
+    // SAFETY: `StructData<'db>` contains only an owned `String` and a phantom lifetime.
+    unsafe impl zalsa_struct_::Configuration for Configuration_ {
         const LOCATION: zalsa_::Location = zalsa_::Location {
             file: file!(),
             line: line!(),
         };
         const DEBUG_NAME: &'static str = "InternedString";
         type Fields<'a> = StructData<'a>;
-        type FieldsValue = StructData<'static>;
         type Struct<'a> = InternedString<'a>;
 
         const PERSIST: bool = false;
@@ -179,9 +179,7 @@ const _: () = {
         }
     }
 
-    unsafe impl<'db> zalsa_::SalsaValue<'db> for InternedString<'static> {
-        type Output = InternedString<'db>;
-    }
+    unsafe impl zalsa_::SalsaValue for InternedString<'_> {}
     impl<'db> InternedString<'db> {
         pub fn new<Db_, T0: zalsa_::Lookup<String> + std::hash::Hash>(
             db: &'db Db_,
