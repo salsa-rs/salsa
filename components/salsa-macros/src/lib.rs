@@ -515,9 +515,8 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 /// A field whose type is unconditionally `'static` is accepted directly; any other field must
 /// implement [`salsa::SalsaValue`].
 ///
-/// The type may declare at most one lifetime parameter. Type parameters, const parameters, and
-/// unions are not supported. Named fields, tuple fields, unit structs, and enum variants are
-/// supported.
+/// The type may declare at most one lifetime parameter. Type and const parameters are supported;
+/// unions are not. Named fields, tuple fields, unit structs, and enum variants are supported.
 ///
 /// # Field attributes
 ///

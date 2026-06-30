@@ -19,7 +19,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
     let mut declared_lifetimes = input.generics.lifetimes();
     let declared_lifetime = declared_lifetimes
         .next()
-        .map(|parameter| &parameter.lifetime);
+        .map(|parameter| parameter.lifetime.clone());
     if declared_lifetimes.next().is_some() {
         return Err(syn::Error::new_spanned(
             &input.generics,
@@ -41,9 +41,6 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         syn::Data::Union(_) => unreachable!(),
     }
 
-    let assertion_lifetime = declared_lifetime
-        .cloned()
-        .unwrap_or_else(|| syn::Lifetime::new("'__salsa", input.ident.span()));
     let ident = &input.ident;
     let (_, type_generics, _) = input.generics.split_for_impl();
     let derived_type = syn::parse_quote!(#ident #type_generics);
@@ -52,13 +49,16 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
     let generics = add_field_bounds(input.generics.clone(), &checked_field_types);
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
-    let mut assertion_generics = generics.clone();
-    if declared_lifetime.is_none() {
-        assertion_generics
-            .params
-            .insert(0, syn::parse_quote!('__salsa));
-    }
-    let (assertion_impl_generics, _, assertion_where_clause) = assertion_generics.split_for_impl();
+    let implementation = quote! {
+        #[automatically_derived]
+        // SAFETY: The generated bounds and assertions verify every field without
+        // an explicit manual retention proof.
+        unsafe impl #impl_generics ::salsa::SalsaValue for #derived_type #where_clause {}
+    };
+
+    let Some(assertion_lifetime) = declared_lifetime else {
+        return Ok(crate::debug::dump_tokens(&input.ident, implementation));
+    };
 
     let field_assertions =
         checked_field_types
@@ -75,17 +75,14 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
             });
 
     let tokens = quote! {
-        #[automatically_derived]
-        // SAFETY: The generated assertions and bounds verify every field without
-        // an explicit manual retention proof.
-        unsafe impl #impl_generics ::salsa::SalsaValue for #derived_type #where_clause {}
+        #implementation
 
         const _: () = {
             use ::salsa::plumbing as #zalsa;
             use #zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
 
             #[allow(dead_code)]
-            fn _assert_fields_are_salsa_values #assertion_impl_generics () #assertion_where_clause {
+            fn _assert_fields_are_salsa_values #impl_generics () #where_clause {
                 #(#field_assertions)*
             }
         };
@@ -100,9 +97,8 @@ fn add_field_bounds(
 ) -> syn::Generics {
     let type_params = generics
         .type_params()
-        .map(|parameter| parameter.ident.to_string())
+        .map(|parameter| parameter.ident.clone())
         .collect::<HashSet<_>>();
-    let mut field_bounds = Vec::<syn::WherePredicate>::new();
 
     for (field_type, has_manual_retention_proof) in checked_field_types {
         if *has_manual_retention_proof {
@@ -113,18 +109,18 @@ fn add_field_bounds(
             continue;
         }
 
-        field_bounds.push(syn::parse_quote!(#field_type: ::salsa::SalsaValue));
+        generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(#field_type: ::salsa::SalsaValue));
     }
-
-    let where_clause = generics.make_where_clause();
-    where_clause.predicates.extend(field_bounds);
 
     generics
 }
 
-fn type_uses_type_param(ty: &syn::Type, type_params: &HashSet<String>) -> bool {
+fn type_uses_type_param(ty: &syn::Type, type_params: &HashSet<syn::Ident>) -> bool {
     struct UsesTypeParam<'a> {
-        type_params: &'a HashSet<String>,
+        type_params: &'a HashSet<syn::Ident>,
         result: bool,
     }
 
@@ -132,7 +128,7 @@ fn type_uses_type_param(ty: &syn::Type, type_params: &HashSet<String>) -> bool {
         fn visit_type_path(&mut self, path: &'ast syn::TypePath) {
             if path.qself.is_none() {
                 if let Some(segment) = path.path.segments.first() {
-                    self.result |= self.type_params.contains(&segment.ident.to_string());
+                    self.result |= self.type_params.contains(&segment.ident);
                 }
             }
 
@@ -226,7 +222,7 @@ pub(crate) fn assert_salsa_value_or_static(
 
     let assertion = assert_salsa_value_or_static_expr(db_lt, zalsa, ty);
     quote! {
-        fn _assert_output_is_salsa_value_or_static<#db_lt>() {
+        fn _assert_output_is_salsa_value_or_static() {
             use #zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
             #assertion
         }
