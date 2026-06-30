@@ -116,6 +116,7 @@ macro_rules! setup_interned_struct {
                 $zalsa::ErasedJar::erase::<$StructWithStatic>()
             }
 
+            #[allow(unused_lifetimes)]
             fn _assert_fields_are_salsa_values<$db_lt>() {
                 use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
                 $($assert_fields_are_salsa_values)*

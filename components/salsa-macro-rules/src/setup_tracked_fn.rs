@@ -144,6 +144,7 @@ macro_rules! setup_tracked_fn {
 
             $zalsa::macro_if! {
                 if $needs_interner {
+                    #[allow(unused_lifetimes)]
                     fn _assert_interned_inputs_are_salsa_values<$db_lt>() {
                         use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
                         $($assert_interned_inputs_are_salsa_values)*

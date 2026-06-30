@@ -123,6 +123,7 @@ macro_rules! setup_tracked_struct {
 
             type $Configuration = $Struct<'static>;
 
+            #[allow(unused_lifetimes)]
             fn _assert_fields_are_salsa_values<$db_lt>() {
                 use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
                 $($assert_fields_are_salsa_values)*
