@@ -1116,7 +1116,7 @@ where
     /// They can change across revisions, but they do not change within
     /// a particular revision.
     #[cfg_attr(not(feature = "salsa_unstable"), doc(hidden))]
-    pub fn fields<'db>(&'db self) -> &'db C::Fields<'db> {
+    pub fn fields(&self) -> &C::Fields<'_> {
         crate::salsa_value::rebind::<C::FieldsValue>(&self.fields)
     }
 }

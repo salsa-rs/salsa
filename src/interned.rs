@@ -274,7 +274,7 @@ where
 
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
-    pub fn fields<'db>(&'db self) -> &'db C::Fields<'db> {
+    pub fn fields(&self) -> &C::Fields<'_> {
         // SAFETY: The fact that this function is safe is technically unsound. However, interned
         // values are only exposed if they have been validated in the current revision, which
         // ensures that they are not reused while being accessed.
@@ -363,7 +363,7 @@ where
         unsafe { crate::salsa_value::erase::<C::FieldsValue>(data) }
     }
 
-    fn from_internal_data<'db>(data: &'db C::FieldsValue) -> &'db C::Fields<'db> {
+    fn from_internal_data(data: &C::FieldsValue) -> &C::Fields<'_> {
         crate::salsa_value::rebind::<C::FieldsValue>(data)
     }
 
