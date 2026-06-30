@@ -136,6 +136,8 @@ macro_rules! setup_tracked_fn {
 
             struct $Configuration;
 
+            // Adapts static outputs accepted by the fallback to the concrete
+            // `SalsaValue` bound required by `Configuration::OutputValue`.
             #[repr(transparent)]
             struct $Output($output_static_ty);
 

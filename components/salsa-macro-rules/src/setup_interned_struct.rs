@@ -162,11 +162,11 @@ macro_rules! setup_interned_struct {
                 {
 
                 fn hash<H: ::std::hash::Hasher>(&self, h: &mut H) {
-                    $($zalsa::HashEqLike::<$indexed_ty>::hash(&self.fields.$field_index, &mut *h);)*
+                    $($zalsa::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
                 }
 
                 fn eq(&self, data: &StructKey<$db_lt, $($indexed_ty),*>) -> bool {
-                    ($($zalsa::HashEqLike::<$indexed_ty>::eq(&self.fields.$field_index, &data.$field_index) && )* true)
+                    ($($zalsa::HashEqLike::<$indexed_ty>::eq(&self.$field_index, &data.$field_index) && )* true)
                 }
             }
 
@@ -200,7 +200,7 @@ macro_rules! setup_interned_struct {
 
                 $(
                     fn heap_size(value: &Self::Fields<'_>) -> Option<usize> {
-                        Some($heap_size_fn(&value.fields))
+                        Some($heap_size_fn(value))
                     }
                 )?
 
@@ -359,7 +359,7 @@ macro_rules! setup_interned_struct {
                         $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,
-                            &fields.fields.$field_index,
+                            &fields.$field_index,
                         )
                     }
                 )*
@@ -381,7 +381,7 @@ macro_rules! setup_interned_struct {
                                 let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
                                 let mut f = f.debug_struct(stringify!($Struct));
                                 $(
-                                    let f = f.field(stringify!($field_id), &fields.fields.$field_index);
+                                    let f = f.field(stringify!($field_id), &fields.$field_index);
                                 )*
                                 f.finish()
                             }).unwrap_or_else(|| {
@@ -405,7 +405,7 @@ macro_rules! setup_interned_struct {
                                 let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
                                 let mut f = f.debug_struct(stringify!($Struct));
                                 $(
-                                    let f = f.field(stringify!($field_id), &fields.fields.$field_index);
+                                    let f = f.field(stringify!($field_id), &fields.$field_index);
                                 )*
                                 f.finish()
                             }).unwrap_or_else(|| {

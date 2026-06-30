@@ -127,20 +127,20 @@ macro_rules! setup_tracked_struct {
 
             type $Configuration = $Struct<'static>;
 
-            #[repr(transparent)]
-            $vis struct $Fields(($($static_field_ty,)*));
-
-            // SAFETY: The generated assertions below prove each retained field
-            // can be exposed with the current database lifetime.
-            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Fields {
-                type Output = ($($field_ty,)*);
-            }
-
             fn _assert_fields_are_salsa_values<$db_lt>() {
                 use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
                 $($assert_fields_are_salsa_values)*
             }
             let _ = _assert_fields_are_salsa_values;
+
+            #[repr(transparent)]
+            $vis struct $Fields(($($static_field_ty,)*));
+
+            // SAFETY: The generated assertions above prove each retained field
+            // can be exposed with the current database lifetime.
+            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Fields {
+                type Output = ($($field_ty,)*);
+            }
 
             impl<$db_lt> $zalsa::HasJar for $Struct<$db_lt> {
                 type Jar = $zalsa_struct::JarImpl<$Configuration>;
