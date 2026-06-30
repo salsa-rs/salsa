@@ -54,6 +54,7 @@ mod tracked;
 mod tracked_fn;
 mod tracked_impl;
 mod tracked_struct;
+#[path = "salsa_value.rs"]
 mod update;
 mod xform;
 

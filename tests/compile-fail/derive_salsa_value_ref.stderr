@@ -1,5 +1,5 @@
 error: lifetime may not live long enough
- --> tests/compile-fail/invalid_update_field.rs:1:10
+ --> tests/compile-fail/derive_salsa_value_ref.rs:1:10
   |
 1 | #[derive(salsa::Update)]
   |          ^^^^^^^^^^^^^ requires that `'a` must outlive `'static`
