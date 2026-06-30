@@ -37,7 +37,7 @@ pub trait Configuration: Any {
     type Struct: FromId + AsId + 'static + Send + Sync;
 
     /// A (possibly empty) tuple of the fields for this struct.
-    type Fields: Send + Sync;
+    type Fields: 'static + Send + Sync;
 
     /// A array of [`Revision`], one per each of the value fields.
     #[cfg(feature = "persistence")]
