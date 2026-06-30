@@ -34,6 +34,9 @@ macro_rules! setup_tracked_fn {
         // Return type of the function (may reference `$generics`).
         output_ty: $output_ty:ty,
 
+        // Return type with the database lifetime replaced by `'static`.
+        output_static_ty: $output_static_ty:ty,
+
         // Function body, may reference identifiers defined in `$input_pats` and the generics from `$generics`
         inner_fn: {$($inner_fn:tt)*},
 
@@ -70,7 +73,7 @@ macro_rules! setup_tracked_fn {
         // If true, the input and output values implement `serde::{Serialize, Deserialize}`.
         persist: $persist:tt,
 
-        salsa_value_field_attr: {$($salsa_value_field_attr:tt)*},
+        assert_interned_inputs_are_salsa_values: {$($assert_interned_inputs_are_salsa_values:tt)*},
 
         assert_output_is_salsa_value_or_static: {$($assert_output_is_salsa_value_or_static:tt)*},
 
@@ -82,6 +85,7 @@ macro_rules! setup_tracked_fn {
         unused_names: [
             $zalsa:ident,
             $Configuration:ident,
+            $Output:ident,
             $InternedData:ident,
             $InternedFields:ident,
             $assemble_interned_fields:ident,
@@ -132,6 +136,16 @@ macro_rules! setup_tracked_fn {
 
             struct $Configuration;
 
+            #[repr(transparent)]
+            struct $Output($output_static_ty);
+
+            // SAFETY: The generated assertion below proves the retained value
+            // can be exposed with the current database lifetime. The unsafe
+            // escape hatch makes this the caller's responsibility instead.
+            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Output {
+                type Output = $output_ty;
+            }
+
             $zalsa::register_jar! {
                 $zalsa::ErasedJar::erase::<$fn_name>()
             }
@@ -146,9 +160,15 @@ macro_rules! setup_tracked_fn {
 
             $zalsa::macro_if! {
                 if $needs_interner {
+                    fn _assert_interned_inputs_are_salsa_values<$db_lt>() {
+                        use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
+                        $($assert_interned_inputs_are_salsa_values)*
+                    }
+                    let _ = _assert_interned_inputs_are_salsa_values;
+
                     #[derive(Clone, PartialEq, Eq, Hash, ::salsa::SalsaValue)]
                     struct $InternedFields<$db_lt>(
-                        $($salsa_value_field_attr)*
+                        #[salsa_value(prove_safe_to_retain_manually)]
                         ($($interned_input_ty),*),
                         // This marker contains no data; it only makes the GAT lifetime explicit.
                         ::core::marker::PhantomData<fn() -> &$db_lt ()>,
@@ -233,6 +253,7 @@ macro_rules! setup_tracked_fn {
                         const PERSIST: bool = $persist;
 
                         type Fields<$db_lt> = $InternedFields<$db_lt>;
+                        type StoredFields = $InternedFields<'static>;
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
 
@@ -327,10 +348,7 @@ macro_rules! setup_tracked_fn {
 
             $($assert_output_is_salsa_value_or_static)*
 
-            // SAFETY: The generated assertion above proves the output is either a
-            // `SalsaValue` or the same `'static` type for every database lifetime.
-            // `unsafe(non_salsa_values)` makes this guarantee the caller's responsibility.
-            unsafe impl $zalsa::function::Configuration for $Configuration {
+            impl $zalsa::function::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
@@ -345,6 +363,8 @@ macro_rules! setup_tracked_fn {
                 type Input<$db_lt> = ($($interned_input_ty),*);
 
                 type Output<$db_lt> = $output_ty;
+
+                type OutputValue = $Output;
 
                 type Eviction = $Eviction;
 

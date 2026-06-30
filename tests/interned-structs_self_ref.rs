@@ -88,6 +88,7 @@ const _: () = {
         };
         const DEBUG_NAME: &'static str = "InternedString";
         type Fields<'a> = StructData<'a>;
+        type StoredFields = StructData<'static>;
         type Struct<'a> = InternedString<'a>;
 
         const PERSIST: bool = false;
@@ -178,7 +179,9 @@ const _: () = {
         }
     }
 
-    unsafe impl zalsa_::SalsaValue for InternedString<'_> {}
+    unsafe impl<'db> zalsa_::SalsaValue<'db> for InternedString<'static> {
+        type Output = InternedString<'db>;
+    }
     impl<'db> InternedString<'db> {
         pub fn new<Db_, T0: zalsa_::Lookup<String> + std::hash::Hash>(
             db: &'db Db_,

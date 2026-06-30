@@ -13,6 +13,7 @@
 extern crate quote;
 
 use proc_macro::TokenStream;
+use quote::ToTokens;
 
 macro_rules! parse_quote {
     ($($inp:tt)*) => {
@@ -138,7 +139,8 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// The annotated item must be a struct with named fields. It may declare one lifetime parameter,
 /// which Salsa treats as the database lifetime, but no type or const parameters. The generated
 /// struct is [`Copy`] and provides a constructor and field getters. Every field type must implement
-/// [`Clone`] + [`Eq`] + [`Hash`] + [`Send`] + [`Sync`] + [`salsa::SalsaValue`].
+/// [`Clone`] + [`Eq`] + [`Hash`] + [`Send`] + [`Sync`]. A field whose type changes with the database
+/// lifetime must also implement [`salsa::SalsaValue`].
 ///
 /// See [interned structs in the `salsa` crate documentation] for their identity and lifecycle.
 ///
@@ -177,8 +179,8 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   may be reclaimed or reused.
 /// - **Unsafe: `unsafe(non_salsa_values)` is strongly discouraged.** It adapts field types that do
 ///   not implement [`salsa::SalsaValue`] by suppressing the generated checks. The caller becomes
-///   responsible for ensuring retained values remain valid across revisions. Prefer deriving or
-///   implementing [`salsa::SalsaValue`] for every field type.
+///   responsible for ensuring retained values remain valid across revisions. Prefer adapting only
+///   the affected field with `#[salsa_value(prove_safe_to_retain_manually)]`.
 ///
 /// # Field attributes
 ///
@@ -192,6 +194,9 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   [`salsa::SalsaAsDeref`] to return borrowed forms such as `Option<&T>` and
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
 /// - `#[get(IDENT)]` renames the generated getter.
+/// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the retention check for
+///   this field. The caller must ensure Salsa can retain the field and expose it with a later
+///   database lifetime.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -348,8 +353,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// revision.
 ///
 /// The annotated item must have named fields and exactly one lifetime parameter, conventionally
-/// `'db`; type and const parameters are not supported. Every field type must implement
-/// [`salsa::SalsaValue`].
+/// `'db`; type and const parameters are not supported. A field whose type changes with the database
+/// lifetime must implement [`salsa::SalsaValue`].
 ///
 /// See [tracked structs in the `salsa` crate documentation] for their identity, change tracking,
 /// and lifecycle.
@@ -389,6 +394,9 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `#[eq(EXPR)]` uses `EXPR` to compare the stored and recreated field values. The expression
 ///   must have type `fn(&FieldTy, &FieldTy) -> bool`. Salsa retains the stored value when it returns
 ///   `true`; otherwise Salsa replaces the field and invalidates dependent queries.
+/// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the retention check for
+///   this field. The caller must ensure Salsa can retain the field and expose it with a later
+///   database lifetime.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -406,8 +414,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// obtain an ID, adding an interning step to every call. Each key parameter must additionally
 /// implement [`Clone`] + [`Eq`] + [`Hash`]. Equality and hashing determine whether calls use the
 /// same memo, and Salsa always clones the stored tuple when materializing the function arguments.
-/// Interned key parameters must implement [`salsa::SalsaValue`]. The output must either implement
-/// [`salsa::SalsaValue`] or be the same `'static` type for every database lifetime.
+/// An interned key parameter whose type changes with the database lifetime must implement
+/// [`salsa::SalsaValue`]. The same rule applies to the output.
 ///
 /// See [tracked functions in the `salsa` crate documentation] for query identity, dependency
 /// tracking, result equality, and memo lifecycle.
@@ -506,23 +514,24 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
     tracked::tracked(args, input)
 }
 
-/// Derives the unsafe [`salsa::SalsaValue`] marker for a struct or enum.
+/// Derives the unsafe [`salsa::SalsaValue`] trait for a struct or enum.
 ///
-/// The derive checks that every field implements [`salsa::SalsaValue`]. A field
-/// can instead use `#[salsa_value(prove_safe_to_retain_manually)]` when its
-/// safety cannot be expressed through a [`salsa::SalsaValue`] implementation.
+/// The derive accepts fields whose retained and exposed types are identical. A field whose type
+/// changes with the database lifetime must implement [`salsa::SalsaValue`], or use
+/// `#[salsa_value(prove_safe_to_retain_manually)]` when its safety cannot be expressed through an
+/// implementation.
+/// For a type with generic type parameters, the derive maps every parameter through its
+/// [`SalsaValue::Output`](salsa::SalsaValue::Output), so each parameter must implement
+/// [`salsa::SalsaValue`].
 /// Named fields, tuple fields, unit structs, and enum variants are supported; unions are not.
 ///
 /// # Safety
 ///
-/// This derive implements an unsafe marker trait. Its field checks establish
-/// the structural requirements, but cannot inspect invariants maintained by
-/// unsafe code in the derived type's methods. By deriving `SalsaValue`, the
-/// author asserts that any such invariants remain valid when Salsa retains the
-/// value across revisions and rebinds its database lifetime.
-///
-/// The field helper skips the structural check for that field and is a manual
-/// assertion that retaining the field is safe under the same conditions.
+/// Its field checks establish the structural requirements, but cannot inspect
+/// invariants maintained by unsafe code in the derived type's methods. By
+/// deriving `SalsaValue`, the author asserts that any such invariants remain
+/// valid when Salsa retains the value across revisions and rebinds its database
+/// lifetime.
 ///
 /// # Example
 ///
@@ -546,6 +555,23 @@ pub fn salsa_value(input: TokenStream) -> TokenStream {
 pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error) -> TokenStream {
     tokens.extend(TokenStream::from(error.into_compile_error()));
     tokens
+}
+
+pub(crate) fn token_stream_with_error_without_salsa_value_attrs(
+    tokens: TokenStream,
+    error: syn::Error,
+) -> TokenStream {
+    let Ok(mut item) = syn::parse::<syn::ItemStruct>(tokens.clone()) else {
+        return token_stream_with_error(tokens, error);
+    };
+
+    for field in &mut item.fields {
+        field
+            .attrs
+            .retain(|attr| !attr.path().is_ident("salsa_value"));
+    }
+
+    token_stream_with_error(item.into_token_stream().into(), error)
 }
 
 mod kw {

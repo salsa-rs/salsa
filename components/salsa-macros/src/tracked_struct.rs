@@ -80,6 +80,8 @@ impl SalsaStructAllowedOptions for TrackedStruct {
     const ELIDABLE_LIFETIME: bool = false;
 
     const ALLOW_DEFAULT: bool = false;
+
+    const ALLOW_MANUAL_RETENTION_PROOF: bool = true;
 }
 
 struct Macro {
@@ -120,6 +122,25 @@ impl Macro {
         let untracked_options = salsa_struct.untracked_options();
 
         let field_tys = salsa_struct.field_tys();
+        let field_manual_retention_proofs = salsa_struct.field_manual_retention_proofs();
+        let static_field_tys = field_tys
+            .iter()
+            .map(|ty| crate::salsa_value::static_type(ty, &db_lt))
+            .collect::<Vec<_>>();
+        let assert_fields_are_salsa_values = field_tys
+            .iter()
+            .zip(&static_field_tys)
+            .zip(field_manual_retention_proofs)
+            .map(|((ty, static_ty), has_manual_retention_proof)| {
+                crate::salsa_value::assert_salsa_value_field(
+                    &db_lt,
+                    &zalsa,
+                    ty,
+                    static_ty,
+                    has_manual_retention_proof,
+                )
+            })
+            .collect::<TokenStream>();
         let tracked_tys = salsa_struct.tracked_tys();
         let untracked_tys = salsa_struct.untracked_tys();
 
@@ -152,6 +173,7 @@ impl Macro {
 
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
+        let Fields = self.hygiene.ident("Fields");
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
         let Revision = self.hygiene.ident("Revision");
@@ -173,6 +195,8 @@ impl Macro {
                     untracked_getters: [#(#untracked_vis #untracked_getter_ids),*],
 
                     field_tys: [#(#field_tys),*],
+                    static_field_tys: [#(#static_field_tys),*],
+                    assert_fields_are_salsa_values: {#assert_fields_are_salsa_values},
                     tracked_tys: [#(#tracked_tys),*],
                     untracked_tys: [#(#untracked_tys),*],
 
@@ -205,6 +229,7 @@ impl Macro {
                         #zalsa,
                         #zalsa_struct,
                         #Configuration,
+                        #Fields,
                         #CACHE,
                         #Db,
                         #Revision,

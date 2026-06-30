@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use crate::hygiene::Hygiene;
 use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
 use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
-use crate::{db_lifetime, token_stream_with_error};
+use crate::{db_lifetime, token_stream_with_error_without_salsa_value_attrs};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -24,7 +24,7 @@ pub(crate) fn interned(
     };
     match m.try_macro() {
         Ok(v) => v.into(),
-        Err(e) => token_stream_with_error(input, e),
+        Err(e) => token_stream_with_error_without_salsa_value_attrs(input, e),
     }
 }
 
@@ -84,6 +84,8 @@ impl SalsaStructAllowedOptions for InternedStruct {
     const ELIDABLE_LIFETIME: bool = true;
 
     const ALLOW_DEFAULT: bool = false;
+
+    const ALLOW_MANUAL_RETENTION_PROOF: bool = true;
 }
 
 struct Macro {
@@ -100,7 +102,7 @@ impl Macro {
         let attrs = &self.struct_item.attrs;
         let vis = &self.struct_item.vis;
         let struct_ident = &self.struct_item.ident;
-        let struct_data_ident = format_ident!("{}Data", struct_ident);
+        let struct_data_ident = salsa_struct.data_ident();
         let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
         let field_ids = salsa_struct.field_ids();
@@ -110,6 +112,7 @@ impl Macro {
         let field_getter_ids = salsa_struct.field_getter_ids();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
+        let field_manual_retention_proofs = salsa_struct.field_manual_retention_proofs();
         let field_indexed_tys = salsa_struct.field_indexed_tys();
         let field_unused_attrs = salsa_struct.field_attrs();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
@@ -145,10 +148,23 @@ impl Macro {
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
 
-        let salsa_value_field_attr = if self.args.non_salsa_values.is_some() {
-            Some(quote!(#[salsa_value(prove_safe_to_retain_manually)]))
+        let assert_fields_are_salsa_values = if self.args.non_salsa_values.is_some() {
+            quote! {}
         } else {
-            None
+            field_tys
+                .iter()
+                .zip(field_manual_retention_proofs)
+                .map(|(field_ty, has_manual_retention_proof)| {
+                    let static_field_ty = crate::salsa_value::static_type(field_ty, &db_lt);
+                    crate::salsa_value::assert_salsa_value_field(
+                        &db_lt,
+                        &zalsa,
+                        field_ty,
+                        &static_field_ty,
+                        has_manual_retention_proof,
+                    )
+                })
+                .collect()
         };
 
         Ok(crate::debug::dump_tokens(
@@ -179,7 +195,7 @@ impl Macro {
                     persist: #persist,
                     serialize_fn: #(#serialize_fn)*,
                     deserialize_fn: #(#deserialize_fn)*,
-                    salsa_value_field_attr: { #salsa_value_field_attr },
+                    assert_fields_are_salsa_values: { #assert_fields_are_salsa_values },
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

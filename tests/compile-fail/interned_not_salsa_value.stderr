@@ -1,19 +1,11 @@
-error: lifetime may not live long enough
- --> tests/compile-fail/interned_not_salsa_value.rs:6:1
-  |
-6 | #[salsa::tracked]
-  | ^^^^^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
-7 | fn tracked_fn<'db>(_db: &'db dyn Db, _: (), _: &'db str) {}
-  |               --- lifetime `'db` defined here
-  |
-  = note: this error originates in the derive macro `::salsa::SalsaValue` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+error: a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa handle instead
+  --> tests/compile-fail/interned_not_salsa_value.rs:11:13
+   |
+11 |     _field: &'db str,
+   |             ^^^^^^^^
 
-error: lifetime may not live long enough
-  --> tests/compile-fail/interned_not_salsa_value.rs:9:1
-   |
- 9 | #[salsa::interned]
-   | ^^^^^^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
-10 | struct Interned<'db> {
-   |                 --- lifetime `'db` defined here
-   |
-   = note: this error originates in the derive macro `::salsa::SalsaValue` which comes from the expansion of the attribute macro `salsa::interned` (in Nightly builds, run with -Z macro-backtrace for more info)
+error: a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa handle instead
+ --> tests/compile-fail/interned_not_salsa_value.rs:7:48
+  |
+7 | fn tracked_fn<'db>(_db: &'db dyn Db, _: (), _: &'db str) {}
+  |                                                ^^^^^^^^

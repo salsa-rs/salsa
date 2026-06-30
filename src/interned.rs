@@ -48,7 +48,10 @@ pub trait Configuration: Sized + 'static {
     const REVISIONS: NonZeroUsize = NonZeroUsize::new(DEFAULT_REVISIONS).unwrap();
 
     /// The fields of the struct being interned.
-    type Fields<'db>: InternedData + crate::SalsaValue;
+    type Fields<'db>: InternedData;
+
+    /// The representation retained in Salsa's intern table.
+    type StoredFields: InternedData + for<'db> crate::SalsaValue<'db, Output = Self::Fields<'db>>;
 
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;
@@ -146,7 +149,7 @@ where
     ///
     /// These are valid for read-only access as long as the lock is held
     /// or the value has been validated in the current revision.
-    fields: UnsafeCell<C::Fields<'static>>,
+    fields: UnsafeCell<C::StoredFields>,
 
     /// Memos attached to this interned value.
     ///
@@ -234,11 +237,11 @@ where
 {
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
-    pub fn fields(&self) -> &C::Fields<'static> {
+    pub fn fields<'db>(&'db self) -> &'db C::Fields<'db> {
         // SAFETY: The fact that this function is safe is technically unsound. However, interned
         // values are only exposed if they have been validated in the current revision, which
         // ensures that they are not reused while being accessed.
-        unsafe { &*self.fields.get() }
+        crate::salsa_value::rebind::<C::StoredFields>(unsafe { &*self.fields.get() })
     }
 
     /// Returns memory usage information about the interned value.
@@ -258,8 +261,8 @@ where
 
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
-            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
-            size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
+            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::StoredFields>(),
+            size_of_fields: std::mem::size_of::<C::StoredFields>(),
             heap_size_of_fields: heap_size,
             memos: memos.memory_usage(),
         }
@@ -325,15 +328,13 @@ where
     ///
     /// The `from_internal_data` function must be called to restore the correct lifetime
     /// before access.
-    unsafe fn to_internal_data<'db>(&'db self, data: C::Fields<'db>) -> C::Fields<'static> {
-        // SAFETY: Guaranteed by caller.
-        unsafe { std::mem::transmute(data) }
+    unsafe fn to_internal_data<'db>(&'db self, data: C::Fields<'db>) -> C::StoredFields {
+        // SAFETY: Guaranteed by caller and retained in this ingredient.
+        unsafe { crate::salsa_value::erase::<C::StoredFields>(data) }
     }
 
-    fn from_internal_data<'db>(data: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
-        // SAFETY: It's sound to go from `Data<'static>` to `Data<'db>`. We shrink the
-        // lifetime here to use a single lifetime in `Lookup::eq(&StructKey<'db>, &C::Data<'db>)`
-        unsafe { std::mem::transmute(data) }
+    fn from_internal_data<'db>(data: &'db C::StoredFields) -> &'db C::Fields<'db> {
+        crate::salsa_value::rebind::<C::StoredFields>(data)
     }
 
     /// Intern data to a unique reference.
@@ -1636,7 +1637,7 @@ mod persistence {
         }
     }
 
-    struct SerializeFields<'db, C: Configuration>(&'db C::Fields<'static>);
+    struct SerializeFields<'db, C: Configuration>(&'db C::StoredFields);
 
     impl<C> serde::Serialize for SerializeFields<'_, C>
     where
@@ -1646,7 +1647,10 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            C::serialize(self.0, serializer)
+            C::serialize(
+                crate::salsa_value::rebind::<C::StoredFields>(self.0),
+                serializer,
+            )
         }
     }
 
@@ -1756,7 +1760,7 @@ mod persistence {
         fields: DeserializeFields<C>,
     }
 
-    struct DeserializeFields<C: Configuration>(C::Fields<'static>);
+    struct DeserializeFields<C: Configuration>(C::StoredFields);
 
     impl<'de, C> serde::Deserialize<'de> for DeserializeFields<C>
     where
@@ -1767,7 +1771,12 @@ mod persistence {
             D: serde::Deserializer<'de>,
         {
             C::deserialize(deserializer)
-                .map(DeserializeFields)
+                .map(|fields| {
+                    // SAFETY: The fields are immediately retained in the intern table.
+                    DeserializeFields(unsafe {
+                        crate::salsa_value::erase::<C::StoredFields>(fields)
+                    })
+                })
                 .map_err(de::Error::custom)
         }
     }
@@ -1789,6 +1798,7 @@ mod tests {
         const REVISIONS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
 
         type Fields<'db> = ();
+        type StoredFields = ();
         type Struct<'db> = Id;
 
         fn serialize<S>(_value: &Self::Fields<'_>, _serializer: S) -> Result<S::Ok, S::Error>

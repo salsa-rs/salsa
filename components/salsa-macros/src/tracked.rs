@@ -1,7 +1,7 @@
 use syn::Item;
 use syn::spanned::Spanned;
 
-use crate::token_stream_with_error;
+use crate::token_stream_with_error_without_salsa_value_attrs;
 
 pub(crate) fn tracked(
     args: proc_macro::TokenStream,
@@ -19,6 +19,6 @@ pub(crate) fn tracked(
     };
     match res {
         Ok(s) => s.into(),
-        Err(err) => token_stream_with_error(input, err),
+        Err(err) => token_stream_with_error_without_salsa_value_attrs(input, err),
     }
 }
