@@ -78,7 +78,9 @@ macro_rules! setup_interned_struct {
         // The path to the `serialize` function for the value's fields.
         deserialize_fn: $($deserialize_fn:path)?,
 
-        assert_types_are_update: {$($assert_types_are_update:tt)*},
+        // Applied to the generated field storage when the user selected the
+        // unsafe escape hatch.
+        salsa_value_field_attr: {$($salsa_value_field_attr:tt)*},
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -115,7 +117,21 @@ macro_rules! setup_interned_struct {
                 $zalsa::ErasedJar::erase::<$StructWithStatic>()
             }
 
-            type $StructDataIdent<$db_lt> = ($($field_ty,)*);
+            #[derive(Clone, PartialEq, Eq, Hash, ::salsa::SalsaValue)]
+            $vis struct $StructDataIdent<$db_lt> {
+                $($salsa_value_field_attr)*
+                fields: ($($field_ty,)*),
+                // This marker contains no data; it only makes the GAT lifetime explicit.
+                marker: ::std::marker::PhantomData<fn() -> &$db_lt ()>,
+            }
+
+            impl<$db_lt> ::std::ops::Deref for $StructDataIdent<$db_lt> {
+                type Target = ($($field_ty,)*);
+
+                fn deref(&self) -> &Self::Target {
+                    &self.fields
+                }
+            }
 
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
             /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
@@ -132,11 +148,11 @@ macro_rules! setup_interned_struct {
                 {
 
                 fn hash<H: ::std::hash::Hasher>(&self, h: &mut H) {
-                    $($zalsa::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
+                    $($zalsa::HashEqLike::<$indexed_ty>::hash(&self.fields.$field_index, &mut *h);)*
                 }
 
                 fn eq(&self, data: &StructKey<$db_lt, $($indexed_ty),*>) -> bool {
-                    ($($zalsa::HashEqLike::<$indexed_ty>::eq(&self.$field_index, &data.$field_index) && )* true)
+                    ($($zalsa::HashEqLike::<$indexed_ty>::eq(&self.fields.$field_index, &data.$field_index) && )* true)
                 }
             }
 
@@ -145,7 +161,10 @@ macro_rules! setup_interned_struct {
 
                 #[allow(unused_unit)]
                 fn into_owned(self) -> $StructDataIdent<$db_lt> {
-                    ($($zalsa::Lookup::into_owned(self.$field_index),)*)
+                    $StructDataIdent {
+                        fields: ($($zalsa::Lookup::into_owned(self.$field_index),)*),
+                        marker: ::std::marker::PhantomData,
+                    }
                 }
             }
 
@@ -166,7 +185,7 @@ macro_rules! setup_interned_struct {
 
                 $(
                     fn heap_size(value: &Self::Fields<'_>) -> Option<usize> {
-                        Some($heap_size_fn(value))
+                        Some($heap_size_fn(&value.fields))
                     }
                 )?
 
@@ -176,7 +195,7 @@ macro_rules! setup_interned_struct {
                 ) -> ::std::result::Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
                         if $persist {
-                            $($serialize_fn(fields, serializer))?
+                            $($serialize_fn(&fields.fields, serializer))?
                         } else {
                             panic!("attempted to serialize value not marked with `persist` attribute")
                         }
@@ -188,7 +207,10 @@ macro_rules! setup_interned_struct {
                 ) -> ::std::result::Result<Self::Fields<'static>, D::Error> {
                     $zalsa::macro_if! {
                         if $persist {
-                            $($deserialize_fn(deserializer))?
+                            $($deserialize_fn(deserializer).map(|fields| $StructDataIdent {
+                                fields,
+                                marker: ::std::marker::PhantomData,
+                            }))?
                         } else {
                             panic!("attempted to deserialize value not marked with `persist` attribute")
                         }
@@ -290,18 +312,7 @@ macro_rules! setup_interned_struct {
             }
 
 
-            unsafe impl< $($db_lt_arg)? > $zalsa::Update for $Struct< $($db_lt_arg)? > {
-                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
-                    $($assert_types_are_update)*
-
-                    if unsafe { *old_pointer } != new_value {
-                        unsafe { *old_pointer = new_value };
-                        true
-                    } else {
-                        false
-                    }
-                }
-            }
+            unsafe impl< $($db_lt_arg)? > $zalsa::SalsaValue for $Struct< $($db_lt_arg)? > {}
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
                 pub fn $new_fn<$Db, $($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
@@ -314,7 +325,7 @@ macro_rules! setup_interned_struct {
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
                     $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
-                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| ($($zalsa::Lookup::into_owned(data.$field_index),)*))
+                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| $zalsa::Lookup::into_owned(data))
                 }
 
                 $(
@@ -329,7 +340,7 @@ macro_rules! setup_interned_struct {
                         $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,
-                            &fields.$field_index,
+                            &fields.fields.$field_index,
                         )
                     }
                 )*
@@ -351,7 +362,7 @@ macro_rules! setup_interned_struct {
                                 let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
                                 let mut f = f.debug_struct(stringify!($Struct));
                                 $(
-                                    let f = f.field(stringify!($field_id), &fields.$field_index);
+                                    let f = f.field(stringify!($field_id), &fields.fields.$field_index);
                                 )*
                                 f.finish()
                             }).unwrap_or_else(|| {
@@ -375,7 +386,7 @@ macro_rules! setup_interned_struct {
                                 let fields = $Configuration::ingredient(zalsa).fields(zalsa, this);
                                 let mut f = f.debug_struct(stringify!($Struct));
                                 $(
-                                    let f = f.field(stringify!($field_id), &fields.$field_index);
+                                    let f = f.field(stringify!($field_id), &fields.fields.$field_index);
                                 )*
                                 f.finish()
                             }).unwrap_or_else(|| {

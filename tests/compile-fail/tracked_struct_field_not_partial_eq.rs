@@ -1,9 +1,9 @@
 #[salsa::tracked]
 struct MyInput<'db> {
-    field: NotUpdate,
+    field: NotPartialEq,
 }
 
-#[derive(Clone, Debug, Hash)]
-struct NotUpdate;
+#[derive(Clone, Debug, Hash, salsa::SalsaValue)]
+struct NotPartialEq;
 
 fn main() {}

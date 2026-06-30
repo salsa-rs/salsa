@@ -33,7 +33,7 @@ fn dropped() -> Vec<u32> {
     DROPPED.with(|d| d.borrow().clone())
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, salsa::SalsaValue)]
 struct Bomb {
     identity: u32,
 }

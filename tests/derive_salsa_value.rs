@@ -1,98 +1,55 @@
-#![cfg(feature = "inventory")]
+#[derive(salsa::SalsaValue)]
+struct Generic<T>(T);
 
-//! Test that the `Update` derive works as expected
+#[derive(salsa::SalsaValue)]
+struct StaticValue;
 
-#[derive(salsa::Update)]
-struct MyInput {
-    field: &'static str,
+#[derive(salsa::SalsaValue)]
+struct ContainsStaticValue(StaticValue);
+
+#[derive(salsa::SalsaValue)]
+struct ContainsPhantomRef<'db> {
+    marker: std::marker::PhantomData<&'db ()>,
 }
 
-#[derive(salsa::Update)]
-struct MyInput2 {
-    #[update(unsafe(with(custom_update)))]
-    field: &'static str,
-    #[update(unsafe(with(|dest, data| { *dest = data; true })))]
-    field2: &'static str,
+#[derive(salsa::SalsaValue)]
+enum Recursive {
+    Nil,
+    Cons(Box<Self>),
 }
 
-#[derive(Debug, PartialEq)]
-struct FallbackValue(&'static str);
+fn assert_salsa_value<T: salsa::SalsaValue>() {}
 
-#[derive(salsa::Update)]
-struct MyInput3 {
-    #[update(fallback)]
-    field: FallbackValue,
-}
-
-unsafe fn custom_update(dest: *mut &'static str, _data: &'static str) -> bool {
-    unsafe { *dest = "ill-behaved for testing purposes" };
-    true
+fn assert_contains_phantom_ref<'db>(_marker: std::marker::PhantomData<&'db ()>) {
+    assert_salsa_value::<ContainsPhantomRef<'db>>();
 }
 
 #[test]
-fn derived() {
-    let mut m = MyInput { field: "foo" };
-    assert_eq!(m.field, "foo");
-    assert!(unsafe { salsa::Update::maybe_update(&mut m, MyInput { field: "bar" }) });
-    assert_eq!(m.field, "bar");
-    assert!(!unsafe { salsa::Update::maybe_update(&mut m, MyInput { field: "bar" }) });
-    assert_eq!(m.field, "bar");
-}
-
-#[test]
-fn derived_fallback() {
-    let mut m = MyInput3 {
-        field: FallbackValue("foo"),
+fn derives_salsa_value() {
+    let contains_phantom_ref = ContainsPhantomRef {
+        marker: std::marker::PhantomData,
     };
-    assert_eq!(m.field, FallbackValue("foo"));
-    assert!(unsafe {
-        salsa::Update::maybe_update(
-            &mut m,
-            MyInput3 {
-                field: FallbackValue("bar"),
-            },
-        )
-    });
-    assert_eq!(m.field, FallbackValue("bar"));
-    assert!(!unsafe {
-        salsa::Update::maybe_update(
-            &mut m,
-            MyInput3 {
-                field: FallbackValue("bar"),
-            },
-        )
-    });
-    assert_eq!(m.field, FallbackValue("bar"));
-}
-
-#[test]
-fn derived_with() {
-    let mut m = MyInput2 {
-        field: "foo",
-        field2: "foo",
+    assert_contains_phantom_ref(contains_phantom_ref.marker);
+    let recursive = Recursive::Cons(Box::new(Recursive::Nil));
+    let Recursive::Cons(recursive) = recursive else {
+        unreachable!()
     };
-    assert_eq!(m.field, "foo");
-    assert_eq!(m.field2, "foo");
-    assert!(unsafe {
-        salsa::Update::maybe_update(
-            &mut m,
-            MyInput2 {
-                field: "bar",
-                field2: "bar",
-            },
-        )
-    });
-    assert_eq!(m.field, "ill-behaved for testing purposes");
-    assert_eq!(m.field2, "bar");
-    assert!(unsafe {
-        salsa::Update::maybe_update(
-            &mut m,
-            MyInput2 {
-                field: "ill-behaved for testing purposes",
-                field2: "foo",
-            },
-        )
-    });
-    assert_eq!(m.field, "ill-behaved for testing purposes");
-    assert_eq!(m.field2, "foo");
+    let _ = recursive;
+
+    assert_salsa_value::<Generic<String>>();
+    assert_salsa_value::<ContainsStaticValue>();
+    assert_salsa_value::<Recursive>();
+    assert_salsa_value::<std::num::NonZeroU32>();
+    assert_salsa_value::<std::ops::Range<u32>>();
+    assert_salsa_value::<std::ops::RangeInclusive<u32>>();
+    assert_salsa_value::<std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>(
+    );
+    assert_salsa_value::<
+        std::collections::HashMap<
+            String,
+            String,
+            std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>,
+        >,
+    >();
+    assert_salsa_value::<salsa::Id>();
 }

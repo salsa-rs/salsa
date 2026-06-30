@@ -1,6 +1,6 @@
-#[derive(salsa::Update)]
-struct S2<'a> {
-    bad2: &'a str,
+#[derive(salsa::SalsaValue)]
+struct ContainsRef<'db> {
+    value: &'db str,
 }
 
 fn main() {}

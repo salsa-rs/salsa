@@ -3,7 +3,7 @@
 //! Test that a setting a field on a `#[salsa::input]`
 //! overwrites and returns the old value.
 
-use salsa::{Database, DatabaseImpl, Update};
+use salsa::{Database, DatabaseImpl, SalsaValue};
 use test_log::test;
 
 #[salsa::input(debug)]
@@ -20,7 +20,7 @@ struct MyTracked<'db> {
     next: MyList<'db>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Update)]
+#[derive(PartialEq, Eq, Clone, Debug, SalsaValue)]
 enum MyList<'db> {
     None,
     Next(MyTracked<'db>),

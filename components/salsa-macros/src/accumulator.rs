@@ -33,7 +33,7 @@ impl AllowedOptions for Accumulator {
     const SPECIFY: bool = false;
     const NO_EQ: bool = false;
     const DEBUG: bool = false;
-    const NON_UPDATE_TYPES: bool = false;
+    const NON_SALSA_VALUES: bool = false;
     const NO_LIFETIME: bool = false;
     const SINGLETON: bool = false;
     const DATA: bool = false;
