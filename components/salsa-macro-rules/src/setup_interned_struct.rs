@@ -122,21 +122,7 @@ macro_rules! setup_interned_struct {
             }
             let _ = _assert_fields_are_salsa_values;
 
-            #[derive(Clone, PartialEq, Eq, Hash)]
-            $vis struct $StructDataIdent<$db_lt> {
-                fields: ($($field_ty,)*),
-                // Keeps the database lifetime in the type even if no field uses it.
-                marker: ::std::marker::PhantomData<fn() -> &$db_lt ()>,
-            }
-
-            // Public ingredient APIs expose their field tuple through this wrapper.
-            impl<$db_lt> ::std::ops::Deref for $StructDataIdent<$db_lt> {
-                type Target = ($($field_ty,)*);
-
-                fn deref(&self) -> &Self::Target {
-                    &self.fields
-                }
-            }
+            type $StructDataIdent<$db_lt> = ($($field_ty,)*);
 
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
             /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
@@ -166,10 +152,7 @@ macro_rules! setup_interned_struct {
 
                 #[allow(unused_unit)]
                 fn into_owned(self) -> $StructDataIdent<$db_lt> {
-                    $StructDataIdent {
-                        fields: ($($zalsa::Lookup::into_owned(self.$field_index),)*),
-                        marker: ::std::marker::PhantomData,
-                    }
+                    ($($zalsa::Lookup::into_owned(self.$field_index),)*)
                 }
             }
 
@@ -202,7 +185,7 @@ macro_rules! setup_interned_struct {
                 ) -> ::std::result::Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
                         if $persist {
-                            $($serialize_fn(&fields.fields, serializer))?
+                            $($serialize_fn(fields, serializer))?
                         } else {
                             panic!("attempted to serialize value not marked with `persist` attribute")
                         }
@@ -214,10 +197,7 @@ macro_rules! setup_interned_struct {
                 ) -> ::std::result::Result<Self::Fields<'static>, D::Error> {
                     $zalsa::macro_if! {
                         if $persist {
-                            $($deserialize_fn(deserializer).map(|fields| $StructDataIdent {
-                                fields,
-                                marker: ::std::marker::PhantomData,
-                            }))?
+                            $($deserialize_fn(deserializer))?
                         } else {
                             panic!("attempted to deserialize value not marked with `persist` attribute")
                         }

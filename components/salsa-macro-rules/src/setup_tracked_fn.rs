@@ -83,8 +83,6 @@ macro_rules! setup_tracked_fn {
             $zalsa:ident,
             $Configuration:ident,
             $InternedData:ident,
-            $InternedFields:ident,
-            $assemble_interned_fields:ident,
             $FN_CACHE:ident,
             $INTERN_CACHE:ident,
             $inner:ident,
@@ -104,7 +102,7 @@ macro_rules! setup_tracked_fn {
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
                         {
-                            let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| $fn_name::$assemble_interned_fields(data));
+                            let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
                             $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
                         }
                     } else {
@@ -151,25 +149,6 @@ macro_rules! setup_tracked_fn {
                         $($assert_interned_inputs_are_salsa_values)*
                     }
                     let _ = _assert_interned_inputs_are_salsa_values;
-
-                    #[derive(Clone, PartialEq, Eq, Hash)]
-                    struct $InternedFields<$db_lt>(
-                        ($($interned_input_ty),*),
-                        // This marker contains no data; it keeps the configuration lifetime explicit.
-                        ::core::marker::PhantomData<fn() -> &$db_lt ()>,
-                    );
-
-                    impl<$db_lt> $zalsa::HashEqLike<($($interned_input_ty),*)>
-                        for $InternedFields<$db_lt>
-                    {
-                        fn hash<H: ::core::hash::Hasher>(&self, hasher: &mut H) {
-                            <($($interned_input_ty),*) as $zalsa::HashEqLike<($($interned_input_ty),*)>>::hash(&self.0, hasher);
-                        }
-
-                        fn eq(&self, data: &($($interned_input_ty),*)) -> bool {
-                            <($($interned_input_ty),*) as $zalsa::HashEqLike<($($interned_input_ty),*)>>::eq(&self.0, data)
-                        }
-                    }
 
                     #[derive(Copy, Clone)]
                     struct $InternedData<$db_lt>(
@@ -239,7 +218,7 @@ macro_rules! setup_tracked_fn {
                         const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::",)? stringify!($fn_name), "::interned_arguments");
                         const PERSIST: bool = $persist;
 
-                        type Fields<$db_lt> = $InternedFields<$db_lt>;
+                        type Fields<$db_lt> = ($($interned_input_ty),*);
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
 
@@ -249,7 +228,7 @@ macro_rules! setup_tracked_fn {
                         ) -> ::std::result::Result<S::Ok, S::Error> {
                             $zalsa::macro_if! {
                                 if $persist {
-                                    $zalsa::serde::Serialize::serialize(&fields.0, serializer)
+                                    $zalsa::serde::Serialize::serialize(fields, serializer)
                                 } else {
                                     panic!("attempted to serialize value not marked with `persist` attribute")
                                 }
@@ -262,7 +241,6 @@ macro_rules! setup_tracked_fn {
                             $zalsa::macro_if! {
                                 if $persist {
                                     $zalsa::serde::Deserialize::deserialize(deserializer)
-                                        .map($fn_name::$assemble_interned_fields)
                                 } else {
                                     panic!("attempted to deserialize value not marked with `persist` attribute")
                                 }
@@ -388,7 +366,7 @@ macro_rules! setup_tracked_fn {
                 fn id_to_input<$db_lt>(zalsa: &$db_lt $zalsa::Zalsa, key: ::salsa::Id) -> Self::Input<$db_lt> {
                     $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient_(zalsa).data(zalsa, key).0.clone()
+                            $Configuration::intern_ingredient_(zalsa).data(zalsa, key).clone()
                         } else {
                             $zalsa::FromIdWithDb::from_id(key, zalsa)
                         }
@@ -485,14 +463,6 @@ macro_rules! setup_tracked_fn {
             }
 
             impl $fn_name {
-                $zalsa::macro_if! { $needs_interner =>
-                    fn $assemble_interned_fields<$db_lt>(
-                        fields: ($($interned_input_ty),*),
-                    ) -> $InternedFields<$db_lt> {
-                        $InternedFields(fields, ::core::marker::PhantomData)
-                    }
-                }
-
                 $zalsa::gate_accumulated! {
                     pub fn accumulated<$db_lt, A: ::salsa::Accumulator>(
                         $db: &$db_lt dyn $Db,
@@ -502,7 +472,7 @@ macro_rules! setup_tracked_fn {
                         let key = $zalsa::macro_if! {
                             if $needs_interner {{
                                 let (zalsa, zalsa_local) = $db.zalsas();
-                                $Configuration::intern_ingredient(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| $fn_name::$assemble_interned_fields(data))
+                                $Configuration::intern_ingredient(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
                             }} else {
                                 $zalsa::AsId::as_id(&($($input_id),*))
                             }
