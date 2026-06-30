@@ -1,0 +1,5 @@
+error: lifetime may not live long enough
+  --> tests/compile-fail/tracked_fn_return_not_salsa_value.rs:12:58
+   |
+12 | fn tracked_fn<'db>(_db: &'db dyn Db, _input: MyInput) -> NotSalsaValue<'db> {
+   |               --- lifetime `'db` defined here            ^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
