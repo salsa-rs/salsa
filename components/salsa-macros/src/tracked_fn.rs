@@ -132,10 +132,6 @@ impl Macro {
         let zalsa = self.hygiene.ident("zalsa");
         let Configuration = self.hygiene.scoped_ident(fn_name, "Configuration");
         let InternedData = self.hygiene.scoped_ident(fn_name, "InternedData");
-        let InternedFields = self.hygiene.scoped_ident(fn_name, "InternedFields");
-        let assemble_interned_fields = self
-            .hygiene
-            .scoped_ident(fn_name, "assemble_interned_fields");
         let FN_CACHE = self.hygiene.scoped_ident(fn_name, "FN_CACHE");
         let INTERN_CACHE = self.hygiene.scoped_ident(fn_name, "INTERN_CACHE");
         let inner = &inner_fn.sig.ident;
@@ -246,8 +242,6 @@ impl Macro {
                     #zalsa,
                     #Configuration,
                     #InternedData,
-                    #InternedFields,
-                    #assemble_interned_fields,
                     #FN_CACHE,
                     #INTERN_CACHE,
                     #inner,
