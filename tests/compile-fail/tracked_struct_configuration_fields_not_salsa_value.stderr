@@ -1,0 +1,21 @@
+error: incompatible lifetime on type
+  --> tests/compile-fail/tracked_struct_configuration_fields_not_salsa_value.rs:13:24
+   |
+13 |     type Fields<'db> = &'db u32;
+   |                        ^^^^^^^^
+   |
+note: because this has an unmet lifetime requirement
+  --> src/tracked_struct.rs
+   |
+   |     type Fields<'db>: Send + Sync + crate::SalsaValue;
+   |                                     ^^^^^^^^^^^^^^^^^ introduces a `'static` lifetime requirement
+note: the lifetime `'db` as defined here...
+  --> tests/compile-fail/tracked_struct_configuration_fields_not_salsa_value.rs:13:17
+   |
+13 |     type Fields<'db> = &'db u32;
+   |                 ^^^
+note: ...does not necessarily outlive the static lifetime introduced by the compatible `impl`
+  --> src/salsa_value.rs
+   |
+   | unsafe impl<T: ?Sized> SalsaValue for &'static T {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

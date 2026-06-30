@@ -161,34 +161,32 @@ macro_rules! setup_tracked_struct {
                     std::array::from_fn(|_| $zalsa::AtomicRevision::new(current_revision))
                 }
 
-                unsafe fn update_fields<$db_lt>(
+                fn update_fields<$db_lt>(
                     current_revision: $Revision,
                     revisions: &Self::Revisions,
-                    old_fields: *mut Self::Fields<$db_lt>,
+                    old_fields: &mut Self::Fields<$db_lt>,
                     new_fields: Self::Fields<$db_lt>,
                 ) -> bool {
-                    unsafe {
-                        $(
-                            if $zalsa::update_field(
-                                &mut (*old_fields).$absolute_tracked_index,
-                                new_fields.$absolute_tracked_index,
-                                $tracked_field_equality,
-                            ) {
-                                revisions[$relative_tracked_index].store(current_revision);
-                            }
-                        )*;
+                    $(
+                        if $zalsa::update_field(
+                            &mut old_fields.$absolute_tracked_index,
+                            new_fields.$absolute_tracked_index,
+                            $tracked_field_equality,
+                        ) {
+                            revisions[$relative_tracked_index].store(current_revision);
+                        }
+                    )*;
 
-                        // If any identity field has changed, return `true`, indicating that the tracked
-                        // struct itself should be considered changed.
-                        $(
-                            $zalsa::update_field(
-                                &mut (*old_fields).$absolute_untracked_index,
-                                new_fields.$absolute_untracked_index,
-                                $untracked_field_equality,
-                            )
-                            |
-                        )* false
-                    }
+                    // If any identity field has changed, return `true`, indicating that the tracked
+                    // struct itself should be considered changed.
+                    $(
+                        $zalsa::update_field(
+                            &mut old_fields.$absolute_untracked_index,
+                            new_fields.$absolute_untracked_index,
+                            $untracked_field_equality,
+                        )
+                        |
+                    )* false
                 }
 
                 $(
