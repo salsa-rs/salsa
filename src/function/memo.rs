@@ -199,25 +199,25 @@ impl MemoHeader {
 }
 
 impl<C: Configuration> Memo<C> {
-    pub(super) fn new<'db>(
-        value: Option<C::Output<'db>>,
+    pub(super) fn new(
+        value: Option<C::Output<'_>>,
         revision_now: Revision,
         revisions: QueryRevisions,
     ) -> Self {
         Self {
             value: value.map(|value| {
                 // SAFETY: Guaranteed by `Configuration` and retained only in this memo.
-                unsafe { std::mem::transmute::<C::Output<'db>, C::Output<'static>>(value) }
+                unsafe { std::mem::transmute::<C::Output<'_>, C::Output<'static>>(value) }
             }),
             header: MemoHeader::new(revision_now, revisions),
         }
     }
 
-    pub(super) fn value<'db>(&'db self) -> Option<&'db C::Output<'db>> {
+    pub(super) fn value(&self) -> Option<&C::Output<'_>> {
         self.value.as_ref().map(|value| {
             // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
             // bounded by the borrow of this memo.
-            unsafe { std::mem::transmute::<&C::Output<'static>, &'db C::Output<'db>>(value) }
+            unsafe { std::mem::transmute::<&C::Output<'static>, &C::Output<'_>>(value) }
         })
     }
 

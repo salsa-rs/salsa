@@ -230,7 +230,7 @@ fn assert_salsa_value_or_static_expr(
         if is_db_reference(ty, db_lt) {
             return syn::Error::new_spanned(
                 ty,
-                "a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa handle instead",
+                "a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa struct instead",
             )
             .into_compile_error();
         }
