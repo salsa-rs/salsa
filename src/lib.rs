@@ -226,14 +226,14 @@
 //! # Values retained across revisions
 //!
 //! Salsa retains tracked and interned fields and memoized query results after the database borrow
-//! that produced them has ended. [`SalsaValue`] marks a type as safe to retain and use after Salsa
-//! erases and later restores its database lifetime. The derive checks this structurally by
-//! requiring every field to implement `SalsaValue`.
+//! that produced them has ended. [`SalsaValue`] relates the `'static` representation Salsa retains
+//! to the value exposed with the current database lifetime. The derive checks this relationship
+//! structurally through the value's fields.
 //!
-//! Custom types used as tracked or interned fields should normally derive `SalsaValue`. A complete
-//! stored value that is unconditionally `'static`, such as an input's field tuple or a query result
-//! with no database lifetime, is accepted without an implementation. See [`SalsaValue`]'s safety
-//! documentation before implementing it manually or exempting a field from the derive's checks.
+//! A field whose retained and exposed types are identical is accepted without a `SalsaValue`
+//! implementation. Custom types that change with the database lifetime should normally derive
+//! `SalsaValue`. See its safety documentation before implementing it manually or exempting a field
+//! from the generated checks.
 //!
 //! This retention guarantee is separate from [`PartialEq`], which Salsa uses to detect changes
 //! when recreating a tracked struct. A field can use `#[no_eq]` to always report a change or
@@ -369,7 +369,8 @@ pub mod plumbing {
     pub use crate::runtime::{Runtime, Stamp, stamp};
     pub use crate::salsa_struct::{SalsaStructInDb, assert_supertype_no_overlap};
     pub use crate::salsa_value::helper::{
-        Dispatch as SalsaValueDispatch, Fallback as SalsaValueFallback,
+        Dispatch as SalsaValueDispatch, Fallback as SalsaValueFallback, assert_salsa_value,
+        assert_salsa_value_output,
     };
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::table::memo::MemoTableWithTypes;
@@ -417,9 +418,7 @@ pub mod plumbing {
     }
 
     pub mod function {
-        pub use crate::function::Configuration;
-        pub use crate::function::IngredientImpl;
-        pub use crate::function::Memo;
+        pub use crate::function::{Configuration, IngredientImpl, Memo};
         pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
         pub use crate::table::memo::MemoEntryType;
     }

@@ -4,7 +4,19 @@ use std::marker::PhantomData;
 struct NotSalsaValue<'db>(PhantomData<fn() -> &'db ()>);
 
 #[salsa::interned(unsafe(non_salsa_values))]
-struct Interned<'db> {
+struct InternedWithItemEscape<'db> {
+    value: NotSalsaValue<'db>,
+}
+
+#[salsa::interned]
+struct InternedWithFieldEscape<'db> {
+    #[salsa_value(prove_safe_to_retain_manually)]
+    value: NotSalsaValue<'db>,
+}
+
+#[salsa::tracked]
+struct TrackedWithFieldEscape<'db> {
+    #[salsa_value(prove_safe_to_retain_manually)]
     value: NotSalsaValue<'db>,
 }
 

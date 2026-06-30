@@ -204,18 +204,21 @@ This reference is linked to `db` and remains valid so long as the
 Salsa stores tracked and interned fields and memoized query results after the particular `&'db DB`
 borrow that produced them has ended. Internally, Salsa erases that lifetime while the value is in
 storage and restores the current database lifetime when the value is accessed again. The unsafe
-`SalsaValue` marker trait is the boundary that makes this rebranding sound: an older value must
-remain safe to retain and use in a later revision, including through safe operations such as
-`PartialEq`.
+`SalsaValue` trait describes both representations: `Self` is the `'static` type retained in storage,
+and its `Output` is the type exposed with the current database lifetime. This is the boundary that
+makes rebranding sound: an older value must remain safe to retain and use in a later revision,
+including through safe operations such as `PartialEq`.
 
-`#[derive(salsa::SalsaValue)]` checks the guarantee structurally by requiring every field to
-implement `SalsaValue`. A direct database-lifetime reference such as `&'db T` does not implement
-the trait because its referent may be changed or freed in a later revision. Salsa handles do
-implement it because access to their data goes back through the current database state.
+`#[derive(salsa::SalsaValue)]` checks the guarantee structurally. A field whose retained and
+exposed types are identical is accepted directly. A field whose type changes with the database
+lifetime must implement `SalsaValue`. A direct database-lifetime reference such as `&'db T` does
+not implement the trait because its referent may be changed or freed in a later revision. Salsa
+handles do implement it because access to their data goes back through the current database state.
 
 If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
-`#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This is
-a manual assertion of the same retention guarantee.
+`#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This
+manual assertion is supported by `derive(SalsaValue)` and directly on tracked and interned struct
+fields.
 
 The structural derive cannot validate invariants hidden behind unsafe code. For example, a type
 could store an integer address together with a Salsa handle used as a lifetime witness. Even though

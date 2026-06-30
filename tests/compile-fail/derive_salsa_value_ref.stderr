@@ -1,9 +1,5 @@
-error: lifetime may not live long enough
- --> tests/compile-fail/derive_salsa_value_ref.rs:1:10
+error: a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa handle instead
+ --> tests/compile-fail/derive_salsa_value_ref.rs:3:12
   |
-1 | #[derive(salsa::SalsaValue)]
-  |          ^^^^^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
-2 | struct ContainsRef<'db> {
-  |                    --- lifetime `'db` defined here
-  |
-  = note: this error originates in the derive macro `salsa::SalsaValue` (in Nightly builds, run with -Z macro-backtrace for more info)
+3 |     value: &'db str,
+  |            ^^^^^^^^

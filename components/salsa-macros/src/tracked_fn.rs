@@ -5,6 +5,7 @@ use syn::{Ident, ItemFn};
 
 use crate::hygiene::Hygiene;
 use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
+use crate::xform::ChangeLt;
 use crate::{db_lifetime, fn_util};
 
 // Source:
@@ -88,17 +89,15 @@ impl Macro {
         let db_lt = db_lifetime::db_lifetime(&item.sig.generics);
         let input_ids = self.input_ids(&item);
         let input_tys = self.input_tys(&item)?;
-        let interned_input_tys = input_tys.iter().map(|&ty| {
-            let mut ty = ty.clone();
-            syn::visit_mut::visit_type_mut(
-                &mut ToDbLifetimeVisitor {
-                    db_lifetime: db_lt.clone(),
-                },
-                &mut ty,
-            );
-            ty
-        });
-        let output_ty = self.output_ty(&db_lt, &item)?;
+        let with_db_lifetime = |ty: &syn::Type| ChangeLt::elided_to(&db_lt).in_type(ty);
+        let interned_input_tys = input_tys
+            .iter()
+            .map(|&ty| with_db_lifetime(ty))
+            .collect::<Vec<_>>();
+        let output_ty = with_db_lifetime(&self.output_ty(&db_lt, &item)?);
+        let output_static_ty =
+            ChangeLt::named_to(&db_lt, &syn::Lifetime::new("'static", output_ty.span()))
+                .in_type(&output_ty);
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
@@ -135,6 +134,7 @@ impl Macro {
 
         let zalsa = self.hygiene.ident("zalsa");
         let Configuration = self.hygiene.scoped_ident(fn_name, "Configuration");
+        let Output = self.hygiene.scoped_ident(fn_name, "Output");
         let InternedData = self.hygiene.scoped_ident(fn_name, "InternedData");
         let InternedFields = self.hygiene.scoped_ident(fn_name, "InternedFields");
         let assemble_interned_fields = self
@@ -199,12 +199,32 @@ impl Macro {
         let persist = self.args.persist();
 
         let assert_output_is_salsa_value_or_static = if requires_salsa_value {
-            crate::salsa_value::assert_salsa_value_or_static(&db_lt, &zalsa, &output_ty)
+            crate::salsa_value::assert_salsa_value_or_static(
+                &db_lt,
+                &zalsa,
+                &output_ty,
+                &output_static_ty,
+            )
         } else {
             quote! {}
         };
-        let salsa_value_field_attr =
-            (!requires_salsa_value).then(|| quote!(#[salsa_value(prove_safe_to_retain_manually)]));
+        let assert_interned_inputs_are_salsa_values = if requires_salsa_value {
+            interned_input_tys
+                .iter()
+                .map(|input_ty| {
+                    let static_input_ty = crate::salsa_value::static_type(input_ty, &db_lt);
+                    crate::salsa_value::assert_salsa_value_field(
+                        &db_lt,
+                        &zalsa,
+                        input_ty,
+                        &static_input_ty,
+                        false,
+                    )
+                })
+                .collect()
+        } else {
+            quote! {}
+        };
         let self_ty = match &self.args.self_ty {
             Some(ty) => quote! { self_ty: #ty, },
             None => quote! {},
@@ -223,6 +243,7 @@ impl Macro {
                 input_tys: [#(#input_tys),*],
                 interned_input_tys: [#(#interned_input_tys),*],
                 output_ty: #output_ty,
+                output_static_ty: #output_static_ty,
                 inner_fn: { #inner_fn },
                 cycle_recovery_fn: #cycle_recovery_fn,
                 cycle_recovery_initial: #cycle_recovery_initial,
@@ -235,12 +256,13 @@ impl Macro {
                 lru: #lru,
                 return_mode: #return_mode,
                 persist: #persist,
-                salsa_value_field_attr: { #salsa_value_field_attr },
+                assert_interned_inputs_are_salsa_values: { #assert_interned_inputs_are_salsa_values },
                 assert_output_is_salsa_value_or_static: { #assert_output_is_salsa_value_or_static },
                 #self_ty
                 unused_names: [
                     #zalsa,
                     #Configuration,
+                    #Output,
                     #InternedData,
                     #InternedFields,
                     #assemble_interned_fields,
@@ -317,16 +339,6 @@ impl Macro {
 
     fn output_ty(&self, db_lt: &syn::Lifetime, item: &syn::ItemFn) -> syn::Result<syn::Type> {
         fn_util::output_ty(Some(db_lt), &item.sig)
-    }
-}
-
-struct ToDbLifetimeVisitor {
-    db_lifetime: syn::Lifetime,
-}
-
-impl syn::visit_mut::VisitMut for ToDbLifetimeVisitor {
-    fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        i.clone_from(&self.db_lifetime);
     }
 }
 

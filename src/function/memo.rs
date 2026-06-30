@@ -1,6 +1,4 @@
-use std::any::Any;
 use std::fmt::{Debug, Formatter};
-use std::mem::transmute;
 use std::ptr::NonNull;
 
 use crate::cycle::{
@@ -18,25 +16,16 @@ use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
-    pub(super) fn insert_memo_into_table_for<'db>(
+    pub(super) fn insert_memo_into_table_for(
         &self,
-        zalsa: &'db Zalsa,
+        zalsa: &Zalsa,
         id: Id,
-        memo: NonNull<Memo<'db, C>>,
+        memo: NonNull<Memo<C>>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<NonNull<Memo<'db, C>>> {
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        let static_memo =
-            unsafe { transmute::<NonNull<Memo<'db, C>>, NonNull<Memo<'static, C>>>(memo) };
-        let old_static_memo = zalsa
+    ) -> Option<NonNull<Memo<C>>> {
+        zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .insert(memo_ingredient_index, static_memo)?;
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        Some(unsafe {
-            transmute::<NonNull<Memo<'static, C>>, NonNull<Memo<'db, C>>>(old_static_memo)
-        })
+            .insert(memo_ingredient_index, memo)
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
@@ -47,13 +36,12 @@ impl<C: Configuration> IngredientImpl<C> {
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
-        let static_memo = zalsa
+    ) -> Option<&'db Memo<C>> {
+        let memo = zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
             .get(memo_ingredient_index)?;
-        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
-        // for `'db` though as we delay their dropping to the end of a revision.
-        Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
+        // SAFETY: The memo table owns this allocation for at least `'db`.
+        Some(unsafe { memo.as_ref() })
     }
 
     /// Evicts the existing memo for the given key, replacing it
@@ -63,7 +51,7 @@ impl<C: Configuration> IngredientImpl<C> {
         table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,
     ) {
-        let map = |memo: &mut Memo<'static, C>| {
+        let map = |memo: &mut Memo<C>| {
             if memo.header.can_evict_value() {
                 // Set the memo value to `None`.
                 memo.value = None;
@@ -75,12 +63,12 @@ impl<C: Configuration> IngredientImpl<C> {
 }
 
 #[derive(Debug)]
-pub struct Memo<'db, C: Configuration> {
+pub struct Memo<C: Configuration> {
     /// Configuration-independent state used to validate and manage this memo.
     pub(super) header: MemoHeader,
 
     /// The result of the query, if we decide to memoize it.
-    pub(super) value: Option<C::Output<'db>>,
+    pub(super) value: Option<C::OutputValue>,
 }
 
 #[derive(Debug)]
@@ -210,16 +198,24 @@ impl MemoHeader {
     }
 }
 
-impl<'db, C: Configuration> Memo<'db, C> {
-    pub(super) fn new(
+impl<C: Configuration> Memo<C> {
+    pub(super) fn new<'db>(
         value: Option<C::Output<'db>>,
         revision_now: Revision,
         revisions: QueryRevisions,
     ) -> Self {
         Self {
-            value,
+            // SAFETY: Query outputs are erased only while retained in this
+            // memo and are rebound to the lifetime of a database borrow.
+            value: value.map(|value| unsafe { crate::salsa_value::erase::<C::OutputValue>(value) }),
             header: MemoHeader::new(revision_now, revisions),
         }
+    }
+
+    pub(super) fn value<'db>(&'db self) -> Option<&'db C::Output<'db>> {
+        self.value
+            .as_ref()
+            .map(crate::salsa_value::rebind::<C::OutputValue>)
     }
 
     /// Returns `true` if this memo should be serialized.
@@ -229,15 +225,12 @@ impl<'db, C: Configuration> Memo<'db, C> {
         self.value.is_some() && !self.header.may_be_provisional()
     }
 
-    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, 'db, C> {
+    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, C> {
         self.header.tracing_debug(self.value.is_some())
     }
 }
 
-impl<C: Configuration> crate::table::memo::Memo for Memo<'static, C>
-where
-    C::Output<'static>: Send + Sync + Any,
-{
+impl<C: Configuration> crate::table::memo::Memo for Memo<C> {
     fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
         self.header.remove_outputs(zalsa, executor);
     }
@@ -245,11 +238,7 @@ where
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
         let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
-        let heap_size = if let Some(value) = self.value.as_ref() {
-            C::heap_size(value)
-        } else {
-            Some(0)
-        };
+        let heap_size = self.value().map_or(Some(0), C::heap_size);
 
         crate::database::MemoInfo {
             debug_name: C::DEBUG_NAME,
@@ -276,35 +265,33 @@ mod persistence {
     use serde::ser::SerializeStruct;
 
     /// A reference to the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
-    pub(crate) struct MappedMemo<'memo, 'db, C: Configuration> {
-        pub(crate) value: Option<&'memo C::Output<'db>>,
+    pub(crate) struct MappedMemo<'memo, C: Configuration> {
+        pub(crate) value: Option<&'memo C::Output<'memo>>,
         pub(crate) verified_at: AtomicRevision,
         pub(crate) revisions: MappedQueryRevisions<'memo>,
     }
 
-    impl<'db, C: Configuration> Memo<'db, C> {
+    impl<C: Configuration> Memo<C> {
         pub(crate) fn with_origin(
             &self,
             serialized_origin: PersistentQueryOrigin,
-        ) -> MappedMemo<'_, 'db, C> {
-            let Memo {
-                ref value,
-                ref header,
-            } = *self;
+        ) -> MappedMemo<'_, C> {
+            let value = self.value();
+            let Memo { ref header, .. } = *self;
             let MemoHeader {
                 ref verified_at,
                 ref revisions,
             } = *header;
 
             MappedMemo {
-                value: value.as_ref(),
+                value,
                 verified_at: AtomicRevision::from(verified_at.load()),
                 revisions: revisions.with_origin(serialized_origin),
             }
         }
     }
 
-    impl<C> serde::Serialize for MappedMemo<'_, '_, C>
+    impl<C> serde::Serialize for MappedMemo<'_, C>
     where
         C: Configuration,
     {
@@ -344,7 +331,7 @@ mod persistence {
         }
     }
 
-    impl<'de, C> serde::Deserialize<'de> for Memo<'static, C>
+    impl<'de, C> serde::Deserialize<'de> for Memo<C>
     where
         C: Configuration,
     {
@@ -380,7 +367,8 @@ mod persistence {
             let memo = DeserializeMemo::<C>::deserialize(deserializer)?;
 
             Ok(Memo {
-                value: Some(memo.value.0),
+                // SAFETY: The output is immediately retained in this memo.
+                value: Some(unsafe { crate::salsa_value::erase::<C::OutputValue>(memo.value.0) }),
                 header: MemoHeader {
                     verified_at: memo.verified_at,
                     revisions: memo.revisions,
@@ -514,8 +502,7 @@ mod _memory_usage {
 
     struct DummyConfiguration;
 
-    // SAFETY: `NonZeroUsize` is `'static` and contains no database lifetime.
-    unsafe impl super::Configuration for DummyConfiguration {
+    impl super::Configuration for DummyConfiguration {
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
         const PERSIST: bool = false;
@@ -525,6 +512,7 @@ mod _memory_usage {
         type SalsaStruct<'db> = DummyStruct;
         type Input<'db> = ();
         type Output<'db> = NonZeroUsize;
+        type OutputValue = NonZeroUsize;
         type Eviction = crate::function::eviction::NoopEviction;
 
         fn values_equal<'db>(_: &Self::Output<'db>, _: &Self::Output<'db>) -> bool {

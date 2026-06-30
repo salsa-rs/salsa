@@ -78,9 +78,8 @@ macro_rules! setup_interned_struct {
         // The path to the `serialize` function for the value's fields.
         deserialize_fn: $($deserialize_fn:path)?,
 
-        // Applied to the generated field storage when the user selected the
-        // unsafe escape hatch.
-        salsa_value_field_attr: {$($salsa_value_field_attr:tt)*},
+        // Ensures that every field can be rebound to the database lifetime.
+        assert_fields_are_salsa_values: {$($assert_fields_are_salsa_values:tt)*},
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -117,14 +116,29 @@ macro_rules! setup_interned_struct {
                 $zalsa::ErasedJar::erase::<$StructWithStatic>()
             }
 
-            #[derive(Clone, PartialEq, Eq, Hash, ::salsa::SalsaValue)]
+            fn _assert_fields_are_salsa_values<$db_lt>() {
+                use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
+                $($assert_fields_are_salsa_values)*
+            }
+            let _ = _assert_fields_are_salsa_values;
+
+            #[derive(Clone, PartialEq, Eq, Hash)]
             $vis struct $StructDataIdent<$db_lt> {
-                $($salsa_value_field_attr)*
                 fields: ($($field_ty,)*),
-                // This marker contains no data; it only makes the GAT lifetime explicit.
+                // Keeps the database lifetime in the type even if no field uses it.
                 marker: ::std::marker::PhantomData<fn() -> &$db_lt ()>,
             }
 
+            // SAFETY: The generated assertions above prove each retained field
+            // can be exposed with the current database lifetime. This wrapper
+            // exposes the fields only through a shared tuple reference.
+            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt>
+                for $StructDataIdent<'static>
+            {
+                type Output = $StructDataIdent<$db_lt>;
+            }
+
+            // Public ingredient APIs expose their field tuple through this wrapper.
             impl<$db_lt> ::std::ops::Deref for $StructDataIdent<$db_lt> {
                 type Target = ($($field_ty,)*);
 
@@ -181,6 +195,7 @@ macro_rules! setup_interned_struct {
                 )?
 
                 type Fields<'a> = $StructDataIdent<'a>;
+                type StoredFields = $StructDataIdent<'static>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
 
                 $(
@@ -312,7 +327,11 @@ macro_rules! setup_interned_struct {
             }
 
 
-            unsafe impl< $($db_lt_arg)? > $zalsa::SalsaValue for $Struct< $($db_lt_arg)? > {}
+            unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt>
+                for $StructWithStatic
+            {
+                type Output = $Struct<$($db_lt_arg)?>;
+            }
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
                 pub fn $new_fn<$Db, $($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self

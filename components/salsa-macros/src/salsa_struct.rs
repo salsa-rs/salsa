@@ -56,6 +56,9 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
 
     /// Are `#[default]` fields allowed?
     const ALLOW_DEFAULT: bool;
+
+    /// Is `#[salsa_value(prove_safe_to_retain_manually)]` allowed on fields?
+    const ALLOW_MANUAL_RETENTION_PROOF: bool;
 }
 
 pub(crate) struct SalsaField<'s> {
@@ -65,6 +68,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) has_default_attr: bool,
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
+    pub(crate) has_manual_retention_proof: bool,
     pub(crate) custom_eq_attr: Option<(syn::Path, syn::Expr)>,
     get_name: syn::Ident,
     set_name: syn::Ident,
@@ -93,6 +97,18 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
     }),
     ("no_eq", |_, ef| {
         ef.has_no_eq_attr = true;
+        Ok(())
+    }),
+    ("salsa_value", |attr, ef| {
+        if ef.has_manual_retention_proof {
+            return Err(syn::Error::new_spanned(
+                ef.field,
+                "multiple `#[salsa_value]` attributes on field",
+            ));
+        }
+        crate::salsa_value::parse_manual_retention_proof(attr)
+            .map_err(|error| syn::Error::new_spanned(ef.field, error.to_string()))?;
+        ef.has_manual_retention_proof = true;
         Ok(())
     }),
     ("get", |attr, ef| {
@@ -139,6 +155,7 @@ where
         this.maybe_disallow_custom_eq_fields()?;
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
+        this.maybe_disallow_manual_retention_proofs()?;
 
         this.check_generics()?;
 
@@ -151,6 +168,11 @@ where
             Some(name) => name,
             None => Ident::new("new", self.struct_item.ident.span()),
         }
+    }
+
+    /// Returns the generated data type name (`FooData` for `Foo`).
+    pub(crate) fn data_ident(&self) -> syn::Ident {
+        quote::format_ident!("{}Data", self.struct_item.ident)
     }
 
     /// Returns the `id` in `Options` if it is `Some`, else `salsa::Id`.
@@ -234,6 +256,26 @@ where
                 return Err(syn::Error::new_spanned(
                     ef.field,
                     format!("`#[default]` cannot be used with `#[salsa::{}]`", A::KIND),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn maybe_disallow_manual_retention_proofs(&self) -> syn::Result<()> {
+        if A::ALLOW_MANUAL_RETENTION_PROOF {
+            return Ok(());
+        }
+
+        for field in &self.fields {
+            if field.has_manual_retention_proof {
+                return Err(syn::Error::new_spanned(
+                    field.field,
+                    format!(
+                        "`#[salsa_value(prove_safe_to_retain_manually)]` cannot be used with `#[salsa::{}]`",
+                        A::KIND
+                    ),
                 ));
             }
         }
@@ -353,6 +395,13 @@ where
 
     pub(crate) fn field_tys(&self) -> Vec<&syn::Type> {
         self.fields.iter().map(|f| &f.field.ty).collect()
+    }
+
+    pub(crate) fn field_manual_retention_proofs(&self) -> Vec<bool> {
+        self.fields
+            .iter()
+            .map(|field| field.has_manual_retention_proof)
+            .collect()
     }
 
     pub(crate) fn tracked_tys(&self) -> Vec<&syn::Type> {
@@ -480,6 +529,7 @@ impl<'s> SalsaField<'s> {
             returns,
             has_default_attr: false,
             has_no_eq_attr: false,
+            has_manual_retention_proof: false,
             custom_eq_attr: None,
             get_name,
             set_name,
