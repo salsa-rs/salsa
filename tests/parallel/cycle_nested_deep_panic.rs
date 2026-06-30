@@ -8,7 +8,7 @@ use crate::{Knobs, KnobsDatabase};
 use std::fmt;
 use std::panic::catch_unwind;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 struct CycleValue(u32);
 
 const MIN: CycleValue = CycleValue(0);

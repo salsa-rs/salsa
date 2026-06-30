@@ -42,8 +42,8 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// The kind of struct (e.g., interned, input, tracked).
     const KIND: &'static str;
 
-    /// Are `#[maybe_update]` fields allowed?
-    const ALLOW_MAYBE_UPDATE: bool;
+    /// Are `#[eq]` fields allowed?
+    const ALLOW_CUSTOM_EQ: bool;
 
     /// Are `#[tracked]` fields allowed?
     const ALLOW_TRACKED: bool;
@@ -65,7 +65,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) has_default_attr: bool,
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
-    pub(crate) maybe_update_attr: Option<(syn::Path, syn::Expr)>,
+    pub(crate) custom_eq_attr: Option<(syn::Path, syn::Expr)>,
     get_name: syn::Ident,
     set_name: syn::Ident,
     unknown_attrs: Vec<&'s syn::Attribute>,
@@ -103,8 +103,8 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
         ef.set_name = attr.parse_args()?;
         Ok(())
     }),
-    ("maybe_update", |attr, ef| {
-        ef.maybe_update_attr = Some(attr.parse_args_with(|parser: ParseStream| {
+    ("eq", |attr, ef| {
+        ef.custom_eq_attr = Some(attr.parse_args_with(|parser: ParseStream| {
             let expr = parser.parse::<syn::Expr>()?;
             Ok((attr.path().clone(), expr))
         })?);
@@ -136,7 +136,7 @@ where
             fields,
         };
 
-        this.maybe_disallow_maybe_update_fields()?;
+        this.maybe_disallow_custom_eq_fields()?;
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
 
@@ -173,20 +173,17 @@ where
     /// # Parameters
     ///
     /// * `kind`, the attribute name (e.g., `input` or `interned`)
-    fn maybe_disallow_maybe_update_fields(&self) -> syn::Result<()> {
-        if A::ALLOW_MAYBE_UPDATE {
+    fn maybe_disallow_custom_eq_fields(&self) -> syn::Result<()> {
+        if A::ALLOW_CUSTOM_EQ {
             return Ok(());
         }
 
-        // Check if any field has the `#[maybe_update]` attribute.
+        // Check if any field has the `#[eq]` attribute.
         for ef in &self.fields {
-            if ef.maybe_update_attr.is_some() {
+            if ef.custom_eq_attr.is_some() {
                 return Err(syn::Error::new_spanned(
                     ef.field,
-                    format!(
-                        "`#[maybe_update]` cannot be used with `#[salsa::{}]`",
-                        A::KIND
-                    ),
+                    format!("`#[eq]` cannot be used with `#[salsa::{}]`", A::KIND),
                 ));
             }
         }
@@ -483,7 +480,7 @@ impl<'s> SalsaField<'s> {
             returns,
             has_default_attr: false,
             has_no_eq_attr: false,
-            maybe_update_attr: None,
+            custom_eq_attr: None,
             get_name,
             set_name,
             unknown_attrs: Default::default(),

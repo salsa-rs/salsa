@@ -201,6 +201,31 @@ This reference is linked to `db` and remains valid so long as the
 
 ## The `'db` lifetime at rest
 
+Salsa stores tracked and interned fields and memoized query results after the particular `&'db DB`
+borrow that produced them has ended. Internally, Salsa erases that lifetime while the value is in
+storage and restores the current database lifetime when the value is accessed again. The unsafe
+`SalsaValue` marker trait is the boundary that makes this rebranding sound: an older value must
+remain safe to retain and use in a later revision, including through safe operations such as
+`PartialEq`.
+
+`#[derive(salsa::SalsaValue)]` checks the guarantee structurally by requiring every field to
+implement `SalsaValue`. A direct database-lifetime reference such as `&'db T` does not implement
+the trait because its referent may be changed or freed in a later revision. Salsa handles do
+implement it because access to their data goes back through the current database state.
+
+If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
+`#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This is
+a manual assertion of the same retention guarantee.
+
+The structural derive cannot validate invariants hidden behind unsafe code. For example, a type
+could store an integer address together with a Salsa handle used as a lifetime witness. Even though
+both fields implement `SalsaValue`, retaining the type would be unsound if a safe method later
+dereferenced the address after the pointed-to memo was replaced. Authors of such abstractions must
+not derive `SalsaValue` unless their invariant remains valid across revisions.
+
+This retention guarantee is separate from equality. `PartialEq` tells Salsa whether a recreated
+tracked field changed; it does not prove that the field can be stored across revisions.
+
 ## Updating tracked struct fields across revisions
 
 ### The `XX`

@@ -34,7 +34,7 @@ pub struct Program<'db> {
 // ANCHOR_END: program
 
 // ANCHOR: statements_and_expressions
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::SalsaValue)]
 pub struct Statement<'db> {
     pub span: Span<'db>,
 
@@ -47,7 +47,7 @@ impl<'db> Statement<'db> {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::SalsaValue)]
 pub enum StatementData<'db> {
     /// Defines `fn <name>(<args>) = <body>`
     Function(Function<'db>),
@@ -55,7 +55,7 @@ pub enum StatementData<'db> {
     Print(Expression<'db>),
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::SalsaValue)]
 pub struct Expression<'db> {
     pub span: Span<'db>,
 
@@ -68,15 +68,15 @@ impl<'db> Expression<'db> {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::SalsaValue)]
 pub enum ExpressionData<'db> {
     Op(Box<Expression<'db>>, Op, Box<Expression<'db>>),
-    Number(OrderedFloat<f64>),
+    Number(#[salsa_value(prove_safe_to_retain_manually)] OrderedFloat<f64>),
     Variable(VariableId<'db>),
     Call(FunctionId<'db>, Vec<Expression<'db>>),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::SalsaValue)]
 pub enum Op {
     Add,
     Subtract,
