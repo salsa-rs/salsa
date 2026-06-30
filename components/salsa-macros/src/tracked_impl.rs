@@ -56,7 +56,7 @@ impl Macro {
         }
         impl_item.items = member_items;
         Ok(crate::debug::dump_tokens(
-            format!("impl {:?}", impl_item.self_ty),
+            format!("impl {}", impl_item.self_ty.to_token_stream()),
             impl_item.into_token_stream(),
         ))
     }
