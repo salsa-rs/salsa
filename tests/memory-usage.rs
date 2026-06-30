@@ -46,7 +46,7 @@ fn input_to_string_get_size(_db: &dyn salsa::Database) -> String {
     "a".repeat(1000)
 }
 
-#[salsa::tracked(volatile = 1, heap_size = string_size_of)]
+#[salsa::tracked(volatile = 1, returns(clone), heap_size = string_size_of)]
 fn volatile_input_to_string(db: &dyn salsa::Database, input: MyInput) -> String {
     input.field(db).clone()
 }

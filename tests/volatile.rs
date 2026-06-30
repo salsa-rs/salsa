@@ -16,18 +16,20 @@ const FILL_FIELDS: std::ops::Range<u32> = 100..1_124;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked]
 struct CreatedByVolatile<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
 #[derive(Clone, salsa::Update)]
 struct TrackedReference<'db>(CreatedByVolatile<'db>);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn create_tracked(db: &dyn salsa::Database, input: MyInput) -> CreatedByVolatile<'_> {
     CreatedByVolatile::new(db, input.field(db))
 }
@@ -86,7 +88,7 @@ fn live_values() -> usize {
     LIVE_VALUES.with(|n| n.load(Ordering::SeqCst))
 }
 
-#[salsa::tracked(volatile = 2)]
+#[salsa::tracked(volatile = 2, returns(copy))]
 fn volatile_value(db: &dyn salsa::Database, input: MyInput) -> u32 {
     VOLATILE_EXECUTIONS.with(|n| n.fetch_add(1, Ordering::SeqCst));
     input.field(db)
@@ -97,12 +99,12 @@ fn volatile_copy(db: &dyn salsa::Database, input: MyInput) -> u32 {
     input.field(db)
 }
 
-#[salsa::tracked(volatile = 2)]
+#[salsa::tracked(volatile = 2, returns(clone))]
 fn volatile_arc(_db: &dyn salsa::Database, _input: MyInput) -> Arc<LiveValue> {
     Arc::new(LiveValue::new())
 }
 
-#[salsa::tracked(volatile = 2, no_eq)]
+#[salsa::tracked(volatile = 2, returns(clone), no_eq)]
 fn volatile_tracked_reference<'db>(
     _db: &'db dyn salsa::Database,
     value: CreatedByVolatile<'db>,
@@ -124,7 +126,7 @@ fn volatile_creates_tracked_struct(
 struct VolatileLog(u32);
 
 #[cfg(feature = "accumulator")]
-#[salsa::tracked(volatile = 2)]
+#[salsa::tracked(volatile = 2, returns(copy))]
 fn volatile_accumulate(db: &dyn salsa::Database, input: MyInput) -> u32 {
     ACCUMULATE_EXECUTIONS.with(|n| n.fetch_add(1, Ordering::SeqCst));
     let field = input.field(db);
@@ -132,13 +134,13 @@ fn volatile_accumulate(db: &dyn salsa::Database, input: MyInput) -> u32 {
     field
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn outer_value(db: &dyn salsa::Database, input: MyInput) -> u32 {
     OUTER_EXECUTIONS.with(|n| n.fetch_add(1, Ordering::SeqCst));
     *volatile_value(db, input) + 1
 }
 
-#[salsa::tracked(volatile = 2, cycle_initial=cycle_initial)]
+#[salsa::tracked(volatile = 2, returns(copy), cycle_initial=cycle_initial)]
 fn volatile_cycle_value(db: &dyn salsa::Database, input: MyInput) -> u32 {
     CYCLE_EXECUTIONS.with(|n| n.fetch_add(1, Ordering::SeqCst));
 

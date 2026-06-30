@@ -46,7 +46,7 @@ For values that are cheap to recompute and useful only during a short burst of
 queries, use the `volatile` option:
 
 ```rust
-#[salsa::tracked(volatile = 4096)]
+#[salsa::tracked(volatile = 4096, returns(clone))]
 fn lower(db: &dyn Db, input: SourceFile) -> Arc<LoweredFile> {
     // ...
 }
@@ -56,9 +56,10 @@ Unlike `lru`, volatile collection runs within a revision. Once the cache reaches
 its configured capacity, each new value replaces a randomly selected resident
 value. Cache hits require no eviction bookkeeping or synchronization.
 
-Volatile queries must return values using `returns(copy)` or `returns(clone)`
-(the default). Reference return modes such as `returns(ref)` are rejected
-because volatile values may be dropped before the next revision.
+Volatile queries must explicitly return values using `returns(copy)` or
+`returns(clone)`. The default reference return mode and an explicit
+`returns(ref)` are rejected because volatile values may be dropped before the
+next revision.
 
 ### Memory Management
 

@@ -2,13 +2,14 @@ use salsa::Database as Db;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[derive(Clone)]
 struct NotUpdate;
 
-#[salsa::tracked(volatile = 3)]
+#[salsa::tracked(volatile = 3, returns(clone))]
 fn volatile_requires_update(_db: &dyn Db, _input: MyInput) -> NotUpdate {
     unreachable!()
 }

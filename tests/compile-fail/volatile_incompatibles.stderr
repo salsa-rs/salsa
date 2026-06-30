@@ -1,54 +1,54 @@
 error: the `volatile` and `lru` options cannot be used together
-  --> tests/compile-fail/volatile_incompatibles.rs:16:18
+  --> tests/compile-fail/volatile_incompatibles.rs:17:18
    |
-16 | #[salsa::tracked(volatile = 3, lru = 3)]
+17 | #[salsa::tracked(volatile = 3, lru = 3)]
    |                  ^^^^^^^^
 
 error: the `volatile` and `specify` options cannot be used together
-  --> tests/compile-fail/volatile_incompatibles.rs:21:32
+  --> tests/compile-fail/volatile_incompatibles.rs:22:32
    |
-21 | #[salsa::tracked(volatile = 3, specify)]
+22 | #[salsa::tracked(volatile = 3, specify)]
    |                                ^^^^^^^
 
 error: the `volatile` and `unsafe(non_update_types)` options cannot be used together
-  --> tests/compile-fail/volatile_incompatibles.rs:26:39
+  --> tests/compile-fail/volatile_incompatibles.rs:27:39
    |
-26 | #[salsa::tracked(volatile = 3, unsafe(non_update_types))]
+27 | #[salsa::tracked(volatile = 3, unsafe(non_update_types))]
    |                                       ^^^^^^^^^^^^^^^^
 
 error: the `volatile` option cannot be used with reference return modes
-  --> tests/compile-fail/volatile_incompatibles.rs:31:40
+  --> tests/compile-fail/volatile_incompatibles.rs:32:40
    |
-31 | #[salsa::tracked(volatile = 3, returns(ref))]
+32 | #[salsa::tracked(volatile = 3, returns(ref))]
    |                                        ^^^
 
 error[E0369]: binary operation `==` cannot be applied to type `&NotUpdate`
-  --> tests/compile-fail/volatile_incompatibles.rs:12:63
+  --> tests/compile-fail/volatile_incompatibles.rs:13:63
    |
-12 | fn volatile_requires_update(_db: &dyn Db, _input: MyInput) -> NotUpdate {
+13 | fn volatile_requires_update(_db: &dyn Db, _input: MyInput) -> NotUpdate {
    |                                                               ^^^^^^^^^
    |
 note: an implementation of `PartialEq` might be missing for `NotUpdate`
-  --> tests/compile-fail/volatile_incompatibles.rs:9:1
+  --> tests/compile-fail/volatile_incompatibles.rs:10:1
    |
- 9 | struct NotUpdate;
+10 | struct NotUpdate;
    | ^^^^^^^^^^^^^^^^ must implement `PartialEq`
 help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
    |
- 9 + #[derive(PartialEq)]
-10 | struct NotUpdate;
+10 + #[derive(PartialEq)]
+11 | struct NotUpdate;
    |
 
 error[E0277]: the trait bound `NotUpdate: Update` is not satisfied
-  --> tests/compile-fail/volatile_incompatibles.rs:12:63
+  --> tests/compile-fail/volatile_incompatibles.rs:13:63
    |
-12 | fn volatile_requires_update(_db: &dyn Db, _input: MyInput) -> NotUpdate {
+13 | fn volatile_requires_update(_db: &dyn Db, _input: MyInput) -> NotUpdate {
    |                                                               ^^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `Update` is not implemented for `NotUpdate`
-  --> tests/compile-fail/volatile_incompatibles.rs:9:1
+  --> tests/compile-fail/volatile_incompatibles.rs:10:1
    |
- 9 | struct NotUpdate;
+10 | struct NotUpdate;
    | ^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `Update`:
              ()
@@ -61,10 +61,10 @@ help: the trait `Update` is not implemented for `NotUpdate`
              (A, B, C, D, E, F, G, H)
            and $N others
 note: required by a bound in `assert_update`
-  --> tests/compile-fail/volatile_incompatibles.rs:11:1
+  --> tests/compile-fail/volatile_incompatibles.rs:12:1
    |
-11 | #[salsa::tracked(volatile = 3)]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `assert_update`
-12 | fn volatile_requires_update(_db: &dyn Db, _input: MyInput) -> NotUpdate {
+12 | #[salsa::tracked(volatile = 3, returns(clone))]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `assert_update`
+13 | fn volatile_requires_update(_db: &dyn Db, _input: MyInput) -> NotUpdate {
    |                                                               --------- required by a bound in this function
    = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
