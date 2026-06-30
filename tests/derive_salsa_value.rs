@@ -20,7 +20,7 @@ unsafe impl<'db, T> salsa::SalsaValue<'db> for Invariant<T>
 where
     T: salsa::SalsaValue<'db>,
 {
-    type WithDb = Invariant<T::WithDb>;
+    type Output = Invariant<T::Output>;
 }
 
 #[derive(salsa::SalsaValue)]
@@ -38,13 +38,13 @@ fn assert_salsa_value<T: for<'db> salsa::SalsaValue<'db>>() {}
 
 fn assert_contains_phantom_ref<'db>(_marker: std::marker::PhantomData<&'db ()>)
 where
-    ContainsPhantomRef<'static>: salsa::SalsaValue<'db, WithDb = ContainsPhantomRef<'db>>,
+    ContainsPhantomRef<'static>: salsa::SalsaValue<'db, Output = ContainsPhantomRef<'db>>,
 {
 }
 
 fn assert_invariant_container_output<'db>()
 where
-    ContainsInvariant<'static>: salsa::SalsaValue<'db, WithDb = ContainsInvariant<'db>>,
+    ContainsInvariant<'static>: salsa::SalsaValue<'db, Output = ContainsInvariant<'db>>,
 {
 }
 
