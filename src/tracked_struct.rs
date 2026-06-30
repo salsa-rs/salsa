@@ -53,7 +53,7 @@ pub trait Configuration: Sized + 'static {
     type Fields<'db>: Send + Sync;
 
     /// The representation retained in Salsa's tracked-struct storage.
-    type FieldsValue: for<'db> crate::SalsaValue<'db, Output = Self::Fields<'db>>;
+    type FieldsValue: for<'db> crate::SalsaValue<'db, WithDb = Self::Fields<'db>>;
 
     /// A array of [`AtomicRevision`][] values, one per each of the tracked value fields.
     /// When a struct is re-recreated in a new revision, the corresponding

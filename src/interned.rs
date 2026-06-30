@@ -51,7 +51,7 @@ pub trait Configuration: Sized + 'static {
     type Fields<'db>: InternedData;
 
     /// The representation retained in Salsa's intern table.
-    type FieldsValue: InternedData + for<'db> crate::SalsaValue<'db, Output = Self::Fields<'db>>;
+    type FieldsValue: InternedData + for<'db> crate::SalsaValue<'db, WithDb = Self::Fields<'db>>;
 
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;

@@ -180,7 +180,7 @@ const _: () = {
     }
 
     unsafe impl<'db> zalsa_::SalsaValue<'db> for InternedString<'static> {
-        type Output = InternedString<'db>;
+        type WithDb = InternedString<'db>;
     }
     impl<'db> InternedString<'db> {
         pub fn new<Db_, T0: zalsa_::Lookup<String> + std::hash::Hash>(
