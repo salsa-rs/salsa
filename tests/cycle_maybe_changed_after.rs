@@ -8,21 +8,24 @@ use salsa::{Database, Durability, Setter};
 
 #[salsa::input(debug)]
 struct Input {
+    #[returns(copy)]
     value: u32,
+    #[returns(copy)]
     max: u32,
 }
 
 #[salsa::interned(debug)]
 struct Output<'db> {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked(cycle_initial=query_a_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=query_a_initial)]
 fn query_c(db: &dyn salsa::Database, input: Input) -> u32 {
     query_d(db, input)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_d(db: &dyn salsa::Database, input: Input) -> u32 {
     let value = query_c(db, input);
     if value < input.max(db) * 2 {
@@ -45,12 +48,12 @@ fn query_a_initial(_db: &dyn Database, _id: salsa::Id, _input: Input) -> u32 {
 /// from the previous iteration.
 #[test_log::test]
 fn first_iteration_input_only() {
-    #[salsa::tracked(cycle_initial=query_a_initial)]
+    #[salsa::tracked(returns(copy), cycle_initial=query_a_initial)]
     fn query_a(db: &dyn salsa::Database, input: Input) -> u32 {
         query_b(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_b(db: &dyn salsa::Database, input: Input) -> u32 {
         let value = query_a(db, input);
 
@@ -88,12 +91,13 @@ fn first_iteration_input_only() {
 fn nested_cycle_fewer_dependencies_in_first_iteration() {
     #[salsa::interned(debug)]
     struct ClassLiteral<'db> {
+        #[returns(copy)]
         scope: Scope<'db>,
     }
 
     #[salsa::tracked]
     impl<'db> ClassLiteral<'db> {
-        #[salsa::tracked]
+        #[salsa::tracked(returns(copy))]
         fn context(self, db: &'db dyn salsa::Database) -> u32 {
             let scope = self.scope(db);
 
@@ -104,10 +108,11 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
 
     #[salsa::tracked(debug)]
     struct Scope<'db> {
+        #[returns(copy)]
         field: u32,
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn create_interned<'db>(db: &'db dyn salsa::Database, scope: Scope<'db>) -> ClassLiteral<'db> {
         ClassLiteral::new(db, scope)
     }
@@ -117,7 +122,7 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         scope: Scope<'db>,
     }
 
-    #[salsa::tracked(cycle_initial=head_initial)]
+    #[salsa::tracked(returns(copy), cycle_initial=head_initial)]
     fn cycle_head(db: &dyn salsa::Database, input: Input) -> Option<ClassLiteral<'_>> {
         let b = cycle_outer(db, input);
         tracing::info!("query_b = {b:?}");
@@ -132,12 +137,12 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         None
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn cycle_outer(db: &dyn salsa::Database, input: Input) -> Option<ClassLiteral<'_>> {
         cycle_participant(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn cycle_participant(db: &dyn salsa::Database, input: Input) -> Option<ClassLiteral<'_>> {
         let value = cycle_head(db, input);
         tracing::info!("cycle_head = {value:?}");
@@ -157,7 +162,7 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         }
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn entry(db: &dyn salsa::Database, input: Input) -> u32 {
         let _ = input.value(db);
         let head = cycle_head(db, input);

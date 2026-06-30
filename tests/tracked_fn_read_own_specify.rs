@@ -7,15 +7,17 @@ use salsa::Database;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked(debug)]
 struct MyTracked<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_fn(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("tracked_fn({input:?})"));
     let t = MyTracked::new(db, input.field(db) * 2);
@@ -23,14 +25,14 @@ fn tracked_fn(db: &dyn LogDatabase, input: MyInput) -> u32 {
     tracked_fn_extra(db, t)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_fn_specify_twice(db: &dyn LogDatabase, input: MyInput) {
     let t = MyTracked::new(db, input.field(db) * 2);
     tracked_fn_extra::specify(db, t, 1111);
     tracked_fn_extra::specify(db, t, 2222);
 }
 
-#[salsa::tracked(specify)]
+#[salsa::tracked(returns(copy), specify)]
 fn tracked_fn_extra<'db>(db: &'db dyn LogDatabase, input: MyTracked<'db>) -> u32 {
     db.push_log(format!("tracked_fn_extra({input:?})"));
     0

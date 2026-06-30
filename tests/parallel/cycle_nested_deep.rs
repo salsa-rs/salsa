@@ -15,18 +15,18 @@ struct CycleValue(u32);
 const MIN: CycleValue = CycleValue(0);
 const MAX: CycleValue = CycleValue(3);
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     query_b(db)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     let c_value = query_c(db);
     CycleValue(c_value.0 + 1).min(MAX)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     let d_value = query_d(db);
     let e_value = query_e(db);
@@ -36,12 +36,12 @@ fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     CycleValue(d_value.0.max(e_value.0).max(b_value.0).max(a_value.0))
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_d(db: &dyn KnobsDatabase) -> CycleValue {
     query_c(db)
 }
 
-#[salsa::tracked(cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_initial=initial)]
 fn query_e(db: &dyn KnobsDatabase) -> CycleValue {
     query_c(db)
 }

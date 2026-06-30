@@ -10,13 +10,14 @@ use crate::sync::thread;
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
 /// A query with cycle recovery that will be interrupted by LRU eviction.
 /// This uses `cycle_initial` which gives it `FallbackImmediate` cycle recovery strategy,
 /// meaning it goes through `execute_maybe_iterate` and has `PoisonProvisionalIfPanicking`.
-#[salsa::tracked(cycle_initial = cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial = cycle_initial)]
 fn cycle_query(db: &dyn KnobsDatabase, input: Input) -> u32 {
     // Signal that we've started the cycle query
     db.signal(1);
@@ -26,7 +27,7 @@ fn cycle_query(db: &dyn KnobsDatabase, input: Input) -> u32 {
     inner_query(db, input)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn inner_query(db: &dyn KnobsDatabase, input: Input) -> u32 {
     input.value(db)
 }

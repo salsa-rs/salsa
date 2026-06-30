@@ -4,6 +4,7 @@ use salsa::Database;
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     number: usize,
 }
 

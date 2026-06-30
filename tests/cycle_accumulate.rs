@@ -43,7 +43,7 @@ struct File {
 #[derive(Debug)]
 struct Diagnostic(#[allow(dead_code)] String);
 
-#[salsa::tracked(cycle_fn = cycle_fn, cycle_initial = cycle_initial)]
+#[salsa::tracked(returns(clone), cycle_fn = cycle_fn, cycle_initial = cycle_initial)]
 fn check_file(db: &dyn LogDatabase, file: File) -> Vec<u32> {
     db.push_log(format!(
         "check_file(name = {}, issues = {:?})",
@@ -53,7 +53,7 @@ fn check_file(db: &dyn LogDatabase, file: File) -> Vec<u32> {
 
     let mut collected_issues = HashSet::<u32>::from_iter(file.issues(db).iter().copied());
 
-    for dep in file.dependencies(db) {
+    for &dep in file.dependencies(db) {
         let issues = check_file(db, dep);
         collected_issues.extend(issues);
     }

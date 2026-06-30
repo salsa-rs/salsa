@@ -21,7 +21,7 @@ const OFFSET_B: u32 = 0b1000;
 // Signal 1: T1 has entered `query_a`
 // Signal 2: T2 has entered `query_b`
 
-#[salsa::tracked(cycle_result=cycle_result_a)]
+#[salsa::tracked(returns(copy), cycle_result=cycle_result_a)]
 fn query_a(db: &dyn KnobsDatabase) -> u32 {
     db.signal(1);
 
@@ -31,7 +31,7 @@ fn query_a(db: &dyn KnobsDatabase) -> u32 {
     query_b(db) | OFFSET_A
 }
 
-#[salsa::tracked(cycle_result=cycle_result_b)]
+#[salsa::tracked(returns(copy), cycle_result=cycle_result_b)]
 fn query_b(db: &dyn KnobsDatabase) -> u32 {
     // Wait for Thread T1 to enter `query_a` before we continue.
     db.wait_for(1);

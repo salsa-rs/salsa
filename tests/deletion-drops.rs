@@ -11,11 +11,13 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     identity: u32,
 }
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[returns(copy)]
     identifier: u32,
 
     #[tracked]
@@ -44,7 +46,7 @@ impl Drop for Bomb {
 
 #[salsa::tracked]
 impl MyInput {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn create_tracked_struct(self, db: &dyn Database) -> MyTracked<'_> {
         MyTracked::new(
             db,

@@ -22,11 +22,12 @@
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
 // Outer cycle head - should iterate
-#[salsa::tracked(cycle_initial = initial_zero)]
+#[salsa::tracked(returns(copy), cycle_initial = initial_zero)]
 fn query_e(db: &dyn salsa::Database, input: Input) -> u32 {
     // First call C to establish the nested cycles
     let c_val = query_c(db, input);
@@ -39,12 +40,12 @@ fn query_e(db: &dyn salsa::Database, input: Input) -> u32 {
     c_val.min(x_val)
 }
 
-#[salsa::tracked(cycle_initial = initial_zero)]
+#[salsa::tracked(returns(copy), cycle_initial = initial_zero)]
 fn query_c(db: &dyn salsa::Database, input: Input) -> u32 {
     query_d(db, input)
 }
 
-#[salsa::tracked(cycle_initial = initial_zero)]
+#[salsa::tracked(returns(copy), cycle_initial = initial_zero)]
 fn query_d(db: &dyn salsa::Database, input: Input) -> u32 {
     let b_val = query_b(db, input);
 
@@ -54,7 +55,7 @@ fn query_d(db: &dyn salsa::Database, input: Input) -> u32 {
     b_val.min(e_val)
 }
 
-#[salsa::tracked(cycle_initial = initial_zero)]
+#[salsa::tracked(returns(copy), cycle_initial = initial_zero)]
 fn query_b(db: &dyn salsa::Database, input: Input) -> u32 {
     // First call A - this will detect A<->B cycle and A will complete
     let a_val = query_a(db, input);
@@ -66,7 +67,7 @@ fn query_b(db: &dyn salsa::Database, input: Input) -> u32 {
     (a_val + d_val + c_val).min(50)
 }
 
-#[salsa::tracked(cycle_initial = initial_zero)]
+#[salsa::tracked(returns(copy), cycle_initial = initial_zero)]
 fn query_a(db: &dyn salsa::Database, input: Input) -> u32 {
     // Read B to create A<->B cycle
     let b_val = query_b(db, input);
@@ -77,7 +78,7 @@ fn query_a(db: &dyn salsa::Database, input: Input) -> u32 {
     b_val.max(val)
 }
 
-#[salsa::tracked(cycle_initial = initial_zero)]
+#[salsa::tracked(returns(copy), cycle_initial = initial_zero)]
 fn query_x(db: &dyn salsa::Database, input: Input) -> u32 {
     // This reads A's memoized result which has stale cycle_heads
     query_a(db, input)

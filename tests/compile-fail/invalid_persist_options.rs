@@ -40,17 +40,17 @@ struct InvalidInput3 {
 
 #[salsa::tracked(persist)]
 fn tracked_fn(db: &dyn salsa::Database, input: Input) -> String {
-    input.text(db)
+    input.text(db).clone()
 }
 
 #[salsa::tracked(persist())]
 fn tracked_fn2(db: &dyn salsa::Database, input: Input) -> String {
-    input.text(db)
+    input.text(db).clone()
 }
 
 #[salsa::tracked(persist(serialize = serde::Serialize::serialize, deserialize = serde::Deserialize::deserialize))]
 fn invalid_tracked_fn(db: &dyn salsa::Database, input: Input) -> String {
-    input.text(db)
+    input.text(db).clone()
 }
 
 fn main() {}

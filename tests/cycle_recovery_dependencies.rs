@@ -13,15 +13,16 @@ mod common;
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn entry(db: &dyn salsa::Database, input: Input) -> u32 {
     query(db, input)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
 fn query(db: &dyn salsa::Database, input: Input) -> u32 {
     let val = query(db, input);
     if val < 5 { val + 1 } else { val }

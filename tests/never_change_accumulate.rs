@@ -6,6 +6,7 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     value: u32,
 }
 
@@ -13,12 +14,12 @@ struct MyInput {
 #[derive(Debug)]
 struct Log(#[allow(dead_code)] u32);
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_log(db: &dyn Database, input: MyInput) {
     Log(input.value(db)).accumulate(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn outer(db: &dyn Database, input: MyInput) {
     push_log(db, input);
 }

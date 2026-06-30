@@ -10,12 +10,12 @@ use salsa::{Cancelled, Database};
 
 use crate::setup::{Knobs, KnobsDatabase};
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_a(db: &dyn KnobsDatabase) -> u32 {
     query_b(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_b(db: &dyn KnobsDatabase) -> u32 {
     // Signal that t1 has started computing query_b
     db.signal(1);
@@ -26,7 +26,7 @@ fn query_b(db: &dyn KnobsDatabase) -> u32 {
     query_c(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_c(_db: &dyn KnobsDatabase) -> u32 {
     42
 }

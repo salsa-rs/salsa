@@ -169,7 +169,7 @@ where
 }
 
 /// Query minimum value of inputs, with cycle recovery.
-#[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=min_initial)]
+#[salsa::tracked(returns(copy), cycle_fn=cycle_recover, cycle_initial=min_initial)]
 fn min_iterate(db: &dyn Db, inputs: Inputs) -> Value {
     fold_values(inputs.values(db), u8::min)
 }
@@ -179,7 +179,7 @@ fn min_initial(_db: &dyn Db, _id: salsa::Id, _inputs: Inputs) -> Value {
 }
 
 /// Query maximum value of inputs, with cycle recovery.
-#[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=max_initial)]
+#[salsa::tracked(returns(copy), cycle_fn=cycle_recover, cycle_initial=max_initial)]
 fn max_iterate(db: &dyn Db, inputs: Inputs) -> Value {
     fold_values(inputs.values(db), u8::max)
 }
@@ -189,13 +189,13 @@ fn max_initial(_db: &dyn Db, _id: salsa::Id, _inputs: Inputs) -> Value {
 }
 
 /// Query minimum value of inputs, without cycle recovery.
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn min_panic(db: &dyn Db, inputs: Inputs) -> Value {
     fold_values(inputs.values(db), u8::min)
 }
 
 /// Query maximum value of inputs, without cycle recovery.
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn max_panic(db: &dyn Db, inputs: Inputs) -> Value {
     fold_values(inputs.values(db), u8::max)
 }
@@ -1167,16 +1167,19 @@ fn repeat_provisional_query_incremental() {
 fn repeat_query_participating_in_cycle() {
     #[salsa::input]
     struct Input {
+        #[returns(copy)]
         value: u32,
+        #[returns(copy)]
         stable: u32,
     }
 
     #[salsa::interned]
     struct Interned {
+        #[returns(copy)]
         value: u32,
     }
 
-    #[salsa::tracked(cycle_initial=initial)]
+    #[salsa::tracked(returns(copy), cycle_initial=initial)]
     fn head(db: &dyn Db, input: Input) -> u32 {
         let a = query_a(db, input);
 
@@ -1187,33 +1190,33 @@ fn repeat_query_participating_in_cycle() {
         0
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_a(db: &dyn Db, input: Input) -> u32 {
         let _ = query_b(db, input);
 
         query_hot(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_b(db: &dyn Db, input: Input) -> u32 {
         let _ = query_c(db, input);
 
         query_hot(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_c(db: &dyn Db, input: Input) -> u32 {
         let _ = query_d(db, input);
 
         query_hot(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_d(db: &dyn Db, input: Input) -> u32 {
         query_hot(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_hot(db: &dyn Db, input: Input) -> u32 {
         let value = head(db, input);
 
@@ -1276,16 +1279,19 @@ fn repeat_query_participating_in_cycle() {
 fn repeat_query_participating_in_cycle2() {
     #[salsa::input]
     struct Input {
+        #[returns(copy)]
         value: u32,
+        #[returns(copy)]
         stable: u32,
     }
 
     #[salsa::interned]
     struct Interned {
+        #[returns(copy)]
         value: u32,
     }
 
-    #[salsa::tracked(cycle_initial=initial)]
+    #[salsa::tracked(returns(copy), cycle_initial=initial)]
     fn head(db: &dyn Db, input: Input) -> u32 {
         let a = query_a(db, input);
 
@@ -1296,25 +1302,25 @@ fn repeat_query_participating_in_cycle2() {
         0
     }
 
-    #[salsa::tracked(cycle_initial=initial)]
+    #[salsa::tracked(returns(copy), cycle_initial=initial)]
     fn query_a(db: &dyn Db, input: Input) -> u32 {
         let _ = query_hot(db, input);
         query_b(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_b(db: &dyn Db, input: Input) -> u32 {
         let _ = query_hot(db, input);
         query_c(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_c(db: &dyn Db, input: Input) -> u32 {
         let _ = query_hot(db, input);
         query_d(db, input)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_d(db: &dyn Db, input: Input) -> u32 {
         let _ = query_hot(db, input);
 
@@ -1324,7 +1330,7 @@ fn repeat_query_participating_in_cycle2() {
         value + 1
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_hot(db: &dyn Db, input: Input) -> u32 {
         let _ = input.stable(db);
 

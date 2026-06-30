@@ -10,7 +10,9 @@ use test_log::test;
 
 #[salsa::input(singleton, debug)]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
+    #[returns(copy)]
     id_field: u16,
 }
 

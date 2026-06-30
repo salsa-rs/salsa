@@ -34,16 +34,17 @@ impl Drop for HotPotato {
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked(lru = 8)]
+#[salsa::tracked(returns(clone), lru = 8)]
 fn get_hot_potato(db: &dyn LogDatabase, input: MyInput) -> Arc<HotPotato> {
     db.push_log(format!("get_hot_potato({:?})", input.field(db)));
     Arc::new(HotPotato::new(input.field(db)))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn get_hot_potato2(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("get_hot_potato2({:?})", input.field(db)));
     get_hot_potato(db, input).0

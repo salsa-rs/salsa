@@ -476,7 +476,7 @@ impl<'s> SalsaField<'s> {
 
         let get_name = Ident::new(&field_name_str, field_name.span());
         let set_name = Ident::new(&format!("set_{field_name_str}",), field_name.span());
-        let returns = Ident::new("clone", field.span());
+        let returns = Ident::new("ref", field.span());
         let mut result = SalsaField {
             field,
             has_tracked_attr: false,

@@ -7,9 +7,11 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     required_field: bool,
 
     #[default]
+    #[returns(copy)]
     optional_field: usize,
 }
 

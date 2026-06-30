@@ -545,7 +545,7 @@ impl Macro {
         if let Some(returns) = &args.returns {
             returns == "ref" || returns == "deref" || returns == "as_ref" || returns == "as_deref"
         } else {
-            false
+            true
         }
     }
 
@@ -571,6 +571,9 @@ impl Macro {
         if let Some(returns) = &args.returns {
             if let syn::ReturnType::Type(_, t) = &mut sig.output {
                 if returns == "copy" || returns == "clone" {
+                    if let Some(db_lt) = db_lt {
+                        **t = ChangeLt::elided_to(db_lt).in_type(t);
+                    }
                 } else if returns == "ref" {
                     let ty = db_lt
                         .map(|db_lt| ChangeLt::elided_to(db_lt).in_type(t))
@@ -602,9 +605,15 @@ impl Macro {
                     returns,
                     "returns attribute requires explicit return type",
                 ));
-            };
-        } else if let (Some(db_lt), syn::ReturnType::Type(_, t)) = (db_lt, &mut sig.output) {
-            **t = ChangeLt::elided_to(db_lt).in_type(t);
+            }
+        } else {
+            let db_lt = db_lt.expect("the default ref return mode uses the database lifetime");
+            if let syn::ReturnType::Type(_, t) = &mut sig.output {
+                let ty = ChangeLt::elided_to(db_lt).in_type(t);
+                **t = parse_quote!(& #db_lt #ty);
+            } else {
+                sig.output = parse_quote!(-> & #db_lt ());
+            }
         }
         Ok(())
     }

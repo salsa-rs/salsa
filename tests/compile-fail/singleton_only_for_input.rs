@@ -4,6 +4,7 @@
 
 #[salsa::input(singleton)]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 

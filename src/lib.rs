@@ -51,9 +51,8 @@
 //! in that database until it is dropped; dropping every copy of the handle does not delete the
 //! input.
 //!
-//! References returned by getters such as `#[returns(ref)]` are tied to an immutable database
-//! borrow. They cannot overlap the mutable borrow required to call a setter and begin a new
-//! revision.
+//! References returned by field getters are tied to an immutable database borrow. They cannot
+//! overlap the mutable borrow required to call a setter and begin a new revision.
 //!
 //! See [input structs in the Salsa book] for examples of declaring, reading, and updating inputs,
 //! and the [durability reference] for choosing a durability.
@@ -123,13 +122,13 @@
 //!
 //! # Return modes
 //!
-//! Salsa struct field getters and tracked functions return cloned values by default. The
+//! Salsa struct field getters and tracked functions return references by default. The
 //! `#[returns(MODE)]` field attribute and `returns(MODE)` tracked-function option select another
 //! mode:
 //!
+//! - `ref` returns a reference to the stored field or memoized result. This is the default.
 //! - `clone` returns an owned clone.
 //! - `copy` returns an owned copy.
-//! - `ref` returns a reference to the stored field or memoized result.
 //! - `deref` uses [`Deref`] and returns a reference to its `Target`.
 //! - `as_ref` uses [`SalsaAsRef`].
 //! - `as_deref` uses [`SalsaAsDeref`].
@@ -233,7 +232,7 @@
 //! [input structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#inputs
 //! [interned structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#interned-structs
 //! [red-green algorithm]: https://salsa-rs.github.io/salsa/reference/algorithm.html
-//! [returning references in the Salsa book]: https://salsa-rs.github.io/salsa/tutorial/parser.html#the-returnsref-annotation
+//! [returning references in the Salsa book]: https://salsa-rs.github.io/salsa/tutorial/parser.html#the-returnscopy-annotation
 //! [specifying query results in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#specify-the-result-of-tracked-functions-for-particular-structs
 //! [tracked functions in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#tracked-functions
 //! [tracked structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#tracked-structs

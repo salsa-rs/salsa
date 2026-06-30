@@ -6,15 +6,17 @@
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_struct_created_in_another_query<'db>(
     db: &'db dyn salsa::Database,
     input: MyInput,
@@ -22,7 +24,7 @@ fn tracked_struct_created_in_another_query<'db>(
     MyTracked::new(db, input.field(db) * 2)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'db> {
     let t = tracked_struct_created_in_another_query(db, input);
     if input.field(db) != 0 {
@@ -31,7 +33,7 @@ fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'d
     t
 }
 
-#[salsa::tracked(specify)]
+#[salsa::tracked(returns(copy), specify)]
 fn tracked_fn_extra<'db>(_db: &'db dyn salsa::Database, _input: MyTracked<'db>) -> u32 {
     0
 }

@@ -8,15 +8,17 @@ mod deleted {
 
     #[salsa::input]
     struct Input {
+        #[returns(copy)]
         enabled: bool,
     }
 
     #[salsa::tracked]
     struct Entity<'db> {
+        #[returns(copy)]
         value: u32,
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn maybe_entity(db: &dyn salsa::Database, input: Input) -> Option<Entity<'_>> {
         input.enabled(db).then(|| Entity::new(db, 22))
     }
@@ -39,15 +41,17 @@ mod stale {
 
     #[salsa::input]
     struct Input {
+        #[returns(copy)]
         value: u32,
     }
 
     #[salsa::tracked]
     struct Entity<'db> {
+        #[returns(copy)]
         value: u32,
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn make_entity(db: &dyn salsa::Database, input: Input) -> Entity<'_> {
         Entity::new(db, input.value(db))
     }

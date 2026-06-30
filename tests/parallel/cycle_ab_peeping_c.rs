@@ -16,7 +16,7 @@ const MIN: CycleValue = CycleValue(0);
 const MID: CycleValue = CycleValue(5);
 const MAX: CycleValue = CycleValue(10);
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {
     let b_value = query_b(db);
 
@@ -34,14 +34,14 @@ fn cycle_initial(_db: &dyn KnobsDatabase, _id: salsa::Id) -> CycleValue {
     MIN
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     let a_value = query_a(db);
 
     CycleValue(a_value.0 + 1).min(MAX)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_c(db: &dyn KnobsDatabase) -> CycleValue {
     // Wait until T1 has reached MID then execute `query_b`.
     // This should block and (due to the configuration on our database) signal stage 2.

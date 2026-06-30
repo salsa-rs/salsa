@@ -29,15 +29,16 @@ struct Log(#[allow(dead_code)] String);
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     n: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_logs(db: &dyn Database) {
     push_a_logs(db, MyInput::new(db, 1));
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_a_logs(db: &dyn Database, input: MyInput) {
     Log("log a".to_string()).accumulate(db);
     if input.n(db) == 1 {
@@ -50,12 +51,12 @@ fn push_a_logs(db: &dyn Database, input: MyInput) {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_b_logs(db: &dyn Database) {
     Log("log b".to_string()).accumulate(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_c_logs(db: &dyn Database) {
     Log("log c".to_string()).accumulate(db);
     push_d_logs(db);
@@ -69,7 +70,7 @@ fn push_d_logs(db: &dyn Database) {
     push_b_logs(db);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_e_logs(db: &dyn Database) {
     Log("log e".to_string()).accumulate(db);
 }

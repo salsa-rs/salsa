@@ -11,32 +11,33 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn immutable_value(db: &dyn Database, input: MyInput) -> u32 {
     input.value(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn mixed_value(db: &dyn Database, immutable_input: MyInput, mutable_input: MyInput) -> u32 {
     immutable_value(db, immutable_input) + mutable_input.value(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn mixed_input_value(db: &dyn Database, immutable_input: MyInput, mutable_input: MyInput) -> u32 {
     immutable_input.value(db) + mutable_input.value(db)
 }
 
-#[salsa::tracked(lru = 1)]
+#[salsa::tracked(returns(copy), lru = 1)]
 #[cfg(not(feature = "persistence"))]
 fn immutable_value_with_lru(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("immutable_value_with_lru({})", input.value(db)));
     input.value(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 #[cfg(not(feature = "persistence"))]
 fn value_from_lru(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("value_from_lru({})", input.value(db)));
@@ -45,24 +46,25 @@ fn value_from_lru(db: &dyn LogDatabase, input: MyInput) -> u32 {
 
 #[salsa::tracked]
 struct Output<'db> {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn output(db: &dyn Database, input: MyInput) -> Output<'_> {
     let output = Output::new(db, input.value(db));
     specified::specify(db, output, input.value(db) + 1);
     output
 }
 
-#[salsa::tracked(lru = 1)]
+#[salsa::tracked(returns(copy), lru = 1)]
 fn output_with_lru(db: &dyn Database, input: MyInput) -> Output<'_> {
     let output = Output::new(db, input.value(db));
     specified::specify(db, output, input.value(db) + 1);
     output
 }
 
-#[salsa::tracked(specify)]
+#[salsa::tracked(returns(copy), specify)]
 fn specified<'db>(_db: &'db dyn Database, _output: Output<'db>) -> u32 {
     0
 }

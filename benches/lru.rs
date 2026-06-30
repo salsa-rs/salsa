@@ -15,6 +15,7 @@ const SCATTERED_HOT_ITEMS: usize = EVICTION_CAPACITY * 2;
 
 #[salsa::input]
 struct Item {
+    #[returns(copy)]
     value: usize,
 }
 
@@ -27,7 +28,7 @@ impl Drop for Value {
     }
 }
 
-#[salsa::tracked(lru = 4096)]
+#[salsa::tracked(returns(clone), lru = 4096)]
 #[inline(never)]
 fn lru_value(db: &dyn salsa::Database, item: Item) -> Value {
     value(item.value(db))

@@ -17,8 +17,10 @@ struct Tracked<'db> {
         MARK1.store(true, Ordering::Release);
         true
     })]
+    #[returns(copy)]
     tracked: usize,
     #[maybe_update(untracked_update)]
+    #[returns(copy)]
     untracked: usize,
 }
 
@@ -30,16 +32,18 @@ unsafe fn untracked_update(dst: *mut usize, src: usize) -> bool {
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field1: usize,
+    #[returns(copy)]
     field2: usize,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn intermediate(db: &dyn salsa::Database, input: MyInput) -> Tracked<'_> {
     Tracked::new(db, input.field1(db), input.field2(db))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn accumulate(db: &dyn salsa::Database, input: MyInput) -> (usize, usize) {
     let tracked = intermediate(db, input);
     let one = read_tracked(db, tracked);
@@ -48,12 +52,12 @@ fn accumulate(db: &dyn salsa::Database, input: MyInput) -> (usize, usize) {
     (one, two)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn read_tracked<'db>(db: &'db dyn Database, tracked: Tracked<'db>) -> usize {
     tracked.tracked(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn read_untracked<'db>(db: &'db dyn Database, tracked: Tracked<'db>) -> usize {
     tracked.untracked(db)
 }

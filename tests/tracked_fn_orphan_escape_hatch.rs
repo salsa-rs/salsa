@@ -8,13 +8,14 @@ use std::marker::PhantomData;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NotUpdate<'a>(PhantomData<fn() -> &'a ()>);
 
-#[salsa::tracked(unsafe(non_update_types))]
+#[salsa::tracked(returns(copy), unsafe(non_update_types))]
 fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> NotUpdate<'_> {
     NotUpdate(PhantomData)
 }

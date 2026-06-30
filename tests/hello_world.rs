@@ -11,10 +11,11 @@ use test_log::test;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn final_result(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("final_result({input:?})"));
     intermediate_result(db, input).field(db) * 2
@@ -22,10 +23,11 @@ fn final_result(db: &dyn LogDatabase, input: MyInput) -> u32 {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn intermediate_result(db: &dyn LogDatabase, input: MyInput) -> MyTracked<'_> {
     db.push_log(format!("intermediate_result({input:?})"));
     MyTracked::new(db, input.field(db) / 2)

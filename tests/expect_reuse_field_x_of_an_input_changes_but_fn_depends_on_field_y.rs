@@ -12,17 +12,19 @@ use salsa::Setter;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     x: u32,
+    #[returns(copy)]
     y: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn result_depends_on_x(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("result_depends_on_x({input:?})"));
     input.x(db) + 1
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("result_depends_on_y({input:?})"));
     input.y(db) - 1

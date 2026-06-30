@@ -9,21 +9,22 @@ use expect_test::expect;
 
 #[salsa::tracked]
 struct Item<'db> {
+    #[returns(copy)]
     value: (),
 }
 
-#[salsa::tracked(specify)]
+#[salsa::tracked(returns(copy), specify)]
 fn specified(db: &dyn salsa::Database, item: Item<'_>) -> u32 {
     item.value(db);
     0
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn read_specified(db: &dyn salsa::Database, item: Item<'_>) -> u32 {
     specified(db, item)
 }
 
-#[salsa::tracked(cycle_initial = initial)]
+#[salsa::tracked(returns(copy), cycle_initial = initial)]
 fn cycle(db: &dyn salsa::Database) -> Option<Item<'_>> {
     let item = cycle(db).unwrap_or_else(|| Item::new(db, ()));
 

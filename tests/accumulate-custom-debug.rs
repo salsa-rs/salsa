@@ -8,6 +8,7 @@ use test_log::test;
 
 #[salsa::input(debug)]
 struct MyInput {
+    #[returns(copy)]
     count: u32,
 }
 
@@ -20,7 +21,7 @@ impl std::fmt::Debug for Log {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn push_logs(db: &dyn salsa::Database, input: MyInput) {
     for i in 0..input.count(db) {
         Log(format!("#{i}")).accumulate(db);

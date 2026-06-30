@@ -29,45 +29,50 @@ trait Db: salsa::Database {
 
 #[salsa::input]
 struct File {
+    #[returns(copy)]
     field: usize,
 }
 
 #[salsa::tracked]
 struct Definition<'db> {
     #[tracked]
+    #[returns(copy)]
     file: File,
 }
 
 #[salsa::tracked]
 struct Index<'db> {
     #[tracked]
+    #[returns(copy)]
     definitions: Definitions<'db>,
 }
 
 #[salsa::tracked]
 struct Definitions<'db> {
     #[tracked]
+    #[returns(copy)]
     definition: Definition<'db>,
 }
 
 #[salsa::tracked]
 struct Inference<'db> {
     #[tracked]
+    #[returns(copy)]
     definition: Definition<'db>,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn index(db: &dyn Db, file: File) -> Index<'_> {
     let _ = file.field(db);
     Index::new(db, Definitions::new(db, Definition::new(db, file)))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn definitions(db: &dyn Db, file: File) -> Definitions<'_> {
     index(db, file).definitions(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn infer<'db>(db: &'db dyn Db, definition: Definition<'db>) -> Inference<'db> {
     let file = definition.file(db);
     if file.field(db) < 1 {
@@ -80,7 +85,7 @@ fn infer<'db>(db: &'db dyn Db, definition: Definition<'db>) -> Inference<'db> {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn check(db: &dyn Db, file: File) -> Inference<'_> {
     let defs = definitions(db, file);
     infer(db, defs.definition(db))

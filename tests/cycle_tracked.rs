@@ -36,12 +36,15 @@ struct Node<'db> {
     #[tracked]
     edges: Vec<Edge>,
 
+    #[returns(copy)]
     graph: GraphInput,
 }
 
 #[salsa::input(debug)]
 struct GraphInput {
+    #[returns(copy)]
     simple: bool,
+    #[returns(copy)]
     fixpoint_variant: usize,
 }
 
@@ -86,7 +89,7 @@ fn create_graph(db: &dyn salsa::Database, input: GraphInput) -> Graph<'_> {
 }
 
 /// Computes the minimum cost from the node with offset `0` to the given node.
-#[salsa::tracked(cycle_initial=max_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=max_initial)]
 fn cost_to_start<'db>(db: &'db dyn Database, node: Node<'db>) -> usize {
     let mut min_cost = usize::MAX;
     let graph = create_graph(db, node.graph(db));
@@ -188,6 +191,7 @@ fn main() {
 struct IterationNode<'db> {
     #[returns(ref)]
     name: String,
+    #[returns(copy)]
     iteration: usize,
 }
 
@@ -206,7 +210,7 @@ struct IterationNode<'db> {
 /// 3. Second iteration: returns `[iter_0, iter_1]`
 /// 4. Third iteration (only for variant=1): returns `[iter_0, iter_1, iter_2]`
 /// 5. Further iterations: no change, fixpoint reached
-#[salsa::tracked(cycle_initial=initial_with_structs)]
+#[salsa::tracked(returns(clone), cycle_initial=initial_with_structs)]
 fn create_tracked_in_cycle(db: &dyn Database, input: GraphInput) -> Vec<IterationNode<'_>> {
     // Check if we should create more nodes based on the input.
     let variant = input.fixpoint_variant(db);
@@ -304,12 +308,13 @@ struct NameWithOffset<'db> {
     name: String,
 
     #[tracked]
+    #[returns(copy)]
     offset: u32,
 }
 
 #[test]
 fn cycle_tracked_struct_with_tracked_field() {
-    #[salsa::tracked(cycle_initial=|_,_| 0)]
+    #[salsa::tracked(returns(copy), cycle_initial=|_,_| 0)]
     fn query_a(db: &dyn salsa::Database) -> u32 {
         let offset = query_b(db);
 
@@ -318,7 +323,7 @@ fn cycle_tracked_struct_with_tracked_field() {
         tracked.offset(db)
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn query_b(db: &dyn salsa::Database) -> u32 {
         let base_offset = query_a(db);
 

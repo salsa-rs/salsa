@@ -13,6 +13,7 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u64,
 }
 
@@ -38,7 +39,7 @@ struct MyTracked<'db> {
     field: BadHash,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn the_fn(db: &dyn Db, input: MyInput) {
     let tracked0 = MyTracked::new(db, BadHash::from(input.field(db)));
     assert_eq!(tracked0.field(db).field, input.field(db));
@@ -54,12 +55,12 @@ fn execute() {
     the_fn(&db, input);
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn create_tracked(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, BadHash::from(input.field(db)))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn with_tracked<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u64 {
     tracked.field(db).field
 }

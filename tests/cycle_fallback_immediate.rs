@@ -3,7 +3,7 @@
 //! It is possible to omit the `cycle_fn`, only specifying `cycle_result` in which case
 //! an immediate fallback value is used as the cycle handling opposed to doing a fixpoint resolution.
 
-#[salsa::tracked(cycle_result=cycle_result)]
+#[salsa::tracked(returns(copy), cycle_result=cycle_result)]
 fn one_o_one(db: &dyn salsa::Database) -> u32 {
     let val = one_o_one(db);
     val + 1
@@ -20,12 +20,12 @@ fn simple() {
     assert_eq!(one_o_one(&db), 100);
 }
 
-#[salsa::tracked(cycle_result=two_queries_cycle_result)]
+#[salsa::tracked(returns(copy), cycle_result=two_queries_cycle_result)]
 fn two_queries1(db: &dyn salsa::Database) -> i32 {
     two_queries2(db) + 1
 }
 
-#[salsa::tracked(cycle_result=two_queries_cycle_result)]
+#[salsa::tracked(returns(copy), cycle_result=two_queries_cycle_result)]
 fn two_queries2(db: &dyn salsa::Database) -> i32 {
     two_queries1(db)
 }

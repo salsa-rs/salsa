@@ -179,7 +179,7 @@ impl Macro {
             .args
             .returns
             .clone()
-            .unwrap_or(Ident::new("clone", Span::call_site()));
+            .unwrap_or(Ident::new("ref", Span::call_site()));
 
         // Validate return mode
         if !ALLOWED_RETURN_MODES

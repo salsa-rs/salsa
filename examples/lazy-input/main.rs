@@ -66,8 +66,9 @@ fn main() -> Result<()> {
 // ANCHOR: db
 #[salsa::input]
 struct File {
+    #[returns(deref)]
     path: PathBuf,
-    #[returns(ref)]
+    #[returns(deref)]
     contents: String,
 }
 
@@ -160,18 +161,19 @@ impl Diagnostic {
 
 #[salsa::tracked]
 struct ParsedFile<'db> {
+    #[returns(copy)]
     value: u32,
-    #[returns(ref)]
+    #[returns(deref)]
     links: Vec<ParsedFile<'db>>,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn compile(db: &dyn Db, input: File) -> u32 {
     let parsed = parse(db, input);
     sum(db, parsed)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
     let mut lines = input.contents(db).lines();
     let value = match lines.next().map(|line| (line.parse::<u32>(), line)) {
@@ -217,7 +219,7 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
     ParsedFile::new(db, value, links)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn sum<'db>(db: &'db dyn Db, input: ParsedFile<'db>) -> u32 {
     input.value(db)
         + input

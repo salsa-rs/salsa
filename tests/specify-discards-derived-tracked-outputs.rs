@@ -41,25 +41,28 @@ impl Database for EventDatabase {}
 
 #[salsa::tracked]
 struct Owner<'db> {
+    #[returns(copy)]
     value: u32,
 }
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     specify: bool,
 }
 
 #[salsa::tracked]
 struct Child<'db> {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked(specify)]
+#[salsa::tracked(returns(copy), specify)]
 fn overridable<'db>(db: &'db dyn Database, owner: Owner<'db>) -> Child<'db> {
     Child::new(db, owner.value(db) + 10)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn specify_over_derived_memo(db: &dyn Database, input: Input) -> Child<'_> {
     let owner = Owner::new(db, 1);
     if input.specify(db) {

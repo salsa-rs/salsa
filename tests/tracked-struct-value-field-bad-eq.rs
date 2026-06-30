@@ -12,6 +12,7 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: bool,
 }
 
@@ -39,18 +40,18 @@ struct MyTracked<'db> {
     field: BadEq,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn the_fn(db: &dyn Database, input: MyInput) -> bool {
     let tracked = make_tracked_struct(db, input);
     read_tracked_struct(db, tracked)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn make_tracked_struct(db: &dyn Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, BadEq::from(input.field(db)))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn read_tracked_struct<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> bool {
     tracked.field(db).field
 }

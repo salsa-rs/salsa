@@ -4,14 +4,14 @@
 //! Test for panic in cycle recovery function, in cross-thread cycle.
 use crate::setup::{Knobs, KnobsDatabase};
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_fn=cycle_fn, cycle_initial=initial)]
 fn query_a(db: &dyn KnobsDatabase) -> u32 {
     db.signal(1);
     db.wait_for(2);
     query_b(db)
 }
 
-#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+#[salsa::tracked(returns(copy), cycle_fn=cycle_fn, cycle_initial=initial)]
 fn query_b(db: &dyn KnobsDatabase) -> u32 {
     db.wait_for(1);
     db.signal(2);

@@ -3,17 +3,18 @@ use crate::{Knobs, KnobsDatabase};
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_a(db: &dyn KnobsDatabase, input: Input) -> u32 {
     db.signal(1);
     db.wait_for(2);
     input.value(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_b(db: &dyn KnobsDatabase, input: Input) -> u32 {
     db.wait_for(1);
     db.signal(2);

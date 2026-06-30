@@ -7,8 +7,10 @@ use test_log::test;
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     required: bool,
     #[default]
+    #[returns(copy)]
     optional: usize,
 }
 

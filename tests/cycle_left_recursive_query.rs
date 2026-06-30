@@ -6,7 +6,7 @@ use salsa::{Database, Durability, Id};
 
 mod common;
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query_a(db: &dyn salsa::Database) -> Interned<'_> {
     let interned = query_b(db);
     let value = interned.value(db);
@@ -18,14 +18,14 @@ fn query_a(db: &dyn salsa::Database) -> Interned<'_> {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_b(db: &dyn Database) -> Interned<'_> {
     let interned = query_a(db);
     query_x(db, interned);
     interned
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_x<'db>(db: &'db dyn Database, _i: Interned<'db>) {
     StableInput::get(db).value(db);
 }
@@ -38,11 +38,13 @@ fn cycle_initial(db: &dyn Database, _id: Id) -> Interned<'_> {
 
 #[salsa::interned]
 struct Interned {
+    #[returns(copy)]
     value: u32,
 }
 
 #[salsa::input(singleton)]
 struct StableInput {
+    #[returns(copy)]
     value: (),
 }
 

@@ -12,6 +12,7 @@ use syn::{parenthesized, token};
 #[derive(Debug)]
 pub(crate) struct Options<A: AllowedOptions> {
     /// The `returns` option is used to configure the "return mode" for the field/function.
+    /// Fields and tracked functions default to `ref`.
     /// This may be one of `copy`, `clone`, `ref`, `as_ref`, `as_deref`.
     ///
     /// If this is `Some`, the value is the ident representing the selected mode.

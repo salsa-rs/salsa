@@ -12,7 +12,9 @@ use test_log::test;
 
 #[salsa::input(debug)]
 struct List {
+    #[returns(copy)]
     value: u32,
+    #[returns(copy)]
     next: Option<List>,
 }
 
@@ -22,7 +24,7 @@ struct List {
 struct Integers(u32);
 
 /// Outer tracked fn: iterates the list and delegates accumulation to `compute_single`.
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn compute(db: &dyn salsa::Database, input: List) {
     compute_single(db, input);
     if let Some(next) = input.next(db) {
@@ -31,7 +33,7 @@ fn compute(db: &dyn salsa::Database, input: List) {
 }
 
 /// Inner tracked fn: performs the actual accumulation.
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn compute_single(db: &dyn salsa::Database, input: List) {
     Integers(input.value(db)).accumulate(db);
 }

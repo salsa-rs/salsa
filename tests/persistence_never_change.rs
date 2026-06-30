@@ -6,10 +6,11 @@ use salsa::Durability;
 
 #[salsa::input(singleton)]
 struct NonPersistedInput {
+    #[returns(copy)]
     value: usize,
 }
 
-#[salsa::tracked(persist)]
+#[salsa::tracked(returns(copy), persist)]
 fn query(db: &dyn salsa::Database) -> usize {
     NonPersistedInput::get(db).value(db)
 }

@@ -9,7 +9,7 @@ use crate::ir::{
 };
 
 // ANCHOR: parse_statements
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 pub fn type_check_program<'db>(db: &'db dyn crate::Db, program: Program<'db>) {
     for statement in program.statements(db) {
         match &statement.data {
@@ -19,7 +19,7 @@ pub fn type_check_program<'db>(db: &'db dyn crate::Db, program: Program<'db>) {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 pub fn type_check_function<'db>(
     db: &'db dyn crate::Db,
     function: Function<'db>,
@@ -28,7 +28,7 @@ pub fn type_check_function<'db>(
     CheckExpression::new(db, program, function.args(db)).check(function.body(db))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 pub fn find_function<'db>(
     db: &'db dyn crate::Db,
     program: Program<'db>,

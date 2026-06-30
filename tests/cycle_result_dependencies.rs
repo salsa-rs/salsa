@@ -4,10 +4,11 @@ use salsa::{Database, Setter};
 
 #[salsa::input]
 struct Input {
+    #[returns(copy)]
     value: i32,
 }
 
-#[salsa::tracked(cycle_result=cycle_result)]
+#[salsa::tracked(returns(copy), cycle_result=cycle_result)]
 fn has_cycle(db: &dyn Database, input: Input) -> i32 {
     has_cycle(db, input)
 }

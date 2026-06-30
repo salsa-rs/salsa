@@ -3,25 +3,28 @@
 mod ingredients {
     #[salsa::input]
     pub(super) struct MyInput {
+        #[returns(copy)]
         field: u32,
     }
 
     #[salsa::tracked]
     pub(super) struct MyTracked<'db> {
+        #[returns(copy)]
         pub(super) field: u32,
     }
 
     #[salsa::interned]
     pub(super) struct MyInterned<'db> {
+        #[returns(copy)]
         pub(super) field: u32,
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     pub(super) fn intern<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyInterned<'db> {
         MyInterned::new(db, input.field(db))
     }
 
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     pub(super) fn track<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'db> {
         MyTracked::new(db, input.field(db))
     }

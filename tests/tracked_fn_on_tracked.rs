@@ -5,15 +5,17 @@
 
 #[salsa::input]
 struct MyInput {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db) * 2)
 }

@@ -6,19 +6,19 @@ use salsa::{Cancelled, Database};
 
 use crate::setup::{Knobs, KnobsDatabase};
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_a(db: &dyn KnobsDatabase) -> u32 {
     query_b(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_b(db: &dyn KnobsDatabase) -> u32 {
     db.signal(1);
     db.wait_for(3);
     query_c(db)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn query_c(_db: &dyn KnobsDatabase) -> u32 {
     1
 }

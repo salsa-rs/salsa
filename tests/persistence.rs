@@ -9,11 +9,13 @@ use expect_test::expect;
 
 #[salsa::input(persist)]
 struct MyInput {
+    #[returns(copy)]
     field: usize,
 }
 
 #[salsa::input(persist, singleton)]
 struct MySingleton {
+    #[returns(copy)]
     field: usize,
 }
 
@@ -27,17 +29,17 @@ struct MyTracked<'db> {
     field: String,
 }
 
-#[salsa::tracked(persist)]
+#[salsa::tracked(returns(copy), persist)]
 fn unit_to_interned(db: &dyn salsa::Database) -> MyInterned<'_> {
     MyInterned::new(db, "a".repeat(50))
 }
 
-#[salsa::tracked(persist)]
+#[salsa::tracked(returns(copy), persist)]
 fn input_to_tracked(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, "a".repeat(input.field(db)))
 }
 
-#[salsa::tracked(persist)]
+#[salsa::tracked(returns(clone), persist)]
 fn input_pair_to_string(db: &dyn salsa::Database, input1: MyInput, input2: MyInput) -> String {
     "a".repeat(input1.field(db) + input2.field(db))
 }
@@ -310,13 +312,13 @@ fn everything() {
 fn partial_query() {
     use salsa::plumbing::ZalsaDatabase;
 
-    #[salsa::tracked(persist)]
+    #[salsa::tracked(returns(copy), persist)]
     fn query(db: &dyn salsa::Database, input: MyInput) -> usize {
         inner_query(db, input) + 1
     }
 
     // Note that the inner query is not persisted, but we should still preserve the dependency on `input.field`.
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn inner_query(db: &dyn salsa::Database, input: MyInput) -> usize {
         input.field(db)
     }
@@ -420,13 +422,13 @@ fn partial_query() {
 fn partial_query_interned() {
     use salsa::plumbing::{AsId, ZalsaDatabase};
 
-    #[salsa::tracked(persist)]
+    #[salsa::tracked(returns(copy), persist)]
     fn intern(db: &dyn salsa::Database, input: MyInput, value: usize) -> MyInterned<'_> {
         do_intern(db, input, value)
     }
 
     // Note that the inner query is not persisted, but we should still preserve the dependency on `MyInterned`.
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn do_intern(db: &dyn salsa::Database, input: MyInput, value: usize) -> MyInterned<'_> {
         let _i = input.field(db); // Only low durability interned values are garbage collected.
         MyInterned::new(db, value.to_string())
@@ -561,13 +563,13 @@ fn partial_query_interned() {
 #[test]
 #[should_panic(expected = "must be persistable")]
 fn invalid_specified_dependency() {
-    #[salsa::tracked]
+    #[salsa::tracked(returns(copy))]
     fn specify(db: &dyn salsa::Database) {
         let tracked = MyTracked::new(db, "a".to_string());
         specified_query::specify(db, tracked, 2222);
     }
 
-    #[salsa::tracked(specify, persist)]
+    #[salsa::tracked(returns(copy), specify, persist)]
     fn specified_query<'db>(_db: &'db dyn salsa::Database, _tracked: MyTracked<'db>) -> u32 {
         0
     }

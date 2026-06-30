@@ -2,12 +2,12 @@
 
 //! Calling back into the same cycle from your cycle initial function will trigger another cycle.
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn initial_value(db: &dyn salsa::Database) -> u32 {
     query(db)
 }
 
-#[salsa::tracked(cycle_initial=cycle_initial)]
+#[salsa::tracked(returns(copy), cycle_initial=cycle_initial)]
 fn query(db: &dyn salsa::Database) -> u32 {
     let val = query(db);
     if val < 5 { val + 1 } else { val }

@@ -5,7 +5,7 @@ use ordered_float::OrderedFloat;
 // ANCHOR: input
 #[salsa::input(debug)]
 pub struct SourceProgram {
-    #[returns(ref)]
+    #[returns(deref)]
     pub text: String,
 }
 // ANCHOR_END: input
@@ -13,13 +13,13 @@ pub struct SourceProgram {
 // ANCHOR: interned_ids
 #[salsa::interned(debug)]
 pub struct VariableId<'db> {
-    #[returns(ref)]
+    #[returns(deref)]
     pub text: String,
 }
 
 #[salsa::interned(debug)]
 pub struct FunctionId<'db> {
-    #[returns(ref)]
+    #[returns(deref)]
     pub text: String,
 }
 // ANCHOR_END: interned_ids
@@ -28,7 +28,7 @@ pub struct FunctionId<'db> {
 #[salsa::tracked(debug)]
 pub struct Program<'db> {
     #[tracked]
-    #[returns(ref)]
+    #[returns(deref)]
     pub statements: Vec<Statement<'db>>,
 }
 // ANCHOR_END: program
@@ -88,16 +88,17 @@ pub enum Op {
 // ANCHOR: functions
 #[salsa::tracked(debug)]
 pub struct Function<'db> {
+    #[returns(copy)]
     pub name: FunctionId<'db>,
 
+    #[returns(copy)]
     name_span: Span<'db>,
 
     #[tracked]
-    #[returns(ref)]
+    #[returns(deref)]
     pub args: Vec<VariableId<'db>>,
 
     #[tracked]
-    #[returns(ref)]
     pub body: Expression<'db>,
 }
 // ANCHOR_END: functions
@@ -105,8 +106,10 @@ pub struct Function<'db> {
 #[salsa::tracked(debug)]
 pub struct Span<'db> {
     #[tracked]
+    #[returns(copy)]
     pub start: usize,
     #[tracked]
+    #[returns(copy)]
     pub end: usize,
 }
 

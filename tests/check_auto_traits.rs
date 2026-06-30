@@ -14,6 +14,7 @@ struct MyInput {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[returns(copy)]
     field: MyInterned<'db>,
 }
 
@@ -22,7 +23,7 @@ struct MyInterned<'db> {
     field: String,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn test(db: &dyn Database, input: MyInput) {
     let input = is_send(is_sync(input));
     let interned = is_send(is_sync(MyInterned::new(db, input.field(db).clone())));

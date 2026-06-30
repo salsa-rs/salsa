@@ -7,15 +7,17 @@ struct InternedStruct<'db> {
 
 #[salsa::input(debug)]
 struct InputStruct {
+    #[returns(copy)]
     field: u32,
 }
 
 #[salsa::tracked(debug)]
 struct TrackedStruct<'db> {
+    #[returns(copy)]
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(returns(copy))]
 fn tracked_fn(db: &dyn salsa::Database, input: InputStruct) -> TrackedStruct<'_> {
     TrackedStruct::new(db, input.field(db) * 2)
 }
