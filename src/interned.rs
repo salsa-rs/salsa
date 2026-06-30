@@ -48,7 +48,7 @@ pub trait Configuration: Sized + 'static {
     const REVISIONS: NonZeroUsize = NonZeroUsize::new(DEFAULT_REVISIONS).unwrap();
 
     /// The fields of the struct being interned.
-    type Fields<'db>: InternedData;
+    type Fields<'db>: InternedData + crate::SalsaValue;
 
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;
