@@ -11,7 +11,7 @@ use salsa::{Database as Db, DatabaseImpl as DbImpl, Durability, Setter};
 #[cfg(not(miri))]
 use test_log::test;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, salsa::Update)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Value {
     N(u8),
     OutOfBounds,

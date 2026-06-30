@@ -21,7 +21,7 @@ struct Interned<'db> {
 }
 // Use a consistent hash value to ensure that interned value sharding
 // does not interefere with garbage collection.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, salsa::SalsaValue)]
 struct BadHash(usize);
 
 impl std::hash::Hash for BadHash {

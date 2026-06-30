@@ -50,7 +50,10 @@ pub trait Configuration: Sized + 'static {
     const PERSIST: bool;
 
     /// A (possibly empty) tuple of the fields for this struct.
-    type Fields<'db>: Send + Sync;
+    ///
+    /// Salsa stores this value with an erased database lifetime and later
+    /// restores the current database lifetime before accessing it.
+    type Fields<'db>: Send + Sync + crate::SalsaValue;
 
     /// A array of [`AtomicRevision`][] values, one per each of the tracked value fields.
     /// When a struct is re-recreated in a new revision, the corresponding
@@ -76,31 +79,13 @@ pub trait Configuration: Sized + 'static {
     /// Update the field data and, if the value has changed,
     /// the appropriate entry in the `revisions` array (tracked fields only).
     ///
-    /// Returns `true` if any untracked field was updated and
-    /// the struct should be considered re-created.
+    /// Returns `true` if any identity field changed and the struct should be
+    /// considered re-created.
     ///
-    /// # Safety
-    ///
-    /// Requires the same conditions as the `maybe_update`
-    /// method on [the `Update` trait](`crate::update::Update`).
-    ///
-    /// In short, requires that `old_fields` be a pointer into
-    /// storage from a previous revision.
-    /// It must meet its validity invariant.
-    /// Owned content must meet safety invariant.
-    /// `*mut` here is not strictly needed;
-    /// it is used to signal that the content
-    /// is not guaranteed to recursively meet
-    /// its safety invariant and
-    /// hence this must be dereferenced with caution.
-    ///
-    /// Ensures that `old_fields` is fully updated and valid
-    /// after it returns and that `revisions` has been updated
-    /// for any field that changed.
-    unsafe fn update_fields<'db>(
+    fn update_fields<'db>(
         current_revision: Revision,
         revisions: &Self::Revisions,
-        old_fields: *mut Self::Fields<'db>,
+        old_fields: &mut Self::Fields<'db>,
         new_fields: Self::Fields<'db>,
     ) -> bool;
 
@@ -124,6 +109,21 @@ pub trait Configuration: Sized + 'static {
         D: plumbing::serde::Deserializer<'de>;
 }
 // ANCHOR_END: Configuration
+
+/// Replaces a recreated field when `old_value` and `new_value` are not equal.
+#[doc(hidden)]
+pub fn update_field<T>(
+    old_value: &mut T,
+    new_value: T,
+    values_equal: impl FnOnce(&T, &T) -> bool,
+) -> bool {
+    if values_equal(old_value, &new_value) {
+        return false;
+    }
+
+    *old_value = new_value;
+    true
+}
 
 pub struct JarImpl<C>
 where
@@ -566,7 +566,8 @@ where
             durability: current_deps.durability,
             revisions: C::new_revisions(current_deps.changed_at),
 
-            // SAFETY: We just erase the lifetime
+            // SAFETY: `C::Fields<'db>: SalsaValue` guarantees that the fields remain valid when
+            // retained with an erased database lifetime.
             fields: unsafe { mem::transmute::<C::Fields<'db>, C::Fields<'static>>(fields) },
             // SAFETY: We only ever access the memos of a value that we allocated through
             // our `MemoTableTypes`.
@@ -700,23 +701,19 @@ where
         }
 
         // SAFETY: We have now *claimed* mutable access to the `value` field by swapping in `None`,
-        // any attempt to read concurrently will panic so it is safe to take exclusive references.
-        let old_fields = unsafe { &raw mut (*data_raw).fields }.cast::<C::Fields<'_>>();
+        // so it is safe to take an exclusive reference. The `SalsaValue` bound on `C::Fields`
+        // guarantees that restoring the current database lifetime is valid.
+        let old_fields = unsafe { &mut *(&raw mut (*data_raw).fields).cast::<C::Fields<'_>>() };
 
         // SAFETY: `revisions` contains `AtomicRevision` values which can be safely accessed
         // concurrently with `tracked_field::maybe_changed_after`.
         let revisions = unsafe { &(*data_raw).revisions };
 
-        // SAFETY: We assert that the pointer to `data.revisions`
-        // is a pointer into the database referencing a value
-        // from a previous revision. As such, it continues to meet
-        // its validity invariant and any owned content also continues
-        // to meet its safety invariant.
-        let untracked_update =
-            unsafe { C::update_fields(current_deps.changed_at, revisions, old_fields, fields) };
+        let identity_fields_changed =
+            C::update_fields(current_deps.changed_at, revisions, old_fields, fields);
 
-        if untracked_update {
-            // Consider this a new tracked-struct when any non-tracked field got updated.
+        if identity_fields_changed {
+            // Consider this a new tracked struct when any identity field changed.
             // This should be rare and only ever happen if there's a hash collision.
             //
             // Note that we hold the lock and have exclusive access to the tracked struct data,
@@ -769,7 +766,8 @@ where
     ) -> &C::Fields<'_> {
         // SAFETY: `data` is a valid pointer
         acquire_read_lock(unsafe { &(*data).updated_at }, current_revision);
-        // SAFETY: We have acquired a read lock, so `values` is not aliased
+        // SAFETY: We have acquired a read lock, so `fields` cannot be mutated. The `SalsaValue`
+        // bound on `C::Fields` guarantees that restoring the current database lifetime is valid.
         unsafe { mem::transmute::<&C::Fields<'static>, &C::Fields<'_>>(&(*data).fields) }
     }
 

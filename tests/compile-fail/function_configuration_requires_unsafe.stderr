@@ -1,0 +1,11 @@
+error[E0200]: the trait `salsa::function::Configuration` requires an `unsafe impl` declaration
+ --> tests/compile-fail/function_configuration_requires_unsafe.rs:3:1
+  |
+3 | impl salsa::plumbing::function::Configuration for BadConfiguration {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: the trait `salsa::function::Configuration` enforces invariants that the compiler can't check. Review the trait documentation and make sure this implementation upholds those invariants before adding the `unsafe` keyword
+help: add `unsafe` to this trait implementation
+  |
+3 | unsafe impl salsa::plumbing::function::Configuration for BadConfiguration {}
+  | ++++++

@@ -6,7 +6,7 @@ use crate::common::{EventLoggerDatabase, LogDatabase};
 use expect_test::expect;
 use salsa::{Database, Setter};
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, salsa::Update)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, salsa::SalsaValue)]
 struct Graph<'db> {
     nodes: Vec<Node<'db>>,
 }
@@ -20,7 +20,7 @@ impl<'db> Graph<'db> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, salsa::SalsaValue)]
 struct Edge {
     // Index into `graph.nodes`
     to: usize,

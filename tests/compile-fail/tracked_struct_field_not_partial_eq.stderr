@@ -1,34 +1,16 @@
-error[E0599]: the associated function or constant `maybe_update` exists for struct `salsa::plumbing::UpdateDispatch<NotUpdate>`, but its trait bounds were not satisfied
- --> tests/compile-fail/tracked_struct_field_not_partial_eq.rs:1:1
+error[E0369]: binary operation `==` cannot be applied to type `&NotPartialEq`
+ --> tests/compile-fail/tracked_struct_field_not_partial_eq.rs:3:12
   |
-1 | #[salsa::tracked]
-  | ^^^^^^^^^^^^^^^^^ associated function or constant cannot be called on `salsa::plumbing::UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
-...
-7 | struct NotUpdate;
-  | ---------------- doesn't satisfy `NotUpdate: PartialEq` or `NotUpdate: Update`
+3 |     field: NotPartialEq,
+  |            ^^^^^^^^^^^^
   |
- ::: src/update.rs
+note: an implementation of `PartialEq` might be missing for `NotPartialEq`
+ --> tests/compile-fail/tracked_struct_field_not_partial_eq.rs:7:1
   |
-  |     pub struct Dispatch<D>(PhantomData<D>);
-  |     ---------------------- doesn't satisfy `_: UpdateFallback<NotUpdate>`
-  |
-note: if you're trying to build a new `salsa::plumbing::UpdateDispatch<NotUpdate>`, consider using `salsa::plumbing::UpdateDispatch::<D>::new` which returns `salsa::plumbing::UpdateDispatch<_>`
- --> src/update.rs
-  |
-  |         pub fn new() -> Self {
-  |         ^^^^^^^^^^^^^^^^^^^^
-  = note: the following trait bounds were not satisfied:
-          `NotUpdate: Update`
-          `NotUpdate: PartialEq`
-          which is required by `salsa::plumbing::UpdateDispatch<NotUpdate>: salsa::plumbing::UpdateFallback<NotUpdate>`
-note: the trait `Update` must be implemented
- --> src/update.rs
-  |
-  | pub unsafe trait Update {
-  | ^^^^^^^^^^^^^^^^^^^^^^^
-  = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
+7 | struct NotPartialEq;
+  | ^^^^^^^^^^^^^^^^^^^ must implement `PartialEq`
+help: consider annotating `NotPartialEq` with `#[derive(PartialEq)]`
   |
 7 + #[derive(PartialEq)]
-8 | struct NotUpdate;
+8 | struct NotPartialEq;
   |

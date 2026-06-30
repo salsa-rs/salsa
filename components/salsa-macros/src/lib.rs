@@ -49,13 +49,12 @@ mod input;
 mod interned;
 mod options;
 mod salsa_struct;
+mod salsa_value;
 mod supertype;
 mod tracked;
 mod tracked_fn;
 mod tracked_impl;
 mod tracked_struct;
-#[path = "salsa_value.rs"]
-mod update;
 mod xform;
 
 /// Defines a type whose values can be accumulated by tracked functions.
@@ -139,7 +138,7 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// The annotated item must be a struct with named fields. It may declare one lifetime parameter,
 /// which Salsa treats as the database lifetime, but no type or const parameters. The generated
 /// struct is [`Copy`] and provides a constructor and field getters. Every field type must implement
-/// [`Clone`] + [`Eq`] + [`Hash`] + [`Send`] + [`Sync`] + [`salsa::Update`].
+/// [`Clone`] + [`Eq`] + [`Hash`] + [`Send`] + [`Sync`] + [`salsa::SalsaValue`].
 ///
 /// See [interned structs in the `salsa` crate documentation] for their identity and lifecycle.
 ///
@@ -166,7 +165,7 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// These options exist to adapt older code or external representations to Salsa. New code should
 /// use the default lifetime-bearing struct and [`salsa::Id`], and its field types should implement
-/// [`salsa::Update`].
+/// [`salsa::SalsaValue`].
 ///
 /// - `id = PATH` uses `PATH` as a legacy ID adapter instead of [`salsa::Id`]. The custom type must
 ///   implement [`Copy`] + [`Clone`] + [`PartialEq`] + [`Eq`] + [`Hash`] as well as
@@ -176,10 +175,10 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   guarantee that an interned handle cannot outlive its database revision. The caller becomes
 ///   responsible for ensuring every handle remains valid as revisions advance and interned slots
 ///   may be reclaimed or reused.
-/// - **Unsafe: `unsafe(non_update_types)` is strongly discouraged.** It adapts field types that do
-///   not implement [`salsa::Update`] by suppressing the generated checks. The caller becomes
-///   responsible for ensuring reused values cannot contain dangling references. Prefer deriving
-///   or implementing [`salsa::Update`] for every field type.
+/// - **Unsafe: `unsafe(non_salsa_values)` is strongly discouraged.** It adapts field types that do
+///   not implement [`salsa::SalsaValue`] by suppressing the generated checks. The caller becomes
+///   responsible for ensuring retained values remain valid across revisions. Prefer deriving or
+///   implementing [`salsa::SalsaValue`] for every field type.
 ///
 /// # Field attributes
 ///
@@ -215,7 +214,7 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// [`salsa::Id`]: https://docs.rs/salsa/latest/salsa/struct.Id.html
 /// [`salsa::SalsaAsDeref`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsDeref.html
 /// [`salsa::SalsaAsRef`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsRef.html
-/// [`salsa::Update`]: https://docs.rs/salsa/latest/salsa/trait.Update.html
+/// [`salsa::SalsaValue`]: https://docs.rs/salsa/latest/salsa/trait.SalsaValue.html
 /// [`serde`]: https://docs.rs/serde/latest/serde/
 /// [interned structs in the `salsa` crate documentation]: https://docs.rs/salsa/latest/salsa/#interned-structs
 /// [return mode]: https://docs.rs/salsa/latest/salsa/#return-modes
@@ -348,7 +347,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// revision.
 ///
 /// The annotated item must have named fields and exactly one lifetime parameter, conventionally
-/// `'db`; type and const parameters are not supported.
+/// `'db`; type and const parameters are not supported. Every field type must implement
+/// [`salsa::SalsaValue`].
 ///
 /// See [tracked structs in the `salsa` crate documentation] for their identity, change tracking,
 /// and lifecycle.
@@ -382,12 +382,12 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
 /// - `#[get(IDENT)]` renames the generated getter.
 /// - `#[no_eq]` replaces the stored value and treats the field as changed whenever the struct is
-///   recreated, avoiding equality and [`salsa::Update`] requirements. It is most useful together
-///   with `#[tracked]`: because the field does not contribute to identity, the struct can retain
-///   its identity when recreated, while readers of the field are always invalidated.
-/// - `#[maybe_update(EXPR)]` uses `EXPR` to update the stored field. The expression must have type
-///   `unsafe fn(*mut FieldTy, FieldTy) -> bool` and return whether the value changed. The caller is
-///   responsible for upholding the [`salsa::Update`] safety contract.
+///   recreated, avoiding the [`PartialEq`] requirement. It is most useful together with
+///   `#[tracked]`: because the field does not contribute to identity, the struct can retain its
+///   identity when recreated, while readers of the field are always invalidated.
+/// - `#[eq(EXPR)]` uses `EXPR` to compare the stored and recreated field values. The expression
+///   must have type `fn(&FieldTy, &FieldTy) -> bool`. Salsa retains the stored value when it returns
+///   `true`; otherwise Salsa replaces the field and invalidates dependent queries.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -405,6 +405,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// obtain an ID, adding an interning step to every call. Each key parameter must additionally
 /// implement [`Clone`] + [`Eq`] + [`Hash`]. Equality and hashing determine whether calls use the
 /// same memo, and Salsa always clones the stored tuple when materializing the function arguments.
+/// Interned key parameters must implement [`salsa::SalsaValue`]. The output must either implement
+/// [`salsa::SalsaValue`] or be the same `'static` type for every database lifetime.
 ///
 /// See [tracked functions in the `salsa` crate documentation] for query identity, dependency
 /// tracking, result equality, and memo lifecycle.
@@ -445,10 +447,10 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// ## Legacy function adapter
 ///
-/// - **Unsafe: `unsafe(non_update_types)` is strongly discouraged.** It adapts output or internally
-///   interned input types that do not implement [`salsa::Update`] by suppressing the generated
-///   checks. The caller becomes responsible for ensuring reused values cannot contain dangling
-///   references. Prefer deriving or implementing [`salsa::Update`] for those types.
+/// - **Unsafe: `unsafe(non_salsa_values)` is strongly discouraged.** It adapts output or internally
+///   interned input types that do not implement [`salsa::SalsaValue`] by suppressing the generated
+///   checks. The caller becomes responsible for ensuring retained values remain valid across
+///   revisions. Prefer deriving or implementing [`salsa::SalsaValue`] for those types.
 ///
 /// # Tracked impl blocks
 ///
@@ -489,7 +491,7 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// [`Hash`]: std::hash::Hash
 /// [`salsa::SalsaAsDeref`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsDeref.html
 /// [`salsa::SalsaAsRef`]: https://docs.rs/salsa/latest/salsa/trait.SalsaAsRef.html
-/// [`salsa::Update`]: https://docs.rs/salsa/latest/salsa/trait.Update.html
+/// [`salsa::SalsaValue`]: https://docs.rs/salsa/latest/salsa/trait.SalsaValue.html
 /// [`serde`]: https://docs.rs/serde/latest/serde/
 /// [`serde::Deserialize`]: https://docs.rs/serde/latest/serde/trait.Deserialize.html
 /// [`serde::Serialize`]: https://docs.rs/serde/latest/serde/trait.Serialize.html
@@ -503,75 +505,38 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
     tracked::tracked(args, input)
 }
 
-/// Derives [`salsa::Update`] for a struct or enum.
+/// Derives the unsafe [`salsa::SalsaValue`] marker for a struct or enum.
 ///
-/// The generated implementation updates fields in place and returns whether any field changed.
+/// The derive checks that every field implements [`salsa::SalsaValue`]. A field
+/// can instead use `#[salsa_value(prove_safe_to_retain_manually)]` when its
+/// safety cannot be expressed through a [`salsa::SalsaValue`] implementation.
 /// Named fields, tuple fields, unit structs, and enum variants are supported; unions are not.
 ///
-/// Generic type parameters receive an implicit [`salsa::Update`] bound unless all their uses appear
-/// in fields that use the `fallback` or `unsafe(with(...))` update strategies.
+/// # Safety
 ///
-/// # Field attributes
+/// This derive implements an unsafe marker trait. Its field checks establish
+/// the structural requirements, but cannot inspect invariants maintained by
+/// unsafe code in the derived type's methods. By deriving `SalsaValue`, the
+/// author asserts that any such invariants remain valid when Salsa retains the
+/// value across revisions and rebinds its database lifetime.
 ///
-/// A field accepts at most one `#[update(...)]` attribute. The helper supports these forms:
+/// The field helper skips the structural check for that field and is a manual
+/// assertion that retaining the field is safe under the same conditions.
 ///
-/// - `#[update(fallback)]` updates the field with [`salsa::update_fallback`].
-///   This form adds a `FieldTy: 'static + PartialEq` bound to the generated impl, where
-///   [`PartialEq`] is the standard equality trait.
-/// - `#[update(unsafe(with(expr)))]` updates the field with `expr`, which must have type
-///   `unsafe fn(*mut FieldTy, FieldTy) -> bool`. The caller is responsible for
-///   ensuring the custom function upholds the [`salsa::Update`] safety contract.
-/// - `#[update(bounds(Predicate, ...))]` adds one or more where-predicates to the generated impl.
-///   This form can be combined with `fallback` or `unsafe(with(...))`; by itself it does not change
-///   how the field is updated.
-///
-/// # Examples
+/// # Example
 ///
 /// ```ignore
-/// #[derive(Clone, PartialEq, Eq, salsa::Update)]
-/// struct Foo<T> {
-///     value: T,
+/// #[derive(salsa::SalsaValue)]
+/// struct QueryValue<'db> {
+///     item: MyInterned<'db>,
 /// }
 /// ```
 ///
-/// Since `value` uses the normal update path, the generated impl requires [`salsa::Update`] for
-/// `T`.
-///
-/// ```ignore
-/// #[derive(Clone, PartialEq, Eq, salsa::Update)]
-/// struct Foo<T> {
-///     #[update(fallback)]
-///     value: T,
-/// }
-/// ```
-///
-/// The `fallback` helper uses [`salsa::update_fallback`] and requires
-/// `T: 'static + PartialEq` instead of [`salsa::Update`] for `T`.
-///
-/// ```ignore
-/// #[derive(Clone, PartialEq, Eq, salsa::Update)]
-/// struct Foo<T, U> {
-///     #[update(bounds(T: 'static + PartialEq, Vec<U>: Clone), unsafe(with(custom_update::<T>)))]
-///     value: T,
-///     marker: std::marker::PhantomData<U>,
-/// }
-///
-/// unsafe fn custom_update<T>(_old: *mut T, _new: T) -> bool
-/// where
-///     T: 'static + PartialEq,
-/// {
-///     // Custom update logic that upholds `Update::maybe_update`'s safety contract...
-///     todo!()
-/// }
-/// ```
-///
-/// [`PartialEq`]: std::cmp::PartialEq
-/// [`salsa::Update`]: https://docs.rs/salsa/latest/salsa/trait.Update.html
-/// [`salsa::update_fallback`]: https://docs.rs/salsa/latest/salsa/fn.update_fallback.html
-#[proc_macro_derive(Update, attributes(update))]
-pub fn update(input: TokenStream) -> TokenStream {
+/// [`salsa::SalsaValue`]: https://docs.rs/salsa/latest/salsa/trait.SalsaValue.html
+#[proc_macro_derive(SalsaValue, attributes(salsa_value))]
+pub fn salsa_value(input: TokenStream) -> TokenStream {
     let item = parse_macro_input!(input as syn::DeriveInput);
-    match update::update_derive(item) {
+    match salsa_value::salsa_value_derive(item) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.into_compile_error().into(),
     }
@@ -583,8 +548,5 @@ pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error
 }
 
 mod kw {
-    syn::custom_keyword!(bounds);
-    syn::custom_keyword!(fallback);
-    syn::custom_keyword!(with);
-    syn::custom_keyword!(maybe_update);
+    syn::custom_keyword!(prove_safe_to_retain_manually);
 }

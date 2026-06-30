@@ -514,7 +514,8 @@ mod _memory_usage {
 
     struct DummyConfiguration;
 
-    impl super::Configuration for DummyConfiguration {
+    // SAFETY: `NonZeroUsize` is `'static` and contains no database lifetime.
+    unsafe impl super::Configuration for DummyConfiguration {
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
         const PERSIST: bool = false;

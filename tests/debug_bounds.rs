@@ -2,9 +2,9 @@
 
 //! Test that debug and non-debug structs compile correctly
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, salsa::SalsaValue)]
 struct NotDebug;
-#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, Debug)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::SalsaValue)]
 struct Debug;
 
 #[salsa::input(debug)]

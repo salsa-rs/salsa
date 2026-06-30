@@ -43,7 +43,7 @@ impl AllowedOptions for InternedStruct {
 
     const NO_LIFETIME: bool = true;
 
-    const NON_UPDATE_TYPES: bool = true;
+    const NON_SALSA_VALUES: bool = true;
 
     const SINGLETON: bool = false;
 
@@ -75,7 +75,7 @@ impl AllowedOptions for InternedStruct {
 impl SalsaStructAllowedOptions for InternedStruct {
     const KIND: &'static str = "interned";
 
-    const ALLOW_MAYBE_UPDATE: bool = false;
+    const ALLOW_CUSTOM_EQ: bool = false;
 
     const ALLOW_TRACKED: bool = false;
 
@@ -145,10 +145,10 @@ impl Macro {
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
 
-        let assert_types_are_update = if self.args.non_update_types.is_none() {
-            crate::update::assert_update(&db_lt, &zalsa, field_tys.iter().map(|ty| (**ty).clone()))
+        let salsa_value_field_attr = if self.args.non_salsa_values.is_some() {
+            Some(quote!(#[salsa_value(prove_safe_to_retain_manually)]))
         } else {
-            quote! {}
+            None
         };
 
         Ok(crate::debug::dump_tokens(
@@ -179,7 +179,7 @@ impl Macro {
                     persist: #persist,
                     serialize_fn: #(#serialize_fn)*,
                     deserialize_fn: #(#deserialize_fn)*,
-                    assert_types_are_update: { #assert_types_are_update },
+                    salsa_value_field_attr: { #salsa_value_field_attr },
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

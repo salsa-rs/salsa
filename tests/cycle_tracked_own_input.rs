@@ -37,7 +37,7 @@ struct TypeParam<'db> {
     constraint: Option<Type<'db>>,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, salsa::Update)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, salsa::SalsaValue)]
 enum Type<'db> {
     Class(Class<'db>),
     Unknown,

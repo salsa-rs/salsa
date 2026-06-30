@@ -51,7 +51,7 @@ struct InternedStringNoLifetime {
     data: String,
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, salsa::SalsaValue)]
 struct Foo;
 
 #[salsa::interned(debug)]
@@ -84,7 +84,7 @@ struct InternedStringWithCustomIdAndNoLifetime<'db> {
     data: String,
 }
 
-#[derive(salsa::Update, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(salsa::SalsaValue, Clone, Eq, PartialEq, Hash, Debug)]
 struct Generic<T>(T);
 
 #[salsa::interned(debug)]
@@ -153,7 +153,7 @@ fn interned_structs_have_public_ingredients() {
     let underlying_id = s.0;
 
     let data = InternedString::ingredient(db.zalsa()).data(db.zalsa(), underlying_id.as_id());
-    assert_eq!(data, &(String::from("Hello, world!"),));
+    assert_eq!(&**data, &(String::from("Hello, world!"),));
 }
 
 #[test]

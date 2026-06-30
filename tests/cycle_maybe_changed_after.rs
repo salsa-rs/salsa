@@ -112,7 +112,7 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         ClassLiteral::new(db, scope)
     }
 
-    #[derive(Eq, PartialEq, Debug, salsa::Update)]
+    #[derive(Eq, PartialEq, Debug, salsa::SalsaValue)]
     struct Index<'db> {
         scope: Scope<'db>,
     }

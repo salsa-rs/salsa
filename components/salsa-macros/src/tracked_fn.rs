@@ -36,7 +36,7 @@ impl AllowedOptions for TrackedFn {
 
     const NO_LIFETIME: bool = false;
 
-    const NON_UPDATE_TYPES: bool = true;
+    const NON_SALSA_VALUES: bool = true;
 
     const SINGLETON: bool = false;
 
@@ -102,7 +102,7 @@ impl Macro {
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
-        let requires_update = self.args.non_update_types.is_none();
+        let requires_salsa_value = self.args.non_salsa_values.is_none();
         let heap_size_fn = self.args.heap_size_fn.iter();
         let eq = if let Some(token) = &self.args.no_eq {
             if self.args.cycle_fn.is_some() {
@@ -136,6 +136,10 @@ impl Macro {
         let zalsa = self.hygiene.ident("zalsa");
         let Configuration = self.hygiene.scoped_ident(fn_name, "Configuration");
         let InternedData = self.hygiene.scoped_ident(fn_name, "InternedData");
+        let InternedFields = self.hygiene.scoped_ident(fn_name, "InternedFields");
+        let assemble_interned_fields = self
+            .hygiene
+            .scoped_ident(fn_name, "assemble_interned_fields");
         let FN_CACHE = self.hygiene.scoped_ident(fn_name, "FN_CACHE");
         let INTERN_CACHE = self.hygiene.scoped_ident(fn_name, "INTERN_CACHE");
         let inner = &inner_fn.sig.ident;
@@ -194,15 +198,13 @@ impl Macro {
 
         let persist = self.args.persist();
 
-        let assert_types_are_update = if requires_update {
-            let mut assert_update = vec![output_ty.clone()];
-            if needs_interner {
-                assert_update.extend(interned_input_tys.clone());
-            }
-            crate::update::assert_update(&db_lt, &zalsa, assert_update)
+        let assert_output_is_salsa_value_or_static = if requires_salsa_value {
+            crate::salsa_value::assert_salsa_value_or_static(&db_lt, &zalsa, &output_ty)
         } else {
             quote! {}
         };
+        let salsa_value_field_attr =
+            (!requires_salsa_value).then(|| quote!(#[salsa_value(prove_safe_to_retain_manually)]));
         let self_ty = match &self.args.self_ty {
             Some(ty) => quote! { self_ty: #ty, },
             None => quote! {},
@@ -233,12 +235,15 @@ impl Macro {
                 lru: #lru,
                 return_mode: #return_mode,
                 persist: #persist,
-                assert_types_are_update: { #assert_types_are_update },
+                salsa_value_field_attr: { #salsa_value_field_attr },
+                assert_output_is_salsa_value_or_static: { #assert_output_is_salsa_value_or_static },
                 #self_ty
                 unused_names: [
                     #zalsa,
                     #Configuration,
                     #InternedData,
+                    #InternedFields,
+                    #assemble_interned_fields,
                     #FN_CACHE,
                     #INTERN_CACHE,
                     #inner,
