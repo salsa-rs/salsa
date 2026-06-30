@@ -1,4 +1,4 @@
-error: a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa handle instead
+error: a reference tied to the database lifetime does not implement `SalsaValue`; store owned data or a Salsa struct instead
  --> tests/compile-fail/derive_salsa_value_ref.rs:3:12
   |
 3 |     value: &'db str,
