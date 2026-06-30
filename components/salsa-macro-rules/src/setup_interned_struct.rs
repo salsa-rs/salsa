@@ -130,8 +130,7 @@ macro_rules! setup_interned_struct {
             }
 
             // SAFETY: The generated assertions above prove each retained field
-            // can be exposed with the current database lifetime. This wrapper
-            // exposes the fields only through a shared tuple reference.
+            // can be exposed with the current database lifetime.
             unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt>
                 for $StructDataIdent<'static>
             {

@@ -524,8 +524,8 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 /// A field accepts at most one `#[salsa_value(...)]` attribute:
 ///
 /// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the generated retention
-///   check for this field. The author must ensure its retained representation can be exposed with
-///   the database lifetime and remains valid across revisions.
+///   check for this field. The author must ensure Salsa can replace its database lifetime with
+///   `'static` for storage and safely restore it later.
 ///
 /// # Safety
 ///
