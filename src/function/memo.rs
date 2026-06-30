@@ -366,14 +366,11 @@ mod persistence {
 
             let memo = DeserializeMemo::<C>::deserialize(deserializer)?;
 
-            Ok(Memo {
-                // SAFETY: The output is immediately retained in this memo.
-                value: Some(unsafe { crate::salsa_value::erase::<C::OutputValue>(memo.value.0) }),
-                header: MemoHeader {
-                    verified_at: memo.verified_at,
-                    revisions: memo.revisions,
-                },
-            })
+            Ok(Memo::new(
+                Some(memo.value.0),
+                memo.verified_at.load(),
+                memo.revisions,
+            ))
         }
     }
 }

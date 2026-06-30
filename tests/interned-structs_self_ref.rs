@@ -88,7 +88,7 @@ const _: () = {
         };
         const DEBUG_NAME: &'static str = "InternedString";
         type Fields<'a> = StructData<'a>;
-        type StoredFields = StructData<'static>;
+        type FieldsValue = StructData<'static>;
         type Struct<'a> = InternedString<'a>;
 
         const PERSIST: bool = false;

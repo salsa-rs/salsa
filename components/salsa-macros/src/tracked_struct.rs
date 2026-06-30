@@ -71,8 +71,6 @@ impl AllowedOptions for TrackedStruct {
 impl SalsaStructAllowedOptions for TrackedStruct {
     const KIND: &'static str = "tracked";
 
-    const ALLOW_CUSTOM_EQ: bool = true;
-
     const ALLOW_TRACKED: bool = true;
 
     const HAS_LIFETIME: bool = true;
@@ -151,8 +149,6 @@ impl Macro {
             let field_ty = &field.field.ty;
             if field.has_no_eq_attr {
                 quote! {(|_: &#field_ty, _: &#field_ty| false)}
-            } else if let Some((eq_token, eq)) = &field.custom_eq_attr {
-                quote_spanned! { eq_token.span() => ({ let eq: fn(&#field_ty, &#field_ty) -> bool = #eq; eq }) }
             } else {
                 quote_spanned! { field_ty.span() => (|old: &#field_ty, new: &#field_ty| old == new) }
             }

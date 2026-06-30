@@ -13,7 +13,6 @@
 extern crate quote;
 
 use proc_macro::TokenStream;
-use quote::ToTokens;
 
 macro_rules! parse_quote {
     ($($inp:tt)*) => {
@@ -139,8 +138,8 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// The annotated item must be a struct with named fields. It may declare one lifetime parameter,
 /// which Salsa treats as the database lifetime, but no type or const parameters. The generated
 /// struct is [`Copy`] and provides a constructor and field getters. Every field type must implement
-/// [`Clone`] + [`Eq`] + [`Hash`] + [`Send`] + [`Sync`]. A field whose type changes with the database
-/// lifetime must also implement [`salsa::SalsaValue`].
+/// [`Clone`] + [`Eq`] + [`Hash`] + [`Send`] + [`Sync`]. A field whose type is unconditionally
+/// `'static` is accepted directly; any other field must implement [`salsa::SalsaValue`].
 ///
 /// See [interned structs in the `salsa` crate documentation] for their identity and lifecycle.
 ///
@@ -353,8 +352,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// revision.
 ///
 /// The annotated item must have named fields and exactly one lifetime parameter, conventionally
-/// `'db`; type and const parameters are not supported. A field whose type changes with the database
-/// lifetime must implement [`salsa::SalsaValue`].
+/// `'db`; type and const parameters are not supported. A field whose type is unconditionally
+/// `'static` is accepted directly; any other field must implement [`salsa::SalsaValue`].
 ///
 /// See [tracked structs in the `salsa` crate documentation] for their identity, change tracking,
 /// and lifecycle.
@@ -391,9 +390,6 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   recreated, avoiding the [`PartialEq`] requirement. It is most useful together with
 ///   `#[tracked]`: because the field does not contribute to identity, the struct can retain its
 ///   identity when recreated, while readers of the field are always invalidated.
-/// - `#[eq(EXPR)]` uses `EXPR` to compare the stored and recreated field values. The expression
-///   must have type `fn(&FieldTy, &FieldTy) -> bool`. Salsa retains the stored value when it returns
-///   `true`; otherwise Salsa replaces the field and invalidates dependent queries.
 /// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the retention check for
 ///   this field. The caller must ensure Salsa can retain the field and expose it with a later
 ///   database lifetime.
@@ -414,8 +410,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// obtain an ID, adding an interning step to every call. Each key parameter must additionally
 /// implement [`Clone`] + [`Eq`] + [`Hash`]. Equality and hashing determine whether calls use the
 /// same memo, and Salsa always clones the stored tuple when materializing the function arguments.
-/// An interned key parameter whose type changes with the database lifetime must implement
-/// [`salsa::SalsaValue`]. The same rule applies to the output.
+/// Interned key parameters and outputs whose types are not unconditionally `'static` must implement
+/// [`salsa::SalsaValue`].
 ///
 /// See [tracked functions in the `salsa` crate documentation] for query identity, dependency
 /// tracking, result equality, and memo lifecycle.
@@ -516,14 +512,20 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Derives the unsafe [`salsa::SalsaValue`] trait for a struct or enum.
 ///
-/// The derive accepts fields whose retained and exposed types are identical. A field whose type
-/// changes with the database lifetime must implement [`salsa::SalsaValue`], or use
-/// `#[salsa_value(prove_safe_to_retain_manually)]` when its safety cannot be expressed through an
-/// implementation.
-/// For a type with generic type parameters, the derive maps every parameter through its
-/// [`SalsaValue::Output`](salsa::SalsaValue::Output), so each parameter must implement
-/// [`salsa::SalsaValue`].
-/// Named fields, tuple fields, unit structs, and enum variants are supported; unions are not.
+/// A field whose type is unconditionally `'static` is accepted directly; any other field must
+/// implement [`salsa::SalsaValue`].
+///
+/// The type may declare at most one lifetime parameter. Type parameters, const parameters, and
+/// unions are not supported. Named fields, tuple fields, unit structs, and enum variants are
+/// supported.
+///
+/// # Field attributes
+///
+/// A field accepts at most one `#[salsa_value(...)]` attribute:
+///
+/// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the generated retention
+///   check for this field. The author must ensure its retained representation can be exposed with
+///   the database lifetime and remains valid across revisions.
 ///
 /// # Safety
 ///
@@ -555,23 +557,6 @@ pub fn salsa_value(input: TokenStream) -> TokenStream {
 pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error) -> TokenStream {
     tokens.extend(TokenStream::from(error.into_compile_error()));
     tokens
-}
-
-pub(crate) fn token_stream_with_error_without_salsa_value_attrs(
-    tokens: TokenStream,
-    error: syn::Error,
-) -> TokenStream {
-    let Ok(mut item) = syn::parse::<syn::ItemStruct>(tokens.clone()) else {
-        return token_stream_with_error(tokens, error);
-    };
-
-    for field in &mut item.fields {
-        field
-            .attrs
-            .retain(|attr| !attr.path().is_ident("salsa_value"));
-    }
-
-    token_stream_with_error(item.into_token_stream().into(), error)
 }
 
 mod kw {

@@ -169,7 +169,7 @@ macro_rules! setup_tracked_struct {
                 const PERSIST: bool = $persist;
 
                 type Fields<$db_lt> = ($($field_ty,)*);
-                type StoredFields = $Fields;
+                type FieldsValue = $Fields;
 
                 type Revisions = [$zalsa::AtomicRevision; $N];
 

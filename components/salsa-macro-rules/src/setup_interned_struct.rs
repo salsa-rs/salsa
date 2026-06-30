@@ -195,7 +195,7 @@ macro_rules! setup_interned_struct {
                 )?
 
                 type Fields<'a> = $StructDataIdent<'a>;
-                type StoredFields = $StructDataIdent<'static>;
+                type FieldsValue = $StructDataIdent<'static>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
 
                 $(

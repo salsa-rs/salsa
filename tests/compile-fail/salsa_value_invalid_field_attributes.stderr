@@ -19,3 +19,11 @@ error: `#[salsa_value(prove_safe_to_retain_manually)]` cannot be used with `#[sa
 16 | /     #[salsa_value(prove_safe_to_retain_manually)]
 17 | |     field: String,
    | |_________________^
+
+error: cannot find attribute `salsa_value` in this scope
+  --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:16:7
+   |
+16 |     #[salsa_value(prove_safe_to_retain_manually)]
+   |       ^^^^^^^^^^^
+   |
+   = note: `salsa_value` is an attribute that can be used by the derive macro `SalsaValue`, you might be missing a `derive` attribute

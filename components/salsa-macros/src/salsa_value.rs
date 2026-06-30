@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
-use syn::{Attribute, spanned::Spanned, visit::Visit, visit_mut::VisitMut};
+use syn::{Attribute, spanned::Spanned, visit::Visit};
 
 use crate::kw;
 use crate::xform::{ChangeLt, ChangeSelfPath};
@@ -16,6 +16,15 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
 
     reject_salsa_value_attributes(&input.attrs, "type")?;
 
+    if input.generics.type_params().next().is_some()
+        || input.generics.const_params().next().is_some()
+    {
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            "`derive(SalsaValue)` does not support type or const parameters",
+        ));
+    }
+
     let mut declared_lifetimes = input.generics.lifetimes();
     let declared_lifetime = declared_lifetimes
         .next()
@@ -24,12 +33,6 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         return Err(syn::Error::new_spanned(
             &input.generics,
             "`derive(SalsaValue)` supports at most one lifetime parameter",
-        ));
-    }
-    if declared_lifetime.is_some() && input.generics.params.len() > 1 {
-        return Err(syn::Error::new_spanned(
-            &input.generics,
-            "`derive(SalsaValue)` does not support combining a lifetime with other generic parameters",
         ));
     }
     let salsa_lifetime = declared_lifetime
@@ -51,15 +54,8 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         syn::Data::Union(_) => unreachable!(),
     }
 
-    let rebound_type_params = rebound_type_params(&input.generics, &salsa_lifetime);
     let static_type = derived_type(&input, None);
-    let output_type = rebind_type_params(
-        &derived_type(&input, Some(&salsa_lifetime)),
-        &rebound_type_params,
-    );
-    let mut generics = implementation_generics(&input, declared_lifetime, &salsa_lifetime);
-    add_implementation_bounds(&mut generics, &salsa_lifetime, &rebound_type_params);
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
+    let output_type = derived_type(&input, Some(&salsa_lifetime));
     let zalsa = quote::format_ident!("__salsa_plumbing");
 
     let field_assertions =
@@ -74,8 +70,6 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
                 );
                 let output_field_type =
                     replace_declared_lifetime(field_type, declared_lifetime, &salsa_lifetime);
-                let output_field_type =
-                    rebind_type_params(&output_field_type, &rebound_type_params);
                 let output_field_type = replace_self_type(&output_field_type, &output_type);
 
                 assert_salsa_value_field(
@@ -91,8 +85,8 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         #[automatically_derived]
         // SAFETY: The assertions below verify the retained representation of
         // every field.
-        unsafe impl #impl_generics ::salsa::SalsaValue<#salsa_lifetime>
-            for #static_type #where_clause
+        unsafe impl<#salsa_lifetime> ::salsa::SalsaValue<#salsa_lifetime>
+            for #static_type
         {
             type Output = #output_type;
         }
@@ -105,8 +99,8 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
                 const ASSERT_FIELDS_ARE_SALSA_VALUES: ();
             }
 
-            impl #impl_generics SalsaValueFieldAssertions<#salsa_lifetime>
-                for #static_type #where_clause
+            impl<#salsa_lifetime> SalsaValueFieldAssertions<#salsa_lifetime>
+                for #static_type
             {
                 const ASSERT_FIELDS_ARE_SALSA_VALUES: () = {
                     #(#field_assertions)*
@@ -175,159 +169,6 @@ fn reject_salsa_value_attributes(attrs: &[Attribute], target: &str) -> syn::Resu
     }
 }
 
-fn rebound_type_params(
-    generics: &syn::Generics,
-    salsa_lifetime: &syn::Lifetime,
-) -> HashMap<String, syn::Type> {
-    generics
-        .type_params()
-        .map(|parameter| {
-            let ident = &parameter.ident;
-            (
-                ident.to_string(),
-                syn::parse_quote!(<#ident as ::salsa::SalsaValue<#salsa_lifetime>>::Output),
-            )
-        })
-        .collect()
-}
-
-fn add_implementation_bounds(
-    generics: &mut syn::Generics,
-    salsa_lifetime: &syn::Lifetime,
-    rebound_type_params: &HashMap<String, syn::Type>,
-) {
-    if rebound_type_params.is_empty() {
-        return;
-    }
-
-    let original_where_predicates = generics
-        .where_clause
-        .iter()
-        .flat_map(|where_clause| where_clause.predicates.iter().cloned())
-        .collect::<Vec<_>>();
-    let mut output_bounds = Vec::new();
-
-    for param in &mut generics.params {
-        let syn::GenericParam::Type(type_param) = param else {
-            continue;
-        };
-
-        let output = &rebound_type_params[&type_param.ident.to_string()];
-        let bounds = type_param.bounds.clone();
-        if !bounds.is_empty() {
-            output_bounds.push(syn::parse_quote!(#output: #bounds));
-        }
-        type_param
-            .bounds
-            .push(syn::parse_quote!(::salsa::SalsaValue<#salsa_lifetime>));
-    }
-
-    let output_where_predicates = original_where_predicates
-        .iter()
-        .map(|predicate| rebind_where_predicate(predicate, rebound_type_params));
-    generics
-        .make_where_clause()
-        .predicates
-        .extend(output_bounds.into_iter().chain(output_where_predicates));
-}
-
-fn rebind_where_predicate(
-    predicate: &syn::WherePredicate,
-    rebound_type_params: &HashMap<String, syn::Type>,
-) -> syn::WherePredicate {
-    let mut predicate = predicate.clone();
-    ChangeTypeParams::new(rebound_type_params).visit_where_predicate_mut(&mut predicate);
-    predicate
-}
-
-fn rebind_type_params(
-    ty: &syn::Type,
-    rebound_type_params: &HashMap<String, syn::Type>,
-) -> syn::Type {
-    let mut ty = ty.clone();
-    ChangeTypeParams::new(rebound_type_params).visit_type_mut(&mut ty);
-    ty
-}
-
-struct ChangeTypeParams<'a> {
-    replacements: &'a HashMap<String, syn::Type>,
-}
-
-impl<'a> ChangeTypeParams<'a> {
-    fn new(replacements: &'a HashMap<String, syn::Type>) -> Self {
-        Self { replacements }
-    }
-}
-
-impl VisitMut for ChangeTypeParams<'_> {
-    fn visit_type_mut(&mut self, ty: &mut syn::Type) {
-        let syn::Type::Path(type_path) = ty else {
-            syn::visit_mut::visit_type_mut(self, ty);
-            return;
-        };
-        if type_path.qself.is_some() || type_path.path.segments.len() != 1 {
-            syn::visit_mut::visit_type_mut(self, ty);
-            return;
-        }
-
-        let segment = type_path.path.segments.first().unwrap();
-        let Some(replacement) = self.replacements.get(&segment.ident.to_string()) else {
-            syn::visit_mut::visit_type_mut(self, ty);
-            return;
-        };
-        if !matches!(segment.arguments, syn::PathArguments::None) {
-            syn::visit_mut::visit_type_mut(self, ty);
-            return;
-        }
-
-        *ty = replacement.clone();
-    }
-
-    fn visit_type_path_mut(&mut self, type_path: &mut syn::TypePath) {
-        if type_path.qself.is_some() || type_path.path.segments.len() < 2 {
-            syn::visit_mut::visit_type_path_mut(self, type_path);
-            return;
-        }
-
-        let first = type_path.path.segments.first().unwrap();
-        let Some(replacement) = self.replacements.get(&first.ident.to_string()) else {
-            syn::visit_mut::visit_type_path_mut(self, type_path);
-            return;
-        };
-        if !matches!(first.arguments, syn::PathArguments::None) {
-            syn::visit_mut::visit_type_path_mut(self, type_path);
-            return;
-        }
-
-        let span = first.ident.span();
-        type_path.qself = Some(syn::QSelf {
-            lt_token: syn::Token![<](span),
-            ty: Box::new(replacement.clone()),
-            position: 0,
-            as_token: None,
-            gt_token: syn::Token![>](span),
-        });
-        type_path.path.segments = type_path.path.segments.iter().skip(1).cloned().collect();
-    }
-}
-
-fn implementation_generics(
-    input: &syn::DeriveInput,
-    declared_lifetime: Option<&syn::Lifetime>,
-    salsa_lifetime: &syn::Lifetime,
-) -> syn::Generics {
-    let mut generics = input.generics.clone();
-    if declared_lifetime.is_some() {
-        generics.params.clear();
-        generics.where_clause = None;
-    }
-
-    generics
-        .params
-        .insert(0, syn::parse_quote!(#salsa_lifetime));
-    generics
-}
-
 fn derived_type(input: &syn::DeriveInput, output_lifetime: Option<&syn::Lifetime>) -> syn::Type {
     let ident = &input.ident;
     let tokens = if input.generics.lifetimes().next().is_some() {
@@ -335,8 +176,7 @@ fn derived_type(input: &syn::DeriveInput, output_lifetime: Option<&syn::Lifetime
             .map_or_else(|| syn::Lifetime::new("'static", ident.span()), Clone::clone);
         quote!(#ident<#lifetime>)
     } else {
-        let (_, type_generics, _) = input.generics.split_for_impl();
-        quote!(#ident #type_generics)
+        quote!(#ident)
     };
     syn::parse2(tokens).expect("generated SalsaValue type should parse")
 }

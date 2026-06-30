@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use crate::hygiene::Hygiene;
 use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
 use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
-use crate::{db_lifetime, token_stream_with_error_without_salsa_value_attrs};
+use crate::{db_lifetime, token_stream_with_error};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -24,7 +24,7 @@ pub(crate) fn interned(
     };
     match m.try_macro() {
         Ok(v) => v.into(),
-        Err(e) => token_stream_with_error_without_salsa_value_attrs(input, e),
+        Err(e) => token_stream_with_error(input, e),
     }
 }
 
@@ -74,8 +74,6 @@ impl AllowedOptions for InternedStruct {
 
 impl SalsaStructAllowedOptions for InternedStruct {
     const KIND: &'static str = "interned";
-
-    const ALLOW_CUSTOM_EQ: bool = false;
 
     const ALLOW_TRACKED: bool = false;
 

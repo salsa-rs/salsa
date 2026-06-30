@@ -53,7 +53,7 @@ pub trait Configuration: Sized + 'static {
     type Fields<'db>: Send + Sync;
 
     /// The representation retained in Salsa's tracked-struct storage.
-    type StoredFields: for<'db> crate::SalsaValue<'db, Output = Self::Fields<'db>>;
+    type FieldsValue: for<'db> crate::SalsaValue<'db, Output = Self::Fields<'db>>;
 
     /// A array of [`AtomicRevision`][] values, one per each of the tracked value fields.
     /// When a struct is re-recreated in a new revision, the corresponding
@@ -421,7 +421,7 @@ where
     /// TODO: Consider whether we need a more explicit aliasing barrier or whether
     /// this should be restructured (e.g., with a nested struct for `fields` + `memos`)
     /// to make the aliasing guarantees more obvious. See PR #741 for prior discussion.
-    fields: C::StoredFields,
+    fields: C::FieldsValue,
 
     /// Memo table storing the results of query functions etc.
     /*unsafe */
@@ -567,7 +567,7 @@ where
             revisions: C::new_revisions(current_deps.changed_at),
 
             // SAFETY: These fields remain erased only while retained in this tracked value.
-            fields: unsafe { crate::salsa_value::erase::<C::StoredFields>(fields) },
+            fields: unsafe { crate::salsa_value::erase::<C::FieldsValue>(fields) },
             // SAFETY: We only ever access the memos of a value that we allocated through
             // our `MemoTableTypes`.
             memos: unsafe { MemoTable::new(self.memo_table_types()) },
@@ -702,7 +702,7 @@ where
         // SAFETY: We have claimed mutable access by swapping `None` into
         // `updated_at`, so the retained fields are exclusively borrowed.
         let old_fields =
-            crate::salsa_value::rebind_mut::<C::StoredFields>(unsafe { &mut (*data_raw).fields });
+            crate::salsa_value::rebind_mut::<C::FieldsValue>(unsafe { &mut (*data_raw).fields });
 
         // SAFETY: `revisions` contains `AtomicRevision` values which can be safely accessed
         // concurrently with `tracked_field::maybe_changed_after`.
@@ -766,7 +766,7 @@ where
         // SAFETY: `data` is a valid pointer
         acquire_read_lock(unsafe { &(*data).updated_at }, current_revision);
         // SAFETY: `data` is valid and the read lock keeps its fields immutable.
-        crate::salsa_value::rebind::<C::StoredFields>(unsafe { &(*data).fields })
+        crate::salsa_value::rebind::<C::FieldsValue>(unsafe { &(*data).fields })
     }
 
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare
@@ -1117,7 +1117,7 @@ where
     /// a particular revision.
     #[cfg_attr(not(feature = "salsa_unstable"), doc(hidden))]
     pub fn fields<'db>(&'db self) -> &'db C::Fields<'db> {
-        crate::salsa_value::rebind::<C::StoredFields>(&self.fields)
+        crate::salsa_value::rebind::<C::FieldsValue>(&self.fields)
     }
 }
 
@@ -1159,8 +1159,8 @@ where
 
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
-            size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::StoredFields>(),
-            size_of_fields: mem::size_of::<C::StoredFields>(),
+            size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::FieldsValue>(),
+            size_of_fields: mem::size_of::<C::FieldsValue>(),
             heap_size_of_fields: heap_size,
             memos: memos.memory_usage(),
         }
@@ -1372,7 +1372,7 @@ mod persistence {
         }
     }
 
-    struct SerializeFields<'db, C: Configuration>(&'db C::StoredFields);
+    struct SerializeFields<'db, C: Configuration>(&'db C::FieldsValue);
 
     impl<C> serde::Serialize for SerializeFields<'_, C>
     where
@@ -1383,7 +1383,7 @@ mod persistence {
             S: serde::Serializer,
         {
             C::serialize(
-                crate::salsa_value::rebind::<C::StoredFields>(self.0),
+                crate::salsa_value::rebind::<C::FieldsValue>(self.0),
                 serializer,
             )
         }
@@ -1479,7 +1479,7 @@ mod persistence {
         fields: DeserializeFields<C>,
     }
 
-    struct DeserializeFields<C: Configuration>(C::StoredFields);
+    struct DeserializeFields<C: Configuration>(C::FieldsValue);
 
     impl<'de, C> serde::Deserialize<'de> for DeserializeFields<C>
     where
@@ -1493,7 +1493,7 @@ mod persistence {
                 .map(|fields| {
                     // SAFETY: The fields are immediately retained in tracked-struct storage.
                     DeserializeFields(unsafe {
-                        crate::salsa_value::erase::<C::StoredFields>(fields)
+                        crate::salsa_value::erase::<C::FieldsValue>(fields)
                     })
                 })
                 .map_err(de::Error::custom)
