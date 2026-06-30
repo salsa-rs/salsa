@@ -68,7 +68,7 @@ pub struct Memo<C: Configuration> {
     pub(super) header: MemoHeader,
 
     /// The result of the query, if we decide to memoize it.
-    pub(super) value: Option<C::OutputValue>,
+    pub(super) value: Option<C::Output<'static>>,
 }
 
 #[derive(Debug)]
@@ -199,25 +199,26 @@ impl MemoHeader {
 }
 
 impl<C: Configuration> Memo<C> {
-    pub(super) fn new(
-        value: Option<C::Output<'_>>,
+    pub(super) fn new<'db>(
+        value: Option<C::Output<'db>>,
         revision_now: Revision,
         revisions: QueryRevisions,
     ) -> Self {
         Self {
             value: value.map(|value| {
-                // SAFETY: Query outputs are erased only while retained in this
-                // memo and are rebound to the lifetime of a database borrow.
-                unsafe { crate::salsa_value::erase::<C::OutputValue>(value) }
+                // SAFETY: Guaranteed by `Configuration` and retained only in this memo.
+                unsafe { std::mem::transmute::<C::Output<'db>, C::Output<'static>>(value) }
             }),
             header: MemoHeader::new(revision_now, revisions),
         }
     }
 
-    pub(super) fn value(&self) -> Option<&C::Output<'_>> {
-        self.value
-            .as_ref()
-            .map(crate::salsa_value::rebind::<C::OutputValue>)
+    pub(super) fn value<'db>(&'db self) -> Option<&'db C::Output<'db>> {
+        self.value.as_ref().map(|value| {
+            // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
+            // bounded by the borrow of this memo.
+            unsafe { std::mem::transmute::<&C::Output<'static>, &'db C::Output<'db>>(value) }
+        })
     }
 
     /// Returns `true` if this memo should be serialized.
@@ -501,7 +502,8 @@ mod _memory_usage {
 
     struct DummyConfiguration;
 
-    impl super::Configuration for DummyConfiguration {
+    // SAFETY: `NonZeroUsize` is `'static` and contains no database lifetime.
+    unsafe impl super::Configuration for DummyConfiguration {
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
         const PERSIST: bool = false;
@@ -511,7 +513,6 @@ mod _memory_usage {
         type SalsaStruct<'db> = DummyStruct;
         type Input<'db> = ();
         type Output<'db> = NonZeroUsize;
-        type OutputValue = NonZeroUsize;
         type Eviction = crate::function::eviction::NoopEviction;
 
         fn values_equal<'db>(_: &Self::Output<'db>, _: &Self::Output<'db>) -> bool {

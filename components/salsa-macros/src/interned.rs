@@ -153,12 +153,10 @@ impl Macro {
                 .iter()
                 .zip(field_manual_retention_proofs)
                 .map(|(field_ty, has_manual_retention_proof)| {
-                    let static_field_ty = crate::salsa_value::static_type(field_ty, &db_lt);
                     crate::salsa_value::assert_salsa_value_field(
                         &db_lt,
                         &zalsa,
                         field_ty,
-                        &static_field_ty,
                         has_manual_retention_proof,
                     )
                 })

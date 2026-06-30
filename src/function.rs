@@ -42,7 +42,14 @@ pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
 pub type Memo<C> = memo::Memo<C>;
 
 /// Configuration for a Salsa function ingredient.
-pub trait Configuration: Any {
+///
+/// # Safety
+///
+/// For every lifetime `'db`, `Output<'db>` must be safe for Salsa to retain
+/// after erasing `'db` and to use after rebranding it with a later database
+/// lifetime. This is guaranteed when the output implements [`crate::SalsaValue`]
+/// or when it is the same `'static` type for every `'db`.
+pub unsafe trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
     const PERSIST: bool;
@@ -60,9 +67,6 @@ pub trait Configuration: Any {
 
     /// The value computed by the function.
     type Output<'db>: Send + Sync;
-
-    /// The representation retained in Salsa's memo storage.
-    type OutputValue: for<'db> crate::SalsaValue<'db, Output = Self::Output<'db>>;
 
     /// The eviction policy for this function's memoized values.
     type Eviction: EvictionPolicy;

@@ -184,9 +184,7 @@ macro_rules! setup_input_struct {
                 }
             }
 
-            unsafe impl $zalsa::SalsaValue<'_> for $Struct {
-                type Output = Self;
-            }
+            unsafe impl $zalsa::SalsaValue for $Struct {}
 
             $zalsa::macro_if! { $generate_debug_impl =>
                 impl ::std::fmt::Debug for $Struct {

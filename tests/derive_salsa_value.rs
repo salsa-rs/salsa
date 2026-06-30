@@ -16,12 +16,7 @@ struct Invariant<T>(std::marker::PhantomData<fn(T) -> T>);
 
 // SAFETY: `Invariant` stores no values and only transfers the lifetime
 // relationship guaranteed by `T`.
-unsafe impl<'db, T> salsa::SalsaValue<'db> for Invariant<T>
-where
-    T: salsa::SalsaValue<'db>,
-{
-    type Output = Invariant<T::Output>;
-}
+unsafe impl<T> salsa::SalsaValue for Invariant<T> where T: salsa::SalsaValue {}
 
 #[derive(salsa::SalsaValue)]
 struct ContainsInvariant<'db> {
@@ -34,17 +29,17 @@ enum Recursive {
     Cons(Box<Self>),
 }
 
-fn assert_salsa_value<T: for<'db> salsa::SalsaValue<'db>>() {}
+fn assert_salsa_value<T: salsa::SalsaValue>() {}
 
 fn assert_contains_phantom_ref<'db>(_marker: std::marker::PhantomData<&'db ()>)
 where
-    ContainsPhantomRef<'static>: salsa::SalsaValue<'db, Output = ContainsPhantomRef<'db>>,
+    ContainsPhantomRef<'db>: salsa::SalsaValue,
 {
 }
 
 fn assert_invariant_container_output<'db>()
 where
-    ContainsInvariant<'static>: salsa::SalsaValue<'db, Output = ContainsInvariant<'db>>,
+    ContainsInvariant<'db>: salsa::SalsaValue,
 {
 }
 

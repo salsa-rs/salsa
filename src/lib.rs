@@ -365,7 +365,6 @@ pub mod plumbing {
     pub use crate::salsa_struct::{SalsaStructInDb, assert_supertype_no_overlap};
     pub use crate::salsa_value::helper::{
         Dispatch as SalsaValueDispatch, Fallback as SalsaValueFallback, assert_salsa_value,
-        assert_salsa_value_output,
     };
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::table::memo::MemoTableWithTypes;

@@ -52,32 +52,24 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         let ident = &input.ident;
         let tokens = quote! {
             #[automatically_derived]
-            unsafe impl ::salsa::SalsaValue<'_> for #ident {
-                type Output = Self;
-            }
+            unsafe impl ::salsa::SalsaValue for #ident {}
         };
         return Ok(crate::debug::dump_tokens(&input.ident, tokens));
     };
 
-    let static_lifetime = syn::Lifetime::new("'static", input.ident.span());
-    let static_type = derived_type(&input.ident, &static_lifetime);
-    let output_type = derived_type(&input.ident, salsa_lifetime);
+    let derived_type = derived_type(&input.ident, salsa_lifetime);
     let zalsa = quote::format_ident!("__salsa_plumbing");
 
     let field_assertions =
         checked_field_types
             .iter()
             .map(|(field_type, has_manual_retention_proof)| {
-                let static_field_type = replace_self_type(field_type, &static_type);
-                let static_field_type =
-                    replace_declared_lifetime(&static_field_type, salsa_lifetime, &static_lifetime);
-                let output_field_type = replace_self_type(field_type, &output_type);
+                let field_type = replace_self_type(field_type, &derived_type);
 
                 assert_salsa_value_field(
                     salsa_lifetime,
                     &zalsa,
-                    &output_field_type,
-                    &static_field_type,
+                    &field_type,
                     *has_manual_retention_proof,
                 )
             });
@@ -86,11 +78,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         #[automatically_derived]
         // SAFETY: The assertions below verify the retained representation of
         // every field.
-        unsafe impl<#salsa_lifetime> ::salsa::SalsaValue<#salsa_lifetime>
-            for #static_type
-        {
-            type Output = #output_type;
-        }
+        unsafe impl<#salsa_lifetime> ::salsa::SalsaValue for #derived_type {}
 
         const _: () = {
             use ::salsa::plumbing as #zalsa;
@@ -173,27 +161,18 @@ fn replace_self_type(ty: &syn::Type, self_type: &syn::Type) -> syn::Type {
     ty
 }
 
-fn replace_declared_lifetime(
-    ty: &syn::Type,
-    declared_lifetime: &syn::Lifetime,
-    replacement: &syn::Lifetime,
-) -> syn::Type {
-    ChangeLt::named_to(declared_lifetime, replacement).in_type(ty)
-}
-
 pub(crate) fn assert_salsa_value_or_static(
     db_lt: &syn::Lifetime,
     zalsa: &syn::Ident,
     ty: &syn::Type,
-    static_ty: &syn::Type,
 ) -> TokenStream {
     // Prefer the direct bound when the return type names the database lifetime,
     // so rustc reports a missing `SalsaValue` impl instead of a failed `'static` fallback.
     if crate::xform::uses_lifetime(ty, db_lt) {
-        return assert_tracked_output_is_salsa_value(db_lt, zalsa, ty, static_ty);
+        return assert_tracked_output_is_salsa_value(db_lt, zalsa, ty);
     }
 
-    let assertion = assert_salsa_value_or_static_expr(db_lt, zalsa, ty, static_ty);
+    let assertion = assert_salsa_value_or_static_expr(db_lt, zalsa, ty);
     quote! {
         fn _assert_output_is_salsa_value_or_static<#db_lt>() {
             use #zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
@@ -207,13 +186,12 @@ pub(crate) fn assert_salsa_value_field(
     db_lt: &syn::Lifetime,
     zalsa: &syn::Ident,
     ty: &syn::Type,
-    static_ty: &syn::Type,
     has_manual_retention_proof: bool,
 ) -> TokenStream {
     if has_manual_retention_proof {
         quote! {}
     } else {
-        assert_salsa_value_or_static_expr(db_lt, zalsa, ty, static_ty)
+        assert_salsa_value_or_static_expr(db_lt, zalsa, ty)
     }
 }
 
@@ -221,7 +199,6 @@ fn assert_tracked_output_is_salsa_value(
     db_lt: &syn::Lifetime,
     zalsa: &syn::Ident,
     ty: &syn::Type,
-    static_ty: &syn::Type,
 ) -> TokenStream {
     if is_db_reference(ty, db_lt) {
         return syn::Error::new_spanned(
@@ -234,9 +211,7 @@ fn assert_tracked_output_is_salsa_value(
     let assertion_lifetime = syn::Lifetime::new(&format!("'{}", db_lt.ident), ty.span());
     let ty = ChangeLt::named_to(db_lt, &assertion_lifetime).in_type(ty);
     let assertion = quote_spanned! {ty.span() =>
-        #zalsa::assert_salsa_value_output::<#static_ty, #ty>(
-            ::core::marker::PhantomData::<&#assertion_lifetime ()>,
-        );
+        #zalsa::assert_salsa_value::<#ty>();
     };
     quote! {
         fn _assert_output_is_salsa_value<#assertion_lifetime>() {
@@ -250,7 +225,6 @@ fn assert_salsa_value_or_static_expr(
     db_lt: &syn::Lifetime,
     zalsa: &syn::Ident,
     ty: &syn::Type,
-    static_ty: &syn::Type,
 ) -> TokenStream {
     if crate::xform::uses_lifetime(ty, db_lt) {
         if is_db_reference(ty, db_lt) {
@@ -262,18 +236,12 @@ fn assert_salsa_value_or_static_expr(
         }
 
         return quote_spanned! {ty.span() =>
-            #zalsa::assert_salsa_value::<#static_ty, #ty>(
-                ::core::marker::PhantomData::<&#db_lt ()>,
-            );
+            #zalsa::assert_salsa_value::<#ty>();
         };
     }
 
-    // The second reference selects the explicit implementation before method
-    // autoderef considers the static fallback. `identity` keeps Rust 1.85
-    // Clippy from mistaking that reference for a needless borrow.
     quote_spanned! {ty.span() =>
-        let dispatch = &SalsaValueDispatch::<#db_lt, #static_ty, #ty>::VALUE;
-        ::core::convert::identity(&dispatch).assert_salsa_value();
+        let _ = SalsaValueDispatch::<#ty>::assert_salsa_value;
     }
 }
 
@@ -285,13 +253,5 @@ fn is_db_reference(ty: &syn::Type, db_lt: &syn::Lifetime) -> bool {
                 .lifetime
                 .as_ref()
                 .is_some_and(|lifetime| lifetime.ident == db_lt.ident)
-    )
-}
-
-pub(crate) fn static_type(ty: &syn::Type, db_lifetime: &syn::Lifetime) -> syn::Type {
-    replace_declared_lifetime(
-        ty,
-        db_lifetime,
-        &syn::Lifetime::new("'static", db_lifetime.span()),
     )
 }
