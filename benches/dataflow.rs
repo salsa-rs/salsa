@@ -14,6 +14,7 @@ fn main() {
 /// A Use of a symbol.
 #[salsa::input]
 struct Use {
+    #[returns(clone)]
     reaching_definitions: Vec<Definition>,
 }
 

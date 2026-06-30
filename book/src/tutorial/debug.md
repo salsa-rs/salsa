@@ -7,20 +7,14 @@ Before we can do that, though, we have to address one question: how do we inspec
 ## Generated `Debug` implementations
 
 The `debug` option on Salsa struct attributes generates an ordinary `Debug` implementation.
-The `FunctionId` definition already enables this option:
-
-```rust
-{{#include ../../../examples/calc/ir.rs:interned_ids}}
-```
-
 Tracked functions attach the database automatically; other code can use `salsa::Database::attach` to include field values:
 
 ```rust
 use salsa::Database as _;
 
 db.attach(|db| {
-    let function_id = FunctionId::new(db, "area_circle".to_string());
-    eprintln!("FunctionId = {function_id:?}");
+    let function = FunctionId::new(db, "area_circle".to_string());
+    eprintln!("Function = {function:?}");
 });
 ```
 

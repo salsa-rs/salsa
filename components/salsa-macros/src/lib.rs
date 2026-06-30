@@ -76,7 +76,7 @@ mod xform;
 /// #[salsa::accumulator]
 /// struct Diagnostic(String);
 ///
-/// #[salsa::tracked(returns(copy))]
+/// #[salsa::tracked]
 /// fn check(db: &dyn salsa::Database) {
 ///     salsa::Accumulator::accumulate(Diagnostic("something went wrong".into()), db);
 /// }

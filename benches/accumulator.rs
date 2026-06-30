@@ -22,7 +22,7 @@ struct Expression<'db> {
     number: usize,
 }
 
-#[salsa::tracked(returns(clone))]
+#[salsa::tracked(returns(deref))]
 #[inline(never)]
 fn root(db: &dyn salsa::Database, input: Input) -> Vec<usize> {
     (0..input.expressions(db))

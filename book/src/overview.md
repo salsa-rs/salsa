@@ -81,7 +81,7 @@ pub struct ProgramFile(salsa::Id);
 This means that, when you have a `ProgramFile`, you can easily copy it around and put it wherever you like.
 To actually read any of its fields, however, you will need to use the database and a getter method.
 
-### Reading fields
+### Reading fields and `returns(mode)`
 
 You can access the value of an input's fields by using the getter method.
 As this is only reading the field, it just needs a `&`-reference to the database:
@@ -161,8 +161,6 @@ struct Ast<'db> {
     top_level_items: Vec<Item<'db>>,
 }
 ```
-
-The `#[returns(deref)]` annotation makes `ast.top_level_items(db)` return an `&[Item<'_>]`.
 
 Just as with an input, new values are created by invoking `Ast::new`. The `new` function on a tracked struct only requires a `&`-reference to the database:
 

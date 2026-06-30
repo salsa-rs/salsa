@@ -57,8 +57,7 @@ use salsa::Setter as _;
 let source = SourceProgram::new(&db, "print 11 + 11".to_string());
 ```
 
-The `#[returns(deref)]` annotation makes `source.text(&db)` return a `&str`.
-You can read the value of the field with that getter,
+You can read the value of the field with `source.text(&db)`,
 and you can set the value of the field with `source.set_text(&mut db).to("print 11 * 2".to_string())`.
 
 ### Database revisions
@@ -93,7 +92,7 @@ Apart from having no setters, the API for working with a tracked struct is quite
 
 - You can create a new value by using `new`: e.g., `Program::new(&db, some_statements)`
 - You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
-  - The `#[returns(deref)]` annotation makes this getter return a `&[Statement]`.
+    - In this case, the field is tagged as `#[returns(deref)]`, which means that the getter will return a `&[Statement]`, instead of a `&Vec<Statement>`.
 
 ### The `'db` lifetime
 
@@ -121,7 +120,7 @@ Apart from having no setters, the API for working with a tracked struct is quite
 
 - You can create a new value by using `new`: e.g., `Function::new(&db, some_name, some_name_span, some_args, some_body)`
 - You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
-  - The `#[returns(deref)]` annotation makes this getter return a `&[VariableId]`.
+    - The `#[returns(deref)]` annotation makes this getter return a `&[VariableId]`.
 
 ### Identity fields and tracked fields
 
@@ -147,8 +146,6 @@ Therefore, we define two interned structs, `FunctionId` and `VariableId`, each w
 ```rust
 {{#include ../../../examples/calc/ir.rs:interned_ids}}
 ```
-
-The `#[returns(deref)]` annotations make the `text` getters return `&str` values.
 
 When you invoke e.g. `FunctionId::new(&db, "my_string".to_string())`, you will get back a `FunctionId` that is just a newtype'd integer.
 But if you invoke the same call to `new` again, you get back the same integer:
