@@ -226,17 +226,13 @@
 //! # Values retained across revisions
 //!
 //! Salsa retains tracked and interned fields and memoized query results after the database borrow
-//! that produced them has ended. [`SalsaValue`] relates the `'static` representation Salsa retains
-//! to the value exposed with the current database lifetime. The derive checks this relationship
-//! structurally through the value's fields.
+//! that produced them has ended. [`SalsaValue`] marks types whose database lifetime can safely be
+//! replaced with `'static` for storage and restored when the value is accessed. The derive checks
+//! this through the value's fields.
 //!
-//! A field whose retained and exposed types are identical is accepted without a `SalsaValue`
-//! implementation. Custom types that change with the database lifetime should normally derive
-//! `SalsaValue`. See its safety documentation before implementing it manually or exempting a field
-//! from the generated checks.
-//!
-//! This retention guarantee is separate from [`PartialEq`], which Salsa uses to detect changes
-//! when recreating a tracked struct. A field can use `#[no_eq]` to always report a change.
+//! A `'static` field type is accepted without a `SalsaValue` implementation. Custom field types
+//! that carry the database lifetime should normally derive `SalsaValue`. See its safety
+//! documentation before implementing it manually or exempting a field from the generated checks.
 //!
 //! [`Deref`]: std::ops::Deref
 //! [`Hash`]: std::hash::Hash

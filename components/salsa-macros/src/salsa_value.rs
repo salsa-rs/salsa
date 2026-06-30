@@ -95,17 +95,10 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
             use ::salsa::plumbing as #zalsa;
             use #zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
 
-            trait SalsaValueFieldAssertions<#salsa_lifetime> {
-                const ASSERT_FIELDS_ARE_SALSA_VALUES: ();
+            fn _assert_fields_are_salsa_values<#salsa_lifetime>() {
+                #(#field_assertions)*
             }
-
-            impl<#salsa_lifetime> SalsaValueFieldAssertions<#salsa_lifetime>
-                for #static_type
-            {
-                const ASSERT_FIELDS_ARE_SALSA_VALUES: () = {
-                    #(#field_assertions)*
-                };
-            }
+            let _ = _assert_fields_are_salsa_values;
         };
     };
 
@@ -235,7 +228,6 @@ pub(crate) fn assert_salsa_value_or_static(
     let assertion = assert_salsa_value_or_static_expr(db_lt, zalsa, ty, static_ty);
     quote! {
         fn _assert_output_is_salsa_value_or_static<#db_lt>() {
-            let _ = ::core::marker::PhantomData::<&#db_lt ()>;
             use #zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
             #assertion
         }
@@ -281,14 +273,13 @@ fn assert_tracked_output_is_salsa_value(
     };
     quote! {
         fn _assert_output_is_salsa_value<#assertion_lifetime>() {
-            let _ = ::core::marker::PhantomData::<&#assertion_lifetime ()>;
             #assertion
         }
         let _ = _assert_output_is_salsa_value;
     }
 }
 
-pub(crate) fn assert_salsa_value_or_static_expr(
+fn assert_salsa_value_or_static_expr(
     db_lt: &syn::Lifetime,
     zalsa: &syn::Ident,
     ty: &syn::Type,
@@ -299,13 +290,11 @@ pub(crate) fn assert_salsa_value_or_static_expr(
     }
 
     quote_spanned! {ty.span() =>
-        let _ = || {
-            (&&SalsaValueDispatch::<#db_lt, #static_ty, #ty>::VALUE).assert_salsa_value();
-        };
+        (&&SalsaValueDispatch::<#db_lt, #static_ty, #ty>::VALUE).assert_salsa_value();
     }
 }
 
-pub(crate) fn assert_salsa_value_expr(
+fn assert_salsa_value_expr(
     db_lt: &syn::Lifetime,
     zalsa: &syn::Ident,
     ty: &syn::Type,

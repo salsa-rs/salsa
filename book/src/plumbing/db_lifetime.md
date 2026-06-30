@@ -217,8 +217,8 @@ Salsa handles do implement it because access to their data goes back through the
 state.
 
 The derive supports types with at most one lifetime parameter, but not type or const parameters.
-Generic types require a manual implementation whose safety argument accounts for layout across
-the retained and exposed instantiations.
+Generic types require a manual implementation that guarantees `Self` and `Output` have identical
+layouts and validity invariants.
 
 If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
 `#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This
