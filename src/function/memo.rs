@@ -46,9 +46,9 @@ impl<C: Configuration> IngredientImpl<C> {
         Some(unsafe { memo.as_ref() })
     }
 
-    /// Evicts the existing memo for the given key, replacing it
-    /// with an equivalent memo that has no value. If the memo is untracked
-    /// or has values assigned as output of another query, this has no effect.
+    /// Evicts the value from the existing memo for the given key.
+    /// If the memo is untracked or has values assigned as output of another query,
+    /// this has no effect.
     pub(super) fn evict_value_from_memo_for(
         table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,
@@ -61,6 +61,20 @@ impl<C: Configuration> IngredientImpl<C> {
         };
 
         table.map_memo(memo_ingredient_index, map)
+    }
+
+    /// Returns when the resident value was last verified.
+    pub(super) fn last_verified_at_for(
+        table: MemoTableWithTypesMut<'_>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<Revision> {
+        let mut last_verified_at = None;
+        table.map_memo(memo_ingredient_index, |memo: &mut Memo<'static, C>| {
+            if memo.value.is_some() {
+                last_verified_at = Some(memo.header.verified_at.load());
+            }
+        });
+        last_verified_at
     }
 }
 
