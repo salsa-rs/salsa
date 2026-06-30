@@ -327,7 +327,10 @@ macro_rules! setup_tracked_fn {
 
             $($assert_output_is_salsa_value_or_static)*
 
-            impl $zalsa::function::Configuration for $Configuration {
+            // SAFETY: The generated assertion above proves the output is either a
+            // `SalsaValue` or the same `'static` type for every database lifetime.
+            // `unsafe(non_salsa_values)` makes this guarantee the caller's responsibility.
+            unsafe impl $zalsa::function::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
