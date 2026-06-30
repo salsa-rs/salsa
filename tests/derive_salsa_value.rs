@@ -8,6 +8,15 @@ struct ContainsStaticValue(StaticValue);
 struct ContainsStaticPhantom(std::marker::PhantomData<&'static str>);
 
 #[derive(salsa::SalsaValue)]
+struct Generic<T>(T);
+
+#[derive(salsa::SalsaValue)]
+struct GenericPhantom<T>(std::marker::PhantomData<T>);
+
+#[derive(salsa::SalsaValue)]
+struct ConstGeneric<const N: usize>([u8; N]);
+
+#[derive(salsa::SalsaValue)]
 struct ContainsPhantomRef<'db> {
     marker: std::marker::PhantomData<&'db ()>,
 }
@@ -29,6 +38,12 @@ enum Recursive {
     Cons(Box<Self>),
 }
 
+#[derive(salsa::SalsaValue)]
+enum GenericRecursive<T> {
+    Nil,
+    Cons(T, Box<Self>),
+}
+
 fn assert_salsa_value<T: salsa::SalsaValue>() {}
 
 fn assert_contains_phantom_ref<'db>(_marker: std::marker::PhantomData<&'db ()>)
@@ -40,6 +55,12 @@ where
 fn assert_invariant_container_output<'db>()
 where
     ContainsInvariant<'db>: salsa::SalsaValue,
+{
+}
+
+fn assert_generic_phantom<'db>()
+where
+    GenericPhantom<&'db ()>: salsa::SalsaValue,
 {
 }
 
@@ -59,7 +80,17 @@ fn derives_salsa_value() {
         unreachable!()
     };
     let _ = recursive;
+    let recursive = GenericRecursive::Cons(String::new(), Box::new(GenericRecursive::Nil));
+    let GenericRecursive::Cons(value, recursive) = recursive else {
+        unreachable!()
+    };
+    let _ = (value, recursive);
 
+    assert_generic_phantom();
+    assert_salsa_value::<Generic<String>>();
+    assert_salsa_value::<Generic<ContainsPhantomRef<'static>>>();
+    assert_salsa_value::<GenericRecursive<String>>();
+    assert_salsa_value::<ConstGeneric<4>>();
     assert_salsa_value::<ContainsPhantomRef<'static>>();
     assert_salsa_value::<ContainsStaticPhantom>();
     assert_salsa_value::<ContainsStaticValue>();

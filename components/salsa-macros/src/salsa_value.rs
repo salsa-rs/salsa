@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream;
-use syn::{Attribute, spanned::Spanned};
+use syn::{Attribute, spanned::Spanned, visit::Visit};
 
 use crate::kw;
 use crate::xform::{ChangeLt, ChangeSelfPath};
@@ -13,15 +15,6 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
     }
 
     reject_salsa_value_attributes(&input.attrs, "type")?;
-
-    if input.generics.type_params().next().is_some()
-        || input.generics.const_params().next().is_some()
-    {
-        return Err(syn::Error::new_spanned(
-            &input.generics,
-            "`derive(SalsaValue)` does not support type or const parameters",
-        ));
-    }
 
     let mut declared_lifetimes = input.generics.lifetimes();
     let declared_lifetime = declared_lifetimes
@@ -48,17 +41,24 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         syn::Data::Union(_) => unreachable!(),
     }
 
-    let Some(salsa_lifetime) = declared_lifetime else {
-        let ident = &input.ident;
-        let tokens = quote! {
-            #[automatically_derived]
-            unsafe impl ::salsa::SalsaValue for #ident {}
-        };
-        return Ok(crate::debug::dump_tokens(&input.ident, tokens));
-    };
-
-    let derived_type = derived_type(&input.ident, salsa_lifetime);
+    let assertion_lifetime = declared_lifetime
+        .cloned()
+        .unwrap_or_else(|| syn::Lifetime::new("'__salsa", input.ident.span()));
+    let ident = &input.ident;
+    let (_, type_generics, _) = input.generics.split_for_impl();
+    let derived_type = syn::parse_quote!(#ident #type_generics);
     let zalsa = quote::format_ident!("__salsa_plumbing");
+
+    let generics = add_field_bounds(input.generics.clone(), &checked_field_types);
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
+
+    let mut assertion_generics = generics.clone();
+    if declared_lifetime.is_none() {
+        assertion_generics
+            .params
+            .insert(0, syn::parse_quote!('__salsa));
+    }
+    let (assertion_impl_generics, _, assertion_where_clause) = assertion_generics.split_for_impl();
 
     let field_assertions =
         checked_field_types
@@ -67,7 +67,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
                 let field_type = replace_self_type(field_type, &derived_type);
 
                 assert_salsa_value_field(
-                    salsa_lifetime,
+                    &assertion_lifetime,
                     &zalsa,
                     &field_type,
                     *has_manual_retention_proof,
@@ -76,22 +76,78 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
 
     let tokens = quote! {
         #[automatically_derived]
-        // SAFETY: The assertions below verify the retained representation of
-        // every field.
-        unsafe impl<#salsa_lifetime> ::salsa::SalsaValue for #derived_type {}
+        // SAFETY: The generated assertions and bounds verify every field without
+        // an explicit manual retention proof.
+        unsafe impl #impl_generics ::salsa::SalsaValue for #derived_type #where_clause {}
 
         const _: () = {
             use ::salsa::plumbing as #zalsa;
             use #zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
 
-            fn _assert_fields_are_salsa_values<#salsa_lifetime>() {
+            #[allow(dead_code)]
+            fn _assert_fields_are_salsa_values #assertion_impl_generics () #assertion_where_clause {
                 #(#field_assertions)*
             }
-            let _ = _assert_fields_are_salsa_values;
         };
     };
 
     Ok(crate::debug::dump_tokens(&input.ident, tokens))
+}
+
+fn add_field_bounds(
+    mut generics: syn::Generics,
+    checked_field_types: &[(&syn::Type, bool)],
+) -> syn::Generics {
+    let type_params = generics
+        .type_params()
+        .map(|parameter| parameter.ident.to_string())
+        .collect::<HashSet<_>>();
+    let mut field_bounds = Vec::<syn::WherePredicate>::new();
+
+    for (field_type, has_manual_retention_proof) in checked_field_types {
+        if *has_manual_retention_proof {
+            continue;
+        }
+
+        if !type_uses_type_param(field_type, &type_params) {
+            continue;
+        }
+
+        field_bounds.push(syn::parse_quote!(#field_type: ::salsa::SalsaValue));
+    }
+
+    let where_clause = generics.make_where_clause();
+    where_clause.predicates.extend(field_bounds);
+
+    generics
+}
+
+fn type_uses_type_param(ty: &syn::Type, type_params: &HashSet<String>) -> bool {
+    struct UsesTypeParam<'a> {
+        type_params: &'a HashSet<String>,
+        result: bool,
+    }
+
+    impl<'ast> Visit<'ast> for UsesTypeParam<'_> {
+        fn visit_type_path(&mut self, path: &'ast syn::TypePath) {
+            if path.qself.is_none() {
+                if let Some(segment) = path.path.segments.first() {
+                    self.result |= self.type_params.contains(&segment.ident.to_string());
+                }
+            }
+
+            if !self.result {
+                syn::visit::visit_type_path(self, path);
+            }
+        }
+    }
+
+    let mut visitor = UsesTypeParam {
+        type_params,
+        result: false,
+    };
+    visitor.visit_type(ty);
+    visitor.result
 }
 
 fn collect_checked_field_types<'a>(
@@ -149,10 +205,6 @@ fn reject_salsa_value_attributes(attrs: &[Attribute], target: &str) -> syn::Resu
         Some(error) => Err(error),
         None => Ok(()),
     }
-}
-
-fn derived_type(ident: &syn::Ident, lifetime: &syn::Lifetime) -> syn::Type {
-    syn::parse_quote!(#ident<#lifetime>)
 }
 
 fn replace_self_type(ty: &syn::Type, self_type: &syn::Type) -> syn::Type {
