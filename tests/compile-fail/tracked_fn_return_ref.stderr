@@ -1,3 +1,9 @@
+error: a reference tied to the database lifetime does not implement `SalsaValue`; return an owned value instead
+  --> tests/compile-fail/tracked_fn_return_ref.rs:15:67
+   |
+15 | fn tracked_fn_return_ref<'db>(db: &'db dyn Db, input: MyInput) -> &'db str {
+   |                                                                   ^
+
 error[E0106]: missing lifetime specifier
   --> tests/compile-fail/tracked_fn_return_ref.rs:33:6
    |
@@ -9,26 +15,40 @@ help: consider using the `'db` lifetime
 33 | ) -> ContainsRef<'db> {
    |                 +++++
 
-error: lifetime may not live long enough
-  --> tests/compile-fail/tracked_fn_return_ref.rs:15:67
-   |
-15 | fn tracked_fn_return_ref<'db>(db: &'db dyn Db, input: MyInput) -> &'db str {
-   |                          --- lifetime `'db` defined here          ^ requires that `'db` must outlive `'static`
-
-error: lifetime may not live long enough
+error[E0277]: the tracked function's return type `ContainsRef<'db>` does not implement `SalsaValue`
   --> tests/compile-fail/tracked_fn_return_ref.rs:23:6
    |
-20 | fn tracked_fn_return_struct_containing_ref<'db>(
-   |                                            --- lifetime `'db` defined here
-...
 23 | ) -> ContainsRef<'db> {
-   |      ^^^^^^^^^^^ requires that `'db` must outlive `'static`
+   |      ^^^^^^^^^^^^^^^^ does not implement `SalsaValue`
+   |
+help: the trait `_::_assert_output_is_salsa_value::SalsaValue` is not implemented for `ContainsRef<'db>`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:10:1
+   |
+10 | struct ContainsRef<'db> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: consider deriving `salsa::SalsaValue` for the tracked function's return type if it is safe to retain across revisions
+note: required by a bound in `_::_assert_output_is_salsa_value::assert_salsa_value`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:19:1
+   |
+19 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^ required by this bound in `assert_salsa_value`
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: lifetime may not live long enough
+error[E0277]: the tracked function's return type `ContainsRef<'db>` does not implement `SalsaValue`
   --> tests/compile-fail/tracked_fn_return_ref.rs:43:6
    |
-40 | fn tracked_fn_return_struct_containing_ref_elided_explicit<'db>(
-   |                                                            --- lifetime `'db` defined here
-...
 43 | ) -> ContainsRef<'_> {
-   |      ^^^^^^^^^^^ requires that `'db` must outlive `'static`
+   |      ^^^^^^^^^^^^^^^ does not implement `SalsaValue`
+   |
+help: the trait `_::_assert_output_is_salsa_value::SalsaValue` is not implemented for `ContainsRef<'db>`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:10:1
+   |
+10 | struct ContainsRef<'db> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: consider deriving `salsa::SalsaValue` for the tracked function's return type if it is safe to retain across revisions
+note: required by a bound in `_::_assert_output_is_salsa_value::assert_salsa_value`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:39:1
+   |
+39 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^ required by this bound in `assert_salsa_value`
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)

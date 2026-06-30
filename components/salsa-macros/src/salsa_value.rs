@@ -176,6 +176,12 @@ pub(crate) fn assert_salsa_value_or_static(
     zalsa: &syn::Ident,
     ty: &syn::Type,
 ) -> TokenStream {
+    // Prefer the direct bound when the return type names the database lifetime,
+    // so rustc reports a missing `SalsaValue` impl instead of a failed `'static` fallback.
+    if crate::xform::uses_lifetime(ty, db_lt) {
+        return assert_salsa_value(db_lt, ty);
+    }
+
     let assertion = quote_spanned! {ty.span() =>
         let _ = SalsaValueDispatch::<#ty>::assert_salsa_value;
     };
@@ -186,5 +192,43 @@ pub(crate) fn assert_salsa_value_or_static(
             #assertion
         }
         let _ = _assert_output_is_salsa_value_or_static;
+    }
+}
+
+fn assert_salsa_value(db_lt: &syn::Lifetime, ty: &syn::Type) -> TokenStream {
+    if matches!(
+        ty,
+        syn::Type::Reference(reference)
+            if reference
+                .lifetime
+                .as_ref()
+                .is_some_and(|lifetime| lifetime.ident == db_lt.ident)
+    ) {
+        return quote_spanned! {ty.span() =>
+            compile_error!("a reference tied to the database lifetime does not implement `SalsaValue`; return an owned value instead");
+        };
+    }
+
+    let assertion = quote_spanned! {ty.span() =>
+        let _ = assert_salsa_value::<#ty>;
+    };
+    quote! {
+        fn _assert_output_is_salsa_value<#db_lt>() {
+            let _ = ::core::marker::PhantomData::<&#db_lt ()>;
+
+            #[diagnostic::on_unimplemented(
+                message = "the tracked function's return type `{Self}` does not implement `SalsaValue`",
+                label = "does not implement `SalsaValue`",
+                note = "consider deriving `salsa::SalsaValue` for the tracked function's return type if it is safe to retain across revisions"
+            )]
+            trait SalsaValue {}
+
+            #[diagnostic::do_not_recommend]
+            impl<T: ::salsa::SalsaValue> SalsaValue for T {}
+
+            fn assert_salsa_value<T: SalsaValue>() {}
+            #assertion
+        }
+        let _ = _assert_output_is_salsa_value;
     }
 }

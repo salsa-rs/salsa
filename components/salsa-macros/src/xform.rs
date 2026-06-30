@@ -50,18 +50,32 @@ impl syn::visit_mut::VisitMut for ChangeLt {
 /// rewritten by [`ChangeLt::elided_to`], i.e. one that is not bound by a
 /// higher-ranked `for<..>` binder.
 pub(crate) fn uses_elided_lifetime(ty: &syn::Type) -> bool {
-    let mut finder = ElidedLifetimeFinder { found: false };
+    finds_lifetime(ty, "_")
+}
+
+/// Returns `true` if `ty` mentions `lifetime` outside a higher-ranked
+/// `for<..>` binder.
+pub(crate) fn uses_lifetime(ty: &syn::Type, lifetime: &syn::Lifetime) -> bool {
+    finds_lifetime(ty, &lifetime.ident.to_string())
+}
+
+fn finds_lifetime(ty: &syn::Type, lifetime: &str) -> bool {
+    let mut finder = LifetimeFinder {
+        lifetime,
+        found: false,
+    };
     finder.visit_type(ty);
     finder.found
 }
 
-struct ElidedLifetimeFinder {
+struct LifetimeFinder<'a> {
+    lifetime: &'a str,
     found: bool,
 }
 
-impl<'ast> syn::visit::Visit<'ast> for ElidedLifetimeFinder {
+impl<'ast> syn::visit::Visit<'ast> for LifetimeFinder<'_> {
     fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
-        if i.ident == "_" {
+        if i.ident == self.lifetime {
             self.found = true;
         }
     }
