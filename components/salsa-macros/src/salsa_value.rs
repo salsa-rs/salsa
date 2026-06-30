@@ -53,7 +53,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         let tokens = quote! {
             #[automatically_derived]
             unsafe impl ::salsa::SalsaValue<'_> for #ident {
-                type Output = Self;
+                type WithDb = Self;
             }
         };
         return Ok(crate::debug::dump_tokens(&input.ident, tokens));
@@ -61,7 +61,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
 
     let static_lifetime = syn::Lifetime::new("'static", input.ident.span());
     let static_type = derived_type(&input.ident, &static_lifetime);
-    let output_type = derived_type(&input.ident, salsa_lifetime);
+    let with_db_type = derived_type(&input.ident, salsa_lifetime);
     let zalsa = quote::format_ident!("__salsa_plumbing");
 
     let field_assertions =
@@ -71,12 +71,12 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
                 let static_field_type = replace_self_type(field_type, &static_type);
                 let static_field_type =
                     replace_declared_lifetime(&static_field_type, salsa_lifetime, &static_lifetime);
-                let output_field_type = replace_self_type(field_type, &output_type);
+                let with_db_field_type = replace_self_type(field_type, &with_db_type);
 
                 assert_salsa_value_field(
                     salsa_lifetime,
                     &zalsa,
-                    &output_field_type,
+                    &with_db_field_type,
                     &static_field_type,
                     *has_manual_retention_proof,
                 )
@@ -89,7 +89,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         unsafe impl<#salsa_lifetime> ::salsa::SalsaValue<#salsa_lifetime>
             for #static_type
         {
-            type Output = #output_type;
+            type WithDb = #with_db_type;
         }
 
         const _: () = {

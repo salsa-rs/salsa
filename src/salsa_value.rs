@@ -10,19 +10,22 @@ use rayon::iter::Either;
 
 use crate::sync::Arc;
 
-/// A value Salsa can expose with the database lifetime `'db`.
+/// A value Salsa can retain and later expose with the database lifetime `'db`.
 ///
 /// `Self` is the `'static` representation retained in Salsa's storage and
-/// [`Output`](SalsaValue::Output) is the representation exposed while the
-/// database is borrowed for `'db`.
+/// [`WithDb`](SalsaValue::WithDb) is the same value with the database lifetime
+/// restored.
 ///
 /// # Safety
 ///
-/// `Self` and `Output` must have identical layouts and validity invariants.
-/// Reinterpreting a shared `Self` reference as `Output` must be sound for `'db`,
-/// and an `Output` value must remain valid when Salsa retains it as `Self`.
-/// This includes calling safe trait methods such as [`PartialEq::eq`] in a
-/// later revision.
+/// `WithDb` is not an alternative storage representation. `Self` and `WithDb`
+/// must represent the same value modulo database lifetime branding, with
+/// identical layouts and validity invariants.
+///
+/// Reinterpreting a shared `Self` reference as `WithDb` must be sound for
+/// `'db`, and a `WithDb` value must remain valid when Salsa retains it as
+/// `Self`. This includes calling safe trait methods such as [`PartialEq::eq`]
+/// in a later revision.
 ///
 /// `#[derive(SalsaValue)]` checks this requirement structurally. It cannot
 /// account for additional invariants maintained by unsafe code in the type's
@@ -56,8 +59,8 @@ use crate::sync::Arc;
 /// `SalsaValue`: Salsa may retain `InvalidValue` after the pointed-to memoized
 /// result has been replaced.
 pub unsafe trait SalsaValue<'db>: Sized + 'static + Send + Sync {
-    /// The representation exposed during the database borrow.
-    type Output: 'db + Send + Sync;
+    /// The same value as `Self` with the database lifetime restored.
+    type WithDb: 'db + Send + Sync;
 }
 
 /// Selects an explicit [`SalsaValue`] implementation or an unchanged `'static` value.
@@ -67,13 +70,13 @@ pub mod helper {
 
     use super::SalsaValue;
 
-    pub struct Dispatch<'db, T, Output>(
+    pub struct Dispatch<'db, T, WithDb>(
         PhantomData<&'db ()>,
         PhantomData<fn() -> T>,
-        PhantomData<fn() -> Output>,
+        PhantomData<fn() -> WithDb>,
     );
 
-    impl<T, Output> Dispatch<'_, T, Output> {
+    impl<T, WithDb> Dispatch<'_, T, WithDb> {
         pub const VALUE: Self = Self(PhantomData, PhantomData, PhantomData);
     }
 
@@ -81,9 +84,9 @@ pub mod helper {
         fn assert_salsa_value(self);
     }
 
-    impl<'db, T, Output> Fallback for &&Dispatch<'db, T, Output>
+    impl<'db, T, WithDb> Fallback for &&Dispatch<'db, T, WithDb>
     where
-        T: SalsaValue<'db, Output = Output>,
+        T: SalsaValue<'db, WithDb = WithDb>,
     {
         fn assert_salsa_value(self) {}
     }
@@ -100,8 +103,8 @@ pub mod helper {
     pub trait SalsaValueField<'db, Static> {}
 
     #[diagnostic::do_not_recommend]
-    impl<'db, Static, Output> SalsaValueField<'db, Static> for Output where
-        Static: SalsaValue<'db, Output = Output>
+    impl<'db, Static, WithDb> SalsaValueField<'db, Static> for WithDb where
+        Static: SalsaValue<'db, WithDb = WithDb>
     {
     }
 
@@ -120,7 +123,7 @@ pub mod helper {
 
     #[diagnostic::do_not_recommend]
     impl<'db, Static, Output> SalsaValueOutput<'db, Static> for Output where
-        Static: SalsaValue<'db, Output = Output>
+        Static: SalsaValue<'db, WithDb = Output>
     {
     }
 
@@ -136,7 +139,7 @@ macro_rules! identity_salsa_values {
         $(
             // SAFETY: The representation is unchanged for every `'db`.
             unsafe impl<'db> SalsaValue<'db> for $ty {
-                type Output = Self;
+                type WithDb = Self;
             }
         )*
     };
@@ -184,22 +187,22 @@ identity_salsa_values!(compact_str::CompactString);
 
 // SAFETY: A genuinely `'static` reference is unchanged by rebinding.
 unsafe impl<T: ?Sized + Sync + 'static> SalsaValue<'_> for &'static T {
-    type Output = Self;
+    type WithDb = Self;
 }
 
 // SAFETY: `PhantomData` contains no data. These implementations preserve the
 // lifetime branding used by generated and user-defined Salsa values.
 unsafe impl<'db, T: ?Sized + Sync + 'static> SalsaValue<'db> for PhantomData<&'static T> {
-    type Output = PhantomData<&'db T>;
+    type WithDb = PhantomData<&'db T>;
 }
 
 unsafe impl<'db, T: ?Sized + Sync + 'static> SalsaValue<'db> for PhantomData<fn() -> &'static T> {
-    type Output = PhantomData<fn() -> &'db T>;
+    type WithDb = PhantomData<fn() -> &'db T>;
 }
 
 // SAFETY: The representation is unchanged for every `'db`.
 unsafe impl<T: 'static + Send + Sync> SalsaValue<'_> for std::hash::BuildHasherDefault<T> {
-    type Output = Self;
+    type WithDb = Self;
 }
 
 macro_rules! container_salsa_value {
@@ -211,8 +214,8 @@ macro_rules! container_salsa_value {
             $($parameter: SalsaValue<'db>),+,
             $state: 'static + Send + Sync,
         {
-            type Output = $($container)::+<
-                $(<$parameter as SalsaValue<'db>>::Output),+,
+            type WithDb = $($container)::+<
+                $(<$parameter as SalsaValue<'db>>::WithDb),+,
                 $state,
             >;
         }
@@ -224,7 +227,7 @@ macro_rules! container_salsa_value {
         where
             $($parameter: SalsaValue<'db>),+
         {
-            type Output = $($container)::+<$(<$parameter as SalsaValue<'db>>::Output),+>;
+            type WithDb = $($container)::+<$(<$parameter as SalsaValue<'db>>::WithDb),+>;
         }
     };
 }
@@ -243,23 +246,23 @@ unsafe impl<'db, T, const N: usize> SalsaValue<'db> for [T; N]
 where
     T: SalsaValue<'db>,
 {
-    type Output = [<T as SalsaValue<'db>>::Output; N];
+    type WithDb = [<T as SalsaValue<'db>>::WithDb; N];
 }
 
 unsafe impl<'db, T> SalsaValue<'db> for Box<[T]>
 where
     T: SalsaValue<'db>,
 {
-    type Output = Box<[<T as SalsaValue<'db>>::Output]>;
+    type WithDb = Box<[<T as SalsaValue<'db>>::WithDb]>;
 }
 
 unsafe impl<'db, T, const N: usize> SalsaValue<'db> for smallvec::SmallVec<[T; N]>
 where
     T: SalsaValue<'db>,
     [T; N]: smallvec::Array<Item = T>,
-    [<T as SalsaValue<'db>>::Output; N]: smallvec::Array<Item = <T as SalsaValue<'db>>::Output>,
+    [<T as SalsaValue<'db>>::WithDb; N]: smallvec::Array<Item = <T as SalsaValue<'db>>::WithDb>,
 {
-    type Output = smallvec::SmallVec<[<T as SalsaValue<'db>>::Output; N]>;
+    type WithDb = smallvec::SmallVec<[<T as SalsaValue<'db>>::WithDb; N]>;
 }
 
 identity_salsa_values!(Box<str>);
@@ -292,7 +295,7 @@ macro_rules! tuple_salsa_value {
         where
             $($t: SalsaValue<'db>),*
         {
-            type Output = ($(<$t as SalsaValue<'db>>::Output,)*);
+            type WithDb = ($(<$t as SalsaValue<'db>>::WithDb,)*);
         }
     };
 }
@@ -316,13 +319,13 @@ tuple_salsa_value!(A, B, C, D, E, F, G, H, I, J, K, L);
 ///
 /// The returned value must only be rebound while used with the database from
 /// which `value` originated.
-pub(crate) unsafe fn erase<'db, F>(value: <F as SalsaValue<'db>>::Output) -> F
+pub(crate) unsafe fn erase<'db, F>(value: <F as SalsaValue<'db>>::WithDb) -> F
 where
     F: SalsaValue<'db>,
 {
     const {
-        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::Output>());
-        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::Output>());
+        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::WithDb>());
+        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::WithDb>());
     }
 
     let value = ManuallyDrop::new(value);
@@ -331,13 +334,13 @@ where
 }
 
 /// Restores the database lifetime for a retained value.
-pub(crate) fn rebind<'db, F>(value: &'db F) -> &'db <F as SalsaValue<'db>>::Output
+pub(crate) fn rebind<'db, F>(value: &'db F) -> &'db <F as SalsaValue<'db>>::WithDb
 where
     F: SalsaValue<'db>,
 {
     const {
-        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::Output>());
-        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::Output>());
+        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::WithDb>());
+        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::WithDb>());
     }
 
     // SAFETY: Guaranteed by `F`'s `SalsaValue` implementation. The restored
@@ -346,13 +349,13 @@ where
 }
 
 /// Restores the database lifetime for an exclusively borrowed retained value.
-pub(crate) fn rebind_mut<'db, F>(value: &'db mut F) -> &'db mut <F as SalsaValue<'db>>::Output
+pub(crate) fn rebind_mut<'db, F>(value: &'db mut F) -> &'db mut <F as SalsaValue<'db>>::WithDb
 where
     F: SalsaValue<'db>,
 {
     const {
-        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::Output>());
-        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::Output>());
+        assert!(size_of::<F>() == size_of::<<F as SalsaValue<'db>>::WithDb>());
+        assert!(align_of::<F>() == align_of::<<F as SalsaValue<'db>>::WithDb>());
     }
 
     // SAFETY: Guaranteed by `F`'s `SalsaValue` implementation. The restored
