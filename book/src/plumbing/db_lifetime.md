@@ -204,11 +204,10 @@ This reference is linked to `db` and remains valid so long as the
 Salsa stores tracked and interned fields and memoized query results after the particular `&'db DB`
 borrow that produced them has ended. Internally, Salsa erases that lifetime while the value is in
 storage and restores the current database lifetime when the value is accessed again. The unsafe
-`SalsaValue` trait describes this relationship: `Self` is the `'static` type retained in storage,
-and its `WithDb` is the same value with the current database lifetime restored. `WithDb` is not an
-alternative storage representation. This is the boundary that makes rebranding sound: an older
-value must remain safe to retain and use in a later revision, including through safe operations
-such as `PartialEq`.
+`SalsaValue` trait describes both representations: `Self` is the `'static` type retained in storage,
+and its `Output` is the type exposed with the current database lifetime. This is the boundary that
+makes rebranding sound: an older value must remain safe to retain and use in a later revision,
+including through safe operations such as `PartialEq`.
 
 `#[derive(salsa::SalsaValue)]` checks the guarantee structurally. A field whose type is
 unconditionally `'static` is accepted directly. A field that borrows for `'db`, or is otherwise
@@ -218,8 +217,8 @@ Salsa handles do implement it because access to their data goes back through the
 state.
 
 The derive supports types with at most one lifetime parameter, but not type or const parameters.
-Generic types require a manual implementation that guarantees `Self` and `WithDb` represent the
-same value modulo database lifetime branding and have identical layouts and validity invariants.
+Generic types require a manual implementation that guarantees `Self` and `Output` have identical
+layouts and validity invariants.
 
 If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
 `#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This

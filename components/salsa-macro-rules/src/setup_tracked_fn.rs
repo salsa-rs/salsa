@@ -145,7 +145,7 @@ macro_rules! setup_tracked_fn {
             // can be exposed with the current database lifetime. The unsafe
             // escape hatch makes this the caller's responsibility instead.
             unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Output {
-                type WithDb = $output_ty;
+                type Output = $output_ty;
             }
 
             $zalsa::register_jar! {

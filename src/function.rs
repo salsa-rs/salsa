@@ -62,7 +62,7 @@ pub trait Configuration: Any {
     type Output<'db>: Send + Sync;
 
     /// The representation retained in Salsa's memo storage.
-    type OutputValue: for<'db> crate::SalsaValue<'db, WithDb = Self::Output<'db>>;
+    type OutputValue: for<'db> crate::SalsaValue<'db, Output = Self::Output<'db>>;
 
     /// The eviction policy for this function's memoized values.
     type Eviction: EvictionPolicy;

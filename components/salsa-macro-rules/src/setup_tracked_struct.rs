@@ -139,7 +139,7 @@ macro_rules! setup_tracked_struct {
             // SAFETY: The generated assertions above prove each retained field
             // can be exposed with the current database lifetime.
             unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Fields {
-                type WithDb = ($($field_ty,)*);
+                type Output = ($($field_ty,)*);
             }
 
             impl<$db_lt> $zalsa::HasJar for $Struct<$db_lt> {
@@ -350,7 +350,7 @@ macro_rules! setup_tracked_struct {
             }
 
             unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt> for $Struct<'static> {
-                type WithDb = $Struct<$db_lt>;
+                type Output = $Struct<$db_lt>;
             }
 
             impl<$db_lt> $Struct<$db_lt> {

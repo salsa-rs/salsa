@@ -185,7 +185,7 @@ macro_rules! setup_input_struct {
             }
 
             unsafe impl $zalsa::SalsaValue<'_> for $Struct {
-                type WithDb = Self;
+                type Output = Self;
             }
 
             $zalsa::macro_if! { $generate_debug_impl =>

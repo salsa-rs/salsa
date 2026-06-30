@@ -134,7 +134,7 @@ macro_rules! setup_interned_struct {
             unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt>
                 for $StructDataIdent<'static>
             {
-                type WithDb = $StructDataIdent<$db_lt>;
+                type Output = $StructDataIdent<$db_lt>;
             }
 
             // Public ingredient APIs expose their field tuple through this wrapper.
@@ -329,7 +329,7 @@ macro_rules! setup_interned_struct {
             unsafe impl<$db_lt> $zalsa::SalsaValue<$db_lt>
                 for $StructWithStatic
             {
-                type WithDb = $Struct<$($db_lt_arg)?>;
+                type Output = $Struct<$($db_lt_arg)?>;
             }
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
