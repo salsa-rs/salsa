@@ -26,7 +26,6 @@
 //!     * this could be optimized, particularly for interned fields
 
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use syn::parse::ParseStream;
 use syn::{ext::IdentExt, spanned::Spanned};
 
 use crate::db_lifetime;
@@ -41,9 +40,6 @@ pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
 pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// The kind of struct (e.g., interned, input, tracked).
     const KIND: &'static str;
-
-    /// Are `#[eq]` fields allowed?
-    const ALLOW_CUSTOM_EQ: bool;
 
     /// Are `#[tracked]` fields allowed?
     const ALLOW_TRACKED: bool;
@@ -69,7 +65,6 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
     pub(crate) has_manual_retention_proof: bool,
-    pub(crate) custom_eq_attr: Option<(syn::Path, syn::Expr)>,
     get_name: syn::Ident,
     set_name: syn::Ident,
     unknown_attrs: Vec<&'s syn::Attribute>,
@@ -119,13 +114,6 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
         ef.set_name = attr.parse_args()?;
         Ok(())
     }),
-    ("eq", |attr, ef| {
-        ef.custom_eq_attr = Some(attr.parse_args_with(|parser: ParseStream| {
-            let expr = parser.parse::<syn::Expr>()?;
-            Ok((attr.path().clone(), expr))
-        })?);
-        Ok(())
-    }),
 ];
 
 impl<'s, A> SalsaStruct<'s, A>
@@ -152,7 +140,6 @@ where
             fields,
         };
 
-        this.maybe_disallow_custom_eq_fields()?;
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
         this.maybe_disallow_manual_retention_proofs()?;
@@ -186,31 +173,6 @@ where
     /// Returns the `revisions` in `Options` as an optional iterator.
     pub(crate) fn revisions(&self) -> impl Iterator<Item = &syn::Expr> + '_ {
         self.args.revisions.iter()
-    }
-
-    /// Disallow `#[tracked]` attributes on the fields of this struct.
-    ///
-    /// If an `#[tracked]` field is found, return an error.
-    ///
-    /// # Parameters
-    ///
-    /// * `kind`, the attribute name (e.g., `input` or `interned`)
-    fn maybe_disallow_custom_eq_fields(&self) -> syn::Result<()> {
-        if A::ALLOW_CUSTOM_EQ {
-            return Ok(());
-        }
-
-        // Check if any field has the `#[eq]` attribute.
-        for ef in &self.fields {
-            if ef.custom_eq_attr.is_some() {
-                return Err(syn::Error::new_spanned(
-                    ef.field,
-                    format!("`#[eq]` cannot be used with `#[salsa::{}]`", A::KIND),
-                ));
-            }
-        }
-
-        Ok(())
     }
 
     /// Disallow `#[tracked]` attributes on the fields of this struct.
@@ -530,7 +492,6 @@ impl<'s> SalsaField<'s> {
             has_default_attr: false,
             has_no_eq_attr: false,
             has_manual_retention_proof: false,
-            custom_eq_attr: None,
             get_name,
             set_name,
             unknown_attrs: Default::default(),

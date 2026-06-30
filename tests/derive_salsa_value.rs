@@ -1,20 +1,4 @@
 #[derive(salsa::SalsaValue)]
-struct Generic<T>(T);
-
-#[derive(salsa::SalsaValue)]
-struct GenericPair<K, V>(K, V);
-
-#[derive(salsa::SalsaValue)]
-struct Bounded<T: Clone>(T);
-
-#[derive(salsa::SalsaValue)]
-struct GenericWithMarker<I, T> {
-    value: T,
-    #[salsa_value(prove_safe_to_retain_manually)]
-    marker: std::marker::PhantomData<I>,
-}
-
-#[derive(salsa::SalsaValue)]
 struct StaticValue;
 
 #[derive(salsa::SalsaValue)]
@@ -58,15 +42,6 @@ where
 {
 }
 
-fn assert_generic_output<'db>()
-where
-    GenericPair<String, ContainsPhantomRef<'static>>:
-        salsa::SalsaValue<'db, Output = GenericPair<String, ContainsPhantomRef<'db>>>,
-    GenericWithMarker<String, ContainsPhantomRef<'static>>:
-        salsa::SalsaValue<'db, Output = GenericWithMarker<String, ContainsPhantomRef<'db>>>,
-{
-}
-
 fn assert_invariant_container_output<'db>()
 where
     ContainsInvariant<'static>: salsa::SalsaValue<'db, Output = ContainsInvariant<'db>>,
@@ -78,17 +53,11 @@ fn derives_salsa_value() {
     let contains_phantom_ref = ContainsPhantomRef {
         marker: std::marker::PhantomData,
     };
-    let generic_with_marker = GenericWithMarker {
-        value: String::new(),
-        marker: std::marker::PhantomData::<String>,
-    };
     let contains_invariant = ContainsInvariant {
         value: Invariant::<ContainsPhantomRef<'static>>(std::marker::PhantomData),
     };
-    let _ = (generic_with_marker.value, generic_with_marker.marker);
     let _ = contains_invariant.value.0;
     assert_contains_phantom_ref(contains_phantom_ref.marker);
-    assert_generic_output();
     assert_invariant_container_output();
     let recursive = Recursive::Cons(Box::new(Recursive::Nil));
     let Recursive::Cons(recursive) = recursive else {
@@ -96,8 +65,6 @@ fn derives_salsa_value() {
     };
     let _ = recursive;
 
-    assert_salsa_value::<Generic<String>>();
-    assert_salsa_value::<Bounded<String>>();
     assert_salsa_value::<ContainsPhantomRef<'static>>();
     assert_salsa_value::<ContainsStaticPhantom>();
     assert_salsa_value::<ContainsStaticValue>();

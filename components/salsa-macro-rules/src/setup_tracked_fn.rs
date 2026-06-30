@@ -253,7 +253,7 @@ macro_rules! setup_tracked_fn {
                         const PERSIST: bool = $persist;
 
                         type Fields<$db_lt> = $InternedFields<$db_lt>;
-                        type StoredFields = $InternedFields<'static>;
+                        type FieldsValue = $InternedFields<'static>;
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
 

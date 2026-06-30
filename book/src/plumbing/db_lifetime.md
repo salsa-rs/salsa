@@ -209,11 +209,16 @@ and its `Output` is the type exposed with the current database lifetime. This is
 makes rebranding sound: an older value must remain safe to retain and use in a later revision,
 including through safe operations such as `PartialEq`.
 
-`#[derive(salsa::SalsaValue)]` checks the guarantee structurally. A field whose retained and
-exposed types are identical is accepted directly. A field whose type changes with the database
-lifetime must implement `SalsaValue`. A direct database-lifetime reference such as `&'db T` does
-not implement the trait because its referent may be changed or freed in a later revision. Salsa
-handles do implement it because access to their data goes back through the current database state.
+`#[derive(salsa::SalsaValue)]` checks the guarantee structurally. A field whose type is
+unconditionally `'static` is accepted directly. A field that borrows for `'db`, or is otherwise
+not `'static`, must implement `SalsaValue`. A direct database-lifetime reference such as `&'db T`
+does not implement the trait because its referent may be changed or freed in a later revision.
+Salsa handles do implement it because access to their data goes back through the current database
+state.
+
+The derive supports types with at most one lifetime parameter, but not type or const parameters.
+Generic types require a manual implementation whose safety argument accounts for layout across
+the retained and exposed instantiations.
 
 If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
 `#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This

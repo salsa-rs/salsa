@@ -1,0 +1,11 @@
+error: `derive(SalsaValue)` does not support type or const parameters
+ --> tests/compile-fail/derive_salsa_value_generics.rs:2:15
+  |
+2 | struct Generic<T>(T);
+  |               ^^^
+
+error: `derive(SalsaValue)` does not support type or const parameters
+ --> tests/compile-fail/derive_salsa_value_generics.rs:5:20
+  |
+5 | struct ConstGeneric<const N: usize>([u8; N]);
+  |                    ^^^^^^^^^^^^^^^^

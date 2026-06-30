@@ -236,8 +236,7 @@
 //! from the generated checks.
 //!
 //! This retention guarantee is separate from [`PartialEq`], which Salsa uses to detect changes
-//! when recreating a tracked struct. A field can use `#[no_eq]` to always report a change or
-//! `#[eq(...)]` to provide custom equality.
+//! when recreating a tracked struct. A field can use `#[no_eq]` to always report a change.
 //!
 //! [`Deref`]: std::ops::Deref
 //! [`Hash`]: std::hash::Hash
