@@ -231,9 +231,6 @@ both fields implement `SalsaValue`, retaining the type would be unsound if a saf
 dereferenced the address after the pointed-to memo was replaced. Authors of such abstractions must
 not derive `SalsaValue` unless their invariant remains valid across revisions.
 
-This retention guarantee is separate from equality. `PartialEq` tells Salsa whether a recreated
-tracked field changed; it does not prove that the field can be stored across revisions.
-
 ## Updating tracked struct fields across revisions
 
 ### The `XX`
