@@ -1,10 +1,5 @@
 use std::hint::black_box;
 
-#[path = "support/interned.rs"]
-mod interned;
-
-use interned::{InternedInput, interned_length};
-
 fn main() {
     divan::main();
 }
@@ -32,4 +27,16 @@ mod benches {
                 assert_eq!(black_box(interned_len), 13);
             });
     }
+}
+
+#[salsa::interned]
+pub struct InternedInput<'db> {
+    #[returns(ref)]
+    pub text: String,
+}
+
+#[salsa::tracked(returns(copy))]
+#[inline(never)]
+pub fn interned_length<'db>(db: &'db dyn salsa::Database, input: InternedInput<'db>) -> usize {
+    input.text(db).len()
 }

@@ -1,13 +1,5 @@
 use std::hint::black_box;
 
-#[path = "support/input.rs"]
-mod input;
-#[path = "support/tracked.rs"]
-mod tracked;
-
-use input::Input;
-use tracked::make_tracked;
-
 fn main() {
     divan::main();
 }
@@ -23,4 +15,21 @@ mod benches {
 
         bencher.bench_local(|| tracked.value(black_box(&db)));
     }
+}
+
+#[salsa::input]
+pub struct Input {
+    #[returns(ref)]
+    pub text: String,
+}
+
+#[salsa::tracked]
+pub struct Tracked<'db> {
+    #[returns(copy)]
+    pub value: usize,
+}
+
+#[salsa::tracked(returns(copy))]
+pub fn make_tracked(db: &dyn salsa::Database, input: Input) -> Tracked<'_> {
+    Tracked::new(db, input.text(db).len())
 }

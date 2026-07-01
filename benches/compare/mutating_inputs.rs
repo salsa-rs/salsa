@@ -2,11 +2,6 @@ use std::hint::black_box;
 
 use salsa::Setter;
 
-#[path = "support/input.rs"]
-mod input;
-
-use input::{Input, length};
-
 fn main() {
     divan::main();
 }
@@ -40,4 +35,16 @@ mod benches {
                 assert_eq!(black_box(actual_len), new_len);
             });
     }
+}
+
+#[salsa::input]
+pub struct Input {
+    #[returns(ref)]
+    pub text: String,
+}
+
+#[salsa::tracked(returns(copy))]
+#[inline(never)]
+pub fn length(db: &dyn salsa::Database, input: Input) -> usize {
+    input.text(db).len()
 }
