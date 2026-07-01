@@ -97,8 +97,51 @@ test-log = { version = "=0.2.21", features = ["trace"] }
 trybuild = "=1.0.117"
 serde_json = "=1.0.150"
 
+# Keep comparison microbenchmarks in separate executables to limit code-layout and allocator
+# variance between otherwise unrelated benchmarks.
 [[bench]]
-name = "compare"
+name = "compare_amortized_input"
+path = "benches/compare/amortized_input.rs"
+harness = false
+
+[[bench]]
+name = "compare_amortized_interned_input"
+path = "benches/compare/amortized_interned_input.rs"
+harness = false
+
+[[bench]]
+name = "compare_amortized_supertype_input"
+path = "benches/compare/amortized_supertype_input.rs"
+harness = false
+
+[[bench]]
+name = "compare_cached_input"
+path = "benches/compare/cached_input.rs"
+harness = false
+
+[[bench]]
+name = "compare_mutating_inputs"
+path = "benches/compare/mutating_inputs.rs"
+harness = false
+
+[[bench]]
+name = "compare_new_input"
+path = "benches/compare/new_input.rs"
+harness = false
+
+[[bench]]
+name = "compare_new_interned_input"
+path = "benches/compare/new_interned_input.rs"
+harness = false
+
+[[bench]]
+name = "compare_new_supertype_input"
+path = "benches/compare/new_supertype_input.rs"
+harness = false
+
+[[bench]]
+name = "compare_read_field"
+path = "benches/compare/read_field.rs"
 harness = false
 
 [[bench]]
