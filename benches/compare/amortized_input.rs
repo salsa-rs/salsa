@@ -4,7 +4,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(name = "inputs::Mutating Inputs::amortized[Input]")]
+#[divan::bench]
 fn amortized_input(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {

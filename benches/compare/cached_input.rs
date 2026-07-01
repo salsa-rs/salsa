@@ -4,7 +4,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(name = "inputs::Mutating Inputs::cached[Input]")]
+#[divan::bench]
 fn cached_input(bencher: divan::Bencher) {
     let db = salsa::DatabaseImpl::default();
     let input = Input::new(&db, "hello, world!".to_owned());

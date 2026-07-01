@@ -5,7 +5,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(name = "inputs::Mutating Inputs::amortized[SupertypeInput]")]
+#[divan::bench]
 fn amortized_supertype_input(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {

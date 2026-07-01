@@ -6,10 +6,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(
-    name = "mutating_inputs::Mutating Inputs::mutating",
-    args = [10, 20, 30]
-)]
+#[divan::bench(args = [10, 20, 30])]
 fn mutating(bencher: divan::Bencher, n: usize) {
     bencher
         .with_inputs(move || {

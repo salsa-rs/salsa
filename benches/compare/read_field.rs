@@ -4,7 +4,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(name = "tracked_struct::read_field")]
+#[divan::bench]
 fn read_tracked_field(bencher: divan::Bencher) {
     let db = salsa::DatabaseImpl::default();
     let input = Input::new(&db, "hello, world!".to_owned());

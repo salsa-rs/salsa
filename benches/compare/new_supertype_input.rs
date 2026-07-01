@@ -4,7 +4,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(name = "inputs::Mutating Inputs::new[SupertypeInput]")]
+#[divan::bench]
 fn new_supertype_input(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {

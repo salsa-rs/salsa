@@ -4,7 +4,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(name = "inputs::Mutating Inputs::new[InternedInput]")]
+#[divan::bench]
 fn new_interned_input(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {
