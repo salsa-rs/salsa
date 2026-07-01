@@ -2,6 +2,8 @@ use std::hint::black_box;
 
 use salsa::Accumulator;
 
+const INPUTS: usize = 128;
+
 fn main() {
     divan::main();
 }
@@ -47,25 +49,32 @@ fn infer_expression<'db>(db: &'db dyn salsa::Database, expression: Expression<'d
     number
 }
 
+/// Collects accumulated diagnostics from cached query results.
 #[divan::bench(name = "benches::accumulator::accumulator")]
 fn accumulator(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {
             let db = salsa::DatabaseImpl::new();
-
-            let input = Input::new(black_box(&db), black_box(10_000));
+            let expressions = 1_000;
+            let expected_diagnostics = expressions / 10;
+            let inputs = (0..INPUTS)
+                .map(|_| Input::new(black_box(&db), black_box(expressions)))
+                .collect::<Vec<_>>();
 
             // Pre-warm
-            let result = root(black_box(&db), black_box(input));
-            assert!(!black_box(result).is_empty());
+            for input in inputs.iter().copied() {
+                let result = root(black_box(&db), black_box(input));
+                assert!(!black_box(result).is_empty());
+            }
 
-            (db, input)
+            (db, inputs, expected_diagnostics)
         })
-        .bench_local_refs(|(db, input)| {
+        .bench_local_refs(|(db, inputs, expected_diagnostics)| {
             // Measure the cost of collecting accumulators ignoring the cost of running the
             // query itself.
-            let diagnostics = root::accumulated::<Diagnostic>(black_box(db), *black_box(input));
-
-            assert_eq!(black_box(diagnostics).len(), 1000);
+            for input in inputs.iter().copied() {
+                let diagnostics = root::accumulated::<Diagnostic>(black_box(db), black_box(input));
+                assert_eq!(black_box(diagnostics).len(), *expected_diagnostics);
+            }
         });
 }

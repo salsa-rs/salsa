@@ -150,16 +150,9 @@ jobs:
       - name: "Build benchmarks"
         run: |
           cargo codspeed build -m simulation -m memory \
-            --bench compare_amortized_input \
-            --bench compare_amortized_interned_input \
-            --bench compare_amortized_supertype_input \
-            --bench compare_cached_input \
-            --bench compare_mutating_inputs \
-            --bench compare_new_input \
-            --bench compare_new_interned_input \
-            --bench compare_new_supertype_input \
-            --bench compare_read_field \
-            --bench incremental \
+            --bench creation \
+            --bench field_access \
+            --bench query_fetch \
             --bench accumulator \
             --bench dataflow
           cargo codspeed build -m walltime --bench lru
