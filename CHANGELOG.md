@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.3](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.2...salsa-v0.27.3) - 2026-07-02
+
+### Added
+
+- return references by default ([#1216](https://github.com/salsa-rs/salsa/pull/1216))
+- report per-ingredient page occupancy ([#1181](https://github.com/salsa-rs/salsa/pull/1181))
+
+### Other
+
+- Add untracked field read benchmark ([#1225](https://github.com/salsa-rs/salsa/pull/1225))
+- Revise salsa benchmarks ([#1224](https://github.com/salsa-rs/salsa/pull/1224))
+- update Salsa book for current APIs ([#1215](https://github.com/salsa-rs/salsa/pull/1215))
+- document proc macros and Salsa concepts ([#1213](https://github.com/salsa-rs/salsa/pull/1213))
+- simplify specify origin handling ([#1214](https://github.com/salsa-rs/salsa/pull/1214))
+- reduce table monomorphization ([#1211](https://github.com/salsa-rs/salsa/pull/1211))
+- reduce ingredient cache monomorphization ([#1207](https://github.com/salsa-rs/salsa/pull/1207))
+- inline tracked struct revision loads ([#1202](https://github.com/salsa-rs/salsa/pull/1202))
+- avoid repeated cycle dependency lookups ([#1201](https://github.com/salsa-rs/salsa/pull/1201))
+
 ## [0.27.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.1...salsa-v0.27.2) - 2026-06-25
 
 ### Fixed
