@@ -74,8 +74,9 @@
 //! execution. Recreating the same identities in the same order preserves their IDs.
 //!
 //! A field marked `#[tracked]` is excluded from identity. When an entity is matched across
-//! executions, Salsa updates that field with [`Update`]. Only queries that read a changed tracked
-//! field are invalidated; reading an identity field depends on the entity as a whole.
+//! executions, Salsa compares the old and new field values with [`PartialEq`] and replaces the
+//! stored value when they differ. Only queries that read a changed tracked field are invalidated;
+//! reading an identity field depends on the entity as a whole.
 //!
 //! ### Lifecycle
 //!
@@ -222,6 +223,17 @@
 //! complete incremental program. Its chapter on the [`'db` database lifetime] explains why tracked
 //! and interned values cannot cross revisions.
 //!
+//! # Values retained across revisions
+//!
+//! Salsa retains tracked and interned fields and memoized query results after the database borrow
+//! that produced them has ended. [`SalsaValue`] marks types whose database lifetime can safely be
+//! replaced with `'static` for storage and restored when the value is accessed. The derive checks
+//! this through the value's fields.
+//!
+//! A `'static` field type is accepted without a `SalsaValue` implementation. Custom field types
+//! that carry the database lifetime should normally derive `SalsaValue`. See its safety
+//! documentation before implementing it manually or exempting a field from the generated checks.
+//!
 //! [`Deref`]: std::ops::Deref
 //! [`Hash`]: std::hash::Hash
 //! [`'db` database lifetime]: https://salsa-rs.github.io/salsa/plumbing/db_lifetime.html
@@ -263,12 +275,12 @@ mod return_mode;
 mod revision;
 mod runtime;
 mod salsa_struct;
+mod salsa_value;
 mod storage;
 mod sync;
 mod table;
 mod tracing;
 mod tracked_struct;
-mod update;
 mod views;
 mod zalsa;
 mod zalsa_local;
@@ -277,7 +289,7 @@ mod zalsa_local;
 mod nonce;
 
 #[cfg(feature = "macros")]
-pub use salsa_macros::{Supertype, Update, accumulator, db, input, interned, tracked};
+pub use salsa_macros::{SalsaValue, Supertype, accumulator, db, input, interned, tracked};
 
 #[cfg(feature = "salsa_unstable")]
 pub use self::database::{IngredientInfo, PageInfo};
@@ -299,8 +311,8 @@ pub use self::return_mode::SalsaAsDeref;
 pub use self::return_mode::SalsaAsRef;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
+pub use self::salsa_value::SalsaValue;
 pub use self::storage::{Storage, StorageHandle};
-pub use self::update::{Update, update_fallback};
 pub use self::zalsa::IngredientIndex;
 pub use self::zalsa_local::CancellationToken;
 pub use crate::attach::{attach, attach_allow_change, with_attached_database};
@@ -332,6 +344,7 @@ pub mod plumbing {
         unexpected_cycle_initial, unexpected_cycle_recovery,
     };
 
+    pub use crate::SalsaValue;
     #[cfg(feature = "accumulator")]
     pub use crate::accumulator::Accumulator;
     pub use crate::attach::{attach, with_attached_database};
@@ -350,11 +363,12 @@ pub mod plumbing {
     pub use crate::revision::{AtomicRevision, Revision};
     pub use crate::runtime::{Runtime, Stamp, stamp};
     pub use crate::salsa_struct::{SalsaStructInDb, assert_supertype_no_overlap};
+    pub use crate::salsa_value::helper::{
+        Dispatch as SalsaValueDispatch, Fallback as SalsaValueFallback, assert_salsa_value,
+    };
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::table::memo::MemoTableWithTypes;
-    pub use crate::tracked_struct::TrackedStructInDb;
-    pub use crate::update::helper::{Dispatch as UpdateDispatch, Fallback as UpdateFallback};
-    pub use crate::update::{Update, always_update};
+    pub use crate::tracked_struct::{TrackedStructInDb, update_field};
     pub use crate::views::DatabaseDownCaster;
     pub use crate::zalsa::{
         ErasedJar, HasJar, IngredientIndex, JarKind, Zalsa, ZalsaDatabase, register_jar,
@@ -398,9 +412,7 @@ pub mod plumbing {
     }
 
     pub mod function {
-        pub use crate::function::Configuration;
-        pub use crate::function::IngredientImpl;
-        pub use crate::function::Memo;
+        pub use crate::function::{Configuration, IngredientImpl, Memo};
         pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
         pub use crate::table::memo::MemoEntryType;
     }

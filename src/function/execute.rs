@@ -38,8 +38,8 @@ where
         &'db self,
         db: &'db C::DbView,
         mut claim_guard: ClaimGuard<'db>,
-        opt_old_memo: Option<&Memo<'db, C>>,
-    ) -> Option<&'db Memo<'db, C>> {
+        opt_old_memo: Option<&'db Memo<C>>,
+    ) -> Option<&'db Memo<C>> {
         let database_key_index = claim_guard.database_key_index();
         let zalsa = claim_guard.zalsa();
 
@@ -119,7 +119,7 @@ where
     fn execute_maybe_iterate<'db>(
         &'db self,
         db: &'db C::DbView,
-        opt_old_memo: Option<&Memo<'db, C>>,
+        opt_old_memo: Option<&'db Memo<C>>,
         claim_guard: &mut ClaimGuard<'db>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> (C::Output<'db>, CompletedQuery) {
@@ -132,7 +132,7 @@ where
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // This is different from `opt_old_memo` which might be from a different revision.
-        let mut last_provisional_memo_opt: Option<&Memo<'db, C>> = None;
+        let mut last_provisional_memo_opt: Option<&Memo<C>> = None;
 
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
         let cancellation_count = zalsa.runtime().cancellation_count();
@@ -230,7 +230,7 @@ where
                 memo
             });
 
-            let last_provisional_value = last_provisional_memo.value.as_ref();
+            let last_provisional_value = last_provisional_memo.value();
 
             let last_provisional_value = last_provisional_value.expect(
                 "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",

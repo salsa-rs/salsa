@@ -26,7 +26,6 @@
 //!     * this could be optimized, particularly for interned fields
 
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use syn::parse::ParseStream;
 use syn::{ext::IdentExt, spanned::Spanned};
 
 use crate::db_lifetime;
@@ -42,9 +41,6 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// The kind of struct (e.g., interned, input, tracked).
     const KIND: &'static str;
 
-    /// Are `#[maybe_update]` fields allowed?
-    const ALLOW_MAYBE_UPDATE: bool;
-
     /// Are `#[tracked]` fields allowed?
     const ALLOW_TRACKED: bool;
 
@@ -56,6 +52,9 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
 
     /// Are `#[default]` fields allowed?
     const ALLOW_DEFAULT: bool;
+
+    /// Is `#[salsa_value(prove_safe_to_retain_manually)]` allowed on fields?
+    const ALLOW_MANUAL_RETENTION_PROOF: bool;
 }
 
 pub(crate) struct SalsaField<'s> {
@@ -65,7 +64,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) has_default_attr: bool,
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
-    pub(crate) maybe_update_attr: Option<(syn::Path, syn::Expr)>,
+    pub(crate) has_manual_retention_proof: bool,
     get_name: syn::Ident,
     set_name: syn::Ident,
     unknown_attrs: Vec<&'s syn::Attribute>,
@@ -95,19 +94,24 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
         ef.has_no_eq_attr = true;
         Ok(())
     }),
+    ("salsa_value", |attr, ef| {
+        if ef.has_manual_retention_proof {
+            return Err(syn::Error::new_spanned(
+                ef.field,
+                "multiple `#[salsa_value]` attributes on field",
+            ));
+        }
+        crate::salsa_value::parse_manual_retention_proof(attr)
+            .map_err(|error| syn::Error::new_spanned(ef.field, error.to_string()))?;
+        ef.has_manual_retention_proof = true;
+        Ok(())
+    }),
     ("get", |attr, ef| {
         ef.get_name = attr.parse_args()?;
         Ok(())
     }),
     ("set", |attr, ef| {
         ef.set_name = attr.parse_args()?;
-        Ok(())
-    }),
-    ("maybe_update", |attr, ef| {
-        ef.maybe_update_attr = Some(attr.parse_args_with(|parser: ParseStream| {
-            let expr = parser.parse::<syn::Expr>()?;
-            Ok((attr.path().clone(), expr))
-        })?);
         Ok(())
     }),
 ];
@@ -136,9 +140,9 @@ where
             fields,
         };
 
-        this.maybe_disallow_maybe_update_fields()?;
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
+        this.maybe_disallow_manual_retention_proofs()?;
 
         this.check_generics()?;
 
@@ -153,6 +157,11 @@ where
         }
     }
 
+    /// Returns the generated data type name (`FooData` for `Foo`).
+    pub(crate) fn data_ident(&self) -> syn::Ident {
+        quote::format_ident!("{}Data", self.struct_item.ident)
+    }
+
     /// Returns the `id` in `Options` if it is `Some`, else `salsa::Id`.
     pub(crate) fn id(&self) -> syn::Path {
         match &self.args.id {
@@ -164,34 +173,6 @@ where
     /// Returns the `revisions` in `Options` as an optional iterator.
     pub(crate) fn revisions(&self) -> impl Iterator<Item = &syn::Expr> + '_ {
         self.args.revisions.iter()
-    }
-
-    /// Disallow `#[tracked]` attributes on the fields of this struct.
-    ///
-    /// If an `#[tracked]` field is found, return an error.
-    ///
-    /// # Parameters
-    ///
-    /// * `kind`, the attribute name (e.g., `input` or `interned`)
-    fn maybe_disallow_maybe_update_fields(&self) -> syn::Result<()> {
-        if A::ALLOW_MAYBE_UPDATE {
-            return Ok(());
-        }
-
-        // Check if any field has the `#[maybe_update]` attribute.
-        for ef in &self.fields {
-            if ef.maybe_update_attr.is_some() {
-                return Err(syn::Error::new_spanned(
-                    ef.field,
-                    format!(
-                        "`#[maybe_update]` cannot be used with `#[salsa::{}]`",
-                        A::KIND
-                    ),
-                ));
-            }
-        }
-
-        Ok(())
     }
 
     /// Disallow `#[tracked]` attributes on the fields of this struct.
@@ -237,6 +218,26 @@ where
                 return Err(syn::Error::new_spanned(
                     ef.field,
                     format!("`#[default]` cannot be used with `#[salsa::{}]`", A::KIND),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn maybe_disallow_manual_retention_proofs(&self) -> syn::Result<()> {
+        if A::ALLOW_MANUAL_RETENTION_PROOF {
+            return Ok(());
+        }
+
+        for field in &self.fields {
+            if field.has_manual_retention_proof {
+                return Err(syn::Error::new_spanned(
+                    field.field,
+                    format!(
+                        "`#[salsa_value(prove_safe_to_retain_manually)]` cannot be used with `#[salsa::{}]`",
+                        A::KIND
+                    ),
                 ));
             }
         }
@@ -356,6 +357,13 @@ where
 
     pub(crate) fn field_tys(&self) -> Vec<&syn::Type> {
         self.fields.iter().map(|f| &f.field.ty).collect()
+    }
+
+    pub(crate) fn field_manual_retention_proofs(&self) -> Vec<bool> {
+        self.fields
+            .iter()
+            .map(|field| field.has_manual_retention_proof)
+            .collect()
     }
 
     pub(crate) fn tracked_tys(&self) -> Vec<&syn::Type> {
@@ -483,7 +491,7 @@ impl<'s> SalsaField<'s> {
             returns,
             has_default_attr: false,
             has_no_eq_attr: false,
-            maybe_update_attr: None,
+            has_manual_retention_proof: false,
             get_name,
             set_name,
             unknown_attrs: Default::default(),

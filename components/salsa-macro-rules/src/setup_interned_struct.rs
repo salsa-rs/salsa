@@ -78,7 +78,8 @@ macro_rules! setup_interned_struct {
         // The path to the `serialize` function for the value's fields.
         deserialize_fn: $($deserialize_fn:path)?,
 
-        assert_types_are_update: {$($assert_types_are_update:tt)*},
+        // Ensures that every field can be rebound to the database lifetime.
+        assert_fields_are_salsa_values: {$($assert_fields_are_salsa_values:tt)*},
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -115,6 +116,13 @@ macro_rules! setup_interned_struct {
                 $zalsa::ErasedJar::erase::<$StructWithStatic>()
             }
 
+            #[allow(unused_lifetimes)]
+            fn _assert_fields_are_salsa_values<$db_lt>() {
+                use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
+                $($assert_fields_are_salsa_values)*
+            }
+            let _ = _assert_fields_are_salsa_values;
+
             type $StructDataIdent<$db_lt> = ($($field_ty,)*);
 
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
@@ -149,7 +157,9 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl $zalsa::interned::Configuration for $StructWithStatic {
+            // SAFETY: The generated assertions above prove every field can be
+            // retained after erasing the database lifetime.
+            unsafe impl $zalsa::interned::Configuration for $StructWithStatic {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
@@ -290,18 +300,7 @@ macro_rules! setup_interned_struct {
             }
 
 
-            unsafe impl< $($db_lt_arg)? > $zalsa::Update for $Struct< $($db_lt_arg)? > {
-                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
-                    $($assert_types_are_update)*
-
-                    if unsafe { *old_pointer } != new_value {
-                        unsafe { *old_pointer = new_value };
-                        true
-                    } else {
-                        false
-                    }
-                }
-            }
+            unsafe impl< $($db_lt_arg)? > $zalsa::SalsaValue for $Struct< $($db_lt_arg)? > {}
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
                 pub fn $new_fn<$Db, $($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
@@ -314,7 +313,7 @@ macro_rules! setup_interned_struct {
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
                     $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
-                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| ($($zalsa::Lookup::into_owned(data.$field_index),)*))
+                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| $zalsa::Lookup::into_owned(data))
                 }
 
                 $(

@@ -5,6 +5,7 @@ use syn::{Ident, ItemFn};
 
 use crate::hygiene::Hygiene;
 use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
+use crate::xform::ChangeLt;
 use crate::{db_lifetime, fn_util};
 
 // Source:
@@ -36,7 +37,7 @@ impl AllowedOptions for TrackedFn {
 
     const NO_LIFETIME: bool = false;
 
-    const NON_UPDATE_TYPES: bool = true;
+    const NON_SALSA_VALUES: bool = true;
 
     const SINGLETON: bool = false;
 
@@ -88,21 +89,16 @@ impl Macro {
         let db_lt = db_lifetime::db_lifetime(&item.sig.generics);
         let input_ids = self.input_ids(&item);
         let input_tys = self.input_tys(&item)?;
-        let interned_input_tys = input_tys.iter().map(|&ty| {
-            let mut ty = ty.clone();
-            syn::visit_mut::visit_type_mut(
-                &mut ToDbLifetimeVisitor {
-                    db_lifetime: db_lt.clone(),
-                },
-                &mut ty,
-            );
-            ty
-        });
-        let output_ty = self.output_ty(&db_lt, &item)?;
+        let with_db_lifetime = |ty: &syn::Type| ChangeLt::elided_to(&db_lt).in_type(ty);
+        let interned_input_tys = input_tys
+            .iter()
+            .map(|&ty| with_db_lifetime(ty))
+            .collect::<Vec<_>>();
+        let output_ty = with_db_lifetime(&self.output_ty(&db_lt, &item)?);
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
-        let requires_update = self.args.non_update_types.is_none();
+        let requires_salsa_value = self.args.non_salsa_values.is_none();
         let heap_size_fn = self.args.heap_size_fn.iter();
         let eq = if let Some(token) = &self.args.no_eq {
             if self.args.cycle_fn.is_some() {
@@ -194,12 +190,18 @@ impl Macro {
 
         let persist = self.args.persist();
 
-        let assert_types_are_update = if requires_update {
-            let mut assert_update = vec![output_ty.clone()];
-            if needs_interner {
-                assert_update.extend(interned_input_tys.clone());
-            }
-            crate::update::assert_update(&db_lt, &zalsa, assert_update)
+        let assert_output_is_salsa_value_or_static = if requires_salsa_value {
+            crate::salsa_value::assert_salsa_value_or_static(&db_lt, &zalsa, &output_ty)
+        } else {
+            quote! {}
+        };
+        let assert_interned_inputs_are_salsa_values = if requires_salsa_value {
+            interned_input_tys
+                .iter()
+                .map(|input_ty| {
+                    crate::salsa_value::assert_salsa_value_field(&db_lt, &zalsa, input_ty, false)
+                })
+                .collect()
         } else {
             quote! {}
         };
@@ -233,7 +235,8 @@ impl Macro {
                 lru: #lru,
                 return_mode: #return_mode,
                 persist: #persist,
-                assert_types_are_update: { #assert_types_are_update },
+                assert_interned_inputs_are_salsa_values: { #assert_interned_inputs_are_salsa_values },
+                assert_output_is_salsa_value_or_static: { #assert_output_is_salsa_value_or_static },
                 #self_ty
                 unused_names: [
                     #zalsa,
@@ -312,16 +315,6 @@ impl Macro {
 
     fn output_ty(&self, db_lt: &syn::Lifetime, item: &syn::ItemFn) -> syn::Result<syn::Type> {
         fn_util::output_ty(Some(db_lt), &item.sig)
-    }
-}
-
-struct ToDbLifetimeVisitor {
-    db_lifetime: syn::Lifetime,
-}
-
-impl syn::visit_mut::VisitMut for ToDbLifetimeVisitor {
-    fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        i.clone_from(&self.db_lifetime);
     }
 }
 

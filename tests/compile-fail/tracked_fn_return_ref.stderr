@@ -1,34 +1,61 @@
-error[E0106]: missing lifetime specifier
-  --> tests/compile-fail/tracked_fn_return_ref.rs:33:6
-   |
-33 | ) -> ContainsRef {
-   |      ^^^^^^^^^^^ expected named lifetime parameter
-   |
-help: consider using the `'db` lifetime
-   |
-33 | ) -> ContainsRef<'db> {
-   |                 +++++
-
-error: lifetime may not live long enough
+error: a reference tied to the database lifetime does not implement `SalsaValue`; return an owned value instead
   --> tests/compile-fail/tracked_fn_return_ref.rs:15:67
    |
 15 | fn tracked_fn_return_ref<'db>(db: &'db dyn Db, input: MyInput) -> &'db str {
-   |                          --- lifetime `'db` defined here          ^ requires that `'db` must outlive `'static`
+   |                                                                   ^^^^^^^^
 
-error: lifetime may not live long enough
+error[E0277]: `ContainsRef<'db>` doesn't implement `SalsaValue`
   --> tests/compile-fail/tracked_fn_return_ref.rs:23:6
    |
-20 | fn tracked_fn_return_struct_containing_ref<'db>(
-   |                                            --- lifetime `'db` defined here
-...
 23 | ) -> ContainsRef<'db> {
-   |      ^^^^^^^^^^^ requires that `'db` must outlive `'static`
-
-error: lifetime may not live long enough
-  --> tests/compile-fail/tracked_fn_return_ref.rs:43:6
+   |      ^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
-40 | fn tracked_fn_return_struct_containing_ref_elided_explicit<'db>(
-   |                                                            --- lifetime `'db` defined here
-...
-43 | ) -> ContainsRef<'_> {
-   |      ^^^^^^^^^^^ requires that `'db` must outlive `'static`
+help: the trait `SalsaValue` is not implemented for `ContainsRef<'db>`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:10:1
+   |
+10 | struct ContainsRef<'db> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: add `#[derive(salsa::SalsaValue)]` to `ContainsRef<'db>`
+   = help: the following other types implement trait `SalsaValue`:
+             &'static T
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+           and $N others
+note: required by a bound in `salsa::plumbing::assert_salsa_value`
+  --> src/salsa_value.rs
+   |
+   |     pub const fn assert_salsa_value<T: SalsaValue>() {}
+   |                                        ^^^^^^^^^^ required by this bound in `assert_salsa_value`
+
+error[E0277]: `ContainsRef<'db>` doesn't implement `SalsaValue`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:33:6
+   |
+33 | ) -> ContainsRef<'_> {
+   |      ^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `SalsaValue` is not implemented for `ContainsRef<'db>`
+  --> tests/compile-fail/tracked_fn_return_ref.rs:10:1
+   |
+10 | struct ContainsRef<'db> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: add `#[derive(salsa::SalsaValue)]` to `ContainsRef<'db>`
+   = help: the following other types implement trait `SalsaValue`:
+             &'static T
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+           and $N others
+note: required by a bound in `salsa::plumbing::assert_salsa_value`
+  --> src/salsa_value.rs
+   |
+   |     pub const fn assert_salsa_value<T: SalsaValue>() {}
+   |                                        ^^^^^^^^^^ required by this bound in `assert_salsa_value`

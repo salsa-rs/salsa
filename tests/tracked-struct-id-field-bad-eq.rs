@@ -12,7 +12,7 @@ struct MyInput {
 }
 
 #[allow(clippy::derived_hash_with_manual_eq)]
-#[derive(Eq, Hash, Debug, Clone)]
+#[derive(Eq, Hash, Debug, Clone, salsa::SalsaValue)]
 struct BadEq {
     field: bool,
 }

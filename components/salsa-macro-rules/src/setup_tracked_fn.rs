@@ -70,7 +70,9 @@ macro_rules! setup_tracked_fn {
         // If true, the input and output values implement `serde::{Serialize, Deserialize}`.
         persist: $persist:tt,
 
-        assert_types_are_update: {$($assert_types_are_update:tt)*},
+        assert_interned_inputs_are_salsa_values: {$($assert_interned_inputs_are_salsa_values:tt)*},
+
+        assert_output_is_salsa_value_or_static: {$($assert_output_is_salsa_value_or_static:tt)*},
 
         $(self_ty: $self_ty:ty,)?
 
@@ -142,6 +144,13 @@ macro_rules! setup_tracked_fn {
 
             $zalsa::macro_if! {
                 if $needs_interner {
+                    #[allow(unused_lifetimes)]
+                    fn _assert_interned_inputs_are_salsa_values<$db_lt>() {
+                        use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
+                        $($assert_interned_inputs_are_salsa_values)*
+                    }
+                    let _ = _assert_interned_inputs_are_salsa_values;
+
                     #[derive(Copy, Clone)]
                     struct $InternedData<$db_lt>(
                         ::salsa::Id,
@@ -200,7 +209,9 @@ macro_rules! setup_tracked_fn {
                         }
                     }
 
-                    impl $zalsa::interned::Configuration for $Configuration {
+                    // SAFETY: The generated assertions above prove every field
+                    // can be retained after erasing the database lifetime.
+                    unsafe impl $zalsa::interned::Configuration for $Configuration {
                         const LOCATION: $zalsa::Location = $zalsa::Location {
                             file: file!(),
                             line: line!(),
@@ -300,7 +311,12 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
-            impl $zalsa::function::Configuration for $Configuration {
+            $($assert_output_is_salsa_value_or_static)*
+
+            // SAFETY: The generated assertion above proves the output is either
+            // a `SalsaValue` or the same `'static` type for every database lifetime.
+            // `unsafe(non_salsa_values)` makes this guarantee the caller's responsibility.
+            unsafe impl $zalsa::function::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
@@ -329,8 +345,6 @@ macro_rules! setup_tracked_fn {
                 )?
 
                 fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
-                    $($assert_types_are_update)*
-
                     $($inner_fn)*
 
                     $inner($db, $($input_id),*)

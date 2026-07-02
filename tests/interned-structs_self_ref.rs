@@ -49,7 +49,7 @@ const _: () = {
         zalsa_::ErasedJar::erase::<InternedString<'static>>()
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, salsa::SalsaValue)]
     struct StructData<'db>(String, InternedString<'db>);
 
     impl<'db> Eq for StructData<'db> {}
@@ -81,7 +81,8 @@ const _: () = {
             (zalsa_::HashEqLike::<T0>::eq(&self.0, &data.0) && true)
         }
     }
-    impl zalsa_struct_::Configuration for Configuration_ {
+    // SAFETY: `StructData<'db>` contains only an owned `String` and a phantom lifetime.
+    unsafe impl zalsa_struct_::Configuration for Configuration_ {
         const LOCATION: zalsa_::Location = zalsa_::Location {
             file: file!(),
             line: line!(),
@@ -178,16 +179,7 @@ const _: () = {
         }
     }
 
-    unsafe impl zalsa_::Update for InternedString<'_> {
-        unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
-            if unsafe { *old_pointer } != new_value {
-                unsafe { *old_pointer = new_value };
-                true
-            } else {
-                false
-            }
-        }
-    }
+    unsafe impl zalsa_::SalsaValue for InternedString<'_> {}
     impl<'db> InternedString<'db> {
         pub fn new<Db_, T0: zalsa_::Lookup<String> + std::hash::Hash>(
             db: &'db Db_,
