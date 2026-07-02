@@ -19,10 +19,16 @@ pub(crate) fn lru_value(db: &dyn salsa::Database, item: Item) -> Value {
     compute_value(item.value(db))
 }
 
+#[salsa::tracked(returns(copy), sieve = 4096)]
+pub(crate) fn sieve_value(db: &dyn salsa::Database, item: Item) -> Value {
+    compute_value(item.value(db))
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum Policy {
     NoEviction,
     Lru,
+    Sieve,
 }
 
 impl Policy {
@@ -30,6 +36,7 @@ impl Policy {
         match self {
             Self::NoEviction => {}
             Self::Lru => lru_value::set_lru_capacity(db, capacity),
+            Self::Sieve => sieve_value::set_lru_capacity(db, capacity),
         }
     }
 }
@@ -39,6 +46,7 @@ impl std::fmt::Display for Policy {
         formatter.write_str(match self {
             Self::NoEviction => "NoEviction",
             Self::Lru => "Lru",
+            Self::Sieve => "Sieve",
         })
     }
 }
@@ -52,6 +60,7 @@ pub(crate) fn access_all(
     match policy {
         Policy::NoEviction => access_all_with(db, items, no_eviction_value),
         Policy::Lru => access_all_with(db, items, lru_value),
+        Policy::Sieve => access_all_with(db, items, sieve_value),
     }
 }
 

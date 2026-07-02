@@ -59,6 +59,8 @@ impl AllowedOptions for InternedStruct {
 
     const LRU: bool = false;
 
+    const SIEVE: bool = false;
+
     const CONSTRUCTOR_NAME: bool = true;
 
     const ID: bool = true;
