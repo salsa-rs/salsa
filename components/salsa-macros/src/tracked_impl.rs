@@ -243,7 +243,13 @@ impl Macro {
             (None, 0, 1)
         };
 
-        let (db_ident, db_ty) = self.check_db_argument(&fn_item.sig.inputs[db_input_index])?;
+        let db_arg = fn_item.sig.inputs.iter().nth(db_input_index).ok_or_else(|| {
+            syn::Error::new_spanned(
+                &fn_item.sig,
+                "tracked methods must have a database parameter after `self`",
+            )
+        })?;
+        let (db_ident, db_ty) = self.check_db_argument(db_arg)?;
 
         let input_ids: Vec<syn::Ident> =
             crate::fn_util::input_ids(&self.hygiene, &fn_item.sig, skipped_inputs);
