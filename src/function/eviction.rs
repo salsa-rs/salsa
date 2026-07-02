@@ -5,9 +5,11 @@
 
 mod lru;
 mod noop;
+mod sieve;
 
 pub use lru::Lru;
 pub use noop::NoopEviction;
+pub use sieve::Sieve;
 
 use crate::{Id, Revision};
 

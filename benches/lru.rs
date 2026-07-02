@@ -22,7 +22,7 @@ struct Item {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 struct Value(usize);
 
-#[salsa::tracked(returns(copy), lru = 4096)]
+#[salsa::tracked(returns(copy), sieve = 4096)]
 #[inline(never)]
 fn lru_value(db: &dyn salsa::Database, item: Item) -> Value {
     value(item.value(db))

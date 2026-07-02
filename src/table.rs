@@ -16,9 +16,9 @@ use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
 
-const PAGE_LEN_BITS: usize = 10;
+pub(crate) const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
-const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
+pub(crate) const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
 const MAX_PAGES: usize = 1 << (u32::BITS as usize - PAGE_LEN_BITS);
 
 /// A typed [`Page`] view.
@@ -151,6 +151,10 @@ impl SlotIndex {
     fn new(idx: usize) -> Self {
         debug_assert!(idx < PAGE_LEN);
         Self(idx)
+    }
+
+    pub(crate) fn as_usize(&self) -> usize {
+        self.0
     }
 }
 

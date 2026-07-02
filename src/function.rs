@@ -37,7 +37,7 @@ mod memo;
 mod specify;
 mod sync;
 
-pub use eviction::{EvictionContext, EvictionPolicy, HasCapacity, Lru, NoopEviction};
+pub use eviction::{EvictionContext, EvictionPolicy, HasCapacity, Lru, NoopEviction, Sieve};
 
 pub type Memo<C> = memo::Memo<'static, C>;
 
