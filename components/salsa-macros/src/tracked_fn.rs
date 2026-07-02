@@ -52,6 +52,8 @@ impl AllowedOptions for TrackedFn {
 
     const LRU: bool = true;
 
+    const SIEVE: bool = true;
+
     const CONSTRUCTOR_NAME: bool = false;
 
     const ID: bool = false;
@@ -161,16 +163,32 @@ impl Macro {
             ));
         }
 
+        if let (Some(_), Some(token)) = (&self.args.sieve, &self.args.specify) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `specify` and `sieve` options cannot be used together",
+            ));
+        }
+
+        if let (Some(_), Some(token)) = (&self.args.lru, &self.args.sieve) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `lru` and `sieve` options cannot be used together",
+            ));
+        }
+
         let needs_interner = match function_type {
             FunctionType::Constant | FunctionType::RequiresInterning => true,
             FunctionType::SalsaStruct => false,
         };
 
-        let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
+        let lru = Literal::usize_unsuffixed(self.args.lru.or(self.args.sieve).unwrap_or(0));
 
         // Determine the eviction policy type based on whether LRU capacity is specified
         let eviction_type = if self.args.lru.is_some() {
             quote!(::salsa::plumbing::function::Lru)
+        } else if self.args.sieve.is_some() {
+            quote!(::salsa::plumbing::function::Sieve)
         } else {
             quote!(::salsa::plumbing::function::NoopEviction)
         };

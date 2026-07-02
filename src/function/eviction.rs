@@ -5,9 +5,11 @@
 
 mod lru;
 mod noop;
+mod sieve;
 
 pub use lru::Lru;
 pub use noop::NoopEviction;
+pub use sieve::Sieve;
 
 use crate::{Id, Revision};
 
@@ -21,10 +23,7 @@ pub trait EvictionPolicy: Send + Sync {
     /// A value of zero disables eviction.
     fn new(tuning: usize) -> Self;
 
-    /// Records that `id` transitioned from having no cached value to having one.
-    fn record_insert(&self, _id: Id) {}
-
-    /// Records that a resident value was used.
+    /// Records that a value was used.
     ///
     /// Implementations may treat this as a best-effort hint.
     fn record_use(&self, _id: Id) {}
