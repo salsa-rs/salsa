@@ -94,7 +94,7 @@ where
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let (zalsa, zalsa_local) = db.zalsas();
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
-        let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
+        let (memo, _) = self.refresh_memo(db, zalsa, zalsa_local, key);
         (
             memo.header.revisions.accumulated(),
             memo.header.revisions.accumulated_inputs.load(),

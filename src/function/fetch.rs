@@ -26,12 +26,14 @@ where
         #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
-        let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+        let (memo, record_use) = self.refresh_memo(db, zalsa, zalsa_local, id);
 
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
 
-        self.eviction.record_use(id);
+        if record_use {
+            self.eviction.record_use(id);
+        }
 
         let revisions = &memo.header.revisions;
         zalsa_local.report_tracked_read(
@@ -55,7 +57,7 @@ where
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         id: Id,
-    ) -> &'db Memo<'db, C> {
+    ) -> (&'db Memo<'db, C>, bool) {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         loop {
@@ -63,7 +65,7 @@ where
             // here can outline both into one function, making hot hits pay for the cold path's
             // stack frame.
             if let Some(memo) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
-                return memo;
+                return (memo, true);
             }
 
             if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index) {
@@ -108,7 +110,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
+    ) -> Option<(&'db Memo<'db, C>, bool)> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let claim_guard = match self
@@ -143,11 +145,11 @@ where
             {
                 // SAFETY: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.
-                return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+                return unsafe { Some((self.extend_memo_lifetime(old_memo), true)) };
             }
         }
 
-        self.execute(db, claim_guard, opt_old_memo)
+        Some((self.execute(db, claim_guard, opt_old_memo)?, false))
     }
 
     #[cold]
@@ -160,7 +162,7 @@ where
         id: Id,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> &'db Memo<'db, C> {
+    ) -> (&'db Memo<'db, C>, bool) {
         // no provisional value; create/insert/return initial provisional value
         match C::CYCLE_STRATEGY {
             // SAFETY: We do not access the query stack reentrantly.
@@ -200,7 +202,7 @@ where
                         );
 
                         // SAFETY: memo is present in memo_map.
-                        return unsafe { self.extend_memo_lifetime(memo) };
+                        return unsafe { (self.extend_memo_lifetime(memo), true) };
                     }
                 }
 
@@ -225,11 +227,14 @@ where
                 let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
 
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                self.insert_memo(
-                    zalsa,
-                    id,
-                    Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
-                    memo_ingredient_index,
+                (
+                    self.insert_memo(
+                        zalsa,
+                        id,
+                        Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
+                        memo_ingredient_index,
+                    ),
+                    false,
                 )
             }
         }

@@ -37,7 +37,7 @@ mod memo;
 mod specify;
 mod sync;
 
-pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
+pub use eviction::{EvictionContext, EvictionPolicy, HasCapacity, Lru, NoopEviction, Sieve};
 
 pub type Memo<C> = memo::Memo<'static, C>;
 
@@ -239,12 +239,14 @@ where
         DatabaseKeyIndex::new(self.index, key)
     }
 
-    /// Set eviction capacity. Only available when eviction policy supports it.
-    pub fn set_capacity(&mut self, capacity: usize)
+    /// Sets the eviction policy's tuning value.
+    ///
+    /// Only available when the eviction policy supports runtime tuning.
+    pub fn set_tuning(&mut self, tuning: usize)
     where
         C::Eviction: HasCapacity,
     {
-        self.eviction.set_capacity(capacity);
+        self.eviction.set_tuning(tuning);
     }
 
     /// Returns a reference to the memo value that lives as long as self.
@@ -276,17 +278,27 @@ where
         // We convert to a `NonNull` here as soon as possible because we are going to alias
         // into the `Box`, which is a `noalias` type.
         // FIXME: Use `Box::into_non_null` once stable
+        let has_value = memo.value.is_some();
         let memo = NonNull::from(Box::leak(Box::new(memo)));
 
-        if let Some(old_value) =
-            self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
-        {
+        let old_value = self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index);
+        let became_resident = has_value
+            && old_value.is_none_or(|old_value| {
+                // SAFETY: The old memo remains allocated in `deleted_entries` until the next
+                // revision, so it is valid to inspect here.
+                unsafe { old_value.as_ref().value.is_none() }
+            });
+
+        if let Some(old_value) = old_value {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             //
             // SAFETY: Once the revision starts, there will be no outstanding borrows to the
             // memo contents, and so it will be safe to free.
             unsafe { self.deleted_entries.push(old_value) };
+        }
+        if became_resident {
+            self.eviction.record_insert(id);
         }
         // SAFETY: memo has been inserted into the table
         unsafe { self.extend_memo_lifetime(memo.as_ref()) }
@@ -465,13 +477,11 @@ where
     }
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
-        self.eviction.for_each_evicted(|evict| {
-            let ingredient_index = table.ingredient_index(evict);
-            Self::evict_value_from_memo_for(
-                table.memos_mut(evict),
-                self.memo_ingredient_indices.get(ingredient_index),
-            )
-        });
+        let mut context = FunctionEvictionContext::<C> {
+            table,
+            memo_ingredient_indices: &self.memo_ingredient_indices,
+        };
+        self.eviction.start_new_revision(&mut context);
 
         self.deleted_entries.clear();
     }
@@ -554,6 +564,29 @@ where
         };
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
+    }
+}
+
+struct FunctionEvictionContext<'a, C: Configuration> {
+    table: &'a mut Table,
+    memo_ingredient_indices: &'a <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
+}
+
+impl<C: Configuration> EvictionContext for FunctionEvictionContext<'_, C> {
+    fn last_verified_at(&mut self, id: Id) -> Option<Revision> {
+        let ingredient_index = self.table.ingredient_index(id);
+        IngredientImpl::<C>::last_verified_at_for(
+            self.table.memos_mut(id),
+            self.memo_ingredient_indices.get(ingredient_index),
+        )
+    }
+
+    fn evict_value(&mut self, id: Id) {
+        let ingredient_index = self.table.ingredient_index(id);
+        IngredientImpl::<C>::evict_value_from_memo_for(
+            self.table.memos_mut(id),
+            self.memo_ingredient_indices.get(ingredient_index),
+        )
     }
 }
 

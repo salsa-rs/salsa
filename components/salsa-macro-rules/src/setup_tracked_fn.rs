@@ -484,14 +484,14 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
-                /// Sets the lru capacity
+                /// Sets the eviction policy's tuning value.
                 ///
                 /// **WARNING:** Just like an ordinary write, this method triggers
                 /// cancellation. If you invoke it while a snapshot exists, it
                 /// will block until that snapshot is dropped -- if that snapshot
                 /// is owned by the current thread, this could trigger deadlock.
                 fn set_lru_capacity(db: &mut dyn $Db, value: usize) where for<'trivial_bounds> $Eviction: $zalsa::function::HasCapacity {
-                    $Configuration::fn_ingredient_mut(db).set_capacity(value);
+                    $Configuration::fn_ingredient_mut(db).set_tuning(value);
                 }
 
                 $zalsa::macro_if! { $needs_interner =>

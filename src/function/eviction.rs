@@ -5,36 +5,58 @@
 
 mod lru;
 mod noop;
+mod sieve;
 
 pub use lru::Lru;
 pub use noop::NoopEviction;
+pub use sieve::Sieve;
 
-use crate::Id;
+use crate::{Id, Revision};
 
 /// Trait for cache eviction strategies.
 ///
 /// Implementations control when memoized values are evicted from the cache.
 /// The eviction policy is selected at compile time via the `Configuration` trait.
 pub trait EvictionPolicy: Send + Sync {
-    /// Create a new eviction policy with the given capacity.
-    fn new(capacity: usize) -> Self;
-
-    /// Record that an item was accessed.
-    fn record_use(&self, id: Id);
-
-    /// Set the maximum capacity.
-    fn set_capacity(&mut self, capacity: usize);
-
-    /// Iterate over items that should be evicted.
+    /// Creates a policy from its configured tuning value.
     ///
-    /// Called once per revision during `reset_for_new_revision`.
-    /// The callback `cb` should be invoked for each item to evict.
-    fn for_each_evicted(&mut self, cb: impl FnMut(Id));
+    /// A value of zero disables eviction.
+    fn new(tuning: usize) -> Self;
+
+    /// Records that `id` transitioned from having no cached value to having one.
+    fn record_insert(&self, _id: Id) {}
+
+    /// Records that a resident value was used.
+    ///
+    /// Implementations may treat this as a best-effort hint.
+    fn record_use(&self, _id: Id) {}
+
+    /// Changes the policy's tuning value.
+    ///
+    /// A value of zero disables eviction.
+    fn set_tuning(&mut self, tuning: usize);
+
+    /// Processes the start of a new revision.
+    ///
+    /// The policy may update its state, inspect memo metadata, and evict
+    /// resident values through `context`.
+    fn start_new_revision(&mut self, context: &mut impl EvictionContext);
 }
 
-/// Marker trait for eviction policies that have a configurable capacity.
+/// Memo operations available when starting a new revision.
+pub trait EvictionContext {
+    /// Returns the revision in which `id`'s resident value was last verified.
+    ///
+    /// Returns `None` if the memo no longer contains a resident value.
+    fn last_verified_at(&mut self, id: Id) -> Option<Revision>;
+
+    /// Evicts `id`'s cached value while retaining its memo metadata.
+    fn evict_value(&mut self, id: Id);
+}
+
+/// Marker trait for eviction policies whose tuning can be changed at runtime.
 ///
 /// This trait is used to conditionally generate the `set_lru_capacity` method
 /// on tracked functions. Only policies that implement this trait will expose
-/// runtime capacity configuration.
+/// runtime tuning.
 pub trait HasCapacity: EvictionPolicy {}

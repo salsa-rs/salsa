@@ -9,7 +9,7 @@ use crate::Id;
 use crate::hash::FxLinkedHashSet;
 use crate::sync::Mutex;
 
-use super::{EvictionPolicy, HasCapacity};
+use super::{EvictionContext, EvictionPolicy, HasCapacity};
 
 /// Least Recently Used eviction policy.
 ///
@@ -36,6 +36,12 @@ impl EvictionPolicy for Lru {
         }
     }
 
+    fn record_insert(&self, id: Id) {
+        if self.capacity.is_some() {
+            self.insert(id);
+        }
+    }
+
     #[inline(always)]
     fn record_use(&self, id: Id) {
         if self.capacity.is_some() {
@@ -43,21 +49,21 @@ impl EvictionPolicy for Lru {
         }
     }
 
-    fn set_capacity(&mut self, capacity: usize) {
+    fn set_tuning(&mut self, capacity: usize) {
         self.capacity = NonZeroUsize::new(capacity);
         if self.capacity.is_none() {
             self.set.get_mut().clear();
         }
     }
 
-    fn for_each_evicted(&mut self, mut cb: impl FnMut(Id)) {
+    fn start_new_revision(&mut self, context: &mut impl EvictionContext) {
         let Some(cap) = self.capacity else {
             return;
         };
         let set = self.set.get_mut();
         while set.len() > cap.get() {
             if let Some(id) = set.pop_front() {
-                cb(id);
+                context.evict_value(id);
             }
         }
     }
