@@ -16,16 +16,61 @@ use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
 
-const PAGE_LEN_BITS: usize = 10;
-const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
-const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
-const MAX_PAGES: usize = 1 << (u32::BITS as usize - PAGE_LEN_BITS);
+const PAGE_CLASS_SHIFT: usize = 30;
+const PAGE_CLASS_MASK: usize = 3 << PAGE_CLASS_SHIFT;
+const PAGE_CLASS_LEN: usize = 1 << PAGE_CLASS_SHIFT;
+const PAGE_CLASS_COUNT: usize = 4;
+
+mod sealed {
+    pub trait Sealed {
+        const CAPACITY: usize;
+    }
+}
+
+/// Type-level table page-size policy used by Salsa's generated code.
+#[doc(hidden)]
+pub trait PageSize: sealed::Sealed + Send + Sync + 'static {}
+
+#[doc(hidden)]
+pub struct PageSizeConst<const N: usize>;
+
+impl<const N: usize> sealed::Sealed for PageSizeConst<N> {
+    const CAPACITY: usize = N;
+}
+
+impl PageSize for PageSizeConst<128> {}
+impl PageSize for PageSizeConst<256> {}
+impl PageSize for PageSizeConst<512> {}
+impl PageSize for PageSizeConst<1024> {}
+
+#[doc(hidden)]
+pub type PageSize128 = PageSizeConst<128>;
+#[doc(hidden)]
+pub type PageSize256 = PageSizeConst<256>;
+#[doc(hidden)]
+pub type PageSize512 = PageSizeConst<512>;
+#[doc(hidden)]
+pub type PageSize1024 = PageSizeConst<1024>;
+
+#[inline]
+pub(crate) const fn page_capacity<P: PageSize>() -> usize {
+    <P as sealed::Sealed>::CAPACITY
+}
+
+#[inline]
+const fn page_class<P: PageSize>() -> usize {
+    10 - page_capacity::<P>().trailing_zeros() as usize
+}
+
+const fn class_capacity(class: usize) -> usize {
+    1024 >> class
+}
 
 /// A typed [`Page`] view.
 pub(crate) struct PageView<'p, T: Slot>(&'p Page, PhantomData<&'p T>);
 
 pub struct Table {
-    pages: boxcar::Vec<Page>,
+    pages: [boxcar::Vec<Page>; PAGE_CLASS_COUNT],
     /// Map from ingredient to non-full pages that are up for grabs
     non_full_pages: Mutex<FxHashMap<IngredientIndex, Vec<PageIndex>>>,
 }
@@ -35,6 +80,8 @@ pub struct Table {
 /// Implementors of this trait need to make sure that their type is unique with respect to
 /// their owning ingredient as the allocation strategy relies on this.
 pub unsafe trait Slot: Any + Send + Sync {
+    type PageSize: PageSize;
+
     /// Access the [`MemoTable`][] for this slot.
     ///
     /// # Safety condition
@@ -62,9 +109,8 @@ struct SlotVTable {
     memos_mut: SlotMemosMutFnErased,
     /// The type name of what is stored as entries in data.
     type_name: fn() -> &'static str,
-    /// A drop impl to call when the own page drops
-    /// SAFETY: The caller is required to supply a valid pointer to a `Box<PageDataEntry<T>>`, and
-    /// the correct initialized length and memo types.
+    /// Drops the page allocation and its initialized prefix.
+    /// SAFETY: The pointer, slot type, initialized length, and memo types must match.
     drop_impl: unsafe fn(data: *mut (), initialized: usize, memo_types: &MemoTableTypes),
 }
 
@@ -73,16 +119,8 @@ impl SlotVTable {
         const {
             &Self {
                 drop_impl: |data, initialized, memo_types| {
-                    // SAFETY: The caller is required to provide a valid data pointer.
-                    let data = unsafe { Box::from_raw(data.cast::<PageData<T>>()) };
-                    for i in 0..initialized {
-                        let item = data[i].get().cast::<T>();
-                        // SAFETY: The caller is required to provide a valid initialized length.
-                        unsafe {
-                            memo_types.attach_memos_mut((*item).memos_mut()).drop();
-                            ptr::drop_in_place(item);
-                        }
-                    }
+                    // SAFETY: `Page` supplies the allocation and initialized length belonging to `T`.
+                    unsafe { drop_page::<T>(NonNull::new_unchecked(data), initialized, memo_types) }
                 },
                 layout: Layout::new::<T>(),
                 type_name: std::any::type_name::<T>,
@@ -98,7 +136,32 @@ impl SlotVTable {
 }
 
 type PageDataEntry<T> = UnsafeCell<MaybeUninit<T>>;
-type PageData<T> = [PageDataEntry<T>; PAGE_LEN];
+
+fn allocate_page<T: Slot>() -> NonNull<()> {
+    // A boxed slice avoids materializing a large page on the stack.
+    let data = (0..page_capacity::<T::PageSize>())
+        .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
+        .collect::<Box<[PageDataEntry<T>]>>();
+    let data = Box::into_raw(data) as *mut PageDataEntry<T>;
+    NonNull::new(data).unwrap().cast()
+}
+
+unsafe fn drop_page<T: Slot>(data: NonNull<()>, initialized: usize, memo_types: &MemoTableTypes) {
+    let data = ptr::slice_from_raw_parts_mut(
+        data.cast::<PageDataEntry<T>>().as_ptr(),
+        page_capacity::<T::PageSize>(),
+    );
+    // SAFETY: `Page::new` allocated this slice for `T` and its page policy.
+    let data = unsafe { Box::from_raw(data) };
+    for entry in &data[..initialized] {
+        let item = entry.get().cast::<T>();
+        // SAFETY: `allocated` tracks the initialized prefix.
+        unsafe {
+            memo_types.attach_memos_mut((*item).memos_mut()).drop();
+            ptr::drop_in_place(item);
+        }
+    }
+}
 
 struct Page {
     /// The ingredient for elements on this page.
@@ -128,18 +191,24 @@ unsafe impl Send for Page /* where for<M: Memo> M: Send */ {}
 unsafe impl Sync for Page /* where for<M: Memo> M: Sync */ {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PageIndex(usize);
+pub struct PageIndex {
+    class: usize,
+    index: usize,
+}
 
 impl PageIndex {
     #[inline]
-    fn new(idx: usize) -> Self {
-        debug_assert!(idx < MAX_PAGES);
-        Self(idx)
+    fn new<P: PageSize>(index: usize) -> Self {
+        let class = page_class::<P>();
+        let tag = class << PAGE_CLASS_SHIFT;
+        let limit = (tag + PAGE_CLASS_LEN).min(Id::MAX_USIZE);
+        assert!(index < (limit - tag) / page_capacity::<P>());
+        Self { class, index }
     }
 
     #[allow(dead_code)]
     pub fn as_usize(&self) -> usize {
-        self.0
+        self.index
     }
 }
 
@@ -148,8 +217,8 @@ pub struct SlotIndex(usize);
 
 impl SlotIndex {
     #[inline]
-    fn new(idx: usize) -> Self {
-        debug_assert!(idx < PAGE_LEN);
+    fn new<P: PageSize>(idx: usize) -> Self {
+        debug_assert!(idx < page_capacity::<P>());
         Self(idx)
     }
 }
@@ -157,7 +226,7 @@ impl SlotIndex {
 impl Default for Table {
     fn default() -> Self {
         Self {
-            pages: boxcar::Vec::new(),
+            pages: std::array::from_fn(|_| boxcar::Vec::new()),
             non_full_pages: Default::default(),
         }
     }
@@ -167,8 +236,8 @@ impl Table {
     /// Returns the [`IngredientIndex`] for an [`Id`].
     #[inline]
     pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
-        let (page_idx, _) = split_id(id);
-        self.pages[page_idx.0].ingredient
+        let (page, _) = split_erased_id(id);
+        self.pages[page.class][page.index].ingredient
     }
 
     /// Get a reference to the data for `id`, which must have been allocated from this table with type `T`.
@@ -177,7 +246,7 @@ impl Table {
     ///
     /// If `id` is out of bounds or the does not have the type `T`.
     pub(crate) fn get<T: Slot>(&self, id: Id) -> &T {
-        let (page, slot) = split_id(id);
+        let (page, slot) = split_typed_id::<T::PageSize>(id);
         let page_ref = self.page::<T>(page);
         &page_ref.data()[slot.0]
     }
@@ -192,36 +261,38 @@ impl Table {
     ///
     /// See [`Page::get_raw`][].
     pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
-        let (page, slot) = split_id(id);
+        let (page, slot) = split_typed_id::<T::PageSize>(id);
         let page_ref = self.page::<T>(page);
         page_ref.page_data()[slot.0].get().cast::<T>()
     }
 
     /// Returns the number of pages that have been allocated.
     pub fn page_count(&self) -> usize {
-        self.pages.count()
-    }
-
-    #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn page_capacity(&self) -> usize {
-        PAGE_LEN
+        self.pages.iter().map(boxcar::Vec::count).sum()
     }
 
     #[cfg(feature = "salsa_unstable")]
     pub(crate) fn page_infos(&self) -> FxHashMap<IngredientIndex, crate::database::PageInfo> {
-        let mut page_fills: FxHashMap<IngredientIndex, Vec<usize>> = FxHashMap::default();
+        let mut page_fills: FxHashMap<IngredientIndex, (usize, Vec<usize>)> = FxHashMap::default();
 
-        for (_, page) in self.pages.iter() {
-            let fill = page.allocated.load(Ordering::Acquire);
-            if fill > 0 {
-                page_fills.entry(page.ingredient).or_default().push(fill);
+        for (class, pages) in self.pages.iter().enumerate() {
+            let capacity = class_capacity(class);
+            for (_, page) in pages.iter() {
+                let fill = page.allocated.load(Ordering::Acquire);
+                if fill > 0 {
+                    let (ingredient_capacity, fills) = page_fills
+                        .entry(page.ingredient)
+                        .or_insert_with(|| (capacity, Vec::new()));
+                    debug_assert_eq!(*ingredient_capacity, capacity);
+                    fills.push(fill);
+                }
             }
         }
 
         page_fills
             .into_iter()
-            .filter_map(|(ingredient, fills)| {
-                crate::database::PageInfo::from_page_fills(PAGE_LEN, fills)
+            .filter_map(|(ingredient, (capacity, fills))| {
+                crate::database::PageInfo::from_page_fills(capacity, fills)
                     .map(|page_info| (ingredient, page_info))
             })
             .collect()
@@ -234,7 +305,8 @@ impl Table {
     /// If `page` is out of bounds or the type `T` is incorrect.
     #[inline]
     pub(crate) fn page<T: Slot>(&self, page: PageIndex) -> PageView<'_, T> {
-        self.pages[page.0].assert_type::<T>()
+        debug_assert_eq!(page.class, page_class::<T::PageSize>());
+        self.pages[page.class][page.index].assert_type::<T>()
     }
 
     /// Force initialize the page at the given index.
@@ -255,12 +327,14 @@ impl Table {
         ingredient: IngredientIndex,
         memo_types: &Arc<MemoTableTypes>,
     ) {
-        let page = self.pages.get_mut(page_idx.0);
+        let class = page_class::<T::PageSize>();
+        assert_eq!(page_idx.class, class);
+        let page = self.pages[class].get_mut(page_idx.index);
 
         match page {
             Some(page) => {
                 // Initialize the page if was created using `push_uninit_page`.
-                if page.slot_type_id == TypeId::of::<DummySlot>() {
+                if page.slot_type_id == TypeId::of::<DummySlot<T::PageSize>>() {
                     *page = Page::new::<T>(ingredient, memo_types.clone());
                 }
 
@@ -270,10 +344,10 @@ impl Table {
 
             None => {
                 // Create dummy pages until we reach the page we want.
-                while self.page_count() < page_idx.as_usize() {
+                while self.pages[class].count() < page_idx.as_usize() {
                     // We make sure not to claim any intermediary pages for ourselves, as they may
                     // be required by a different ingredient when it is deserialized.
-                    self.push_uninit_page();
+                    self.push_uninit_page::<T::PageSize>();
                 }
 
                 let allocated_idx = self.push_page::<T>(ingredient, memo_types.clone());
@@ -292,16 +366,20 @@ impl Table {
         ingredient: IngredientIndex,
         memo_types: Arc<MemoTableTypes>,
     ) -> PageIndex {
-        PageIndex::new(self.pages.push(Page::new::<T>(ingredient, memo_types)))
+        let class = page_class::<T::PageSize>();
+        PageIndex::new::<T::PageSize>(
+            self.pages[class].push(Page::new::<T>(ingredient, memo_types)),
+        )
     }
 
     /// Allocate an uninitialized page.
     #[inline]
     #[allow(dead_code)]
-    pub(crate) fn push_uninit_page(&self) -> PageIndex {
+    pub(crate) fn push_uninit_page<P: PageSize>(&self) -> PageIndex {
         // Note that `DummySlot` is a ZST, so the memory wasted by any pages of ingredients
         // that were not serialized should be negligible.
-        PageIndex::new(self.pages.push(Page::new::<DummySlot>(
+        let class = page_class::<P>();
+        PageIndex::new::<P>(self.pages[class].push(Page::new::<DummySlot<P>>(
             IngredientIndex::new(0),
             Arc::new(MemoTableTypes::default()),
         )))
@@ -322,8 +400,8 @@ impl Table {
         id: Id,
         current_revision: Revision,
     ) -> MemoTableWithTypes<'_> {
-        let (page, slot) = split_id(id);
-        let page = self.pages[page.0].assert_type::<T>();
+        let (page, slot) = split_typed_id::<T::PageSize>(id);
+        let page = self.pages[page.class][page.index].assert_type::<T>();
         let slot = &page.data()[slot.0];
 
         // SAFETY: The caller is required to pass the `current_revision`.
@@ -343,8 +421,8 @@ impl Table {
     /// The parameter `current_revision` must be the current revision of the owner of database
     /// owning this table.
     pub unsafe fn dyn_memos(&self, id: Id, current_revision: Revision) -> MemoTableWithTypes<'_> {
-        let (page, slot) = split_id(id);
-        let page = &self.pages[page.0];
+        let (page, slot) = split_erased_id(id);
+        let page = &self.pages[page.class][page.index];
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
         let memos = unsafe { &*(page.slot_vtable.memos)(page.get(slot), current_revision) };
         // SAFETY: The `Page` keeps the correct memo types.
@@ -353,10 +431,9 @@ impl Table {
 
     /// Get the memo table associated with `id`
     pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypesMut<'_> {
-        let (page, slot) = split_id(id);
-        let page_index = page.0;
-        let page = self
-            .pages
+        let (page, slot) = split_erased_id(id);
+        let page_index = page.index;
+        let page = self.pages[page.class]
             .get_mut(page_index)
             .unwrap_or_else(|| panic!("index `{page_index}` is uninitialized"));
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
@@ -366,8 +443,10 @@ impl Table {
     }
 
     pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = (Id, &T)> + '_ {
+        let class = page_class::<T::PageSize>();
         ErasedSlots {
-            pages: self.pages.iter(),
+            class,
+            pages: self.pages[class].iter(),
             current_page: None,
             slot_type_id: TypeId::of::<T>(),
         }
@@ -386,6 +465,7 @@ impl Table {
         memo_types: impl FnOnce() -> Arc<MemoTableTypes>,
     ) -> PageIndex {
         if let Some(page) = self.take_non_full_page(ingredient) {
+            debug_assert_eq!(page.class, page_class::<T::PageSize>());
             return page;
         }
 
@@ -409,6 +489,7 @@ impl Table {
 }
 
 struct ErasedSlots<'db> {
+    class: usize,
     pages: boxcar::vec::Iter<'db, Page>,
     current_page: Option<(PageIndex, &'db Page, std::ops::Range<usize>)>,
     slot_type_id: TypeId,
@@ -421,8 +502,8 @@ impl Iterator for ErasedSlots<'_> {
         loop {
             if let Some((page_index, page, slots)) = &mut self.current_page {
                 if let Some(slot_index) = slots.next() {
-                    let slot_index = SlotIndex::new(slot_index);
-                    let id = make_id(*page_index, slot_index);
+                    let slot_index = SlotIndex(slot_index);
+                    let id = make_erased_id(*page_index, slot_index);
 
                     // SAFETY: `slot_index` is below the initialized length captured when the page
                     // became current, so the resulting pointer is within the page allocation.
@@ -439,7 +520,10 @@ impl Iterator for ErasedSlots<'_> {
             self.current_page = self.pages.find_map(|(page_index, page)| {
                 (page.slot_type_id == self.slot_type_id).then(|| {
                     (
-                        PageIndex::new(page_index),
+                        PageIndex {
+                            class: self.class,
+                            index: page_index,
+                        },
                         page,
                         0..page.allocated.load(Ordering::Acquire),
                     )
@@ -477,12 +561,12 @@ impl<'db, T: Slot> PageView<'db, T> {
         V: FnOnce(Id) -> T,
     {
         let index = self.0.allocated.load(Ordering::Acquire);
-        if index >= PAGE_LEN {
+        if index >= page_capacity::<T::PageSize>() {
             return Err(value);
         }
 
         // Initialize entry `index`
-        let id = make_id(page, SlotIndex::new(index));
+        let id = make_id::<T::PageSize>(page, SlotIndex::new::<T::PageSize>(index));
         let data = self.0.data.cast::<PageDataEntry<T>>();
 
         // SAFETY: `index` is also guaranteed to be in bounds as per the check above.
@@ -505,30 +589,13 @@ impl<'db, T: Slot> PageView<'db, T> {
 impl Page {
     #[inline]
     fn new<T: Slot>(ingredient: IngredientIndex, memo_types: Arc<MemoTableTypes>) -> Self {
-        #[cfg(not(feature = "shuttle"))]
-        let data: Box<PageData<T>> =
-            Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]);
-
-        #[cfg(feature = "shuttle")]
-        let data = {
-            // Avoid stack overflows when using larger shuttle types.
-            let data = (0..PAGE_LEN)
-                .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
-                .collect::<Box<[PageDataEntry<T>]>>();
-
-            let data: *mut [PageDataEntry<T>] = Box::into_raw(data);
-
-            // SAFETY: `*mut PageDataEntry<T>` and `*mut [PageDataEntry<T>; N]` have the same layout.
-            unsafe { Box::from_raw(data.cast::<PageDataEntry<T>>().cast::<PageData<T>>()) }
-        };
-
         Self {
             ingredient,
             memo_types,
             slot_vtable: SlotVTable::of::<T>(),
             slot_type_id: TypeId::of::<T>(),
             allocated: AtomicUsize::new(0),
-            data: NonNull::from(Box::leak(data)).cast::<()>(),
+            data: allocate_page::<T>(),
         }
     }
 
@@ -582,10 +649,12 @@ impl Drop for Page {
 }
 
 /// A placeholder type representing the slots of an uninitialized `Page`.
-struct DummySlot;
+struct DummySlot<P>(PhantomData<P>);
 
 // SAFETY: The `DummySlot type is private.
-unsafe impl Slot for DummySlot {
+unsafe impl<P: PageSize> Slot for DummySlot<P> {
+    type PageSize = P;
+
     unsafe fn memos(_: *const Self, _: Revision) -> *const MemoTable {
         unreachable!()
     }
@@ -595,17 +664,47 @@ unsafe impl Slot for DummySlot {
     }
 }
 
-fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
-    let page = page.0 as u32;
-    let slot = slot.0 as u32;
-    // SAFETY: `slot` is guaranteed to be small enough that the resulting Id won't be bigger than `Id::MAX_U32`
-    unsafe { Id::from_index((page << PAGE_LEN_BITS) | slot) }
+fn make_id<P: PageSize>(page: PageIndex, slot: SlotIndex) -> Id {
+    debug_assert_eq!(page.class, page_class::<P>());
+    debug_assert!(slot.0 < page_capacity::<P>());
+    make_erased_id(page, slot)
+}
+
+fn make_erased_id(page: PageIndex, slot: SlotIndex) -> Id {
+    let capacity = class_capacity(page.class);
+    debug_assert!(slot.0 < capacity);
+    let index = (page.class << PAGE_CLASS_SHIFT) + page.index * capacity + slot.0;
+    // SAFETY: `PageIndex::new` keeps the complete page below `Id::MAX_U32`.
+    unsafe { Id::from_index(index as u32) }
 }
 
 #[inline]
-pub fn split_id(id: Id) -> (PageIndex, SlotIndex) {
-    let index = id.index() as usize;
-    let slot = index & PAGE_LEN_MASK;
-    let page = index >> PAGE_LEN_BITS;
-    (PageIndex::new(page), SlotIndex::new(slot))
+fn split_erased_id(id: Id) -> (PageIndex, SlotIndex) {
+    let class = id.index() as usize >> PAGE_CLASS_SHIFT;
+    split_id(id, class, class_capacity(class))
+}
+
+#[inline]
+fn split_typed_id<P: PageSize>(id: Id) -> (PageIndex, SlotIndex) {
+    let class = page_class::<P>();
+    debug_assert_eq!(id.index() as usize >> PAGE_CLASS_SHIFT, class);
+    split_id(id, class, page_capacity::<P>())
+}
+
+#[inline]
+fn split_id(id: Id, class: usize, capacity: usize) -> (PageIndex, SlotIndex) {
+    let offset = id.index() as usize & !PAGE_CLASS_MASK;
+    (
+        PageIndex {
+            class,
+            index: offset / capacity,
+        },
+        SlotIndex(offset % capacity),
+    )
+}
+
+#[cfg(feature = "persistence")]
+pub(crate) fn try_split_typed_id<P: PageSize>(id: Id) -> Option<(PageIndex, SlotIndex)> {
+    (id.index() < Id::MAX_U32 && id.index() as usize >> PAGE_CLASS_SHIFT == page_class::<P>())
+        .then(|| split_typed_id::<P>(id))
 }

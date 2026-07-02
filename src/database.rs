@@ -415,12 +415,14 @@ mod memory_usage {
             let mut queries = HashMap::new();
             let mut structs = Vec::new();
             let mut page_infos = self.zalsa().table().page_infos();
-            let page_capacity = self.zalsa().table().page_capacity();
 
             for input_ingredient in self.zalsa().ingredients() {
                 let Some(input_info) = input_ingredient.memory_usage(self) else {
                     continue;
                 };
+                let page_capacity = input_ingredient
+                    .page_capacity()
+                    .expect("struct ingredients must provide a table page capacity");
 
                 let mut size_of_fields = 0;
                 let mut size_of_metadata = 0;

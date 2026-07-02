@@ -84,6 +84,8 @@ macro_rules! setup_tracked_struct {
         // The function used to implement `C::heap_size`.
         heap_size_fn: $($heap_size_fn:path)?,
 
+        page_size: $page_size:ident,
+
         // If `true`, `serialize_fn` and `deserialize_fn` have been provided.
         persist: $persist:tt,
 
@@ -147,6 +149,7 @@ macro_rules! setup_tracked_struct {
 
                 const PERSIST: bool = $persist;
 
+                type PageSize = $zalsa::$page_size;
                 type Fields<$db_lt> = ($($field_ty,)*);
 
                 type Revisions = [$zalsa::AtomicRevision; $N];

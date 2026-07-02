@@ -7,8 +7,9 @@ use crate::zalsa::Zalsa;
 /// The `Id` of a salsa struct in the database [`Table`](`crate::table::Table`).
 ///
 /// The high-order bits of an `Id` store a 32-bit generation counter, while
-/// the low-order bits pack a [`PageIndex`](`crate::table::PageIndex`) and
-/// [`SlotIndex`](`crate::table::SlotIndex`) within the page.
+/// the low-order bits pack a page-size class, a [`PageIndex`](`crate::table::PageIndex`), and
+/// [`SlotIndex`](`crate::table::SlotIndex`) within the page. The page-size class is selected by
+/// the Salsa struct's `page_size` option.
 ///
 /// The low-order bits of `Id` are a `u32` ranging from `0..Id::MAX_U32`.
 /// The maximum range is smaller than a standard `u32` to leave

@@ -208,6 +208,8 @@ macro_rules! setup_tracked_fn {
                         const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::",)? stringify!($fn_name), "::interned_arguments");
                         const PERSIST: bool = $persist;
 
+                        type PageSize = $zalsa::PageSize1024;
+
                         type Fields<$db_lt> = ($($interned_input_ty),*);
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
