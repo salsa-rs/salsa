@@ -1,9 +1,12 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
-use crate::function::memo::{MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
+use crate::database::RawDatabase;
+use crate::function::memo::{
+    ErasedMemo, FunctionMemoTable, MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult,
+};
 use crate::function::sync::{ClaimGuard, ClaimResult};
-use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::function::{Configuration, IngredientImpl, Reentrancy, SyncTable};
 use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
@@ -112,95 +115,156 @@ where
                 zalsa,
                 database_key_index,
                 revision,
+                #[cfg(feature = "detailed-trace")]
                 memo.value.is_some(),
             ) {
                 return result;
             }
 
-            if let Some(mcs) = self.maybe_changed_after_cold(
+            if let Some(result) = self.maybe_changed_after_cold(
                 zalsa,
                 zalsa_local,
                 db,
-                id,
+                database_key_index,
                 revision,
                 memo_ingredient_index,
             ) {
-                return mcs;
-            } else {
-                // We failed to claim, have to retry.
+                return result;
             }
         }
     }
 
-    #[inline(never)]
-    fn maybe_changed_after_cold<'db>(
-        &'db self,
+    fn maybe_changed_after_cold(
+        &self,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
-        db: &'db C::DbView,
-        key_index: Id,
+        db: &C::DbView,
+        database_key_index: DatabaseKeyIndex,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<VerifyResult> {
-        let database_key_index = self.database_key_index(key_index);
+        enum ColdResult<'db> {
+            Retry,
+            Verified(VerifyResult),
+            Reexecute {
+                claim_guard: ClaimGuard<'db>,
+                old_memo: ErasedMemo<'db>,
+            },
+        }
 
-        let claim_guard =
-            match self
-                .sync_table
-                .try_claim(zalsa, zalsa_local, key_index, Reentrancy::Deny)
-            {
+        #[allow(clippy::too_many_arguments)]
+        fn inner<'db>(
+            sync_table: &'db SyncTable,
+            zalsa: &'db Zalsa,
+            zalsa_local: &'db ZalsaLocal,
+            db: RawDatabase<'db>,
+            memo_table: FunctionMemoTable<'db>,
+            database_key_index: DatabaseKeyIndex,
+            revision: Revision,
+            memo_ingredient_index: MemoIngredientIndex,
+            cycle_recovery_strategy: CycleRecoveryStrategy,
+        ) -> ColdResult<'db> {
+            let claim_guard = match sync_table.try_claim(
+                zalsa,
+                zalsa_local,
+                database_key_index.key_index(),
+                Reentrancy::Deny,
+            ) {
                 ClaimResult::Claimed(guard) => guard,
                 ClaimResult::Running(blocked_on) => {
                     let _ = blocked_on.block_on(zalsa);
-                    return None;
+                    return ColdResult::Retry;
                 }
                 ClaimResult::Cycle { .. } => {
-                    return Some(maybe_changed_after_cold_cycle(
+                    return ColdResult::Verified(maybe_changed_after_cold_cycle(
                         zalsa_local,
                         database_key_index,
-                        C::CYCLE_STRATEGY,
+                        cycle_recovery_strategy,
                     ));
                 }
             };
-        // Load the current memo, if any.
-        let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
-        else {
-            return Some(VerifyResult::changed());
-        };
 
-        if let Some(result) = old_memo.header.maybe_changed_after_cold(
-            db.into(),
-            &claim_guard,
-            revision,
-            C::CYCLE_STRATEGY,
-            old_memo.value.is_some(),
-        ) {
-            return Some(result);
-        }
+            // Load the current memo after claiming the query because it may have changed while
+            // this query was blocked on another thread.
+            let Some(old_memo) = memo_table.get_erased(memo_ingredient_index) else {
+                return ColdResult::Verified(VerifyResult::changed());
+            };
 
-        // If inputs have changed, but we have an old value, we can re-execute.
-        // It is possible the result will be equal to the old value and hence
-        // backdated. In that case, although we will have computed a new memo,
-        // the value has not logically changed.
-        if old_memo.value.is_some() && !old_memo.header.may_be_provisional() {
-            let memo = self.execute(db, claim_guard, Some(old_memo))?;
-            let changed_at = memo.header.revisions.changed_at;
+            let old_header = old_memo.header();
 
-            // Always assume that a provisional value has changed.
-            //
-            // We don't know if a provisional value has actually changed. To determine whether a provisional
-            // value has changed, we need to iterate the outer cycle, which cannot be done here.
-            return Some(
-                if changed_at > revision || memo.header.may_be_provisional() {
+            crate::tracing::debug!(
+                "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
+                    revision = {revision:?}, old_memo = {old_memo:#?}",
+                old_memo = old_header.tracing_debug(old_memo.has_value()),
+            );
+
+            if old_header.verify_memo(
+                db,
+                &claim_guard,
+                cycle_recovery_strategy,
+                #[cfg(feature = "detailed-trace")]
+                old_memo.has_value(),
+            ) {
+                return ColdResult::Verified(if old_header.revisions.changed_at > revision {
                     VerifyResult::changed()
                 } else {
-                    VerifyResult::unchanged_for_memo(&memo.header.revisions)
-                },
-            );
+                    VerifyResult::unchanged_for_memo(&old_header.revisions)
+                });
+            }
+
+            // If the memo is not provisional, the generic continuation can check whether it has
+            // an old value and re-execute. The result may equal the old value and be backdated, in
+            // which case the new memo has not logically changed.
+            if !old_header.may_be_provisional() {
+                ColdResult::Reexecute {
+                    claim_guard,
+                    old_memo,
+                }
+            } else {
+                ColdResult::Verified(VerifyResult::changed())
+            }
         }
 
-        // Otherwise, nothing for it: have to consider the value to have changed.
-        Some(VerifyResult::changed())
+        match inner(
+            &self.sync_table,
+            zalsa,
+            zalsa_local,
+            db.into(),
+            self.memo_table_for(zalsa, database_key_index.key_index()),
+            database_key_index,
+            revision,
+            memo_ingredient_index,
+            C::CYCLE_RECOVERY_STRATEGY,
+        ) {
+            ColdResult::Retry => None,
+            ColdResult::Verified(result) => Some(result),
+            ColdResult::Reexecute {
+                claim_guard,
+                old_memo,
+            } => {
+                let old_memo = old_memo.downcast::<C>();
+
+                if old_memo.value.is_none() {
+                    return Some(VerifyResult::changed());
+                }
+
+                let memo = self.execute(db, claim_guard, Some(old_memo), memo_ingredient_index)?;
+                let changed_at = memo.header.revisions.changed_at;
+
+                // Always assume that a provisional value has changed.
+                //
+                // We don't know if a provisional value has actually changed. To determine whether
+                // a provisional value has changed, we need to iterate the outer cycle, which cannot
+                // be done here.
+                Some(
+                    if changed_at > revision || memo.header.may_be_provisional() {
+                        VerifyResult::changed()
+                    } else {
+                        VerifyResult::unchanged_for_memo(&memo.header.revisions)
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -210,9 +274,14 @@ impl MemoHeader {
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         revision: Revision,
-        has_value: bool,
+        #[cfg(feature = "detailed-trace")] has_value: bool,
     ) -> Option<VerifyResult> {
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
+        let can_shallow_update = self.shallow_verify_memo(
+            zalsa,
+            database_key_index,
+            #[cfg(feature = "detailed-trace")]
+            has_value,
+        );
         if can_shallow_update.yes() && !self.may_be_provisional() {
             self.update_shallow(zalsa, database_key_index, can_shallow_update);
 
@@ -232,50 +301,38 @@ impl MemoHeader {
         db: crate::database::RawDatabase<'_>,
         claim_guard: &ClaimGuard<'_>,
         cycle_recovery_strategy: CycleRecoveryStrategy,
-        has_value: bool,
+        #[cfg(feature = "detailed-trace")] has_value: bool,
     ) -> bool {
         let zalsa = claim_guard.zalsa();
         let zalsa_local = claim_guard.zalsa_local();
         let database_key_index = claim_guard.database_key_index();
 
-        let can_shallow_update = self.shallow_verify_memo(zalsa, database_key_index, has_value);
+        let can_shallow_update = self.shallow_verify_memo(
+            zalsa,
+            database_key_index,
+            #[cfg(feature = "detailed-trace")]
+            has_value,
+        );
         if can_shallow_update.yes()
-            && self.validate_may_be_provisional(zalsa, zalsa_local, database_key_index, has_value)
+            && self.validate_may_be_provisional(
+                zalsa,
+                zalsa_local,
+                database_key_index,
+                #[cfg(feature = "detailed-trace")]
+                has_value,
+            )
         {
             self.update_shallow(zalsa, database_key_index, can_shallow_update);
             true
         } else {
-            self.deep_verify_memo(db, claim_guard, cycle_recovery_strategy, has_value)
-                .is_unchanged()
-        }
-    }
-
-    pub(super) fn maybe_changed_after_cold(
-        &self,
-        db: crate::database::RawDatabase<'_>,
-        claim_guard: &ClaimGuard<'_>,
-        revision: Revision,
-        cycle_recovery_strategy: CycleRecoveryStrategy,
-        has_value: bool,
-    ) -> Option<VerifyResult> {
-        crate::tracing::debug!(
-            "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
-                revision = {revision:?}, old_memo = {old_memo:#?}",
-            database_key_index = claim_guard.database_key_index(),
-            old_memo = self.tracing_debug(has_value)
-        );
-
-        let verified = self.verify_memo(db, claim_guard, cycle_recovery_strategy, has_value);
-
-        if verified {
-            // Check if the inputs are still valid. We can just compare `changed_at`.
-            Some(if self.revisions.changed_at > revision {
-                VerifyResult::changed()
-            } else {
-                VerifyResult::unchanged_for_memo(&self.revisions)
-            })
-        } else {
-            None
+            self.deep_verify_memo(
+                db,
+                claim_guard,
+                cycle_recovery_strategy,
+                #[cfg(feature = "detailed-trace")]
+                has_value,
+            )
+            .is_unchanged()
         }
     }
 
@@ -291,8 +348,9 @@ impl MemoHeader {
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        has_value: bool,
+        #[cfg(feature = "detailed-trace")] has_value: bool,
     ) -> ShallowUpdate {
+        #[cfg(feature = "detailed-trace")]
         crate::tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = self.tracing_debug(has_value)
@@ -355,7 +413,7 @@ impl MemoHeader {
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
-        has_value: bool,
+        #[cfg(feature = "detailed-trace")] has_value: bool,
     ) -> bool {
         if !self.may_be_provisional() {
             return true;
@@ -367,9 +425,10 @@ impl MemoHeader {
             return true;
         }
 
+        #[cfg(feature = "detailed-trace")]
         crate::tracing::trace!(
             "{database_key_index:?}: validate_may_be_provisional(memo = {memo:#?})",
-            memo = self.tracing_debug(has_value)
+            memo = self.tracing_debug(has_value),
         );
 
         let verified_at = self.verified_at.load();
@@ -400,13 +459,14 @@ impl MemoHeader {
         db: crate::database::RawDatabase<'_>,
         claim_guard: &ClaimGuard<'_>,
         cycle_recovery_strategy: CycleRecoveryStrategy,
-        has_value: bool,
+        #[cfg(feature = "detailed-trace")] has_value: bool,
     ) -> VerifyResult {
         let zalsa = claim_guard.zalsa();
         let database_key_index = claim_guard.database_key_index();
 
         match self.origin() {
             QueryOriginRef::Derived(edges) => {
+                #[cfg(feature = "detailed-trace")]
                 crate::tracing::debug!(
                     "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
                     old_memo = self.tracing_debug(has_value)
@@ -596,7 +656,9 @@ fn validate_provisional(
     for cycle_head in cycle_heads {
         let Some(provisional_status) = zalsa
             .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-            .provisional_status(zalsa, cycle_head.database_key_index.key_index())
+            .as_function()
+            .and_then(|function| function.memo(zalsa, cycle_head.database_key_index.key_index()))
+            .map(|memo| memo.header().provisional_status())
         else {
             return false;
         };

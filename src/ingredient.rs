@@ -1,16 +1,14 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::cycle::{IterationStamp, ProvisionalStatus};
 use crate::database::RawDatabase;
-use crate::function::VerifyResult;
+use crate::function::{FunctionIngredientRef, VerifyResult};
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa, transmute_data_mut_ptr, transmute_data_ptr};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::QueryEdge;
 use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -68,43 +66,10 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         visited_edges: &mut FxHashSet<QueryEdge>,
     );
 
-    /// Returns information about the current provisional status of `input`.
-    ///
-    /// Is it a provisional value or has it been finalized and in which iteration.
-    ///
-    /// Returns `None` if `input` doesn't exist.
-    fn provisional_status<'db>(
-        &self,
-        _zalsa: &'db Zalsa,
-        _input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        unreachable!(
-            "provisional_status should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
-
-    /// Invoked when the current thread needs to wait for a result for the given `key_index`.
-    /// This call doesn't block the current thread. Instead, it's up to the caller to block
-    /// in case `key_index` is [running](`WaitForResult::Running`) on another thread.
-    ///
-    /// A return value of [`WaitForResult::Available`] indicates that a result is now available.
-    /// A return value of [`WaitForResult::Running`] indicates that `key_index` is currently running
-    /// on an other thread, it's up to caller to block until the result becomes available if desired.
-    /// A return value of [`WaitForResult::Cycle`] means that a cycle was encountered; the waited-on query is either already claimed
-    /// by the current thread, or by a thread waiting on the current thread.
-    fn wait_for<'me>(&'me self, _zalsa: &'me Zalsa, _key_index: Id) -> WaitForResult<'me> {
-        unreachable!(
-            "wait_for should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
-
-    /// Invoked when a query transfers its lock-ownership to `_key_index`. Returns the thread
-    /// owning the lock for `_key_index` or `None` if `_key_index` is not claimed.
-    ///
-    /// Note: The returned `SyncOwnerId` may be outdated as soon as this function returns **unless**
-    /// it's guaranteed that `_key_index` is blocked on the current thread.
-    fn mark_as_transfer_target(&self, _key_index: Id) -> Option<crate::function::SyncOwner> {
-        unreachable!("mark_as_transfer_target should only be called on functions");
+    /// Returns the function-specific interface for this ingredient, if any.
+    #[doc(hidden)]
+    fn as_function(&self) -> Option<FunctionIngredientRef<'_>> {
+        None
     }
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
@@ -159,32 +124,6 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name(), index, fmt)
     }
-    // Function ingredient methods
-
-    /// Tests if the (nested) cycle head `_input` has converged in the most recent iteration.
-    ///
-    /// Returns `false` if the Memo doesn't exist or if called on a non-cycle head.
-    fn cycle_converged(&self, _zalsa: &Zalsa, _input: Id) -> bool {
-        unreachable!(
-            "cycle_converged should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
-
-    /// Updates the iteration for the (nested) cycle head `_input` to `iteration`.
-    ///
-    /// This is a no-op if the memo doesn't exist or if called on a Memo without cycle heads.
-    fn set_cycle_iteration_count(&self, _zalsa: &Zalsa, _input: Id, _iteration: IterationStamp) {
-        unreachable!(
-            "set_cycle_iteration_count should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
-
-    fn finalize_cycle_head(&self, _zalsa: &Zalsa, _input: Id) {
-        unreachable!(
-            "finalize_cycle_head should only be called on cycle heads and only functions can be cycle heads"
-        );
-    }
-
     /// Flattens the dependencies of a query with cycle handling that participates in a cycle.
     ///
     /// This query recursively walks the dependency graph of `id` and flattens input dependencies
@@ -203,12 +142,6 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     );
-
-    /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key_index: Id) -> Option<QueryOriginRef<'db>> {
-        let _ = (zalsa, key_index);
-        unreachable!("only function ingredients have origins")
-    }
 
     /// What values were accumulated during the creation of the value at `key_index`
     /// (if any).
@@ -340,11 +273,4 @@ impl dyn Ingredient {
 /// A helper function to show human readable fmt.
 pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(fmt, "{debug_name}({id:?})")
-}
-
-#[derive(Debug)]
-pub enum WaitForResult<'me> {
-    Running(Running<'me>),
-    Available,
-    Cycle { inner: bool },
 }
