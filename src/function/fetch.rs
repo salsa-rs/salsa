@@ -85,9 +85,12 @@ where
 
         let database_key_index = self.database_key_index(id);
 
-        let can_shallow_update = memo
-            .header
-            .shallow_verify_memo(zalsa, database_key_index, true);
+        let can_shallow_update = memo.header.shallow_verify_memo(
+            zalsa,
+            database_key_index,
+            #[cfg(feature = "detailed-trace")]
+            true,
+        );
 
         if can_shallow_update.yes() && !memo.header.may_be_provisional() {
             memo.header
@@ -137,9 +140,13 @@ where
 
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some()
-                && old_memo
-                    .header
-                    .verify_memo(db.into(), &claim_guard, C::CYCLE_STRATEGY, true)
+                && old_memo.header.verify_memo(
+                    db.into(),
+                    &claim_guard,
+                    C::CYCLE_STRATEGY,
+                    #[cfg(feature = "detailed-trace")]
+                    true,
+                )
             {
                 // SAFETY: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.
