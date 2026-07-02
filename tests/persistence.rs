@@ -526,6 +526,18 @@ fn partial_query_interned() {
         .unwrap()
         .as_struct();
 
+    // Directly re-intern the restored value to exercise the rebuilt key map.
+    let restored_i0_id = MyInterned::ingredient(db.zalsa())
+        .entries(db.zalsa())
+        .next()
+        .unwrap()
+        .key()
+        .key_index();
+    assert_eq!(
+        MyInterned::new(&db, "0".to_string()).as_id(),
+        restored_i0_id
+    );
+
     // Re-intern `i0`.
     let i0 = intern(&db, input, 0);
     let i0_id = i0.as_id();
