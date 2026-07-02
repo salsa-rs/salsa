@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.3](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.27.2...salsa-macros-v0.27.3) - 2026-07-02
+
+### Added
+
+- return references by default ([#1216](https://github.com/salsa-rs/salsa/pull/1216))
+
+### Other
+
+- document proc macros and Salsa concepts ([#1213](https://github.com/salsa-rs/salsa/pull/1213))
+
 ## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.27.0...salsa-macros-v0.27.1) - 2026-06-24
 
 ### Fixed
