@@ -82,6 +82,31 @@ fn tracked_field_read_many(bencher: divan::Bencher) {
         });
 }
 
+/// Reads one untracked field per query across many tracked values.
+#[divan::bench]
+fn untracked_field_read_many(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let db = salsa::DatabaseImpl::default();
+            warm_db(&db);
+            let input = TrackedInput::new(black_box(&db), black_box(MANY));
+            // SAFETY: The tracked values are returned together with the database they came from.
+            // The benchmark only uses them while that database is still alive.
+            let tracked_values: Vec<TrackedValue<'static>> =
+                unsafe { transmute(make_tracked_values(black_box(&db), black_box(input)).clone()) };
+            (db, tracked_values)
+        })
+        .bench_local_refs(|(db, tracked_values)| {
+            let mut sum = 0;
+
+            for tracked in tracked_values.iter().copied() {
+                sum += read_untracked_field(black_box(db), black_box(tracked));
+            }
+
+            assert_eq!(black_box(sum), expected_sum(MANY));
+        });
+}
+
 fn warm_db(db: &salsa::DatabaseImpl) {
     let input = WarmupInput::new(black_box(db), black_box(13));
     let value = warmup_query(black_box(db), black_box(input));
@@ -156,4 +181,10 @@ fn make_tracked_values(db: &dyn salsa::Database, input: TrackedInput) -> Vec<Tra
 #[inline(never)]
 fn read_tracked_field<'db>(db: &'db dyn salsa::Database, tracked: TrackedValue<'db>) -> usize {
     tracked.value(db)
+}
+
+#[salsa::tracked(returns(copy))]
+#[inline(never)]
+fn read_untracked_field<'db>(db: &'db dyn salsa::Database, tracked: TrackedValue<'db>) -> usize {
+    *tracked.index(db)
 }
