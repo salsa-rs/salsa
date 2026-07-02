@@ -1625,7 +1625,7 @@ impl<H, T: Copy> Drop for SliceWithHeaderBuilder<H, T> {
 /// This type stores the [`QueryEdgeKind`] as a tag on the `IngredientIndex` without
 /// increasing the size of the type. Its 12-byte size is meaningful because inputs and
 /// outputs are stored contiguously.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct QueryEdge {
     // Store a normalized zero-based index rather than nesting an `Id`, whose index uses a
     // `NonZeroU32(index + 1)` representation. Packed origins unpack many transient
@@ -1679,6 +1679,17 @@ impl QueryEdge {
     const fn id(self) -> Id {
         // SAFETY: `index` came from a valid `Id` in `QueryEdge::input`.
         unsafe { Id::from_index(self.index) }.with_generation(self.generation)
+    }
+}
+
+impl std::hash::Hash for QueryEdge {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // A query should never depend on the same ingredient and index at different generations:
+        // advancing the generation replaces the previous identity. If this assumption is ever
+        // violated, `Eq` still compares the generation, so omitting it here only causes a hash
+        // collision. The ingredient's tag bit includes the edge kind in the hash.
+        state.write_u32(self.index);
+        state.write_u32(self.ingredient.as_u32());
     }
 }
 
