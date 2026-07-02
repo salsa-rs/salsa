@@ -609,6 +609,7 @@ impl QueryRevisionsExtra {
             None
         } else {
             tracked_struct_ids.shrink_to_fit();
+            let participated_in_cycle = !cycle_heads.is_empty();
 
             Some(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
@@ -617,6 +618,8 @@ impl QueryRevisionsExtra {
                 tracked_struct_ids,
                 iteration: iteration.into(),
                 cycle_converged: false,
+                participated_in_cycle,
+                poisoned: false,
             })
         };
 
@@ -670,6 +673,23 @@ struct QueryRevisionsExtraInner {
     /// This value is always `false` for other queries.
     #[cfg_attr(feature = "persistence", serde(skip))]
     cycle_converged: bool,
+
+    /// Whether this memo has ever participated in a cycle.
+    #[cfg_attr(
+        feature = "persistence",
+        serde(default, skip_serializing_if = "is_false")
+    )]
+    participated_in_cycle: bool,
+
+    /// True if the memo is a poison marker for a provisional cycle result
+    /// that panicked while computing.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    poisoned: bool,
+}
+
+#[cfg(feature = "persistence")]
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl QueryRevisionsExtraInner {
@@ -681,6 +701,8 @@ impl QueryRevisionsExtraInner {
             cycle_heads: empty_cycle_heads().clone(),
             iteration: IterationStamp::default().into(),
             cycle_converged: false,
+            participated_in_cycle: false,
+            poisoned: false,
         }
     }
 
@@ -693,6 +715,8 @@ impl QueryRevisionsExtraInner {
             cycle_heads,
             iteration: _,
             cycle_converged: _,
+            participated_in_cycle: _,
+            poisoned: _,
         } = self;
 
         #[cfg(feature = "accumulator")]
@@ -725,7 +749,8 @@ impl fmt::Debug for QueryRevisionsExtraInner {
 
         f.field("cycle_heads", &self.cycle_heads)
             .field("iteration", &self.iteration)
-            .field("cycle_converged", &self.cycle_converged);
+            .field("cycle_converged", &self.cycle_converged)
+            .field("poisoned", &self.poisoned);
 
         #[cfg(feature = "accumulator")]
         {
@@ -792,8 +817,20 @@ impl QueryRevisions {
     /// Sets the `CycleHeads` for this query.
     pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads, iteration: IterationStamp) {
         let extra = self.origin_and_extra.get_or_insert_extra();
+        extra.participated_in_cycle |= !cycle_heads.is_empty();
         extra.cycle_heads = cycle_heads;
         extra.iteration = iteration.into();
+    }
+
+    pub(crate) fn participated_in_cycle(&self) -> bool {
+        self.extra()
+            .is_some_and(|extra| extra.participated_in_cycle)
+    }
+
+    pub(crate) fn mark_participated_in_cycle(&mut self) {
+        self.origin_and_extra
+            .get_or_insert_extra()
+            .participated_in_cycle = true;
     }
 
     pub(crate) const fn cycle_converged(&self) -> bool {
@@ -807,6 +844,14 @@ impl QueryRevisions {
         if let Some(extra) = self.origin_and_extra.extra_mut() {
             extra.cycle_converged = cycle_converged
         }
+    }
+
+    pub(crate) fn poisoned(&self) -> bool {
+        self.extra().is_some_and(|extra| extra.poisoned)
+    }
+
+    pub(crate) fn set_poisoned(&mut self) {
+        self.origin_and_extra.get_or_insert_extra().poisoned = true;
     }
 
     pub(crate) fn iteration(&self) -> IterationStamp {
@@ -1767,14 +1812,6 @@ impl<'a> QueryEdges<'a> {
     const fn wide(edges: &'a [QueryEdge]) -> Self {
         QueryEdges {
             data: QueryEdgesData::Wide(edges),
-        }
-    }
-
-    #[cfg(feature = "accumulator")]
-    pub(crate) const fn len(self) -> usize {
-        match self.data {
-            QueryEdgesData::Packed(edges) => edges.len(),
-            QueryEdgesData::Wide(edges) => edges.len(),
         }
     }
 

@@ -1,5 +1,6 @@
 use crate::Backtrace;
 use crate::DatabaseKeyIndex;
+use crate::function::eviction::MemoValue;
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa_local::QueryRevisions;
@@ -22,8 +23,8 @@ where
         if old_memo.header.can_backdate(revisions)
             && old_memo
                 .value
-                .as_ref()
-                .is_some_and(|old_value| C::values_equal(old_value, value))
+                .load()
+                .is_some_and(|old_value| C::values_equal(&old_value, value))
         {
             old_memo.header.backdate(index, revisions);
         }

@@ -1,10 +1,11 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::active_query::CompletedQuery;
-use crate::function::memo::{Memo, MemoHeader};
+use crate::function::EvictionPolicy;
+use crate::function::eviction::MemoValue;
+use crate::function::memo::Memo;
 use crate::function::sync::{ClaimResult, Reentrancy};
 use crate::function::{Configuration, IngredientImpl};
-use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
@@ -22,6 +23,7 @@ where
         C::Input<'db>: TrackedStructInDb,
     {
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
 
         let (active_query_key, current_deps, cycle_heads) =
             match zalsa_local.active_query_with_cycle_heads() {
@@ -140,13 +142,7 @@ where
                 .diff_outputs(zalsa, database_key_index, &completed_query);
         }
 
-        let memo = Memo {
-            value: Some(value),
-            header: MemoHeader {
-                verified_at: AtomicRevision::from(revision),
-                revisions: completed_query.revisions,
-            },
-        };
+        let memo = Memo::new(Some(value), revision, completed_query.revisions);
 
         crate::tracing::debug!(
             "specify: about to add memo {:#?} for key {:?}",
@@ -169,6 +165,7 @@ where
         executor: DatabaseKeyIndex,
         key: Id,
     ) {
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
         let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {

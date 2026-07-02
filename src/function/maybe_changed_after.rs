@@ -1,9 +1,10 @@
 #[cfg(feature = "accumulator")]
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
+use crate::function::eviction::MemoValue;
 use crate::function::memo::{MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::{ClaimGuard, ClaimResult};
-use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::function::{Configuration, EvictionPolicy, IngredientImpl, Reentrancy};
 use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
@@ -91,6 +92,7 @@ where
         revision: Revision,
     ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
@@ -365,6 +367,13 @@ impl MemoHeader {
 
         if cycle_heads.is_empty() {
             return true;
+        }
+
+        // Volatile eviction can keep same-revision cycle metadata after discarding
+        // the provisional value. That metadata is still useful for dependency
+        // tracking, but it must not validate as same-iteration cycle state.
+        if !has_value {
+            return false;
         }
 
         crate::tracing::trace!(

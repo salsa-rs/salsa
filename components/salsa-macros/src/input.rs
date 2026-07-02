@@ -59,6 +59,8 @@ impl AllowedOptions for InputStruct {
 
     const LRU: bool = false;
 
+    const VOLATILE: bool = false;
+
     const CONSTRUCTOR_NAME: bool = true;
 
     const ID: bool = false;

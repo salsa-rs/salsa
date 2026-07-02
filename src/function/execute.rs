@@ -2,6 +2,8 @@ use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp};
+use crate::function::eviction::EvictionPolicy;
+use crate::function::eviction::MemoValue;
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
@@ -44,6 +46,13 @@ where
         let zalsa = claim_guard.zalsa();
 
         let id = database_key_index.key_index();
+        if C::Eviction::RETIRES_VALUES
+            && opt_old_memo.is_some_and(|memo| {
+                !memo.value.is_some() && memo.header.verified_at.load() == zalsa.current_revision()
+            })
+        {
+            self.eviction.record_volatile_recomputation();
+        }
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         crate::tracing::info!("{:?}: executing query", database_key_index);
@@ -60,7 +69,7 @@ where
                     db,
                     zalsa,
                     claim_guard.zalsa_local().push_query(database_key_index),
-                    opt_old_memo.map(|memo| &memo.header),
+                    opt_old_memo.map(|memo| (&memo.header, memo.value.is_some())),
                 );
 
                 // Ordinary queries don't need a cycle iteration stamp. Keeping the default avoids
@@ -173,7 +182,7 @@ where
                 active_query,
                 last_provisional_memo_opt
                     .or(opt_old_memo)
-                    .map(|memo| &memo.header),
+                    .map(|memo| (&memo.header, memo.value.is_some())),
             );
 
             let (mut active_query, cycle_heads, outer_cycle, cycle_iteration) =
@@ -230,7 +239,7 @@ where
                 memo
             });
 
-            let last_provisional_value = last_provisional_memo.value.as_ref();
+            let last_provisional_value = last_provisional_memo.value.load();
 
             let last_provisional_value = last_provisional_value.expect(
                 "`fetch_cold_cycle` should have inserted a provisional memo with Cycle::initial",
@@ -258,12 +267,12 @@ where
                 new_value = C::recover_from_cycle(
                     db,
                     &cycle,
-                    last_provisional_value,
+                    &last_provisional_value,
                     new_value,
                     C::id_to_input(zalsa, id),
                 );
 
-                C::values_equal(&new_value, last_provisional_value)
+                C::values_equal(&new_value, &last_provisional_value)
             };
 
             let new_cycle_heads = active_query.take_cycle_heads();
@@ -319,10 +328,10 @@ where
         db: &'db C::DbView,
         zalsa: &'db Zalsa,
         active_query: ActiveQueryGuard<'db>,
-        opt_old_header: Option<&MemoHeader>,
+        opt_old_header: Option<(&MemoHeader, bool)>,
     ) -> (C::Output<'db>, ActiveQueryGuard<'db>) {
-        if let Some(old_header) = opt_old_header {
-            old_header.seed_active_query(zalsa, &active_query);
+        if let Some((old_header, has_value)) = opt_old_header {
+            old_header.seed_active_query(zalsa, &active_query, has_value);
         }
 
         // Query was not previously executed, or value is potentially
@@ -378,11 +387,15 @@ impl MemoHeader {
         //    (we can't rely on `iteration` being updated for nested cycles because the nested cycles may have completed successfully).
         // b) It's guaranteed that this query will panic again anyway.
         // That's why we simply propagate the panic here. It simplifies our lives and it also avoids duplicate panic messages.
-        if !has_value {
+        if self.revisions.poisoned() {
             tracing::warn!(
                 "Propagating panic for cycle head that panicked in an earlier execution in that revision"
             );
             Cancelled::PropagatedPanic.throw();
+        }
+
+        if !has_value {
+            return None;
         }
 
         Some(PreviousIteration {
@@ -393,7 +406,12 @@ impl MemoHeader {
         })
     }
 
-    fn seed_active_query(&self, zalsa: &Zalsa, active_query: &ActiveQueryGuard<'_>) {
+    fn seed_active_query(
+        &self,
+        zalsa: &Zalsa,
+        active_query: &ActiveQueryGuard<'_>,
+        has_value: bool,
+    ) {
         // If we already executed this query once, then use the tracked-struct ids from the
         // previous execution as the starting point for the new one.
         active_query.seed_tracked_struct_ids(self.revisions.tracked_struct_ids());
@@ -403,7 +421,10 @@ impl MemoHeader {
         // * ensure that tracked struct created during the previous iteration
         //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
         // * ensure the final returned memo depends on all inputs from all iterations.
-        if self.may_be_provisional() && self.verified_at.load() == zalsa.current_revision() {
+        if self.may_be_provisional()
+            && self.verified_at.load() == zalsa.current_revision()
+            && has_value
+        {
             active_query.seed_iteration(&self.revisions);
         }
     }
@@ -552,7 +573,7 @@ impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
                 IterationStamp::initial(self.zalsa.runtime().cancellation_count()),
             );
 
-            let memo = Memo::new(None, self.zalsa.current_revision(), revisions);
+            let memo = Memo::poisoned(self.zalsa.current_revision(), revisions);
             self.ingredient
                 .insert_memo(self.zalsa, self.id, memo, self.memo_ingredient_index);
         }
@@ -818,6 +839,7 @@ fn try_complete_cycle_head(
             ingredient.finalize_cycle_head(zalsa, head.database_key_index.key_index());
         }
 
+        completed_query.revisions.mark_participated_in_cycle();
         *completed_query.revisions.verified_final.get_mut() = true;
 
         zalsa.event(&|| {

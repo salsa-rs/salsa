@@ -1,9 +1,8 @@
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::accumulator::{self};
-use crate::function::{Configuration, IngredientImpl};
+use crate::function::{Configuration, EvictionPolicy, IngredientImpl};
 use crate::hash::FxHashSet;
 use crate::zalsa::ZalsaDatabase;
-use crate::zalsa_local::QueryOriginRef;
 use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
@@ -17,6 +16,7 @@ where
         A: accumulator::Accumulator,
     {
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
 
         // NOTE: We don't have a precise way to track accumulated values at present,
         // so we report any read of them as an untracked read.
@@ -37,7 +37,11 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch(db, zalsa, zalsa_local, key);
+        if C::Eviction::RETIRES_VALUES {
+            drop(self.fetch_volatile(db, zalsa, zalsa_local, key));
+        } else {
+            self.fetch(db, zalsa, zalsa_local, key);
+        }
 
         let db_key = self.database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
@@ -64,22 +68,9 @@ where
                 continue;
             }
 
-            // Find the inputs of `k` and push them onto the stack.
-            //
-            // Careful: to ensure the user gets a consistent ordering in their
-            // output vector, we want to push in execution order, so reverse order to
-            // ensure the first child that was executed will be the first child popped
-            // from the stack.
-            let Some(origin) = ingredient.origin(zalsa, k.key_index()) else {
-                continue;
-            };
-
-            if let QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) = origin
-            {
-                stack.reserve(edges.len());
-            }
-
-            stack.extend(origin.inputs().rev());
+            // Find the inputs of `k` and push them onto the stack. Inputs are appended
+            // in reverse execution order so the first child executed is popped first.
+            ingredient.extend_origin_inputs(zalsa, k.key_index(), &mut stack);
 
             visited.reserve(stack.len());
         }
@@ -93,8 +84,11 @@ where
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let (zalsa, zalsa_local) = db.zalsas();
+        let _guard = C::Eviction::RETIRES_VALUES.then(|| zalsa.memo_read_guard());
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
+        // Volatile memos with accumulated values remain revision-delayed because
+        // the returned references can outlive `_guard`.
         (
             memo.header.revisions.accumulated(),
             memo.header.revisions.accumulated_inputs.load(),

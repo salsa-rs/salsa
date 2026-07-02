@@ -248,7 +248,11 @@ where
     /// The `MemoTable` must belong to a `Value` of the correct type. Additionally, the
     /// lock must be held for the shard containing the value.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
+    unsafe fn memory_usage(
+        &self,
+        memo_table_types: &MemoTableTypes,
+        guard: &crate::zalsa::MemoReadGuard<'_>,
+    ) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
         // have at-least read-only access to the value's memos.
@@ -261,7 +265,7 @@ where
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
             size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
             heap_size_of_fields: heap_size,
-            memos: memos.memory_usage(),
+            memos: memos.memory_usage(guard),
         }
     }
 }
@@ -1023,18 +1027,21 @@ where
     fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
         use parking_lot::lock_api::RawMutex;
 
+        let zalsa = db.zalsa();
+        let guard = zalsa.memo_read_guard();
+
         for shard in self.shards.iter() {
             // SAFETY: We do not hold any active mutex guards.
             unsafe { shard.raw().lock() };
         }
 
         // SAFETY: We hold the locks for all shards.
-        let entries = unsafe { self.entries_inner(false, db.zalsa()) };
+        let entries = unsafe { self.entries_inner(false, zalsa) };
 
         let memory_usage = entries
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type. Additionally, we are holding the locks for all shards.
-            .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
+            .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types, &guard) })
             .collect();
 
         for shard in self.shards.iter() {

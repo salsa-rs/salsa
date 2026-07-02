@@ -1049,11 +1049,13 @@ where
     /// Returns memory usage information about any tracked structs.
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+        let zalsa = db.zalsa();
+        let guard = zalsa.memo_read_guard();
         let memory_usage = self
-            .entries(db.zalsa())
+            .entries(zalsa)
             // SAFETY: The memo table belongs to a value that we allocated, so it
             // has the correct type.
-            .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
+            .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types, &guard) })
             .collect();
 
         Some(memory_usage)
@@ -1156,7 +1158,11 @@ where
     /// # Safety
     ///
     /// The `MemoTable` must belong to a `Value` of the correct type.
-    unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
+    unsafe fn memory_usage(
+        &self,
+        memo_table_types: &MemoTableTypes,
+        guard: &crate::zalsa::MemoReadGuard<'_>,
+    ) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
@@ -1166,7 +1172,7 @@ where
             size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::Fields<'_>>(),
             size_of_fields: mem::size_of::<C::Fields<'_>>(),
             heap_size_of_fields: heap_size,
-            memos: memos.memory_usage(),
+            memos: memos.memory_usage(guard),
         }
     }
 }
