@@ -56,6 +56,30 @@ impl<C: Configuration> IngredientImpl<C> {
         Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
     }
 
+    /// Loads the current memo without checking its registered type.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be registered in `zalsa`, and `memo_ingredient_index` must come from this
+    /// ingredient's memo ingredient map.
+    pub(super) unsafe fn get_memo_from_table_for_unchecked<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db Memo<'db, C>> {
+        // SAFETY: The caller guarantees that this ingredient's memo map registered `Memo<C>` at
+        // `memo_ingredient_index` in `zalsa`.
+        let static_memo = unsafe {
+            zalsa
+                .memo_table_for::<C::SalsaStruct<'_>>(id)
+                .get_unchecked(memo_ingredient_index)?
+        };
+        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
+        // for `'db` though as we delay their dropping to the end of a revision.
+        Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
+    }
+
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked
     /// or has values assigned as output of another query, this has no effect.

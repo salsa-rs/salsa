@@ -96,16 +96,17 @@ macro_rules! setup_tracked_fn {
             use ::salsa::plumbing as $zalsa;
 
             $zalsa::attach($db, || {
-                let (zalsa, zalsa_local) = $db.zalsas();
+                let fn_ingredient = $fn_name::fn_ingredient_($db);
+                let (zalsa, zalsa_local) = fn_ingredient.zalsas();
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
                         {
                             let key = $fn_name::intern_ingredient_(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data);
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, key)
+                            fn_ingredient.fetch(key)
                         }
                     } else {
                         {
-                            $fn_name::fn_ingredient_($db, zalsa).fetch($db, zalsa, zalsa_local, $zalsa::AsId::as_id(&($($input_id),*)))
+                            fn_ingredient.fetch($zalsa::AsId::as_id(&($($input_id),*)))
                         }
                     }
                 };
@@ -255,19 +256,18 @@ macro_rules! setup_tracked_fn {
             }
 
             impl $Configuration {
-                fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
-                    let zalsa = db.zalsa();
-                    Self::fn_ingredient_(db, zalsa)
-                }
-
                 #[inline]
-                fn fn_ingredient_<'z>(db: &dyn $Db, zalsa: &'z $zalsa::Zalsa) -> &'z $zalsa::function::IngredientImpl<$Configuration> {
+                fn fn_ingredient<'db>(db: &'db dyn $Db) -> $zalsa::function::IngredientInDb<'db, $Configuration> {
                     // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the first
-                    // ingredient created by our jar is the function ingredient.
+                    // ingredient created by our jar is the function ingredient in the provided
+                    // `zalsa`.
                     unsafe {
-                        $FN_CACHE.get_or_create::<$fn_name, 0>(zalsa)
+                        $zalsa::function::IngredientInDb::new_unchecked(db, |zalsa| {
+                            $FN_CACHE
+                                .get_or_create::<$fn_name, 0>(zalsa)
+                                .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_downcaster(db))
+                        })
                     }
-                    .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_downcaster(db))
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
@@ -456,16 +456,17 @@ macro_rules! setup_tracked_fn {
                         $($input_id: $interned_input_ty,)*
                     ) -> Vec<&$db_lt A> {
                         use ::salsa::plumbing as $zalsa;
+                        let fn_ingredient = $Configuration::fn_ingredient($db);
                         let key = $zalsa::macro_if! {
                             if $needs_interner {{
-                                let (zalsa, zalsa_local) = $db.zalsas();
+                                let (zalsa, zalsa_local) = fn_ingredient.zalsas();
                                 $Configuration::intern_ingredient(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*), |_, data| data)
                             }} else {
                                 $zalsa::AsId::as_id(&($($input_id),*))
                             }
                         };
 
-                        $Configuration::fn_ingredient($db).accumulated_by::<A>($db, key)
+                        fn_ingredient.accumulated_by::<A>(key)
                     }
                 }
 
@@ -477,7 +478,6 @@ macro_rules! setup_tracked_fn {
                     ) {
                         let key = $zalsa::AsId::as_id(&($($input_id),*));
                         $Configuration::fn_ingredient($db).specify_and_record(
-                            $db,
                             key,
                             value,
                         )
@@ -504,8 +504,8 @@ macro_rules! setup_tracked_fn {
                 }
 
                 #[inline]
-                fn fn_ingredient_<'z>(db: &dyn $Db, zalsa: &'z $zalsa::Zalsa) -> &'z $zalsa::function::IngredientImpl<$Configuration> {
-                    $Configuration::fn_ingredient_(db, zalsa)
+                fn fn_ingredient_<'db>(db: &'db dyn $Db) -> $zalsa::function::IngredientInDb<'db, $Configuration> {
+                    $Configuration::fn_ingredient(db)
                 }
             }
         };
