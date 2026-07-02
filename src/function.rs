@@ -1,4 +1,5 @@
 pub(crate) use maybe_changed_after::VerifyResult;
+pub(crate) use memo::ErasedMemo;
 pub(crate) use sync::{ClaimGuard, ClaimResult, Reentrancy, SyncGuard, SyncOwner, SyncTable};
 
 use std::any::Any;
@@ -446,7 +447,15 @@ where
         executor: DatabaseKeyIndex,
         output_key: crate::Id,
     ) {
-        self.validate_specified_value(zalsa, executor, output_key);
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, output_key);
+        let database_key_index = self.database_key_index(output_key);
+        specify::validate_specified_value(
+            zalsa,
+            executor,
+            database_key_index,
+            self.memo_table_for(zalsa, output_key),
+            memo_ingredient_index,
+        );
     }
 
     fn remove_stale_output(
