@@ -243,7 +243,7 @@ impl Macro {
             (None, 0, 1)
         };
 
-        let db_arg = fn_item.sig.inputs.iter().nth(db_input_index).ok_or_else(|| {
+        let db_arg = fn_item.sig.inputs.get(db_input_index).ok_or_else(|| {
             syn::Error::new_spanned(
                 &fn_item.sig,
                 "tracked methods must have a database parameter after `self`",
