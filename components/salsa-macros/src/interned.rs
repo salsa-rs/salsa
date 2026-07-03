@@ -67,6 +67,8 @@ impl AllowedOptions for InternedStruct {
 
     const HEAP_SIZE: bool = true;
 
+    const PAGE_SIZE: bool = true;
+
     const SELF_TY: bool = false;
 
     const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedValue;
@@ -138,6 +140,7 @@ impl Macro {
         let deserialize_fn = salsa_struct.deserialize_fn();
 
         let heap_size_fn = self.args.heap_size_fn.iter();
+        let page_size = format_ident!("PageSize{}", self.args.page_size.unwrap_or(1024));
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -176,6 +179,7 @@ impl Macro {
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,
                     heap_size_fn: #(#heap_size_fn)*,
+                    page_size: #page_size,
                     persist: #persist,
                     serialize_fn: #(#serialize_fn)*,
                     deserialize_fn: #(#deserialize_fn)*,

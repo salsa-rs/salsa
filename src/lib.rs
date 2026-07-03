@@ -352,6 +352,7 @@ pub mod plumbing {
     pub use crate::salsa_struct::{SalsaStructInDb, assert_supertype_no_overlap};
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::table::memo::MemoTableWithTypes;
+    pub use crate::table::{PageSize, PageSize128, PageSize256, PageSize512, PageSize1024};
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::helper::{Dispatch as UpdateDispatch, Fallback as UpdateFallback};
     pub use crate::update::{Update, always_update};

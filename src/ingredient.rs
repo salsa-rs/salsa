@@ -239,6 +239,12 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         None
     }
 
+    /// Returns the table page capacity for struct ingredients.
+    #[cfg(feature = "salsa_unstable")]
+    fn page_capacity(&self) -> Option<usize> {
+        None
+    }
+
     /// Whether this ingredient will be persisted with the database.
     fn is_persistable(&self) -> bool {
         false

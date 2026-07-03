@@ -67,6 +67,8 @@ impl AllowedOptions for InputStruct {
 
     const HEAP_SIZE: bool = true;
 
+    const PAGE_SIZE: bool = true;
+
     const SELF_TY: bool = false;
 
     const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedValue;
@@ -115,6 +117,7 @@ impl Macro {
         let is_singleton = self.args.singleton.is_some();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let heap_size_fn = self.args.heap_size_fn.iter();
+        let page_size = format_ident!("PageSize{}", self.args.page_size.unwrap_or(1024));
 
         let persist = self.args.persist();
         let serialize_fn = salsa_struct.serialize_fn();
@@ -148,6 +151,7 @@ impl Macro {
                     is_singleton: #is_singleton,
                     generate_debug_impl: #generate_debug_impl,
                     heap_size_fn: #(#heap_size_fn)*,
+                    page_size: #page_size,
                     persist: #persist,
                     serialize_fn: #(#serialize_fn)*,
                     deserialize_fn: #(#deserialize_fn)*,

@@ -30,6 +30,10 @@ pub trait Configuration: Any {
     /// Whether this struct should be persisted with the database.
     const PERSIST: bool;
 
+    /// Physical table page-size policy.
+    #[doc(hidden)]
+    type PageSize: crate::table::PageSize;
+
     /// The singleton state for this input if any.
     type Singleton: SingletonChoice + Send + Sync;
 
@@ -366,6 +370,11 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         Some(memory_usage)
     }
 
+    #[cfg(feature = "salsa_unstable")]
+    fn page_capacity(&self) -> Option<usize> {
+        Some(crate::table::page_capacity::<C::PageSize>())
+    }
+
     fn is_persistable(&self) -> bool {
         C::PERSIST
     }
@@ -473,6 +482,8 @@ unsafe impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
+    type PageSize = C::PageSize;
+
     #[inline(always)]
     unsafe fn memos(
         this: *const Self,
@@ -610,7 +621,8 @@ mod persistence {
 
             while let Some((id, value)) = access.next_entry::<u64, DeserializeValue<C>>()? {
                 let id = Id::from_bits(id);
-                let (page_idx, _) = crate::table::split_id(id);
+                let (page_idx, _) = crate::table::try_split_typed_id::<C::PageSize>(id)
+                    .ok_or_else(|| de::Error::custom("serialized ID has the wrong page size"))?;
 
                 let value = Value::<C> {
                     fields: value.fields.0,

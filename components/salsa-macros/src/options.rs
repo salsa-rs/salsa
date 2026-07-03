@@ -113,6 +113,9 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the provided `heap_size` function.
     pub heap_size_fn: Option<syn::Path>,
 
+    /// The physical table page capacity in slots.
+    pub page_size: Option<usize>,
+
     /// The `self_ty = <Ty>` option is used to set the the self type of the tracked impl for tracked
     /// functions. This is merely used to refine the query name.
     pub self_ty: Option<syn::Type>,
@@ -157,6 +160,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             id: Default::default(),
             revisions: Default::default(),
             heap_size_fn: Default::default(),
+            page_size: Default::default(),
             self_ty: Default::default(),
             persist: Default::default(),
         }
@@ -182,6 +186,7 @@ pub(crate) trait AllowedOptions {
     const ID: bool;
     const REVISIONS: bool;
     const HEAP_SIZE: bool;
+    const PAGE_SIZE: bool = false;
     const SELF_TY: bool;
     const PERSIST: AllowedPersistOptions;
 }
@@ -519,6 +524,38 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`heap_size` option not allowed here",
                     ));
                 }
+            } else if ident == "page_size" {
+                if !A::PAGE_SIZE {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`page_size` option not allowed here",
+                    ));
+                }
+                let _eq = Equals::parse(input)?;
+                let expr = syn::Expr::parse(input)?;
+                let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Int(lit),
+                    ..
+                }) = expr
+                else {
+                    return Err(syn::Error::new(
+                        expr.span(),
+                        "`page_size` must be an integer literal",
+                    ));
+                };
+                let value = lit.base10_parse::<usize>()?;
+                if !matches!(value, 128 | 256 | 512 | 1024) {
+                    return Err(syn::Error::new(
+                        lit.span(),
+                        "expected 128, 256, 512, or 1024 slots",
+                    ));
+                }
+                if options.page_size.replace(value).is_some() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "option `page_size` provided twice",
+                    ));
+                }
             } else if ident == "self_ty" {
                 if A::SELF_TY {
                     let _eq = Equals::parse(input)?;
@@ -572,6 +609,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             id,
             revisions,
             heap_size_fn,
+            page_size,
             self_ty,
             persist,
             phantom: _,
@@ -626,6 +664,9 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         }
         if let Some(heap_size_fn) = heap_size_fn {
             tokens.extend(quote::quote! { heap_size = #heap_size_fn, });
+        }
+        if let Some(page_size) = page_size {
+            tokens.extend(quote::quote! { page_size = #page_size, });
         }
         if let Some(self_ty) = self_ty {
             tokens.extend(quote::quote! { self_ty = #self_ty, });

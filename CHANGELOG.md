@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Allow input, interned, and tracked structs to select 128-, 256-, 512-, or 1024-slot table pages
+  with the `page_size` macro option. The default remains 1024 slots.
+
 ## [0.27.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.1...salsa-v0.27.2) - 2026-06-25
 
 ### Fixed
