@@ -485,6 +485,10 @@ macro_rules! setup_tracked_fn {
                 /// function that accumulates must push its values again even when it returns
                 /// its previous result.
                 ///
+                /// For a specifiable function, the previous value may have been assigned via
+                /// `specify` rather than computed by this function; the two cases are
+                /// indistinguishable here.
+                ///
                 /// # Panics
                 ///
                 /// Panics if called outside of this tracked function's own execution.

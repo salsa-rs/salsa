@@ -4,7 +4,7 @@ mod common;
 
 use common::{DiscardLoggerDatabase, LogDatabase, LoggerDatabase};
 use expect_test::expect;
-use salsa::Setter;
+use salsa::{Database as _, Durability, Setter};
 use test_log::test;
 
 #[salsa::input(debug)]
@@ -171,6 +171,113 @@ fn maybe_previous_node(db: &dyn LogDatabase, input: Switch) -> Option<NamedNode<
     }
 
     Some(NamedNode::new(db, "node".to_owned(), input.value(db)))
+}
+
+#[salsa::tracked(returns(copy))]
+fn reads_previous_of_other(db: &dyn LogDatabase, input: Number) -> u32 {
+    previous_plus_one::previous(db);
+    input.value(db)
+}
+
+#[salsa::tracked(returns(copy), cycle_fn=count_recover, cycle_initial=count_initial)]
+fn count_to_three(db: &dyn LogDatabase, input: Number) -> u32 {
+    db.push_log("count_to_three".to_owned());
+
+    assert!(
+        count_to_three::previous(db).is_none(),
+        "provisional memos must not be exposed as previous values"
+    );
+
+    let current = count_to_three(db, input);
+    if current < input.value(db) {
+        current + 1
+    } else {
+        current
+    }
+}
+
+fn count_initial(_db: &dyn LogDatabase, _id: salsa::Id, _input: Number) -> u32 {
+    0
+}
+
+fn count_recover(
+    _db: &dyn LogDatabase,
+    _cycle: &salsa::Cycle,
+    _last_provisional_value: &u32,
+    value: u32,
+    _input: Number,
+) -> u32 {
+    value
+}
+
+#[salsa::tracked(returns(copy), lru = 1)]
+fn lru_previous_or_value(db: &dyn LogDatabase, input: Number) -> u32 {
+    db.push_log("lru_previous_or_value".to_owned());
+
+    match lru_previous_or_value::previous(db) {
+        Some(previous) => previous + 100,
+        None => input.value(db),
+    }
+}
+
+#[salsa::tracked(returns(copy))]
+fn untracked_or_previous(db: &dyn LogDatabase, input: Switch) -> u32 {
+    db.push_log("untracked_or_previous".to_owned());
+
+    if input.use_previous(db) {
+        let previous = untracked_or_previous::previous(db).unwrap();
+        return *previous;
+    }
+
+    db.report_untracked_read();
+    input.value(db)
+}
+
+#[salsa::tracked(returns(copy))]
+fn durable_previous_or_value(db: &dyn LogDatabase, switch: Switch, input: Number) -> u32 {
+    db.push_log("durable_previous_or_value".to_owned());
+
+    if switch.use_previous(db) {
+        let previous = durable_previous_or_value::previous(db).unwrap();
+        return *previous;
+    }
+
+    input.value(db)
+}
+
+#[salsa::tracked(returns(copy))]
+fn previous_twice(db: &dyn LogDatabase, input: Switch) -> u32 {
+    db.push_log("previous_twice".to_owned());
+
+    if input.use_previous(db) {
+        let first = *previous_twice::previous(db).unwrap();
+        let second = *previous_twice::previous(db).unwrap();
+        assert_eq!(first, second);
+        return first;
+    }
+
+    input.value(db)
+}
+
+#[salsa::tracked]
+fn make_node(db: &dyn LogDatabase, input: Number) -> NamedNode<'_> {
+    db.push_log("make_node".to_owned());
+
+    let node = NamedNode::new(db, "specified".to_owned(), input.value(db));
+    if input.value(db) < 10 {
+        specified_or_previous::specify(db, node, 100);
+    }
+    node
+}
+
+#[salsa::tracked(returns(copy), specify)]
+fn specified_or_previous<'db>(db: &'db dyn LogDatabase, node: NamedNode<'db>) -> u32 {
+    db.push_log("specified_or_previous".to_owned());
+
+    match specified_or_previous::previous(db) {
+        Some(previous) => previous + 1,
+        None => node.value(db),
+    }
 }
 
 #[cfg(feature = "accumulator")]
@@ -488,4 +595,154 @@ fn previous_replays_accumulated_inputs() {
 fn previous_panics_outside_of_same_query() {
     let db = LoggerDatabase::default();
     previous_plus_one::previous(&db);
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot access previous memoized value for previous_plus_one while executing"
+)]
+fn previous_panics_inside_different_query() {
+    let db = LoggerDatabase::default();
+    let input = Number::new(&db, 1);
+    reads_previous_of_other(&db, input);
+}
+
+#[test]
+fn previous_is_none_for_provisional_memos() {
+    // `count_to_three` asserts on every iteration that `previous()` returns `None`,
+    // covering both the missing-memo case (iteration one) and the provisional-memo
+    // case (later iterations).
+    let db = LoggerDatabase::default();
+    let input = Number::new(&db, 3);
+
+    assert_eq!(count_to_three(&db, input), 3);
+    db.assert_logs(expect![[r#"
+        [
+            "count_to_three",
+            "count_to_three",
+            "count_to_three",
+            "count_to_three",
+        ]"#]]);
+}
+
+#[test]
+fn previous_is_none_after_lru_eviction() {
+    let mut db = LoggerDatabase::default();
+    let evicted = Number::new(&db, 1);
+    let retained = Number::new(&db, 2);
+
+    assert_eq!(lru_previous_or_value(&db, evicted), 1);
+    assert_eq!(lru_previous_or_value(&db, retained), 2);
+    db.clear_logs();
+
+    // The LRU (capacity one) evicts `evicted`'s value at the revision boundary; the memo
+    // survives without a value, so re-execution sees no previous value.
+    db.synthetic_write(Durability::LOW);
+
+    assert_eq!(lru_previous_or_value(&db, evicted), 1);
+    db.assert_logs(expect![[r#"
+        [
+            "lru_previous_or_value",
+        ]"#]]);
+}
+
+#[test]
+fn previous_replays_untracked_reads() {
+    let mut db = LoggerDatabase::default();
+    let input = Switch::new(&db, 1, false);
+
+    assert_eq!(untracked_or_previous(&db, input), 1);
+    db.clear_logs();
+
+    input.set_use_previous(&mut db).to(true);
+    assert_eq!(untracked_or_previous(&db, input), 1);
+    db.clear_logs();
+
+    // The previous execution performed an untracked read, so the replayed memo must
+    // re-execute in every new revision even though no tracked input changed.
+    db.synthetic_write(Durability::HIGH);
+    assert_eq!(untracked_or_previous(&db, input), 1);
+    db.assert_logs(expect![[r#"
+        [
+            "untracked_or_previous",
+        ]"#]]);
+}
+
+#[test]
+fn previous_replays_low_durability() {
+    let mut db = LoggerDatabase::default();
+    let switch = Switch::new(&db, 0, false);
+    switch
+        .set_use_previous(&mut db)
+        .with_durability(Durability::HIGH)
+        .to(false);
+    let input = Number::new(&db, 1);
+
+    assert_eq!(durable_previous_or_value(&db, switch, input), 1);
+    db.clear_logs();
+
+    switch
+        .set_use_previous(&mut db)
+        .with_durability(Durability::HIGH)
+        .to(true);
+    assert_eq!(durable_previous_or_value(&db, switch, input), 1);
+    db.clear_logs();
+
+    // The new execution only read high-durability inputs, but the replayed previous
+    // result depended on the low-durability `input`. If the replay failed to lower the
+    // memo's durability, this low-durability change would shortcut validation and
+    // never re-execute the query.
+    input.set_value(&mut db).to(5);
+    assert_eq!(durable_previous_or_value(&db, switch, input), 1);
+    db.assert_logs(expect![[r#"
+        [
+            "durable_previous_or_value",
+        ]"#]]);
+}
+
+#[test]
+fn previous_twice_in_one_execution_is_idempotent() {
+    let mut db = LoggerDatabase::default();
+    let input = Switch::new(&db, 1, false);
+
+    assert_eq!(previous_twice(&db, input), 1);
+    db.clear_logs();
+
+    input.set_use_previous(&mut db).to(true);
+    assert_eq!(previous_twice(&db, input), 1);
+    db.assert_logs(expect![[r#"
+        [
+            "previous_twice",
+        ]"#]]);
+
+    input.set_value(&mut db).to(2);
+    assert_eq!(previous_twice(&db, input), 1);
+    db.assert_logs(expect![[r#"
+        [
+            "previous_twice",
+        ]"#]]);
+}
+
+#[test]
+fn previous_sees_value_assigned_via_specify() {
+    let mut db = LoggerDatabase::default();
+    let input = Number::new(&db, 1);
+
+    let node = *make_node(&db, input);
+    assert_eq!(specified_or_previous(&db, node), 100);
+    db.assert_logs(expect![[r#"
+        [
+            "make_node",
+        ]"#]]);
+
+    // In the new revision the value is no longer specified, so the function executes
+    // for the first time; its "previous" value is the stale specify-assigned memo.
+    input.set_value(&mut db).to(20);
+    let node = *make_node(&db, input);
+    assert_eq!(specified_or_previous(&db, node), 101);
+    db.assert_logs(expect![[r#"
+        [
+            "make_node",
+            "specified_or_previous",
+        ]"#]]);
 }
