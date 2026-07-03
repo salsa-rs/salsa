@@ -121,8 +121,8 @@ fn test() {
         .unwrap();
     let input_pages = input_info.page_info().unwrap();
     assert_eq!(input_pages.page_count(), 1);
-    assert_eq!(input_pages.page_capacity(), 1024);
-    assert_eq!(input_pages.excess_capacity(), 1021);
+    assert_eq!(input_pages.page_capacity(), 128);
+    assert_eq!(input_pages.excess_capacity(), 125);
     assert_eq!(input_pages.p25_fill(), 3);
     assert_eq!(input_pages.p50_fill(), 3);
     assert_eq!(input_pages.p75_fill(), 3);
@@ -148,8 +148,8 @@ fn test() {
                 page_info: Some(
                     PageInfo {
                         page_count: 1,
-                        page_capacity: 1024,
-                        excess_capacity: 1021,
+                        page_capacity: 128,
+                        excess_capacity: 125,
                         p25_fill: 3,
                         p50_fill: 3,
                         p75_fill: 3,
@@ -169,8 +169,8 @@ fn test() {
                 page_info: Some(
                     PageInfo {
                         page_count: 1,
-                        page_capacity: 1024,
-                        excess_capacity: 1021,
+                        page_capacity: 128,
+                        excess_capacity: 125,
                         p25_fill: 3,
                         p50_fill: 3,
                         p75_fill: 3,
@@ -190,8 +190,8 @@ fn test() {
                 page_info: Some(
                     PageInfo {
                         page_count: 1,
-                        page_capacity: 1024,
-                        excess_capacity: 1020,
+                        page_capacity: 128,
+                        excess_capacity: 124,
                         p25_fill: 4,
                         p50_fill: 4,
                         p75_fill: 4,
@@ -209,8 +209,8 @@ fn test() {
                 page_info: Some(
                     PageInfo {
                         page_count: 1,
-                        page_capacity: 1024,
-                        excess_capacity: 1023,
+                        page_capacity: 128,
+                        excess_capacity: 127,
                         p25_fill: 1,
                         p50_fill: 1,
                         p75_fill: 1,
@@ -228,8 +228,8 @@ fn test() {
                 page_info: Some(
                     PageInfo {
                         page_count: 1,
-                        page_capacity: 1024,
-                        excess_capacity: 1023,
+                        page_capacity: 128,
+                        excess_capacity: 127,
                         p25_fill: 1,
                         p50_fill: 1,
                         p75_fill: 1,
