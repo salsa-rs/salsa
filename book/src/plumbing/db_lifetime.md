@@ -217,20 +217,14 @@ does not implement the trait because its referent may be changed or freed in a l
 Salsa handles do implement it because access to their data goes back through the current database
 state.
 
-The derive supports types with at most one lifetime parameter, but not type or const parameters.
-Generic types require a manual implementation that guarantees values remain valid when retained
-across revisions.
+The derive supports types with at most one lifetime parameter, as well as type and const
+parameters. Generated implementations require generic field types to implement `SalsaValue`;
+types that need different bounds can provide a manual implementation instead.
 
 If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
 `#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This
 manual assertion is supported by `derive(SalsaValue)` and directly on tracked and interned struct
 fields.
-
-The structural derive cannot validate invariants hidden behind unsafe code. For example, a type
-could store an integer address together with a Salsa handle used as a lifetime witness. Even though
-both fields implement `SalsaValue`, retaining the type would be unsound if a safe method later
-dereferenced the address after the pointed-to memo was replaced. Authors of such abstractions must
-not derive `SalsaValue` unless their invariant remains valid across revisions.
 
 ## Updating tracked struct fields across revisions
 

@@ -44,6 +44,17 @@ enum GenericRecursive<T> {
     Cons(T, Box<Self>),
 }
 
+#[derive(salsa::SalsaValue)]
+struct LifetimeBuildHasher<'db>(std::marker::PhantomData<&'db ()>);
+
+impl std::hash::BuildHasher for LifetimeBuildHasher<'_> {
+    type Hasher = std::collections::hash_map::DefaultHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        std::collections::hash_map::DefaultHasher::new()
+    }
+}
+
 fn assert_salsa_value<T: salsa::SalsaValue>() {}
 
 fn assert_contains_phantom_ref<'db>(_marker: std::marker::PhantomData<&'db ()>)
@@ -61,6 +72,14 @@ where
 fn assert_generic_phantom<'db>()
 where
     GenericPhantom<&'db ()>: salsa::SalsaValue,
+{
+}
+
+fn assert_non_static_standard_values<'db>()
+where
+    std::collections::HashMap<String, String, LifetimeBuildHasher<'db>>: salsa::SalsaValue,
+    std::collections::HashSet<String, LifetimeBuildHasher<'db>>: salsa::SalsaValue,
+    std::hash::BuildHasherDefault<&'db ()>: salsa::SalsaValue,
 {
 }
 
@@ -87,6 +106,7 @@ fn derives_salsa_value() {
     let _ = (value, recursive);
 
     assert_generic_phantom();
+    assert_non_static_standard_values();
     assert_salsa_value::<Generic<String>>();
     assert_salsa_value::<Generic<ContainsPhantomRef<'static>>>();
     assert_salsa_value::<GenericRecursive<String>>();
@@ -95,6 +115,11 @@ fn derives_salsa_value() {
     assert_salsa_value::<ContainsStaticPhantom>();
     assert_salsa_value::<ContainsStaticValue>();
     assert_salsa_value::<Recursive>();
+    assert_salsa_value::<Box<str>>();
+    assert_salsa_value::<Box<std::path::Path>>();
+    assert_salsa_value::<Box<[u32]>>();
+    assert_salsa_value::<std::rc::Rc<str>>();
+    assert_salsa_value::<std::sync::Arc<str>>();
     assert_salsa_value::<std::num::NonZeroU32>();
     assert_salsa_value::<std::ops::Range<u32>>();
     assert_salsa_value::<std::ops::RangeInclusive<u32>>();

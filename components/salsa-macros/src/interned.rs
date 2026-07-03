@@ -100,7 +100,7 @@ impl Macro {
         let attrs = &self.struct_item.attrs;
         let vis = &self.struct_item.vis;
         let struct_ident = &self.struct_item.ident;
-        let struct_data_ident = salsa_struct.data_ident();
+        let struct_data_ident = format_ident!("{}Data", struct_ident);
         let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
         let field_ids = salsa_struct.field_ids();

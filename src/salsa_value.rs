@@ -2,7 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 #[cfg(feature = "rayon")]
 use rayon::iter::Either;
@@ -28,34 +29,6 @@ use crate::sync::Arc;
 /// `#[derive(SalsaValue)]` checks this requirement structurally. It cannot
 /// account for additional invariants maintained by unsafe code in the type's
 /// methods.
-///
-/// For example, this derive is invalid even though its fields pass the
-/// structural checks:
-///
-/// ```no_run
-/// #[salsa::interned]
-/// struct Interned<'db> {
-///     value: u32,
-/// }
-///
-/// #[derive(salsa::SalsaValue)]
-/// struct InvalidValue<'db> {
-///     // This address points into another query's memoized result.
-///     address: usize,
-///     witness: Interned<'db>,
-/// }
-///
-/// impl<'db> InvalidValue<'db> {
-///     fn value(&self) -> &'db u32 {
-///         let _ = self.witness;
-///         unsafe { &*(self.address as *const u32) }
-///     }
-/// }
-/// ```
-///
-/// The author of that unsafe abstraction is responsible for not deriving
-/// `SalsaValue`: Salsa may retain `InvalidValue` after the pointed-to memoized
-/// result has been replaced.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` doesn't implement `SalsaValue`",
     note = "add `#[derive(salsa::SalsaValue)]` to `{Self}`"
@@ -130,11 +103,15 @@ salsa_values! {
     std::num::NonZeroU128,
     std::num::NonZeroUsize,
     crate::Id,
-    Box<str>,
 }
 
 #[cfg(feature = "compact_str")]
 salsa_values!(compact_str::CompactString);
+
+// SAFETY: Values of these types contain no database-lifetime references.
+unsafe impl SalsaValue for str {}
+unsafe impl SalsaValue for Path {}
+unsafe impl<T: SalsaValue> SalsaValue for [T] {}
 
 // SAFETY: A genuinely `'static` reference remains valid across revisions.
 unsafe impl<T: ?Sized> SalsaValue for &'static T {}
@@ -142,76 +119,65 @@ unsafe impl<T: ?Sized> SalsaValue for &'static T {}
 // SAFETY: `PhantomData` contains no data.
 unsafe impl<T: ?Sized> SalsaValue for PhantomData<T> {}
 
-// SAFETY: The parameter is `'static` and therefore contains no database-lifetime references.
-unsafe impl<T: 'static> SalsaValue for std::hash::BuildHasherDefault<T> {}
+// SAFETY: `BuildHasherDefault` contains no value of type `T`.
+unsafe impl<T> SalsaValue for std::hash::BuildHasherDefault<T> {}
 
-macro_rules! container_salsa_value {
-    ($($container:ident)::+ < $($parameter:ident),+ >; unchanged $state:ident) => {
-        // SAFETY: Every retained parameter is a `SalsaValue`; the state is `'static`.
-        unsafe impl<$($parameter),+, $state> SalsaValue
-            for $($container)::+<$($parameter),+, $state>
-        where
-            $($parameter: SalsaValue),+,
-            $state: 'static,
-        {
-        }
-    };
+macro_rules! default_salsa_value {
     ($($container:ident)::+ < $($parameter:ident),+ >) => {
         // SAFETY: Every retained parameter is a `SalsaValue`.
-        unsafe impl<$($parameter),+> SalsaValue for $($container)::+<$($parameter),+>
-        where
-            $($parameter: SalsaValue),+
-        {
-        }
+        unsafe impl<$($parameter: SalsaValue),+> SalsaValue
+            for $($container)::+<$($parameter),+>
+        {}
     };
 }
 
-container_salsa_value!(Vec<T>);
-container_salsa_value!(Option<T>);
-container_salsa_value!(Result<T, E>);
-container_salsa_value!(Box<T>);
-container_salsa_value!(Arc<T>);
-container_salsa_value!(thin_vec::ThinVec<T>);
-container_salsa_value!(std::ops::Range<T>);
-container_salsa_value!(std::ops::RangeInclusive<T>);
+default_salsa_value!(Vec<T>);
+default_salsa_value!(Option<T>);
+default_salsa_value!(Result<T, E>);
+default_salsa_value!(thin_vec::ThinVec<T>);
+default_salsa_value!(std::ops::Range<T>);
+default_salsa_value!(std::ops::RangeInclusive<T>);
+
+// SAFETY: The owned pointee is a `SalsaValue`.
+unsafe impl<T: ?Sized + SalsaValue> SalsaValue for Box<T> {}
+unsafe impl<T: ?Sized + SalsaValue> SalsaValue for Arc<T> {}
+unsafe impl<T: ?Sized + SalsaValue> SalsaValue for Rc<T> {}
 
 #[cfg(feature = "triomphe")]
-container_salsa_value!(triomphe::Arc<T>);
+// SAFETY: The owned pointee is a `SalsaValue`.
+unsafe impl<T: ?Sized + SalsaValue> SalsaValue for triomphe::Arc<T> {}
 
 // SAFETY: Every retained element is a `SalsaValue`.
 unsafe impl<T: SalsaValue, const N: usize> SalsaValue for [T; N] {}
-unsafe impl<T: SalsaValue> SalsaValue for Box<[T]> {}
-unsafe impl<T: SalsaValue, const N: usize> SalsaValue for smallvec::SmallVec<[T; N]> where
-    [T; N]: smallvec::Array<Item = T>
+unsafe impl<A> SalsaValue for smallvec::SmallVec<A>
+where
+    A: smallvec::Array,
+    A::Item: SalsaValue,
 {
 }
 
-container_salsa_value!(HashMap<K, V>; unchanged S);
-container_salsa_value!(HashSet<K>; unchanged S);
-container_salsa_value!(BTreeMap<K, V>);
-container_salsa_value!(BTreeSet<K>);
-container_salsa_value!(hashbrown::HashMap<K, V>; unchanged S);
-container_salsa_value!(hashbrown::HashSet<K>; unchanged S);
-container_salsa_value!(indexmap::IndexMap<K, V>; unchanged S);
-container_salsa_value!(indexmap::IndexSet<K>; unchanged S);
+default_salsa_value!(HashMap<K, V, S>);
+default_salsa_value!(HashSet<K, S>);
+default_salsa_value!(BTreeMap<K, V>);
+default_salsa_value!(BTreeSet<K>);
+default_salsa_value!(hashbrown::HashMap<K, V, S>);
+default_salsa_value!(hashbrown::HashSet<K, S>);
+default_salsa_value!(indexmap::IndexMap<K, V, S>);
+default_salsa_value!(indexmap::IndexSet<K, S>);
 
 #[cfg(feature = "ordermap")]
-container_salsa_value!(ordermap::OrderMap<K, V>; unchanged S);
+default_salsa_value!(ordermap::OrderMap<K, V, S>);
 
 #[cfg(feature = "ordermap")]
-container_salsa_value!(ordermap::OrderSet<K>; unchanged S);
+default_salsa_value!(ordermap::OrderSet<K, S>);
 
 #[cfg(feature = "rayon")]
-container_salsa_value!(Either<L, R>);
+default_salsa_value!(Either<L, R>);
 
 macro_rules! tuple_salsa_value {
-    ($($t:ident),*) => {
+    ($($t:ident),+) => {
         // SAFETY: Every retained tuple element is a `SalsaValue`.
-        unsafe impl<$($t),*> SalsaValue for ($($t,)*)
-        where
-            $($t: SalsaValue),*
-        {
-        }
+        unsafe impl<$($t: SalsaValue),+> SalsaValue for ($($t,)*) {}
     };
 }
 

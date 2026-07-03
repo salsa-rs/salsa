@@ -157,11 +157,6 @@ where
         }
     }
 
-    /// Returns the generated data type name (`FooData` for `Foo`).
-    pub(crate) fn data_ident(&self) -> syn::Ident {
-        quote::format_ident!("{}Data", self.struct_item.ident)
-    }
-
     /// Returns the `id` in `Options` if it is `Some`, else `salsa::Id`.
     pub(crate) fn id(&self) -> syn::Path {
         match &self.args.id {
