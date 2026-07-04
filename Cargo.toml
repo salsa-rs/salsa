@@ -126,6 +126,10 @@ name = "eviction"
 harness = false
 
 [[bench]]
+name = "eviction_revisions"
+harness = false
+
+[[bench]]
 name = "eviction_parallel"
 harness = false
 required-features = ["rayon"]
