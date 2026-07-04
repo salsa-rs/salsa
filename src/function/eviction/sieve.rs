@@ -13,101 +13,102 @@
 //! resident, selection force-evicts the resident at the hand so admissions
 //! cannot starve without changing the scan order.
 //!
-//! Hits update the page-indexed visited bits without taking the state mutex.
+//! Hits update the block-indexed visited bits without taking the state mutex.
 //! Admissions, hand movement, and the pending-eviction queue are serialized by
 //! that mutex. Selecting a victim removes it from the resident list immediately,
 //! but its value is evicted at the next revision only if it was not re-admitted.
-//! A separate page-indexed bitmap ensures each id appears in that queue at most
+//! A separate block-indexed bitmap ensures each id appears in that queue at most
 //! once per revision.
+//!
+//! State is divided into independently allocated blocks. Within each block,
+//! interleaved resident/visited bits cover 32 ids per atomic word, while the
+//! pending bitmap covers 64 ids per word. This keeps SIEVE's allocation
+//! granularity independent of the memo table's page size.
 
-use std::num::NonZeroUsize;
 use std::ptr;
 
 use crate::Id;
 use crate::sync::Mutex;
 use crate::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
-use crate::table::{PAGE_LEN, PAGE_LEN_BITS, split_id};
 
 use super::{EvictionPolicy, HasCapacity};
 use boxcar::buckets::{Buckets, Index, MaybeZeroable, buckets_for_index_bits};
 
 const SLOT_STATE_BITS: usize = 2;
 const SLOTS_PER_STATE_WORD: usize = u64::BITS as usize / SLOT_STATE_BITS;
-const STATE_WORDS: usize = PAGE_LEN.div_ceil(SLOTS_PER_STATE_WORD);
 const SLOTS_PER_PENDING_WORD: usize = u64::BITS as usize;
-const PENDING_WORDS: usize = PAGE_LEN.div_ceil(SLOTS_PER_PENDING_WORD);
+const BLOCK_LEN_BITS: usize = 10;
+const BLOCK_LEN: usize = 1 << BLOCK_LEN_BITS;
+const STATE_WORDS: usize = BLOCK_LEN / SLOTS_PER_STATE_WORD;
+const PENDING_WORDS: usize = BLOCK_LEN / SLOTS_PER_PENDING_WORD;
 
-type PageStates = Buckets<PageSlot, { buckets_for_index_bits(u32::BITS - PAGE_LEN_BITS as u32) }>;
-type PageStateIndex = Index<{ buckets_for_index_bits(u32::BITS - PAGE_LEN_BITS as u32) }>;
+type StateBlocks =
+    Buckets<BlockSlot, { buckets_for_index_bits(u32::BITS - BLOCK_LEN_BITS as u32) }>;
+type StateBlockIndex = Index<{ buckets_for_index_bits(u32::BITS - BLOCK_LEN_BITS as u32) }>;
 
 /// SIEVE eviction policy.
 ///
-/// Values enter at the front of a FIFO queue. Uses set a page-indexed atomic
+/// Values enter at the front of a FIFO queue. Uses set a block-indexed atomic
 /// visited bit; they do not move the value in the queue.
 pub struct Sieve {
-    capacity: Option<NonZeroUsize>,
+    capacity: usize,
     state: Mutex<State>,
-    page_states: PageStates,
+    state_blocks: StateBlocks,
 }
 
 impl EvictionPolicy for Sieve {
     fn new(capacity: usize) -> Self {
         Self {
-            capacity: NonZeroUsize::new(capacity),
+            capacity,
             state: Mutex::default(),
-            page_states: PageStates::new(),
+            state_blocks: StateBlocks::new(),
         }
     }
 
     #[inline]
     fn record_use(&self, id: Id) {
-        if let Some(capacity) = self.capacity {
-            if let Some((page, slot)) = page_and_slot_if_allocated(&self.page_states, id) {
-                if page.record_use(slot) {
-                    return;
-                }
+        // Probe residency before capacity: resident hits do not need the capacity,
+        // while admissions already take the cold path below.
+        if let Some((block, slot)) = block_and_slot_if_allocated(&self.state_blocks, id) {
+            if block.record_use(slot) {
+                return;
             }
+        }
 
-            self.record_admission(id, capacity.get());
+        if self.capacity != 0 {
+            self.record_admission(id, self.capacity);
         }
     }
 
     fn set_tuning(&mut self, capacity: usize) {
-        self.capacity = NonZeroUsize::new(capacity);
-        let page_states = &self.page_states;
-        let state = self.state.get_mut();
-        if let Some(capacity) = self.capacity {
-            state.schedule_evictions(capacity.get(), page_states);
+        self.capacity = capacity;
+        if capacity == 0 {
+            *self.state.get_mut() = State::default();
+            self.state_blocks = StateBlocks::new();
         } else {
-            for id in state
-                .residents
-                .resident_ids()
-                .chain(state.pending_evictions.iter().copied())
-            {
-                if let Some((page, slot)) = page_and_slot_if_allocated(page_states, id) {
-                    page.clear(slot);
-                }
-            }
-            *state = State::default();
+            self.state
+                .get_mut()
+                .schedule_evictions(capacity, &self.state_blocks);
         }
     }
 
     fn for_each_evicted(&mut self, mut evict: impl FnMut(Id)) {
-        let Some(capacity) = self.capacity else {
+        let capacity = self.capacity;
+        if capacity == 0 {
             return;
-        };
+        }
 
         let state = self.state.get_mut();
         for id in state.pending_evictions.drain(..) {
-            let (page, slot) = page_and_slot(&self.page_states, id);
-            if !page.is_resident(slot) {
+            let (block, slot) = block_and_slot(&self.state_blocks, id);
+            if !block.is_resident(slot) {
                 evict(id);
             }
-            page.clear_pending(slot);
+            block.clear_pending(slot);
         }
         state
             .pending_evictions
-            .shrink_to(capacity.get().saturating_mul(2));
+            .shrink_to(capacity.saturating_mul(2));
     }
 }
 
@@ -115,15 +116,15 @@ impl HasCapacity for Sieve {}
 
 impl Sieve {
     fn record_admission(&self, id: Id, capacity: usize) {
-        let (page, slot) = page_and_slot_or_alloc(&self.page_states, id);
+        let (block, slot) = block_and_slot_or_alloc(&self.state_blocks, id);
         let mut state = self.state.lock();
 
-        if page.is_resident(slot) {
-            page.record_use(slot);
+        if block.is_resident(slot) {
+            block.record_use(slot);
             return;
         }
 
-        state.insert(id, page, slot, capacity, &self.page_states);
+        state.insert(id, block, slot, capacity, &self.state_blocks);
     }
 }
 
@@ -138,9 +139,9 @@ struct State {
 
 struct SelectedVictim<'a> {
     id: Id,
-    /// The already-resolved location avoids another page-table lookup when the
+    /// The already-resolved location avoids another state-directory lookup when the
     /// victim is added to the pending-eviction queue.
-    page: &'a PageState,
+    block: &'a StateBlock,
     slot: usize,
 }
 
@@ -148,43 +149,43 @@ impl State {
     fn insert(
         &mut self,
         id: Id,
-        page: &PageState,
+        block: &StateBlock,
         slot: usize,
         capacity: usize,
-        page_states: &PageStates,
+        state_blocks: &StateBlocks,
     ) {
         debug_assert!(self.residents.len() <= capacity);
         if self.residents.len() == capacity {
             assert!(
-                self.schedule_eviction(page_states),
+                self.schedule_eviction(state_blocks),
                 "full resident list should have an eviction candidate"
             );
         }
 
         let node = self.residents.push_front(id);
-        page.admit(slot);
+        block.admit(slot);
 
         if self.hand == 0 {
             self.hand = node;
         }
     }
 
-    fn schedule_evictions(&mut self, capacity: usize, page_states: &PageStates) {
+    fn schedule_evictions(&mut self, capacity: usize, state_blocks: &StateBlocks) {
         self.pending_evictions
             .reserve(self.residents.len().saturating_sub(capacity));
         while self.residents.len() > capacity {
-            if !self.schedule_eviction(page_states) {
+            if !self.schedule_eviction(state_blocks) {
                 return;
             }
         }
     }
 
-    fn schedule_eviction(&mut self, page_states: &PageStates) -> bool {
-        let Some(victim) = self.select_victim(page_states) else {
+    fn schedule_eviction(&mut self, state_blocks: &StateBlocks) -> bool {
+        let Some(victim) = self.select_victim(state_blocks) else {
             return false;
         };
 
-        if victim.page.mark_pending(victim.slot) {
+        if victim.block.mark_pending(victim.slot) {
             self.pending_evictions.push(victim.id);
         }
         true
@@ -195,7 +196,7 @@ impl State {
     /// The scan performs at most two inspections per current resident. The
     /// second pass preserves second chances for concurrent re-marks; exhausting
     /// both passes force-evicts at the hand to guarantee progress.
-    fn select_victim<'a>(&mut self, page_states: &'a PageStates) -> Option<SelectedVictim<'a>> {
+    fn select_victim<'a>(&mut self, state_blocks: &'a StateBlocks) -> Option<SelectedVictim<'a>> {
         if self.hand == 0 {
             return None;
         }
@@ -204,12 +205,12 @@ impl State {
         for _ in 0..inspection_budget {
             let index = self.hand;
             let id = self.residents.id(index);
-            let (page, slot) = page_and_slot(page_states, id);
+            let (block, slot) = block_and_slot(state_blocks, id);
 
-            if page.select(slot).was_visited() {
+            if block.select(slot).was_visited() {
                 self.hand = self.residents.advance_towards_front(index);
             } else {
-                return Some(self.remove_victim(index, page, slot));
+                return Some(self.remove_victim(index, block, slot));
             }
         }
 
@@ -217,21 +218,21 @@ impl State {
         // preserve SIEVE's scan order while guaranteeing progress.
         let index = self.hand;
         let id = self.residents.id(index);
-        let (page, slot) = page_and_slot(page_states, id);
-        page.clear_resident(slot);
-        Some(self.remove_victim(index, page, slot))
+        let (block, slot) = block_and_slot(state_blocks, id);
+        block.clear_resident(slot);
+        Some(self.remove_victim(index, block, slot))
     }
 
     fn remove_victim<'a>(
         &mut self,
         index: ResidentIndex,
-        page: &'a PageState,
+        block: &'a StateBlock,
         slot: usize,
     ) -> SelectedVictim<'a> {
         self.hand = self.residents.hand_after_remove(index);
         SelectedVictim {
             id: self.residents.remove(index),
-            page,
+            block,
             slot,
         }
     }
@@ -328,6 +329,7 @@ impl Residents {
         if prev == 0 { self.node(0).prev } else { prev }
     }
 
+    #[cfg(test)]
     fn resident_ids(&self) -> ResidentIds<'_> {
         ResidentIds {
             residents: self,
@@ -362,11 +364,13 @@ impl Residents {
     }
 }
 
+#[cfg(test)]
 struct ResidentIds<'a> {
     residents: &'a Residents,
     next: ResidentIndex,
 }
 
+#[cfg(test)]
 impl Iterator for ResidentIds<'_> {
     type Item = Id;
 
@@ -382,72 +386,73 @@ impl Iterator for ResidentIds<'_> {
 }
 
 #[derive(Default)]
-struct PageSlot {
-    ptr: AtomicPtr<PageState>,
+struct BlockSlot {
+    ptr: AtomicPtr<StateBlock>,
 }
 
-// SAFETY: `PageSlot`'s all-zero representation is valid because a null
-// `AtomicPtr` is valid.
-unsafe impl MaybeZeroable for PageSlot {
+// SAFETY: Outside Shuttle, `BlockSlot` contains an atomic pointer whose
+// all-zero representation is a valid null pointer. Shuttle atomics require
+// construction.
+unsafe impl MaybeZeroable for BlockSlot {
     fn zeroable() -> bool {
-        true
+        cfg!(not(feature = "shuttle"))
     }
 }
 
-impl PageSlot {
+impl BlockSlot {
     #[inline]
-    fn get(&self) -> Option<&PageState> {
+    fn get(&self) -> Option<&StateBlock> {
         let ptr = self.ptr.load(Ordering::Acquire);
         ptr::NonNull::new(ptr).map(|ptr| {
             // SAFETY: A non-null pointer was allocated by `get_or_alloc` and
-            // remains owned by this `PageSlot` until it is dropped.
+            // remains owned by this slot until the directory is dropped.
             unsafe { ptr.as_ref() }
         })
     }
 
-    fn get_or_alloc(&self) -> &PageState {
-        if let Some(page) = self.get() {
-            return page;
+    fn get_or_alloc(&self) -> &StateBlock {
+        if let Some(block) = self.get() {
+            return block;
         }
 
-        let new_page = Box::into_raw(Box::new(PageState::default()));
+        let new_block = Box::into_raw(Box::new(StateBlock::default()));
         match self.ptr.compare_exchange(
             ptr::null_mut(),
-            new_page,
+            new_block,
             Ordering::Release,
             Ordering::Acquire,
         ) {
             Ok(_) => {
                 // SAFETY: We just installed this allocation.
-                unsafe { &*new_page }
+                unsafe { &*new_block }
             }
             Err(existing) => {
                 // SAFETY: This allocation was not published, so this thread
                 // still owns it.
-                unsafe { drop(Box::from_raw(new_page)) };
+                unsafe { drop(Box::from_raw(new_block)) };
 
-                // SAFETY: `existing` came from a successful install by another
-                // thread and remains owned by this `PageSlot`.
+                // SAFETY: `existing` was installed by another thread and
+                // remains owned by this slot.
                 unsafe { &*existing }
             }
         }
     }
 }
 
-impl Drop for PageSlot {
+impl Drop for BlockSlot {
     fn drop(&mut self) {
         let ptr = *self.ptr.get_mut();
         if !ptr.is_null() {
-            // SAFETY: Dropping the `PageSlot` requires exclusive access, so no
-            // more readers can access the pointed-to page.
+            // SAFETY: Dropping the slot requires exclusive access, so no reader
+            // can still access the allocation.
             unsafe { drop(Box::from_raw(ptr)) };
         }
     }
 }
 
-#[derive(Default)]
-struct PageState {
-    words: [AtomicU64; STATE_WORDS],
+struct StateBlock {
+    /// Interleaved resident and visited bits for all slots in the block.
+    state: [AtomicU64; STATE_WORDS],
     /// Slots that already occur in `State::pending_evictions`.
     ///
     /// These words are only accessed while holding the state mutex or during
@@ -456,11 +461,20 @@ struct PageState {
     pending: [AtomicU64; PENDING_WORDS],
 }
 
-impl PageState {
+impl Default for StateBlock {
+    fn default() -> Self {
+        Self {
+            state: std::array::from_fn(|_| AtomicU64::default()),
+            pending: std::array::from_fn(|_| AtomicU64::default()),
+        }
+    }
+}
+
+impl StateBlock {
     #[inline]
     fn record_use(&self, slot: usize) -> bool {
         let (word, resident, visited) = slot_state(slot);
-        let word = &self.words[word];
+        let word = &self.state[word];
         let mut state = word.load(Ordering::Relaxed);
 
         loop {
@@ -486,7 +500,7 @@ impl PageState {
 
     fn admit(&self, slot: usize) {
         let (word, resident, visited) = slot_state(slot);
-        let word = &self.words[word];
+        let word = &self.state[word];
         let mut state = word.load(Ordering::Relaxed);
 
         loop {
@@ -501,7 +515,7 @@ impl PageState {
 
     fn select(&self, slot: usize) -> Selection {
         let (word, resident, visited) = slot_state(slot);
-        let word = &self.words[word];
+        let word = &self.state[word];
         let mut state = word.load(Ordering::Relaxed);
 
         loop {
@@ -527,7 +541,7 @@ impl PageState {
 
     fn is_resident(&self, slot: usize) -> bool {
         let (word, resident, _) = slot_state(slot);
-        self.words[word].load(Ordering::Relaxed) & resident != 0
+        self.state[word].load(Ordering::Relaxed) & resident != 0
     }
 
     fn mark_pending(&self, slot: usize) -> bool {
@@ -549,14 +563,9 @@ impl PageState {
         word.store(state & !pending, Ordering::Relaxed);
     }
 
-    fn clear(&self, slot: usize) {
-        self.clear_resident(slot);
-        self.clear_pending(slot);
-    }
-
     fn clear_resident(&self, slot: usize) {
         let (word, resident, visited) = slot_state(slot);
-        self.words[word].fetch_and(!(resident | visited), Ordering::Relaxed);
+        self.state[word].fetch_and(!(resident | visited), Ordering::Relaxed);
     }
 }
 
@@ -572,35 +581,38 @@ impl Selection {
     }
 }
 
-fn page_and_slot_or_alloc(page_states: &PageStates, id: Id) -> (&PageState, usize) {
-    let (index, slot) = page_state_index_and_slot(id);
-    (page_states.get_or_alloc(index).get_or_alloc(), slot)
+fn block_and_slot_or_alloc(state_blocks: &StateBlocks, id: Id) -> (&StateBlock, usize) {
+    let (index, slot) = state_block_index_and_slot(id);
+    (state_blocks.get_or_alloc(index).get_or_alloc(), slot)
 }
 
-fn page_and_slot(page_states: &PageStates, id: Id) -> (&PageState, usize) {
-    // Resident and pending ids must already have allocated page state.
-    page_and_slot_if_allocated(page_states, id).expect("SIEVE page state should be allocated")
+fn block_and_slot(state_blocks: &StateBlocks, id: Id) -> (&StateBlock, usize) {
+    // Resident and pending ids must already have allocated state blocks.
+    block_and_slot_if_allocated(state_blocks, id).expect("SIEVE state block should be allocated")
 }
 
 #[inline]
-fn page_and_slot_if_allocated(page_states: &PageStates, id: Id) -> Option<(&PageState, usize)> {
-    let (index, slot) = page_state_index_and_slot(id);
-    page_states
+fn block_and_slot_if_allocated(state_blocks: &StateBlocks, id: Id) -> Option<(&StateBlock, usize)> {
+    let (index, slot) = state_block_index_and_slot(id);
+    state_blocks
         .get(index)
-        .and_then(PageSlot::get)
-        .map(|page| (page, slot))
+        .and_then(BlockSlot::get)
+        .map(|block| (block, slot))
 }
 
 #[inline]
-fn page_state_index_and_slot(id: Id) -> (PageStateIndex, usize) {
-    let (page, slot) = split_id(id);
-    // SAFETY: `Id` is a `u32`, and `PageStates` has enough buckets for every
-    // page representable by an `Id` after removing the slot bits.
-    let index = unsafe { PageStateIndex::new_unchecked(page.as_usize()) };
-    (index, slot.as_usize())
+fn state_block_index_and_slot(id: Id) -> (StateBlockIndex, usize) {
+    let index = id.index() as usize;
+    let block = index >> BLOCK_LEN_BITS;
+    let slot = index & (BLOCK_LEN - 1);
+    // SAFETY: `Id` is a `u32`, and `StateBlocks` has enough buckets for every
+    // block representable by an `Id` after removing the slot bits.
+    let index = unsafe { StateBlockIndex::new_unchecked(block) };
+    (index, slot)
 }
 
 fn slot_state(slot: usize) -> (usize, u64, u64) {
+    debug_assert!(slot < BLOCK_LEN);
     let bit = (slot % SLOTS_PER_STATE_WORD) * SLOT_STATE_BITS;
     let resident = 1 << bit;
     let visited = 1 << (bit + 1);
@@ -608,6 +620,7 @@ fn slot_state(slot: usize) -> (usize, u64, u64) {
 }
 
 fn pending_state(slot: usize) -> (usize, u64) {
+    debug_assert!(slot < BLOCK_LEN);
     let bit = slot % SLOTS_PER_PENDING_WORD;
     (slot / SLOTS_PER_PENDING_WORD, 1 << bit)
 }
@@ -623,20 +636,20 @@ mod tests {
 
     #[test]
     fn all_marked_residents_evict_the_initial_hand() {
-        let page_states = PageStates::new();
+        let state_blocks = StateBlocks::new();
         let mut state = State::default();
         let oldest = id(0);
         let middle = id(1);
         let newest = id(2);
 
         for id in [oldest, middle, newest] {
-            let (page, slot) = page_and_slot_or_alloc(&page_states, id);
-            state.insert(id, page, slot, 3, &page_states);
-            assert!(page.record_use(slot));
+            let (block, slot) = block_and_slot_or_alloc(&state_blocks, id);
+            state.insert(id, block, slot, 3, &state_blocks);
+            assert!(block.record_use(slot));
         }
 
         assert_eq!(
-            state.select_victim(&page_states).map(|victim| victim.id),
+            state.select_victim(&state_blocks).map(|victim| victim.id),
             Some(oldest)
         );
         assert_eq!(state.residents.id(state.hand), middle);
@@ -644,30 +657,46 @@ mod tests {
             state.residents.resident_ids().collect::<Vec<_>>(),
             [newest, middle]
         );
-        let (page, slot) = page_and_slot(&page_states, oldest);
-        assert!(!page.is_resident(slot));
+        let (block, slot) = block_and_slot(&state_blocks, oldest);
+        assert!(!block.is_resident(slot));
     }
 
     #[test]
     fn insertion_selects_a_victim_before_admitting() {
-        let page_states = PageStates::new();
+        let state_blocks = StateBlocks::new();
         let mut state = State::default();
         let oldest = id(0);
         let newest = id(1);
         let incoming = id(2);
 
         for id in [oldest, newest] {
-            let (page, slot) = page_and_slot_or_alloc(&page_states, id);
-            state.insert(id, page, slot, 2, &page_states);
-            assert!(page.record_use(slot));
+            let (block, slot) = block_and_slot_or_alloc(&state_blocks, id);
+            state.insert(id, block, slot, 2, &state_blocks);
+            assert!(block.record_use(slot));
         }
 
-        let (page, slot) = page_and_slot_or_alloc(&page_states, incoming);
-        state.insert(incoming, page, slot, 2, &page_states);
+        let (block, slot) = block_and_slot_or_alloc(&state_blocks, incoming);
+        state.insert(incoming, block, slot, 2, &state_blocks);
 
         assert_eq!(state.pending_evictions, [oldest]);
         assert_eq!(state.residents.nodes.len(), 3);
-        assert!(page.is_resident(slot));
+        assert!(block.is_resident(slot));
+    }
+
+    #[test]
+    fn disabling_discards_state_blocks() {
+        let mut sieve = Sieve::new(1);
+        let resident = id(0);
+
+        sieve.record_use(resident);
+        assert!(block_and_slot_if_allocated(&sieve.state_blocks, resident).is_some());
+
+        sieve.set_tuning(0);
+        assert!(block_and_slot_if_allocated(&sieve.state_blocks, resident).is_none());
+        assert_eq!(sieve.state.get_mut().residents.len(), 0);
+
+        sieve.record_use(resident);
+        assert!(block_and_slot_if_allocated(&sieve.state_blocks, resident).is_none());
     }
 
     #[test]

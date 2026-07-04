@@ -152,10 +152,6 @@ impl SlotIndex {
         debug_assert!(idx < PAGE_LEN);
         Self(idx)
     }
-
-    pub(crate) fn as_usize(&self) -> usize {
-        self.0
-    }
 }
 
 impl Default for Table {
