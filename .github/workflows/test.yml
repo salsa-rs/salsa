@@ -156,8 +156,7 @@ jobs:
             --bench accumulator \
             --bench dataflow \
             --bench eviction
-          cargo codspeed build -m memory -m walltime --bench eviction_revisions
-          cargo codspeed build -m walltime --bench eviction_parallel
+          cargo codspeed build -m walltime --bench eviction_walltime
 
       - name: "Upload benchmark binaries"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

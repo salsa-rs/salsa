@@ -1,8 +1,8 @@
 //! Compares eviction policies across cache-hit overhead and eviction cost.
 //!
-//! Large multi-revision workloads are measured by `eviction_revisions`, and
-//! concurrent hit-path contention is measured by `eviction_parallel`. Keeping
-//! them separate lets these bounded workloads use CPU and memory instrumentation.
+//! Large multi-revision workloads and concurrent hit-path contention are
+//! measured by `eviction_walltime`, letting these bounded workloads use CPU and
+//! memory instrumentation.
 //!
 //! Every benchmark includes `NoEviction` as the policy-free baseline for how
 //! cheap the workload could be without eviction bookkeeping or capacity-driven
