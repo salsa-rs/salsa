@@ -14,22 +14,22 @@
 //! cannot starve without changing the scan order.
 //!
 //! Hits update the block-indexed visited bits without taking the state mutex.
-//! Admissions, hand movement, and the pending-eviction queue are serialized by
-//! that mutex. Selecting a victim removes it from the resident list immediately,
-//! but its value is evicted at the next revision only if it was not re-admitted.
-//! A separate block-indexed bitmap ensures each id appears in that queue at most
-//! once per revision.
+//! Admissions, hand movement, and the pending-block queue are serialized by that
+//! mutex. Selecting a victim removes it from the resident list immediately, but
+//! its value is evicted at the next revision only if it was not re-admitted. Each
+//! queued block owns a transient bitmap identifying its pending ids.
 //!
 //! State is divided into independently allocated blocks. Within each block,
-//! interleaved resident/visited bits cover 32 ids per atomic word, while the
-//! pending bitmap covers 64 ids per word. This keeps SIEVE's allocation
-//! granularity independent of the memo table's page size.
+//! interleaved resident/visited bits cover 32 ids per atomic word. Pending
+//! bitmaps cover 64 ids per word and exist only while their block is queued.
+//! This keeps SIEVE's allocation granularity independent of the memo table's
+//! page size without reserving pending state for every id.
 
 use std::ptr;
 
 use crate::Id;
 use crate::sync::Mutex;
-use crate::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use crate::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
 
 use super::{EvictionPolicy, HasCapacity};
 use boxcar::buckets::{Buckets, Index, MaybeZeroable, buckets_for_index_bits};
@@ -99,16 +99,18 @@ impl EvictionPolicy for Sieve {
         }
 
         let state = self.state.get_mut();
-        for id in state.pending_evictions.drain(..) {
-            let (block, slot) = block_and_slot(&self.state_blocks, id);
-            if !block.is_resident(slot) {
-                evict(id);
-            }
-            block.clear_pending(slot);
+        for (queue_index, pending_block) in state.pending_blocks.drain(..).enumerate() {
+            let block = state_block(&self.state_blocks, pending_block.state_block);
+            block.clear_pending_block_index(queue_index);
+            pending_block.for_each_pending_slot(|slot| {
+                if !block.is_resident(slot) {
+                    evict(state_block_id(pending_block.state_block, slot));
+                }
+            });
         }
         state
-            .pending_evictions
-            .shrink_to(capacity.saturating_mul(2));
+            .pending_blocks
+            .shrink_to(capacity.div_ceil(BLOCK_LEN).saturating_mul(2));
     }
 }
 
@@ -133,8 +135,13 @@ struct State {
     residents: Residents,
     /// Index of the next resident candidate to inspect. `0` is the sentinel.
     hand: ResidentIndex,
-    /// Victims selected by SIEVE admission, waiting for an eviction context.
-    pending_evictions: Vec<Id>,
+    /// State blocks containing victims waiting for an eviction context.
+    pending_blocks: Vec<PendingBlock>,
+}
+
+struct PendingBlock {
+    state_block: StateBlockIndex,
+    pending: [u64; PENDING_WORDS],
 }
 
 struct SelectedVictim<'a> {
@@ -171,8 +178,6 @@ impl State {
     }
 
     fn schedule_evictions(&mut self, capacity: usize, state_blocks: &StateBlocks) {
-        self.pending_evictions
-            .reserve(self.residents.len().saturating_sub(capacity));
         while self.residents.len() > capacity {
             if !self.schedule_eviction(state_blocks) {
                 return;
@@ -185,10 +190,25 @@ impl State {
             return false;
         };
 
-        if victim.block.mark_pending(victim.slot) {
-            self.pending_evictions.push(victim.id);
-        }
+        self.mark_pending(victim);
         true
+    }
+
+    fn mark_pending(&mut self, victim: SelectedVictim<'_>) {
+        let queue_index = victim.block.pending_block_index().unwrap_or_else(|| {
+            let state_block = state_block_index_and_slot(victim.id).0;
+            let queue_index = self.pending_blocks.len();
+            self.pending_blocks.push(PendingBlock::new(state_block));
+            victim.block.set_pending_block_index(queue_index);
+            queue_index
+        });
+
+        let pending_block = &mut self.pending_blocks[queue_index];
+        debug_assert_eq!(
+            pending_block.state_block,
+            state_block_index_and_slot(victim.id).0
+        );
+        pending_block.mark(victim.slot);
     }
 
     /// Selects and removes the next resident using a bounded SIEVE scan.
@@ -235,6 +255,39 @@ impl State {
             block,
             slot,
         }
+    }
+}
+
+impl PendingBlock {
+    #[inline]
+    fn new(state_block: StateBlockIndex) -> Self {
+        Self {
+            state_block,
+            pending: [0; PENDING_WORDS],
+        }
+    }
+
+    #[inline]
+    fn mark(&mut self, slot: usize) {
+        let (word, pending) = pending_state(slot);
+        self.pending[word] |= pending;
+    }
+
+    fn for_each_pending_slot(&self, mut f: impl FnMut(usize)) {
+        for (word_index, &pending) in self.pending.iter().enumerate() {
+            let mut pending = pending;
+            while pending != 0 {
+                let bit = pending.trailing_zeros() as usize;
+                f(word_index * SLOTS_PER_PENDING_WORD + bit);
+                pending &= pending - 1;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn contains(&self, slot: usize) -> bool {
+        let (word, pending) = pending_state(slot);
+        self.pending[word] & pending != 0
     }
 }
 
@@ -453,19 +506,17 @@ impl Drop for BlockSlot {
 struct StateBlock {
     /// Interleaved resident and visited bits for all slots in the block.
     state: [AtomicU64; STATE_WORDS],
-    /// Slots that already occur in `State::pending_evictions`.
-    ///
-    /// These words are only accessed while holding the state mutex or during
-    /// an exclusive revision reset. Atomics provide safe interior mutability;
-    /// the mutex provides synchronization.
-    pending: [AtomicU64; PENDING_WORDS],
+    /// One-based index into `State::pending_blocks`, or zero when not queued.
+    /// Access is serialized by the state mutex; the atomic preserves interior
+    /// mutability without making blocks unavailable to concurrent hit readers.
+    pending_block_index: AtomicU32,
 }
 
 impl Default for StateBlock {
     fn default() -> Self {
         Self {
             state: std::array::from_fn(|_| AtomicU64::default()),
-            pending: std::array::from_fn(|_| AtomicU64::default()),
+            pending_block_index: AtomicU32::default(),
         }
     }
 }
@@ -544,23 +595,24 @@ impl StateBlock {
         self.state[word].load(Ordering::Relaxed) & resident != 0
     }
 
-    fn mark_pending(&self, slot: usize) -> bool {
-        let (word, pending) = pending_state(slot);
-        let word = &self.pending[word];
-        let state = word.load(Ordering::Relaxed);
-        if state & pending != 0 {
-            return false;
+    #[inline]
+    fn pending_block_index(&self) -> Option<usize> {
+        match self.pending_block_index.load(Ordering::Relaxed) {
+            0 => None,
+            index => Some((index - 1) as usize),
         }
-
-        word.store(state | pending, Ordering::Relaxed);
-        true
     }
 
-    fn clear_pending(&self, slot: usize) {
-        let (word, pending) = pending_state(slot);
-        let word = &self.pending[word];
-        let state = word.load(Ordering::Relaxed);
-        word.store(state & !pending, Ordering::Relaxed);
+    #[inline]
+    fn set_pending_block_index(&self, index: usize) {
+        debug_assert!(self.pending_block_index().is_none());
+        let index = u32::try_from(index + 1).expect("pending block index should fit in u32");
+        self.pending_block_index.store(index, Ordering::Relaxed);
+    }
+
+    fn clear_pending_block_index(&self, index: usize) {
+        debug_assert_eq!(self.pending_block_index(), Some(index));
+        self.pending_block_index.store(0, Ordering::Relaxed);
     }
 
     fn clear_resident(&self, slot: usize) {
@@ -588,7 +640,16 @@ fn block_and_slot_or_alloc(state_blocks: &StateBlocks, id: Id) -> (&StateBlock, 
 
 fn block_and_slot(state_blocks: &StateBlocks, id: Id) -> (&StateBlock, usize) {
     // Resident and pending ids must already have allocated state blocks.
-    block_and_slot_if_allocated(state_blocks, id).expect("SIEVE state block should be allocated")
+    let (index, slot) = state_block_index_and_slot(id);
+    (state_block(state_blocks, index), slot)
+}
+
+#[inline]
+fn state_block(state_blocks: &StateBlocks, index: StateBlockIndex) -> &StateBlock {
+    state_blocks
+        .get(index)
+        .and_then(BlockSlot::get)
+        .expect("SIEVE state block should be allocated")
 }
 
 #[inline]
@@ -609,6 +670,14 @@ fn state_block_index_and_slot(id: Id) -> (StateBlockIndex, usize) {
     // block representable by an `Id` after removing the slot bits.
     let index = unsafe { StateBlockIndex::new_unchecked(block) };
     (index, slot)
+}
+
+fn state_block_id(index: StateBlockIndex, slot: usize) -> Id {
+    debug_assert!(slot < BLOCK_LEN);
+    let id = (index.get() << BLOCK_LEN_BITS) | slot;
+    // SAFETY: `StateBlockIndex` covers exactly the block bits of a `u32` id and
+    // `slot` is restricted to the remaining low bits.
+    unsafe { Id::from_index(id as u32) }
 }
 
 fn slot_state(slot: usize) -> (usize, u64, u64) {
@@ -675,12 +744,15 @@ mod tests {
             assert!(block.record_use(slot));
         }
 
-        let (block, slot) = block_and_slot_or_alloc(&state_blocks, incoming);
-        state.insert(incoming, block, slot, 2, &state_blocks);
+        let (block, incoming_slot) = block_and_slot_or_alloc(&state_blocks, incoming);
+        state.insert(incoming, block, incoming_slot, 2, &state_blocks);
 
-        assert_eq!(state.pending_evictions, [oldest]);
+        let (state_block, oldest_slot) = state_block_index_and_slot(oldest);
+        assert_eq!(state.pending_blocks.len(), 1);
+        assert_eq!(state.pending_blocks[0].state_block, state_block);
+        assert!(state.pending_blocks[0].contains(oldest_slot));
         assert_eq!(state.residents.nodes.len(), 3);
-        assert!(block.is_resident(slot));
+        assert!(block.is_resident(incoming_slot));
     }
 
     #[test]
@@ -710,15 +782,37 @@ mod tests {
             sieve.record_use(second);
         }
 
-        assert_eq!(sieve.state.lock().pending_evictions, [first, second]);
+        assert_eq!(sieve.state.lock().pending_blocks.len(), 1);
+        let (block, _) = block_and_slot(&sieve.state_blocks, first);
+        assert_eq!(block.pending_block_index(), Some(0));
 
         let mut evicted = Vec::new();
         sieve.for_each_evicted(|id| evicted.push(id));
 
         assert_eq!(evicted, [first]);
-        assert!(sieve.state.get_mut().pending_evictions.is_empty());
+        assert!(sieve.state.get_mut().pending_blocks.is_empty());
+        let (block, _) = block_and_slot(&sieve.state_blocks, first);
+        assert_eq!(block.pending_block_index(), None);
 
         sieve.record_use(first);
-        assert_eq!(sieve.state.lock().pending_evictions, [second]);
+        assert_eq!(sieve.state.lock().pending_blocks.len(), 1);
+    }
+
+    #[test]
+    fn pending_evictions_cross_state_blocks() {
+        let mut sieve = Sieve::new(1);
+        let first = id(0);
+        let second = id(BLOCK_LEN as u32);
+        let third = id(1);
+        let resident = id(BLOCK_LEN as u32 + 1);
+
+        for id in [first, second, third, resident] {
+            sieve.record_use(id);
+        }
+
+        let mut evicted = Vec::new();
+        sieve.for_each_evicted(|id| evicted.push(id));
+
+        assert_eq!(evicted, [first, third, second]);
     }
 }

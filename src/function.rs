@@ -476,9 +476,9 @@ where
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
         self.eviction.for_each_evicted(|evict| {
-            let ingredient_index = table.ingredient_index(evict);
+            let (ingredient_index, memos) = table.ingredient_and_memos_mut(evict);
             Self::evict_value_from_memo_for(
-                table.memos_mut(evict),
+                memos,
                 self.memo_ingredient_indices.get(ingredient_index),
             )
         });
