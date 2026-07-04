@@ -11,7 +11,7 @@ pub use lru::Lru;
 pub use noop::NoopEviction;
 pub use sieve::Sieve;
 
-use crate::{Id, Revision};
+use crate::Id;
 
 /// Trait for cache eviction strategies.
 ///
@@ -33,22 +33,11 @@ pub trait EvictionPolicy: Send + Sync {
     /// A value of zero disables eviction.
     fn set_tuning(&mut self, tuning: usize);
 
-    /// Processes the start of a new revision.
+    /// Invokes `evict` for each value that should be evicted.
     ///
-    /// The policy may update its state, inspect memo metadata, and evict
-    /// resident values through `context`.
-    fn start_new_revision(&mut self, context: &mut impl EvictionContext);
-}
-
-/// Memo operations available when starting a new revision.
-pub trait EvictionContext {
-    /// Returns the revision in which `id`'s resident value was last verified.
-    ///
-    /// Returns `None` if the memo no longer contains a resident value.
-    fn last_verified_at(&mut self, id: Id) -> Option<Revision>;
-
-    /// Evicts `id`'s cached value while retaining its memo metadata.
-    fn evict_value(&mut self, id: Id);
+    /// Called once per revision. Implementations may also perform any
+    /// revision-boundary maintenance before returning.
+    fn for_each_evicted(&mut self, evict: impl FnMut(Id));
 }
 
 /// Marker trait for eviction policies whose tuning can be changed at runtime.
