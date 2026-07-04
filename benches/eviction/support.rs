@@ -78,7 +78,7 @@ pub(crate) fn prewarm(policy: Policy, db: &dyn salsa::Database, items: &[Item]) 
 }
 
 fn compute_value(_value: u64) -> Value {
-    const FIBONACCI_STEPS: u32 = 512;
+    const FIBONACCI_STEPS: u32 = 128;
 
     let mut previous = 0u64;
     let mut current = 1u64;
