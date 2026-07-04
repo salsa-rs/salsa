@@ -59,6 +59,7 @@ impl EvictionPolicy for Sieve {
         }
     }
 
+    #[inline]
     fn record_use(&self, id: Id) {
         if let Some(capacity) = self.capacity {
             if let Some((page, slot)) = page_and_slot_if_allocated(&self.page_states, id) {
@@ -394,6 +395,7 @@ unsafe impl MaybeZeroable for PageSlot {
 }
 
 impl PageSlot {
+    #[inline]
     fn get(&self) -> Option<&PageState> {
         let ptr = self.ptr.load(Ordering::Acquire);
         ptr::NonNull::new(ptr).map(|ptr| {
@@ -455,18 +457,19 @@ struct PageState {
 }
 
 impl PageState {
+    #[inline]
     fn record_use(&self, slot: usize) -> bool {
         let (word, resident, visited) = slot_state(slot);
         let word = &self.words[word];
         let mut state = word.load(Ordering::Relaxed);
 
         loop {
-            if state & resident == 0 {
-                return false;
-            }
-
             if state & visited != 0 {
                 return true;
+            }
+
+            if state & resident == 0 {
+                return false;
             }
 
             match word.compare_exchange_weak(
@@ -579,6 +582,7 @@ fn page_and_slot(page_states: &PageStates, id: Id) -> (&PageState, usize) {
     page_and_slot_if_allocated(page_states, id).expect("SIEVE page state should be allocated")
 }
 
+#[inline]
 fn page_and_slot_if_allocated(page_states: &PageStates, id: Id) -> Option<(&PageState, usize)> {
     let (index, slot) = page_state_index_and_slot(id);
     page_states
@@ -587,10 +591,12 @@ fn page_and_slot_if_allocated(page_states: &PageStates, id: Id) -> Option<(&Page
         .map(|page| (page, slot))
 }
 
+#[inline]
 fn page_state_index_and_slot(id: Id) -> (PageStateIndex, usize) {
     let (page, slot) = split_id(id);
-    let index = PageStateIndex::new(page.as_usize())
-        .expect("page index should fit in SIEVE page state table");
+    // SAFETY: `Id` is a `u32`, and `PageStates` has enough buckets for every
+    // page representable by an `Id` after removing the slot bits.
+    let index = unsafe { PageStateIndex::new_unchecked(page.as_usize()) };
     (index, slot.as_usize())
 }
 
