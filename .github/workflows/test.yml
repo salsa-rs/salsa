@@ -168,6 +168,7 @@ jobs:
   benchmarks:
     name: Benchmarks
     runs-on: codspeed-macro
+    timeout-minutes: 10
     needs: benchmarks-build
     steps:
       - name: Checkout
