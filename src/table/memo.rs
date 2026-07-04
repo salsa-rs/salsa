@@ -45,6 +45,24 @@ impl MemoTable {
     pub fn reset(&mut self) {
         self.memos.clear();
     }
+
+    /// Returns the memo at `memo_ingredient_index` without validating its erased type.
+    ///
+    /// # Safety
+    ///
+    /// `M` must match the type registered for `memo_ingredient_index` in the
+    /// [`MemoTableTypes`] associated with this table.
+    #[inline]
+    pub(crate) unsafe fn get_mut_unchecked<M: Memo>(
+        &mut self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&mut M> {
+        let MemoEntry { atomic_memo } = self.memos.get_mut(memo_ingredient_index.as_usize())?;
+        let memo = NonNull::new(*atomic_memo.get_mut())?;
+
+        // SAFETY: The caller guarantees that `M` matches the entry's registered type.
+        Some(unsafe { MemoEntryType::from_dummy(memo).as_mut() })
+    }
 }
 
 pub trait Memo: Any + Send + Sync {
@@ -284,6 +302,18 @@ impl MemoTableTypes {
         self.types.len()
     }
 
+    /// Validates the memo type registered at `memo_ingredient_index`.
+    #[inline]
+    pub(crate) fn assert_type<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex) {
+        let Some(type_) = self.types.get(memo_ingredient_index.as_usize()) else {
+            type_assert_failed(memo_ingredient_index);
+        };
+
+        if type_.type_id != TypeId::of::<M>() {
+            type_assert_failed(memo_ingredient_index);
+        }
+    }
+
     /// # Safety
     ///
     /// The types table must be the correct one of `memos`.
@@ -460,6 +490,7 @@ impl MemoTableWithTypesMut<'_> {
     /// Calls `f` on the memo at `memo_ingredient_index`.
     ///
     /// If the memo is not present, `f` is not called.
+    #[allow(dead_code)] // The cursor uses a private unchecked path after validating its page.
     pub(crate) fn map_memo<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
