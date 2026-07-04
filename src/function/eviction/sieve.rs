@@ -28,7 +28,7 @@ use crate::sync::Mutex;
 use crate::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use crate::table::{PAGE_LEN, PAGE_LEN_BITS, split_id};
 
-use super::{EvictionContext, EvictionPolicy, HasCapacity};
+use super::{EvictionPolicy, HasCapacity};
 use boxcar::buckets::{Buckets, Index, MaybeZeroable, buckets_for_index_bits};
 
 const SLOT_STATE_BITS: usize = 2;
@@ -91,7 +91,7 @@ impl EvictionPolicy for Sieve {
         }
     }
 
-    fn start_new_revision(&mut self, context: &mut impl EvictionContext) {
+    fn for_each_evicted(&mut self, mut evict: impl FnMut(Id)) {
         let Some(capacity) = self.capacity else {
             return;
         };
@@ -100,7 +100,7 @@ impl EvictionPolicy for Sieve {
         for id in state.pending_evictions.drain(..) {
             let (page, slot) = page_and_slot(&self.page_states, id);
             if !page.is_resident(slot) {
-                context.evict_value(id);
+                evict(id);
             }
             page.clear_pending(slot);
         }
@@ -610,21 +610,6 @@ fn pending_state(slot: usize) -> (usize, u64) {
 mod tests {
     use super::*;
 
-    #[derive(Default)]
-    struct TestEvictionContext {
-        evicted: Vec<Id>,
-    }
-
-    impl EvictionContext for TestEvictionContext {
-        fn last_verified_at(&mut self, _id: Id) -> Option<crate::Revision> {
-            None
-        }
-
-        fn evict_value(&mut self, id: Id) {
-            self.evicted.push(id);
-        }
-    }
-
     fn id(index: u32) -> Id {
         // SAFETY: Test indices are within `Id`'s valid range.
         unsafe { Id::from_index(index) }
@@ -692,10 +677,10 @@ mod tests {
 
         assert_eq!(sieve.state.lock().pending_evictions, [first, second]);
 
-        let mut context = TestEvictionContext::default();
-        sieve.start_new_revision(&mut context);
+        let mut evicted = Vec::new();
+        sieve.for_each_evicted(|id| evicted.push(id));
 
-        assert_eq!(context.evicted, [first]);
+        assert_eq!(evicted, [first]);
         assert!(sieve.state.get_mut().pending_evictions.is_empty());
 
         sieve.record_use(first);

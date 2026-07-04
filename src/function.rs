@@ -37,7 +37,7 @@ mod memo;
 mod specify;
 mod sync;
 
-pub use eviction::{EvictionContext, EvictionPolicy, HasCapacity, Lru, NoopEviction, Sieve};
+pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction, Sieve};
 
 pub type Memo<C> = memo::Memo<'static, C>;
 
@@ -466,11 +466,13 @@ where
     }
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
-        let mut context = FunctionEvictionContext::<C> {
-            table,
-            memo_ingredient_indices: &self.memo_ingredient_indices,
-        };
-        self.eviction.start_new_revision(&mut context);
+        self.eviction.for_each_evicted(|evict| {
+            let ingredient_index = table.ingredient_index(evict);
+            Self::evict_value_from_memo_for(
+                table.memos_mut(evict),
+                self.memo_ingredient_indices.get(ingredient_index),
+            )
+        });
 
         self.deleted_entries.clear();
     }
@@ -553,29 +555,6 @@ where
         };
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
-    }
-}
-
-struct FunctionEvictionContext<'a, C: Configuration> {
-    table: &'a mut Table,
-    memo_ingredient_indices: &'a <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
-}
-
-impl<C: Configuration> EvictionContext for FunctionEvictionContext<'_, C> {
-    fn last_verified_at(&mut self, id: Id) -> Option<Revision> {
-        let ingredient_index = self.table.ingredient_index(id);
-        IngredientImpl::<C>::last_verified_at_for(
-            self.table.memos_mut(id),
-            self.memo_ingredient_indices.get(ingredient_index),
-        )
-    }
-
-    fn evict_value(&mut self, id: Id) {
-        let ingredient_index = self.table.ingredient_index(id);
-        IngredientImpl::<C>::evict_value_from_memo_for(
-            self.table.memos_mut(id),
-            self.memo_ingredient_indices.get(ingredient_index),
-        )
     }
 }
 
