@@ -793,8 +793,8 @@ mod tests {
     ) -> NonNull<TestMemo> {
         let memo = NonNull::from(Box::leak(Box::new(TestMemo(value))));
         // SAFETY: Test slots ignore the revision, and `memo_index` matches the page's types.
-        let old =
-            unsafe { table.memos::<TestSlot>(id, Revision::start()) }.insert(memo_index, memo);
+        let memos = unsafe { table.memos::<TestSlot>(id, Revision::start()) };
+        let old = memos.insert(memo_index, memo);
         assert!(old.is_none());
         memo
     }
