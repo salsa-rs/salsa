@@ -57,6 +57,8 @@ pub struct Sieve {
 }
 
 impl EvictionPolicy for Sieve {
+    type Value<T: Send + Sync> = Option<T>;
+
     fn new(capacity: usize) -> Self {
         Self {
             capacity,
@@ -67,12 +69,8 @@ impl EvictionPolicy for Sieve {
 
     #[inline]
     fn record_use(&self, id: Id) {
-        // Probe residency before capacity: resident hits do not need the capacity,
-        // while admissions already take the cold path below.
-        if let Some((block, slot)) = block_and_slot_if_allocated(&self.state_blocks, id) {
-            if block.record_use(slot) {
-                return;
-            }
+        if self.record_resident_use(id) {
+            return;
         }
 
         if self.capacity != 0 {
@@ -115,6 +113,27 @@ impl EvictionPolicy for Sieve {
 impl HasCapacity for Sieve {}
 
 impl Sieve {
+    /// Records a use and returns the selected victim immediately.
+    ///
+    /// Volatile queries use the same SIEVE state machine as revision-delayed
+    /// queries, but can reclaim the victim as soon as the caller owns a handle
+    /// to the value it requested.
+    pub(super) fn record_immediate_use(&self, id: Id) -> Option<Id> {
+        if self.record_resident_use(id) || self.capacity == 0 {
+            return None;
+        }
+
+        self.record_immediate_admission(id, self.capacity)
+    }
+
+    #[inline]
+    fn record_resident_use(&self, id: Id) -> bool {
+        // Probe residency before capacity: resident hits do not need the capacity,
+        // while admissions already take the cold path below.
+        block_and_slot_if_allocated(&self.state_blocks, id)
+            .is_some_and(|(block, slot)| block.record_use(slot))
+    }
+
     fn record_admission(&self, id: Id, capacity: usize) {
         let (block, slot) = block_and_slot_or_alloc(&self.state_blocks, id);
         let mut state = self.state.lock();
@@ -124,7 +143,23 @@ impl Sieve {
             return;
         }
 
-        state.insert(id, block, slot, capacity, &self.state_blocks);
+        if let Some(victim) = state.insert(id, block, slot, capacity, &self.state_blocks) {
+            state.schedule_selected_victim(victim);
+        }
+    }
+
+    fn record_immediate_admission(&self, id: Id, capacity: usize) -> Option<Id> {
+        let (block, slot) = block_and_slot_or_alloc(&self.state_blocks, id);
+        let mut state = self.state.lock();
+
+        if block.is_resident(slot) {
+            block.record_use(slot);
+            return None;
+        }
+
+        state
+            .insert(id, block, slot, capacity, &self.state_blocks)
+            .map(|victim| victim.id)
     }
 }
 
@@ -146,21 +181,23 @@ struct SelectedVictim<'a> {
 }
 
 impl State {
-    fn insert(
+    fn insert<'a>(
         &mut self,
         id: Id,
-        block: &StateBlock,
+        block: &'a StateBlock,
         slot: usize,
         capacity: usize,
-        state_blocks: &StateBlocks,
-    ) {
+        state_blocks: &'a StateBlocks,
+    ) -> Option<SelectedVictim<'a>> {
         debug_assert!(self.residents.len() <= capacity);
-        if self.residents.len() == capacity {
-            assert!(
-                self.schedule_eviction(state_blocks),
-                "full resident list should have an eviction candidate"
-            );
-        }
+        let victim = if self.residents.len() == capacity {
+            Some(
+                self.select_victim(state_blocks)
+                    .expect("full resident list should have an eviction candidate"),
+            )
+        } else {
+            None
+        };
 
         let node = self.residents.push_front(id);
         block.admit(slot);
@@ -168,6 +205,8 @@ impl State {
         if self.hand == 0 {
             self.hand = node;
         }
+
+        victim
     }
 
     fn schedule_evictions(&mut self, capacity: usize, state_blocks: &StateBlocks) {
@@ -185,10 +224,14 @@ impl State {
             return false;
         };
 
+        self.schedule_selected_victim(victim);
+        true
+    }
+
+    fn schedule_selected_victim(&mut self, victim: SelectedVictim<'_>) {
         if victim.block.mark_pending(victim.slot) {
             self.pending_evictions.push(victim.id);
         }
-        true
     }
 
     /// Selects and removes the next resident using a bounded SIEVE scan.
@@ -644,7 +687,7 @@ mod tests {
 
         for id in [oldest, middle, newest] {
             let (block, slot) = block_and_slot_or_alloc(&state_blocks, id);
-            state.insert(id, block, slot, 3, &state_blocks);
+            assert!(state.insert(id, block, slot, 3, &state_blocks).is_none());
             assert!(block.record_use(slot));
         }
 
@@ -671,12 +714,15 @@ mod tests {
 
         for id in [oldest, newest] {
             let (block, slot) = block_and_slot_or_alloc(&state_blocks, id);
-            state.insert(id, block, slot, 2, &state_blocks);
+            assert!(state.insert(id, block, slot, 2, &state_blocks).is_none());
             assert!(block.record_use(slot));
         }
 
         let (block, slot) = block_and_slot_or_alloc(&state_blocks, incoming);
-        state.insert(incoming, block, slot, 2, &state_blocks);
+        let victim = state
+            .insert(incoming, block, slot, 2, &state_blocks)
+            .expect("full SIEVE should select a victim");
+        state.schedule_selected_victim(victim);
 
         assert_eq!(state.pending_evictions, [oldest]);
         assert_eq!(state.residents.nodes.len(), 3);

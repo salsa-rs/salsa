@@ -94,6 +94,11 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<usize>`.
     pub sieve: Option<usize>,
 
+    /// The `volatile` option marks a tracked function's values as aggressively evictable.
+    ///
+    /// If this is `Some`, the value is the `volatile` identifier and capacity.
+    pub volatile: Option<VolatileOptions>,
+
     /// The `constructor = <ident>` option lets the user specify the name of
     /// the constructor of a salsa struct.
     ///
@@ -141,6 +146,12 @@ pub struct PersistOptions {
     pub deserialize_fn: Option<syn::Path>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct VolatileOptions {
+    pub ident: syn::Ident,
+    pub capacity: usize,
+}
+
 impl<A: AllowedOptions> Default for Options<A> {
     fn default() -> Self {
         Self {
@@ -159,6 +170,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             phantom: Default::default(),
             lru: Default::default(),
             sieve: Default::default(),
+            volatile: Default::default(),
             singleton: Default::default(),
             id: Default::default(),
             revisions: Default::default(),
@@ -185,6 +197,7 @@ pub(crate) trait AllowedOptions {
     const CYCLE_RESULT: bool;
     const LRU: bool;
     const SIEVE: bool;
+    const VOLATILE: bool;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
     const REVISIONS: bool;
@@ -481,6 +494,27 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`sieve` option not allowed here",
                     ));
                 }
+            } else if ident == "volatile" {
+                if A::VOLATILE {
+                    let _eq = Equals::parse(input)?;
+                    let lit = syn::LitInt::parse(input)?;
+                    let capacity = lit.base10_parse::<usize>()?;
+
+                    if let Some(old) = options
+                        .volatile
+                        .replace(VolatileOptions { ident, capacity })
+                    {
+                        return Err(syn::Error::new(
+                            old.ident.span(),
+                            "option `volatile` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`volatile` option not allowed here",
+                    ));
+                }
             } else if ident == "constructor" {
                 if A::CONSTRUCTOR_NAME {
                     let _eq = Equals::parse(input)?;
@@ -590,6 +624,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             data,
             lru,
             sieve,
+            volatile,
             constructor_name,
             id,
             revisions,
@@ -639,6 +674,10 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         }
         if let Some(sieve) = sieve {
             tokens.extend(quote::quote! { sieve = #sieve, });
+        }
+        if let Some(volatile) = volatile {
+            let capacity = volatile.capacity;
+            tokens.extend(quote::quote! { volatile = #capacity, });
         }
         if let Some(constructor_name) = constructor_name {
             tokens.extend(quote::quote! { constructor = #constructor_name, });

@@ -29,6 +29,8 @@ impl Lru {
 }
 
 impl EvictionPolicy for Lru {
+    type Value<T: Send + Sync> = Option<T>;
+
     fn new(cap: usize) -> Self {
         Self {
             capacity: NonZeroUsize::new(cap),

@@ -351,3 +351,17 @@ pub(crate) fn assert_update(
         }
     }
 }
+
+pub(crate) fn assert_impl_update(
+    db_lt: &syn::Lifetime,
+    zalsa: &syn::Ident,
+    ty: &syn::Type,
+) -> TokenStream {
+    quote_spanned! {ty.span() =>
+        #[allow(clippy::all, warnings)]
+        fn _assert_volatile_return_type_is_update<#db_lt>() {
+            fn assert_update<T: #zalsa::Update>() {}
+            assert_update::<#ty>();
+        }
+    }
+}

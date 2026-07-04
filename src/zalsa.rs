@@ -138,6 +138,12 @@ impl MemoIngredientIndex {
     }
 }
 
+#[cfg(not(feature = "shuttle"))]
+pub(crate) type MemoReadGuard<'a> = seize::LocalGuard<'a>;
+
+#[cfg(feature = "shuttle")]
+pub(crate) type MemoReadGuard<'a> = ();
+
 /// The "plumbing interface" to the Salsa database. Stores all the ingredients and other data.
 ///
 /// **NOT SEMVER STABLE.**
@@ -171,6 +177,9 @@ pub struct Zalsa {
     runtime: Runtime,
 
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
+
+    #[cfg(not(feature = "shuttle"))]
+    memo_collector: Box<seize::Collector>,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
@@ -194,6 +203,8 @@ impl Zalsa {
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
             event_callback,
+            #[cfg(not(feature = "shuttle"))]
+            memo_collector: Box::new(seize::Collector::new()),
             #[cfg(not(feature = "inventory"))]
             nonce: NONCE.nonce(),
         };
@@ -233,6 +244,14 @@ impl Zalsa {
     pub(crate) fn runtime_mut(&mut self) -> &mut Runtime {
         &mut self.runtime
     }
+
+    #[cfg(not(feature = "shuttle"))]
+    pub(crate) fn memo_read_guard(&self) -> MemoReadGuard<'_> {
+        self.memo_collector.enter()
+    }
+
+    #[cfg(feature = "shuttle")]
+    pub(crate) fn memo_read_guard(&self) -> MemoReadGuard<'_> {}
 
     /// Returns the [`Table`] used to store the value of salsa structs
     #[inline]
