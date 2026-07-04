@@ -179,8 +179,18 @@ fn field_has_manual_retention_proof(field: &syn::Field) -> syn::Result<bool> {
 }
 
 pub(crate) fn parse_manual_retention_proof(attr: &Attribute) -> syn::Result<()> {
-    attr.parse_args::<kw::prove_safe_to_retain_manually>()
-        .map(|_| ())
+    attr.parse_args_with(|input: syn::parse::ParseStream<'_>| {
+        let _: syn::Token![unsafe] = input.parse()?;
+        let content;
+        syn::parenthesized!(content in input);
+        content.parse::<kw::prove_safe_to_retain_manually>()?;
+
+        if content.is_empty() {
+            Ok(())
+        } else {
+            Err(content.error("unexpected token"))
+        }
+    })
 }
 
 fn reject_salsa_value_attributes(attrs: &[Attribute], target: &str) -> syn::Result<()> {

@@ -179,7 +179,7 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - **Unsafe: `unsafe(non_salsa_values)` is strongly discouraged.** It adapts field types that do
 ///   not implement [`salsa::SalsaValue`] by suppressing the generated checks. The caller becomes
 ///   responsible for ensuring retained values remain valid across revisions. Prefer adapting only
-///   the affected field with `#[salsa_value(prove_safe_to_retain_manually)]`.
+///   the affected field with `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`.
 ///
 /// # Field attributes
 ///
@@ -193,9 +193,9 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   [`salsa::SalsaAsDeref`] to return borrowed forms such as `Option<&T>` and
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
 /// - `#[get(IDENT)]` renames the generated getter.
-/// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the retention check for
-///   this field. The caller must ensure Salsa can retain the field and expose it with a later
-///   database lifetime.
+/// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the retention
+///   check for this field. The caller must ensure Salsa can retain the field and expose it with a
+///   later database lifetime.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -390,9 +390,9 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   recreated, avoiding the [`PartialEq`] requirement. It is most useful together with
 ///   `#[tracked]`: because the field does not contribute to identity, the struct can retain its
 ///   identity when recreated, while readers of the field are always invalidated.
-/// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the retention check for
-///   this field. The caller must ensure Salsa can retain the field and expose it with a later
-///   database lifetime.
+/// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the retention
+///   check for this field. The caller must ensure Salsa can retain the field and expose it with a
+///   later database lifetime.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -522,9 +522,9 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// A field accepts at most one `#[salsa_value(...)]` attribute:
 ///
-/// - **Unsafe: `#[salsa_value(prove_safe_to_retain_manually)]`** suppresses the generated retention
-///   check for this field. The author must ensure Salsa can replace its database lifetime with
-///   `'static` for storage and safely restore it later.
+/// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the generated
+///   retention check for this field. The author must ensure Salsa can replace its database lifetime
+///   with `'static` for storage and safely restore it later.
 ///
 /// # Safety
 ///

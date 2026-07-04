@@ -71,7 +71,7 @@ impl<'db> Expression<'db> {
 #[derive(Eq, PartialEq, Debug, Hash, salsa::SalsaValue)]
 pub enum ExpressionData<'db> {
     Op(Box<Expression<'db>>, Op, Box<Expression<'db>>),
-    Number(#[salsa_value(prove_safe_to_retain_manually)] OrderedFloat<f64>),
+    Number(#[salsa_value(unsafe(prove_safe_to_retain_manually))] OrderedFloat<f64>),
     Variable(VariableId<'db>),
     Call(FunctionId<'db>, Vec<Expression<'db>>),
 }

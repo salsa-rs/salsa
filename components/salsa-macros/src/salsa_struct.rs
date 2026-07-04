@@ -53,7 +53,7 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// Are `#[default]` fields allowed?
     const ALLOW_DEFAULT: bool;
 
-    /// Is `#[salsa_value(prove_safe_to_retain_manually)]` allowed on fields?
+    /// Is `#[salsa_value(unsafe(prove_safe_to_retain_manually))]` allowed on fields?
     const ALLOW_MANUAL_RETENTION_PROOF: bool;
 }
 
@@ -230,7 +230,7 @@ where
                 return Err(syn::Error::new_spanned(
                     field.field,
                     format!(
-                        "`#[salsa_value(prove_safe_to_retain_manually)]` cannot be used with `#[salsa::{}]`",
+                        "`#[salsa_value(unsafe(prove_safe_to_retain_manually))]` cannot be used with `#[salsa::{}]`",
                         A::KIND
                     ),
                 ));

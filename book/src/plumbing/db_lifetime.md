@@ -222,9 +222,10 @@ parameters. Generated implementations require generic field types to implement `
 types that need different bounds can provide a manual implementation instead.
 
 If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
-`#[salsa_value(prove_safe_to_retain_manually)]` skips the structural check for that field. This
-manual assertion is supported by `derive(SalsaValue)` and directly on tracked and interned struct
-fields.
+`#[salsa_value(unsafe(prove_safe_to_retain_manually))]` skips the structural check for that field.
+The `unsafe` wrapper makes the proof obligation explicit: the author must ensure the field remains
+valid when Salsa retains it across revisions and rebinds its database lifetime. This manual
+assertion is supported by `derive(SalsaValue)` and directly on tracked and interned struct fields.
 
 ## Updating tracked struct fields across revisions
 

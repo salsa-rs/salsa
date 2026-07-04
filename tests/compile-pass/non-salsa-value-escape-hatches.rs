@@ -10,13 +10,13 @@ struct InternedWithItemEscape<'db> {
 
 #[salsa::interned]
 struct InternedWithFieldEscape<'db> {
-    #[salsa_value(prove_safe_to_retain_manually)]
+    #[salsa_value(unsafe(prove_safe_to_retain_manually))]
     value: NotSalsaValue<'db>,
 }
 
 #[salsa::tracked]
 struct TrackedWithFieldEscape<'db> {
-    #[salsa_value(prove_safe_to_retain_manually)]
+    #[salsa_value(unsafe(prove_safe_to_retain_manually))]
     value: NotSalsaValue<'db>,
 }
 
