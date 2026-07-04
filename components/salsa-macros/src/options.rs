@@ -184,7 +184,7 @@ pub(crate) trait AllowedOptions {
     const CYCLE_INITIAL: bool;
     const CYCLE_RESULT: bool;
     const LRU: bool;
-    const SIEVE: bool;
+    const SIEVE: bool = false;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
     const REVISIONS: bool;

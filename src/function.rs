@@ -289,8 +289,9 @@ where
         // FIXME: Use `Box::into_non_null` once stable
         let memo = NonNull::from(Box::leak(Box::new(memo)));
 
-        let old_value = self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index);
-        if let Some(old_value) = old_value {
+        if let Some(old_value) =
+            self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
+        {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             //

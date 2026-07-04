@@ -163,10 +163,7 @@ impl State {
     ) {
         debug_assert!(self.residents.len() <= capacity);
         if self.residents.len() == capacity {
-            assert!(
-                self.schedule_eviction(state_blocks),
-                "full resident list should have an eviction candidate"
-            );
+            self.schedule_eviction(state_blocks);
         }
 
         let node = self.residents.push_front(id);
@@ -179,19 +176,16 @@ impl State {
 
     fn schedule_evictions(&mut self, capacity: usize, state_blocks: &StateBlocks) {
         while self.residents.len() > capacity {
-            if !self.schedule_eviction(state_blocks) {
-                return;
-            }
+            self.schedule_eviction(state_blocks);
         }
     }
 
-    fn schedule_eviction(&mut self, state_blocks: &StateBlocks) -> bool {
-        let Some(victim) = self.select_victim(state_blocks) else {
-            return false;
-        };
+    fn schedule_eviction(&mut self, state_blocks: &StateBlocks) {
+        let victim = self
+            .select_victim(state_blocks)
+            .expect("non-empty resident list should have an eviction candidate");
 
         self.mark_pending(victim);
-        true
     }
 
     fn mark_pending(&mut self, victim: SelectedVictim<'_>) {
@@ -503,6 +497,7 @@ impl Drop for BlockSlot {
     }
 }
 
+#[derive(Default)]
 struct StateBlock {
     /// Interleaved resident and visited bits for all slots in the block.
     state: [AtomicU64; STATE_WORDS],
@@ -510,15 +505,6 @@ struct StateBlock {
     /// Access is serialized by the state mutex; the atomic preserves interior
     /// mutability without making blocks unavailable to concurrent hit readers.
     pending_block_index: AtomicU32,
-}
-
-impl Default for StateBlock {
-    fn default() -> Self {
-        Self {
-            state: std::array::from_fn(|_| AtomicU64::default()),
-            pending_block_index: AtomicU32::default(),
-        }
-    }
 }
 
 impl StateBlock {

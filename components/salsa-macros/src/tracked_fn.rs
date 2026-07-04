@@ -178,9 +178,10 @@ impl Macro {
             FunctionType::SalsaStruct => false,
         };
 
-        let lru = Literal::usize_unsuffixed(self.args.lru.or(self.args.sieve).unwrap_or(0));
+        let eviction_tuning =
+            Literal::usize_unsuffixed(self.args.lru.or(self.args.sieve).unwrap_or(0));
 
-        // Determine the eviction policy type based on whether LRU capacity is specified
+        // Determine the eviction policy type from the configured option.
         let eviction_type = if self.args.lru.is_some() {
             quote!(::salsa::plumbing::function::Lru)
         } else if self.args.sieve.is_some() {
@@ -250,7 +251,7 @@ impl Macro {
                 needs_interner: #needs_interner,
                 heap_size_fn: #(#heap_size_fn)*,
                 eviction: #eviction_type,
-                lru: #lru,
+                lru: #eviction_tuning,
                 return_mode: #return_mode,
                 persist: #persist,
                 assert_interned_inputs_are_salsa_values: { #assert_interned_inputs_are_salsa_values },
