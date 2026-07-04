@@ -25,23 +25,6 @@ const MAX_PAGES: usize = Id::MAX_USIZE / PAGE_LEN;
 /// A typed [`Page`] view.
 pub(crate) struct PageView<'p, T: Slot>(&'p Page, PhantomData<&'p T>);
 
-/// Typed mutable access to one memo ingredient across a stream of table IDs.
-pub(crate) struct MemoCursorMut<'t, M, F> {
-    table: &'t mut Table,
-    memo_index: F,
-    resolved_page: Option<ResolvedPage<M>>,
-}
-
-struct ResolvedPage<M> {
-    page_index: PageIndex,
-    data: NonNull<()>,
-    initialized: usize,
-    slot_size: usize,
-    memos_mut: SlotMemosMutFnErased,
-    memo_index: MemoIngredientIndex,
-    marker: PhantomData<M>,
-}
-
 pub struct Table {
     pages: boxcar::Vec<Page>,
     /// Map from ingredient to non-full pages that are up for grabs
@@ -425,6 +408,13 @@ impl Table {
     }
 }
 
+/// Typed mutable access to one memo ingredient across a stream of table IDs.
+pub(crate) struct MemoCursorMut<'t, M, F> {
+    table: &'t mut Table,
+    memo_index: F,
+    resolved_page: Option<ResolvedPage<M>>,
+}
+
 impl<M, F> MemoCursorMut<'_, M, F>
 where
     M: Memo,
@@ -442,7 +432,7 @@ where
             self.resolve_page(page_index);
         }
 
-        self.resolved_page.as_mut().unwrap().map(slot, f);
+        self.resolved_page.as_ref().unwrap().map(slot, f);
     }
 
     #[cold]
@@ -451,7 +441,7 @@ where
         let page = self
             .table
             .pages
-            .get_mut(index)
+            .get(index)
             .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
         let memo_index = (self.memo_index)(page.ingredient);
         page.memo_types.assert_type::<M>(memo_index);
@@ -468,9 +458,19 @@ where
     }
 }
 
+struct ResolvedPage<M> {
+    page_index: PageIndex,
+    data: NonNull<()>,
+    initialized: usize,
+    slot_size: usize,
+    memos_mut: SlotMemosMutFnErased,
+    memo_index: MemoIngredientIndex,
+    marker: PhantomData<M>,
+}
+
 impl<M: Memo> ResolvedPage<M> {
     #[inline]
-    fn map(&mut self, slot: SlotIndex, f: impl FnOnce(&mut M)) {
+    fn map(&self, slot: SlotIndex, f: impl FnOnce(&mut M)) {
         assert!(
             slot.0 < self.initialized,
             "out of bounds access `{slot:?}` (maximum slot `{}`)",
@@ -718,12 +718,13 @@ mod tests {
         let missing = allocate_slot(&table, page_a, &types_a);
         let b0 = allocate_slot(&table, page_b, &types_b);
         let b1 = allocate_slot(&table, page_b, &types_b);
-        let a0_memo = insert_memo(&table, a0, memo_a, 0);
-        let a1_memo = insert_memo(&table, a1, memo_a, 0);
-        let b0_memo = insert_memo(&table, b0, memo_b, 0);
-        let b1_memo = insert_memo(&table, b1, memo_b, 0);
+        insert_memo(&table, a0, memo_a, 0);
+        insert_memo(&table, a1, memo_a, 1);
+        insert_memo(&table, b0, memo_b, 2);
+        insert_memo(&table, b1, memo_b, 3);
 
         let mut resolutions = Vec::new();
+        let mut values = Vec::new();
         {
             let mut cursor = table.memo_cursor_mut::<TestMemo, _>(|ingredient| {
                 resolutions.push(ingredient);
@@ -735,18 +736,15 @@ mod tests {
             });
 
             for id in [a1, a0, b1, b0, a0, missing] {
-                cursor.map(id, |memo| memo.0 += 1);
+                cursor.map(id, |memo| {
+                    values.push(memo.0);
+                    memo.0 += 10;
+                });
             }
         }
 
         assert_eq!(resolutions, [ingredient_a, ingredient_b, ingredient_a]);
-        // SAFETY: The table owns these memos until it is dropped below.
-        unsafe {
-            assert_eq!(a0_memo.as_ref().0, 2);
-            assert_eq!(a1_memo.as_ref().0, 1);
-            assert_eq!(b0_memo.as_ref().0, 1);
-            assert_eq!(b1_memo.as_ref().0, 1);
-        }
+        assert_eq!(values, [1, 0, 3, 2, 10]);
     }
 
     #[test]
@@ -785,18 +783,12 @@ mod tests {
         id
     }
 
-    fn insert_memo(
-        table: &Table,
-        id: Id,
-        memo_index: MemoIngredientIndex,
-        value: usize,
-    ) -> NonNull<TestMemo> {
+    fn insert_memo(table: &Table, id: Id, memo_index: MemoIngredientIndex, value: usize) {
         let memo = NonNull::from(Box::leak(Box::new(TestMemo(value))));
         // SAFETY: Test slots ignore the revision, and `memo_index` matches the page's types.
         let memos = unsafe { table.memos::<TestSlot>(id, Revision::start()) };
         let old = memos.insert(memo_index, memo);
         assert!(old.is_none());
-        memo
     }
 
     struct TestSlot {
