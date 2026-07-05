@@ -235,7 +235,15 @@ impl Macro {
             None => self.conjure_db_lifetime(impl_item, fn_item),
         };
 
-        let is_method = matches!(&fn_item.sig.inputs[0], syn::FnArg::Receiver(_));
+        // Use `first()` so a zero-argument method doesn't panic with
+        // "index out of bounds" here — the downstream `.get(db_input_index)`
+        // guard plus `check_db_argument`/`check_self_argument` already
+        // produce a clean compile error in that case.
+        let is_method = fn_item
+            .sig
+            .inputs
+            .first()
+            .is_some_and(|arg| matches!(arg, syn::FnArg::Receiver(_)));
 
         let (self_token, db_input_index, skipped_inputs) = if is_method {
             (Some(self.check_self_argument(fn_item)?), 1, 2)
