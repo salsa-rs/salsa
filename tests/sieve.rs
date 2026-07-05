@@ -14,7 +14,7 @@ struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(returns(copy), sieve = 2)]
+#[salsa::tracked(returns(copy), eviction(capacity = 2))]
 fn sieve_value(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("sieve_value({:?})", input.field(db)));
     input.field(db)

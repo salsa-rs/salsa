@@ -18,20 +18,15 @@ use crate::Id;
 /// Implementations control when memoized values are evicted from the cache.
 /// The eviction policy is selected at compile time via the `Configuration` trait.
 pub trait EvictionPolicy: Send + Sync {
-    /// Creates a policy from its configured tuning value.
+    /// Creates a policy with the configured capacity.
     ///
     /// A value of zero disables eviction.
-    fn new(tuning: usize) -> Self;
+    fn new(capacity: usize) -> Self;
 
     /// Records that a value was used.
     ///
     /// Implementations may treat this as a best-effort hint.
     fn record_use(&self, _id: Id) {}
-
-    /// Changes the policy's tuning value.
-    ///
-    /// A value of zero disables eviction.
-    fn set_tuning(&mut self, tuning: usize);
 
     /// Invokes `evict` for each value that should be evicted.
     ///
@@ -40,9 +35,14 @@ pub trait EvictionPolicy: Send + Sync {
     fn for_each_evicted(&mut self, evict: impl FnMut(Id));
 }
 
-/// Marker trait for eviction policies whose tuning can be changed at runtime.
+/// An eviction policy whose capacity can be changed at runtime.
 ///
-/// This trait is used to conditionally generate the `set_lru_capacity` method
+/// This trait is used to conditionally generate the `set_eviction_capacity` method
 /// on tracked functions. Only policies that implement this trait will expose
-/// runtime tuning.
-pub trait HasCapacity: EvictionPolicy {}
+/// runtime capacity changes.
+pub trait HasCapacity: EvictionPolicy {
+    /// Changes the policy's capacity.
+    ///
+    /// A value of zero disables eviction.
+    fn set_capacity(&mut self, capacity: usize);
+}

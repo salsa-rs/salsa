@@ -248,14 +248,14 @@ where
         DatabaseKeyIndex::new(self.index, key)
     }
 
-    /// Sets the eviction policy's tuning value.
+    /// Sets the eviction policy's capacity.
     ///
-    /// Only available when the eviction policy supports runtime tuning.
-    pub fn set_tuning(&mut self, tuning: usize)
+    /// Only available when the eviction policy supports runtime capacity changes.
+    pub fn set_capacity(&mut self, capacity: usize)
     where
         C::Eviction: HasCapacity,
     {
-        self.eviction.set_tuning(tuning);
+        self.eviction.set_capacity(capacity);
     }
 
     /// Returns a reference to the memo value that lives as long as self.

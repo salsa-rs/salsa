@@ -14,12 +14,12 @@ pub(crate) fn no_eviction_value(db: &dyn salsa::Database, item: Item) -> Value {
     compute_value(item.value(db))
 }
 
-#[salsa::tracked(returns(copy), lru = 4096)]
+#[salsa::tracked(returns(copy), eviction(policy = lru, capacity = 4096))]
 pub(crate) fn lru_value(db: &dyn salsa::Database, item: Item) -> Value {
     compute_value(item.value(db))
 }
 
-#[salsa::tracked(returns(copy), sieve = 4096)]
+#[salsa::tracked(returns(copy), eviction(policy = sieve, capacity = 4096))]
 pub(crate) fn sieve_value(db: &dyn salsa::Database, item: Item) -> Value {
     compute_value(item.value(db))
 }
@@ -35,8 +35,8 @@ impl Policy {
     pub(crate) fn set_capacity(self, db: &mut salsa::DatabaseImpl, capacity: usize) {
         match self {
             Self::NoEviction => {}
-            Self::Lru => lru_value::set_lru_capacity(db, capacity),
-            Self::Sieve => sieve_value::set_lru_capacity(db, capacity),
+            Self::Lru => lru_value::set_eviction_capacity(db, capacity),
+            Self::Sieve => sieve_value::set_eviction_capacity(db, capacity),
         }
     }
 }

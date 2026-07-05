@@ -99,7 +99,7 @@ fn fast_path_and_sweep(bencher: divan::Bencher, policy: Policy) {
         })
         .bench_local_refs(|(db, items)| {
             let result = access_all(policy, &*db, items.iter().copied());
-            db.trigger_lru_eviction();
+            db.trigger_eviction();
             black_box(result)
         });
 }
@@ -133,7 +133,7 @@ fn fill_and_evict(bencher: divan::Bencher, policy: Policy) {
         })
         .bench_local_refs(|(db, items)| {
             let result = access_all(policy, &*db, items.iter().copied());
-            db.trigger_lru_eviction();
+            db.trigger_eviction();
             black_box(result)
         });
 }

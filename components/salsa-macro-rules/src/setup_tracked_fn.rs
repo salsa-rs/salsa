@@ -61,8 +61,8 @@ macro_rules! setup_tracked_fn {
         // The eviction policy type for this function
         eviction: $Eviction:ty,
 
-        // LRU capacity (a literal, maybe 0)
-        lru: $lru:tt,
+        // Eviction capacity (a literal, or 0 when eviction is not configured)
+        eviction_capacity: $eviction_capacity:tt,
 
         // The return mode for the function, see `salsa_macros::options::Option::returns`
         return_mode: $return_mode:tt,
@@ -442,7 +442,7 @@ macro_rules! setup_tracked_fn {
                     let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
                         first_index,
                         memo_ingredient_indices,
-                        $lru,
+                        $eviction_capacity,
                     );
                     $zalsa::macro_if! {
                         if $needs_interner {
@@ -498,14 +498,14 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
-                /// Sets the eviction policy's tuning value.
+                /// Sets the eviction policy's capacity.
                 ///
                 /// **WARNING:** Just like an ordinary write, this method triggers
                 /// cancellation. If you invoke it while a snapshot exists, it
                 /// will block until that snapshot is dropped -- if that snapshot
                 /// is owned by the current thread, this could trigger deadlock.
-                fn set_lru_capacity(db: &mut dyn $Db, value: usize) where for<'trivial_bounds> $Eviction: $zalsa::function::HasCapacity {
-                    $Configuration::fn_ingredient_mut(db).set_tuning(value);
+                fn set_eviction_capacity(db: &mut dyn $Db, capacity: usize) where for<'trivial_bounds> $Eviction: $zalsa::function::HasCapacity {
+                    $Configuration::fn_ingredient_mut(db).set_capacity(capacity);
                 }
 
                 $zalsa::macro_if! { $needs_interner =>

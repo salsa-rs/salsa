@@ -1,6 +1,6 @@
 #![cfg(feature = "inventory")]
 
-//! Test that a `tracked` fn with lru options
+//! Test that a `tracked` fn with the LRU eviction policy
 //! compiles and executes successfully.
 
 use std::sync::Arc;
@@ -38,7 +38,7 @@ struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(returns(clone), lru = 8)]
+#[salsa::tracked(returns(clone), eviction(policy = lru, capacity = 8))]
 fn get_hot_potato(db: &dyn LogDatabase, input: MyInput) -> Arc<HotPotato> {
     db.push_log(format!("get_hot_potato({:?})", input.field(db)));
     Arc::new(HotPotato::new(input.field(db)))
@@ -88,7 +88,7 @@ fn lru_can_be_changed_at_runtime() {
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 8);
 
-    get_hot_potato::set_lru_capacity(&mut db, 16);
+    get_hot_potato::set_eviction_capacity(&mut db, 16);
     assert_eq!(load_n_potatoes(), 8);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
@@ -101,7 +101,7 @@ fn lru_can_be_changed_at_runtime() {
     assert_eq!(load_n_potatoes(), 16);
 
     // Special case: setting capacity to zero disables LRU
-    get_hot_potato::set_lru_capacity(&mut db, 0);
+    get_hot_potato::set_eviction_capacity(&mut db, 0);
     assert_eq!(load_n_potatoes(), 16);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
@@ -115,6 +115,13 @@ fn lru_can_be_changed_at_runtime() {
 
     drop(db);
     assert_eq!(load_n_potatoes(), 0);
+}
+
+#[test]
+#[allow(deprecated)]
+fn trigger_lru_eviction_is_a_compatible_alias() {
+    let mut db = common::LoggerDatabase::default();
+    db.trigger_lru_eviction();
 }
 
 #[test]

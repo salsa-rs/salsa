@@ -43,13 +43,6 @@ impl EvictionPolicy for Lru {
         }
     }
 
-    fn set_tuning(&mut self, capacity: usize) {
-        self.capacity = NonZeroUsize::new(capacity);
-        if self.capacity.is_none() {
-            self.set.get_mut().clear();
-        }
-    }
-
     fn for_each_evicted(&mut self, mut evict: impl FnMut(Id)) {
         let Some(cap) = self.capacity else {
             return;
@@ -63,4 +56,11 @@ impl EvictionPolicy for Lru {
     }
 }
 
-impl HasCapacity for Lru {}
+impl HasCapacity for Lru {
+    fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = NonZeroUsize::new(capacity);
+        if self.capacity.is_none() {
+            self.set.get_mut().clear();
+        }
+    }
+}

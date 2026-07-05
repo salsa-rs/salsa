@@ -430,10 +430,11 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   per-key incremental implementation and a batch implementation that computes many results at
 ///   once. The function must take exactly one key argument, and it must be a tracked struct, not an
 ///   input or interned struct. `specify` must be called during the same tracked query invocation
-///   that created the key. It cannot be combined with `lru`. See [specifying query results in the
-///   Salsa book] for an example.
-/// - `lru = INTEGER` bounds the number of memoized values retained by the function and sets the
-///   initial capacity used by `FUNCTION::set_lru_capacity`.
+///   that created the key. It cannot be combined with `eviction`. See [specifying query results in
+///   the Salsa book] for an example.
+/// - `eviction(capacity = INTEGER)` bounds the number of memoized values retained by the function
+///   using SIEVE. Specify `policy = lru` to use LRU instead. `INTEGER` is also the initial capacity
+///   used by `FUNCTION::set_eviction_capacity`.
 /// - `cycle_initial = EXPR` enables fixed-point cycle recovery and computes the initial value. The
 ///   expression is called as `(db, cycle_head_id, query_arguments...)`.
 /// - `cycle_fn = EXPR` combines successive fixed-point values. It must be accompanied by

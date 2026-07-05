@@ -33,4 +33,3 @@ The logic for derived queries is more complex. We summarize the high-level ideas
 [revision]: ./terminology/revision.md
 [verified]: ./terminology/verified.md
 [fetch]: ./fetch.md
-[LRU]: ./terminology/LRU.md

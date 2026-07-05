@@ -1,0 +1,5 @@
+error: the `specify` and `eviction` options cannot be used together
+ --> tests/compile-fail/eviction_can_not_be_used_with_specify.rs:7:56
+  |
+7 | #[salsa::tracked(eviction(policy = lru, capacity = 3), specify)]
+  |                                                        ^^^^^^^

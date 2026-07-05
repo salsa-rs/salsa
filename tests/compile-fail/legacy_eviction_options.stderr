@@ -1,0 +1,5 @@
+error: `lru = ...` has been removed; use `eviction(capacity = ...)` for SIEVE (recommended) or `eviction(policy = lru, capacity = ...)`
+ --> tests/compile-fail/legacy_eviction_options.rs:1:18
+  |
+1 | #[salsa::tracked(lru = 4000)]
+  |                  ^^^
