@@ -121,6 +121,27 @@ pub struct IngredientImpl<C: Configuration> {
     _phantom: std::marker::PhantomData<C::Struct>,
 }
 
+impl<'db, Db: ?Sized, C: Configuration>
+    crate::ingredient::IngredientInDb<'db, Db, IngredientImpl<C>>
+{
+    /// Access a field of an input.
+    #[inline]
+    pub fn field(&self, id: C::Struct, field_index: usize) -> &'db C::Fields {
+        let ingredient = self.ingredient();
+        let field_ingredient_index = ingredient.ingredient_index.successor(field_index);
+        let id = id.as_id();
+        let value = self.slot(id);
+        let durability = value.durabilities[field_index];
+        let revision = value.revisions[field_index];
+        self.zalsa_local().report_tracked_read_simple(
+            DatabaseKeyIndex::new(field_ingredient_index, id),
+            durability,
+            revision,
+        );
+        &value.fields
+    }
+}
+
 impl<C: Configuration> IngredientImpl<C> {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
@@ -222,29 +243,6 @@ impl<C: Configuration> IngredientImpl<C> {
         self.singleton
             .index()
             .map(|id| FromIdWithDb::from_id(id, zalsa))
-    }
-
-    /// Access field of an input.
-    /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responsible for selecting the appropriate element.
-    pub fn field<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        id: C::Struct,
-        field_index: usize,
-    ) -> &'db C::Fields {
-        let field_ingredient_index = self.ingredient_index.successor(field_index);
-        let id = id.as_id();
-        let value = Self::data(zalsa, id);
-        let durability = value.durabilities[field_index];
-        let revision = value.revisions[field_index];
-        zalsa_local.report_tracked_read_simple(
-            DatabaseKeyIndex::new(field_ingredient_index, id),
-            durability,
-            revision,
-        );
-        &value.fields
     }
 
     /// Returns all data corresponding to the input struct.
@@ -466,6 +464,11 @@ where
 
 pub trait HasBuilder {
     type Builder;
+}
+
+// SAFETY: `IngredientImpl<C>` only allocates pages containing `Value<C>`.
+unsafe impl<C: Configuration> crate::ingredient::TableIngredient for IngredientImpl<C> {
+    type Slot = Value<C>;
 }
 
 // SAFETY: `Value<C>` is our private type branded over the unique configuration `C`.

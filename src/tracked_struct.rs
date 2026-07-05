@@ -205,6 +205,52 @@ where
     memo_table_types: Arc<MemoTableTypes>,
 }
 
+impl<'db, Db: ?Sized, C: Configuration>
+    crate::ingredient::IngredientInDb<'db, Db, IngredientImpl<C>>
+{
+    /// Access a tracked field.
+    #[inline]
+    pub fn tracked_field(
+        &self,
+        s: C::Struct<'db>,
+        relative_tracked_index: usize,
+    ) -> &'db C::Fields<'db> {
+        let ingredient = self.ingredient();
+        let id = AsId::as_id(&s);
+        let field_ingredient_index = ingredient
+            .ingredient_index
+            .successor(relative_tracked_index);
+        let data = self.slot_raw(id);
+
+        // SAFETY: `data` belongs to the bound ingredient and database.
+        let fields = unsafe { ingredient.lock_fields(data, self.zalsa().current_revision()) };
+
+        // SAFETY: We acquired the read lock above, so `revisions` and `durability` are not aliased.
+        let field_changed_at = unsafe { (&(*data).revisions)[relative_tracked_index].load() };
+        let durability = unsafe { (*data).durability };
+        self.zalsa_local().report_tracked_read_simple(
+            DatabaseKeyIndex::new(field_ingredient_index, id),
+            durability,
+            field_changed_at,
+        );
+
+        fields
+    }
+
+    /// Access an untracked field.
+    #[inline]
+    pub fn untracked_field(&self, s: C::Struct<'db>) -> &'db C::Fields<'db> {
+        let data = self.slot_raw(AsId::as_id(&s));
+
+        // IDs that are reused increment their generation, invalidating dependent queries directly.
+        // SAFETY: `data` belongs to the bound ingredient and database.
+        unsafe {
+            self.ingredient()
+                .lock_fields(data, self.zalsa().current_revision())
+        }
+    }
+}
+
 /// Defines the identity of a tracked struct.
 /// This is the key to a hashmap that is (initially)
 /// stored in the [`ActiveQuery`](`crate::active_query::ActiveQuery`)
@@ -875,56 +921,6 @@ where
         unsafe { self.lock_fields(data, zalsa.current_revision()) }
     }
 
-    /// Access to this tracked field.
-    ///
-    /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responsible for selecting the appropriate element.
-    pub fn tracked_field<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        s: C::Struct<'db>,
-        relative_tracked_index: usize,
-    ) -> &'db C::Fields<'db> {
-        let id = AsId::as_id(&s);
-        let field_ingredient_index = self.ingredient_index.successor(relative_tracked_index);
-        let data = Self::data_raw(zalsa.table(), id);
-
-        // SAFETY: `data` is a valid pointer acquired from the table.
-        let fields = unsafe { self.lock_fields(data, zalsa.current_revision()) };
-
-        // SAFETY: We just acquired the read lock (in `Self::fields`), so accessing `revisions` will not be able to alias
-        let field_changed_at = unsafe { (&(*data).revisions)[relative_tracked_index].load() };
-
-        // SAFETY: We just acquired the read lock (in `Self::fields`), so accessing `durability` will not be able to alias
-        zalsa_local.report_tracked_read_simple(
-            DatabaseKeyIndex::new(field_ingredient_index, id),
-            unsafe { (*data).durability },
-            field_changed_at,
-        );
-
-        fields
-    }
-
-    /// Access to this untracked field.
-    ///
-    /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responsible for selecting the appropriate element.
-    pub fn untracked_field<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        s: C::Struct<'db>,
-    ) -> &'db C::Fields<'db> {
-        let id = AsId::as_id(&s);
-        let data = Self::data_raw(zalsa.table(), id);
-
-        // Note that we do not need to add a dependency on the tracked struct
-        // as IDs that are reused increment their generation, invalidating any
-        // dependent queries directly.
-        // SAFETY: `data` is a valid pointer acquired from the table.
-        unsafe { self.lock_fields(data, zalsa.current_revision()) }
-    }
-
     /// Returns all data corresponding to the tracked struct.
     pub fn entries<'db>(&'db self, zalsa: &'db Zalsa) -> impl Iterator<Item = StructEntry<'db, C>> {
         zalsa
@@ -1175,6 +1171,11 @@ where
             memos: memos.memory_usage(),
         }
     }
+}
+
+// SAFETY: `IngredientImpl<C>` only allocates pages containing `Value<C>`.
+unsafe impl<C: Configuration> crate::ingredient::TableIngredient for IngredientImpl<C> {
+    type Slot = Value<C>;
 }
 
 // SAFETY: `Value<C>` is our private type branded over the unique configuration `C`.

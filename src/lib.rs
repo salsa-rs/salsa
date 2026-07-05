@@ -352,7 +352,7 @@ pub mod plumbing {
     pub use crate::database::{Database, current_revision};
     pub use crate::durability::Durability;
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
-    pub use crate::ingredient::{Ingredient, Jar, Location};
+    pub use crate::ingredient::{Ingredient, IngredientInDb, Jar, Location};
     pub use crate::ingredient_cache::IngredientCache;
     pub use crate::interned::{HashEqLike, Lookup};
     pub use crate::key::DatabaseKeyIndex;
@@ -412,7 +412,7 @@ pub mod plumbing {
     }
 
     pub mod function {
-        pub use crate::function::{Configuration, IngredientImpl, IngredientInDb, Memo};
+        pub use crate::function::{Configuration, IngredientImpl, Memo};
         pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
         pub use crate::table::memo::MemoEntryType;
     }

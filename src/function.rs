@@ -20,8 +20,8 @@ use crate::sync::Arc;
 use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
 use crate::views::DatabaseDownCaster;
-use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef, ZalsaLocal};
+use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef};
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -157,58 +157,6 @@ pub unsafe trait Configuration: Any {
     fn deserialize<'de, D>(deserializer: D) -> Result<Self::Output<'static>, D::Error>
     where
         D: plumbing::serde::Deserializer<'de>;
-}
-
-/// A function ingredient bound to the database that registered it.
-#[doc(hidden)]
-pub struct IngredientInDb<'db, C: Configuration> {
-    ingredient: &'db IngredientImpl<C>,
-    db: &'db C::DbView,
-    zalsa: &'db Zalsa,
-    zalsa_local: &'db ZalsaLocal,
-}
-
-impl<'db, C: Configuration> IngredientInDb<'db, C> {
-    /// Creates a function ingredient bound to a database.
-    ///
-    /// # Safety
-    ///
-    /// `get_ingredient` must return an ingredient registered in the `Zalsa` it receives.
-    #[inline]
-    pub unsafe fn new_unchecked(
-        db: &'db C::DbView,
-        get_ingredient: impl FnOnce(&'db Zalsa) -> &'db IngredientImpl<C>,
-    ) -> Self {
-        let (zalsa, zalsa_local) = db.zalsas();
-        let ingredient = get_ingredient(zalsa);
-
-        debug_assert!(std::ptr::eq(
-            ingredient,
-            zalsa
-                .lookup_ingredient(ingredient.index)
-                .assert_type::<IngredientImpl<C>>()
-        ));
-
-        Self {
-            ingredient,
-            db,
-            zalsa,
-            zalsa_local,
-        }
-    }
-
-    #[inline]
-    pub fn zalsas(&self) -> (&'db Zalsa, &'db ZalsaLocal) {
-        (self.zalsa, self.zalsa_local)
-    }
-}
-
-impl<C: Configuration> std::ops::Deref for IngredientInDb<'_, C> {
-    type Target = IngredientImpl<C>;
-
-    fn deref(&self) -> &Self::Target {
-        self.ingredient
-    }
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -565,7 +513,7 @@ where
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
         // SAFETY: The caller guarantees that `self` is registered in the `Zalsa` owned by `db`.
-        let ingredient = unsafe { IngredientInDb::new_unchecked(db, |_| self) };
+        let ingredient = unsafe { crate::ingredient::IngredientInDb::new_unchecked(db, |_| self) };
         ingredient.accumulated_map(key_index)
     }
 

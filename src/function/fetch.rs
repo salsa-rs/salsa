@@ -2,23 +2,24 @@ use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
 use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl, IngredientInDb, Reentrancy};
+use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::ingredient::IngredientInDb;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
 
-impl<'db, C> IngredientInDb<'db, C>
+impl<'db, C> IngredientInDb<'db, C::DbView, IngredientImpl<C>>
 where
     C: Configuration,
 {
     #[inline]
     pub fn fetch(&self, id: Id) -> &'db C::Output<'db> {
-        let zalsa = self.zalsa;
-        let zalsa_local = self.zalsa_local;
+        let zalsa = self.zalsa();
+        let zalsa_local = self.zalsa_local();
 
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
-        let database_key_index = self.database_key_index(id);
+        let database_key_index = self.ingredient().database_key_index(id);
 
         #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
@@ -28,7 +29,7 @@ where
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value().unwrap_unchecked() };
 
-        self.eviction.record_use(id);
+        self.ingredient().eviction.record_use(id);
 
         let revisions = &memo.header.revisions;
         zalsa_local.report_tracked_read(
@@ -47,10 +48,10 @@ where
 
     #[inline(always)]
     pub(super) fn refresh_memo(&self, id: Id) -> &'db Memo<C> {
-        let ingredient = self.ingredient;
-        let db = self.db;
-        let zalsa = self.zalsa;
-        let zalsa_local = self.zalsa_local;
+        let ingredient = self.ingredient();
+        let db = self.db();
+        let zalsa = self.zalsa();
+        let zalsa_local = self.zalsa_local();
         let memo_ingredient_index = ingredient.memo_ingredient_index(zalsa, id);
 
         loop {
@@ -75,8 +76,8 @@ where
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C>> {
-        let ingredient = self.ingredient;
-        let zalsa = self.zalsa;
+        let ingredient = self.ingredient();
+        let zalsa = self.zalsa();
 
         // SAFETY: `IngredientInDb` guarantees that the ingredient is registered in `zalsa`, and
         // `memo_ingredient_index` was read from that ingredient's memo map.
@@ -86,7 +87,7 @@ where
 
         memo.value()?;
 
-        let database_key_index = self.database_key_index(id);
+        let database_key_index = ingredient.database_key_index(id);
 
         let can_shallow_update = memo.header.shallow_verify_memo(
             zalsa,

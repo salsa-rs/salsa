@@ -1,11 +1,12 @@
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::accumulator::{self};
-use crate::function::{Configuration, IngredientInDb};
+use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
+use crate::ingredient::IngredientInDb;
 use crate::zalsa_local::QueryOriginRef;
 use crate::{DatabaseKeyIndex, Id};
 
-impl<'db, C> IngredientInDb<'db, C>
+impl<'db, C> IngredientInDb<'db, C::DbView, IngredientImpl<C>>
 where
     C: Configuration,
 {
@@ -16,7 +17,7 @@ where
         A: accumulator::Accumulator,
     {
         let (zalsa, zalsa_local) = self.zalsas();
-        let db = self.db;
+        let db = self.db();
 
         // NOTE: We don't have a precise way to track accumulated values at present,
         // so we report any read of them as an untracked read.
@@ -39,7 +40,7 @@ where
         // First ensure the result is up to date
         self.fetch(key);
 
-        let db_key = self.database_key_index(key);
+        let db_key = self.ingredient().database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
         let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
 

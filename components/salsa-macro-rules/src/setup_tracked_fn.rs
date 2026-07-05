@@ -268,12 +268,12 @@ macro_rules! setup_tracked_fn {
 
             impl $Configuration {
                 #[inline]
-                fn fn_ingredient<'db>(db: &'db dyn $Db) -> $zalsa::function::IngredientInDb<'db, $Configuration> {
+                fn fn_ingredient<'db>(db: &'db dyn $Db) -> $zalsa::IngredientInDb<'db, dyn $Db, $zalsa::function::IngredientImpl<$Configuration>> {
                     // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the first
                     // ingredient created by our jar is the function ingredient in the provided
                     // `zalsa`.
                     unsafe {
-                        $zalsa::function::IngredientInDb::new_unchecked(db, |zalsa| {
+                        $zalsa::IngredientInDb::new_unchecked(db, |zalsa| {
                             $FN_CACHE
                                 .get_or_create::<$fn_name, 0>(zalsa)
                                 .get_or_init(|| *<dyn $Db as $Db>::zalsa_register_downcaster(db))
@@ -518,7 +518,7 @@ macro_rules! setup_tracked_fn {
                 }
 
                 #[inline]
-                fn fn_ingredient_<'db>(db: &'db dyn $Db) -> $zalsa::function::IngredientInDb<'db, $Configuration> {
+                fn fn_ingredient_<'db>(db: &'db dyn $Db) -> $zalsa::IngredientInDb<'db, dyn $Db, $zalsa::function::IngredientImpl<$Configuration>> {
                     $Configuration::fn_ingredient(db)
                 }
             }
