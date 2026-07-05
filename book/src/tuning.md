@@ -13,8 +13,10 @@ fn parse(db: &dyn Db, input: SourceFile) -> Ast {
 }
 ```
 
-The `capacity` option is required. The optional `policy` defaults to `sieve`.
-Salsa supports two policies:
+With `capacity = 128`, Salsa will keep at most 128 memoized values for this
+function. When the cache exceeds this capacity, Salsa uses the configured policy
+to choose which values to evict at the start of the next revision. The optional
+`policy` defaults to `sieve`. Salsa supports two policies:
 
 - `sieve` is recommended. Its lock-free cache-hit path avoids serializing
   concurrent accesses, and it often achieves better cache efficiency (a lower
@@ -33,8 +35,8 @@ that depend on it can still determine whether their own values may have changed.
 ### Zero-Cost When Disabled
 
 When `eviction` is absent, Salsa uses a no-op policy that is optimized away by
-the compiler. Functions without cache eviction therefore have no policy
-bookkeeping on cache hits.
+the compiler. Functions without cache eviction therefore have no eviction-policy
+bookkeeping.
 
 ### Runtime Capacity Adjustment
 

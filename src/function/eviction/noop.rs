@@ -13,5 +13,8 @@ impl EvictionPolicy for NoopEviction {
     }
 
     #[inline(always)]
+    fn record_use(&self, _id: Id) {}
+
+    #[inline(always)]
     fn for_each_evicted(&mut self, _evict: impl FnMut(Id)) {}
 }

@@ -432,9 +432,10 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   input or interned struct. `specify` must be called during the same tracked query invocation
 ///   that created the key. It cannot be combined with `eviction`. See [specifying query results in
 ///   the Salsa book] for an example.
-/// - `eviction(capacity = INTEGER)` bounds the number of memoized values retained by the function
-///   using SIEVE. Specify `policy = lru` to use LRU instead. `INTEGER` is also the initial capacity
-///   used by `FUNCTION::set_eviction_capacity`.
+/// - `eviction(capacity = INTEGER)` enables cache eviction. `capacity` is required; `INTEGER`
+///   bounds the number of retained memoized values and is the initial capacity used by
+///   `FUNCTION::set_eviction_capacity`. The policy defaults to SIEVE; specify `policy = lru` to use
+///   LRU instead.
 /// - `cycle_initial = EXPR` enables fixed-point cycle recovery and computes the initial value. The
 ///   expression is called as `(db, cycle_head_id, query_arguments...)`.
 /// - `cycle_fn = EXPR` combines successive fixed-point values. It must be accompanied by

@@ -13,25 +13,23 @@ pub use sieve::Sieve;
 
 use crate::Id;
 
-/// Trait for cache eviction strategies.
+/// Cache eviction policy for memoized function values.
 ///
-/// Implementations control when memoized values are evicted from the cache.
-/// The eviction policy is selected at compile time via the `Configuration` trait.
+/// Implementations control which memoized values are evicted from the cache.
+/// The eviction policy is selected at compile time by the `Configuration`
+/// trait.
 pub trait EvictionPolicy: Send + Sync {
-    /// Creates a policy with the configured capacity.
+    /// Creates an eviction policy with the given capacity.
     ///
     /// A value of zero disables eviction.
     fn new(capacity: usize) -> Self;
 
-    /// Records that a value was used.
-    ///
-    /// Implementations may treat this as a best-effort hint.
+    /// Records that a memoized value was accessed.
     fn record_use(&self, _id: Id) {}
 
-    /// Invokes `evict` for each value that should be evicted.
+    /// Invokes `evict` for each value selected for eviction.
     ///
-    /// Called once per revision. Implementations may also perform any
-    /// revision-boundary maintenance before returning.
+    /// Salsa calls this once per revision during `reset_for_new_revision`.
     fn for_each_evicted(&mut self, evict: impl FnMut(Id));
 }
 
@@ -41,7 +39,7 @@ pub trait EvictionPolicy: Send + Sync {
 /// on tracked functions. Only policies that implement this trait will expose
 /// runtime capacity changes.
 pub trait HasCapacity: EvictionPolicy {
-    /// Changes the policy's capacity.
+    /// Sets the maximum capacity.
     ///
     /// A value of zero disables eviction.
     fn set_capacity(&mut self, capacity: usize);
