@@ -13,9 +13,8 @@ where
     C: Configuration,
 {
     #[inline]
-    pub fn fetch(&self, id: Id) -> &'db C::Output<'db> {
+    pub fn fetch(&self, zalsa_local: &'db ZalsaLocal, id: Id) -> &'db C::Output<'db> {
         let zalsa = self.zalsa();
-        let zalsa_local = self.zalsa_local();
 
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
@@ -24,7 +23,7 @@ where
         #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
-        let memo = self.refresh_memo(id);
+        let memo = self.refresh_memo(zalsa_local, id);
 
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value().unwrap_unchecked() };
@@ -47,11 +46,10 @@ where
     }
 
     #[inline(always)]
-    pub(super) fn refresh_memo(&self, id: Id) -> &'db Memo<C> {
+    pub(super) fn refresh_memo(&self, zalsa_local: &'db ZalsaLocal, id: Id) -> &'db Memo<C> {
         let ingredient = self.ingredient();
         let db = self.db();
         let zalsa = self.zalsa();
-        let zalsa_local = self.zalsa_local();
         let memo_ingredient_index = ingredient.memo_ingredient_index(zalsa, id);
 
         loop {

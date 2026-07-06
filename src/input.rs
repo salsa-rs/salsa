@@ -126,14 +126,19 @@ impl<'db, Db: ?Sized, C: Configuration>
 {
     /// Access a field of an input.
     #[inline]
-    pub fn field(&self, id: C::Struct, field_index: usize) -> &'db C::Fields {
+    pub fn field(
+        &self,
+        zalsa_local: &ZalsaLocal,
+        id: C::Struct,
+        field_index: usize,
+    ) -> &'db C::Fields {
         let ingredient = self.ingredient();
         let field_ingredient_index = ingredient.ingredient_index.successor(field_index);
         let id = id.as_id();
         let value = self.slot(id);
         let durability = value.durabilities[field_index];
         let revision = value.revisions[field_index];
-        self.zalsa_local().report_tracked_read_simple(
+        zalsa_local.report_tracked_read_simple(
             DatabaseKeyIndex::new(field_ingredient_index, id),
             durability,
             revision,

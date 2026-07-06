@@ -153,13 +153,13 @@ macro_rules! setup_input_struct {
                 }
 
                 #[inline]
-                fn ingredient_in_db<'db, $Db>(db: &'db $Db) -> $zalsa::IngredientInDb<'db, $Db, $zalsa_struct::IngredientImpl<Self>>
+                fn ingredient_in_db<'db, $Db>(db: &'db $Db) -> ($zalsa::IngredientInDb<'db, $Db, $zalsa_struct::IngredientImpl<Self>>, &'db $zalsa::ZalsaLocal)
                 where
                     $Db: ?Sized + $zalsa::Database,
                 {
                     // SAFETY: `ingredient_` looks up the input ingredient in the `Zalsa`
                     // supplied by `IngredientInDb`.
-                    unsafe { $zalsa::IngredientInDb::new_unchecked(db, Self::ingredient_) }
+                    unsafe { $zalsa::IngredientInDb::new_unchecked_with_zalsa_local(db, Self::ingredient_) }
                 }
 
                 fn ingredient_(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
@@ -281,7 +281,8 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = $Configuration::ingredient_in_db(db).field(self, $field_index);
+                        let (ingredient, zalsa_local) = $Configuration::ingredient_in_db(db);
+                        let fields = ingredient.field(zalsa_local, self, $field_index);
                         $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,

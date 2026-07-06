@@ -8,34 +8,22 @@ use crate::ingredient::IngredientInDb;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
-use crate::zalsa::{Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{OriginAndExtra, QueryOriginRef, QueryRevisions};
+use crate::zalsa::Zalsa;
+use crate::zalsa_local::{OriginAndExtra, QueryOriginRef, QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
 
 impl<'db, C> IngredientInDb<'db, C::DbView, IngredientImpl<C>>
 where
     C: Configuration,
 {
-    #[inline]
-    pub fn specify_and_record(&self, key: Id, value: C::Output<'db>)
-    where
-        C::Input<'db>: TrackedStructInDb,
-    {
-        self.ingredient().specify_and_record(self.db(), key, value)
-    }
-}
-
-impl<C> IngredientImpl<C>
-where
-    C: Configuration,
-{
     /// Specify the value for `key` *and* record that we did so.
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
-    pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Output<'db>)
+    pub fn specify_and_record(&self, zalsa_local: &'db ZalsaLocal, key: Id, value: C::Output<'db>)
     where
         C::Input<'db>: TrackedStructInDb,
     {
-        let (zalsa, zalsa_local) = db.zalsas();
+        let ingredient = self.ingredient();
+        let zalsa = self.zalsa();
 
         let (active_query_key, current_deps, cycle_heads) =
             match zalsa_local.active_query_with_cycle_heads() {
@@ -80,12 +68,12 @@ where
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
 
         let revision = zalsa.current_revision();
-        let database_key_index = self.database_key_index(key);
-        let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
+        let database_key_index = ingredient.database_key_index(key);
+        let memo_ingredient_index = ingredient.memo_ingredient_index(zalsa, key);
 
         zalsa.unwind_if_revision_cancelled(zalsa_local);
         let _claim_guard =
-            match self
+            match ingredient
                 .sync_table
                 .try_claim(zalsa, zalsa_local, key, Reentrancy::Deny)
             {
@@ -98,7 +86,7 @@ where
 
         // Re-read the memo after claiming the query so that no concurrent execution or
         // specification can replace it while we decide whether to keep or overwrite it.
-        let old_memo = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index);
+        let old_memo = ingredient.get_memo_from_table_for(zalsa, key, memo_ingredient_index);
 
         if let Some(old_memo) = old_memo {
             if old_memo.header.verified_at.load() == revision && old_memo.value.is_some() {
@@ -143,7 +131,7 @@ where
             completed_query
                 .stale_tracked_structs
                 .extend_from_slice(old_memo.header.revisions.tracked_struct_ids());
-            self.backdate_if_appropriate(
+            ingredient.backdate_if_appropriate(
                 old_memo,
                 database_key_index,
                 &mut completed_query.revisions,
@@ -161,12 +149,17 @@ where
             memo.tracing_debug(),
             key
         );
-        self.insert_memo(zalsa, key, memo, memo_ingredient_index);
+        ingredient.insert_memo(zalsa, key, memo, memo_ingredient_index);
 
         // Record that the current query *specified* a value for this cell.
         zalsa_local.add_output(database_key_index);
     }
+}
 
+impl<C> IngredientImpl<C>
+where
+    C: Configuration,
+{
     /// Invoked when the query `executor` has been validated as having green inputs
     /// and `key` is a value that was specified by `executor`.
     /// Marks `key` as valid in the current revision since if `executor` had re-executed,

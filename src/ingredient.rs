@@ -43,7 +43,6 @@ pub struct IngredientInDb<'db, Db: ?Sized, I> {
     ingredient: &'db I,
     db: &'db Db,
     zalsa: &'db Zalsa,
-    zalsa_local: &'db ZalsaLocal,
 }
 
 impl<'db, Db, I> IngredientInDb<'db, Db, I>
@@ -61,7 +60,31 @@ where
         db: &'db Db,
         get_ingredient: impl FnOnce(&'db Zalsa) -> &'db I,
     ) -> Self {
+        Self::new_unchecked_with_zalsa(db, db.zalsa(), get_ingredient)
+    }
+
+    /// Creates an ingredient bound to a database and returns its thread-local state.
+    ///
+    /// # Safety
+    ///
+    /// `get_ingredient` must return an ingredient registered in the `Zalsa` it receives.
+    #[inline]
+    pub unsafe fn new_unchecked_with_zalsa_local(
+        db: &'db Db,
+        get_ingredient: impl FnOnce(&'db Zalsa) -> &'db I,
+    ) -> (Self, &'db ZalsaLocal) {
         let (zalsa, zalsa_local) = db.zalsas();
+        (
+            Self::new_unchecked_with_zalsa(db, zalsa, get_ingredient),
+            zalsa_local,
+        )
+    }
+
+    fn new_unchecked_with_zalsa(
+        db: &'db Db,
+        zalsa: &'db Zalsa,
+        get_ingredient: impl FnOnce(&'db Zalsa) -> &'db I,
+    ) -> Self {
         let ingredient = get_ingredient(zalsa);
 
         debug_assert!(std::ptr::eq(
@@ -75,17 +98,11 @@ where
             ingredient,
             db,
             zalsa,
-            zalsa_local,
         }
     }
 }
 
 impl<'db, Db: ?Sized, I> IngredientInDb<'db, Db, I> {
-    #[inline]
-    pub fn zalsas(&self) -> (&'db Zalsa, &'db ZalsaLocal) {
-        (self.zalsa, self.zalsa_local)
-    }
-
     #[inline(always)]
     pub(crate) fn ingredient(&self) -> &'db I {
         self.ingredient
@@ -97,13 +114,8 @@ impl<'db, Db: ?Sized, I> IngredientInDb<'db, Db, I> {
     }
 
     #[inline(always)]
-    pub(crate) fn zalsa(&self) -> &'db Zalsa {
+    pub fn zalsa(&self) -> &'db Zalsa {
         self.zalsa
-    }
-
-    #[inline(always)]
-    pub(crate) fn zalsa_local(&self) -> &'db ZalsaLocal {
-        self.zalsa_local
     }
 }
 

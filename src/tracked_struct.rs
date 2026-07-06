@@ -212,6 +212,7 @@ impl<'db, Db: ?Sized, C: Configuration>
     #[inline]
     pub fn tracked_field(
         &self,
+        zalsa_local: &ZalsaLocal,
         s: C::Struct<'db>,
         relative_tracked_index: usize,
     ) -> &'db C::Fields<'db> {
@@ -228,7 +229,7 @@ impl<'db, Db: ?Sized, C: Configuration>
         // SAFETY: We acquired the read lock above, so `revisions` and `durability` are not aliased.
         let field_changed_at = unsafe { (&(*data).revisions)[relative_tracked_index].load() };
         let durability = unsafe { (*data).durability };
-        self.zalsa_local().report_tracked_read_simple(
+        zalsa_local.report_tracked_read_simple(
             DatabaseKeyIndex::new(field_ingredient_index, id),
             durability,
             field_changed_at,

@@ -3,7 +3,7 @@ use crate::accumulator::{self};
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
 use crate::ingredient::IngredientInDb;
-use crate::zalsa_local::QueryOriginRef;
+use crate::zalsa_local::{QueryOriginRef, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
 
 impl<'db, C> IngredientInDb<'db, C::DbView, IngredientImpl<C>>
@@ -12,11 +12,11 @@ where
 {
     /// Helper used by `accumulate` functions. Computes the results accumulated by
     /// `database_key_index` and its inputs.
-    pub fn accumulated_by<A>(&self, key: Id) -> Vec<&'db A>
+    pub fn accumulated_by<A>(&self, zalsa_local: &'db ZalsaLocal, key: Id) -> Vec<&'db A>
     where
         A: accumulator::Accumulator,
     {
-        let (zalsa, zalsa_local) = self.zalsas();
+        let zalsa = self.zalsa();
         let db = self.db();
 
         // NOTE: We don't have a precise way to track accumulated values at present,
@@ -38,7 +38,7 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch(key);
+        self.fetch(zalsa_local, key);
 
         let db_key = self.ingredient().database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
@@ -90,10 +90,11 @@ where
 
     pub(super) fn accumulated_map(
         &self,
+        zalsa_local: &'db ZalsaLocal,
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
-        let memo = self.refresh_memo(key);
+        let memo = self.refresh_memo(zalsa_local, key);
         (
             memo.header.revisions.accumulated(),
             memo.header.revisions.accumulated_inputs.load(),
