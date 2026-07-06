@@ -6,7 +6,7 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
 };
-use crate::hash::FxIndexSet;
+use crate::hash::{FxIndexSet, should_discard_retained_capacity};
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
@@ -276,7 +276,7 @@ impl ActiveQuery {
             #[cfg(feature = "accumulator")]
                 accumulated_inputs: _,
         } = self;
-        input_outputs.clear();
+        clear_input_outputs(input_outputs);
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
@@ -420,7 +420,7 @@ impl QueryStack {
         );
         let completion = active_query.prepare_completion(iteration, force_extra);
         let DetachedInputOutputs(mut reusable_frame_input_outputs) = detached_input_outputs;
-        reusable_frame_input_outputs.clear();
+        clear_input_outputs(&mut reusable_frame_input_outputs);
         active_query.input_outputs = reusable_frame_input_outputs;
         completion
     }
@@ -449,6 +449,14 @@ impl QueryStack {
     }
 }
 
+fn clear_input_outputs(input_outputs: &mut FxIndexSet<QueryEdge>) {
+    if should_discard_retained_capacity(input_outputs.len(), input_outputs.capacity()) {
+        *input_outputs = Default::default();
+    } else {
+        input_outputs.clear();
+    }
+}
+
 pub(crate) struct QueryCompletion {
     changed_at: Revision,
     durability: Durability,
@@ -462,7 +470,7 @@ pub(crate) struct QueryCompletion {
 
 impl QueryCompletion {
     /// Builds the [`CompletedQuery`] from the given edges, leaving `input_outputs` empty
-    /// (but with its allocation intact) so that it can be reused.
+    /// so that it can be reused, retaining its allocation unless it is oversized.
     pub(crate) fn finish(self, input_outputs: &mut FxIndexSet<QueryEdge>) -> CompletedQuery {
         // `QueryEdge` is `Copy`, so copy the edges in their existing order, then clear the set.
         // This preserves the dependency order of `drain(..)` while using a plain slice iterator
@@ -474,7 +482,7 @@ impl QueryCompletion {
         } else {
             OriginAndExtra::derived(edges, self.extra)
         };
-        input_outputs.clear();
+        clear_input_outputs(input_outputs);
         CompletedQuery {
             revisions: QueryRevisions {
                 changed_at: self.changed_at,
