@@ -367,6 +367,12 @@ impl MemoHeader {
             return true;
         }
 
+        // A pending write can cancel a fixpoint iteration without advancing the revision.
+        // Provisional results from the abandoned execution must not be reused.
+        if self.revisions.iteration().cancellation_count() != zalsa.runtime().cancellation_count() {
+            return false;
+        }
+
         crate::tracing::trace!(
             "{database_key_index:?}: validate_may_be_provisional(memo = {memo:#?})",
             memo = self.tracing_debug(has_value)
