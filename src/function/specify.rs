@@ -5,7 +5,6 @@ use crate::function::memo::Memo;
 use crate::function::sync::{ClaimResult, Reentrancy};
 use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::IngredientInDb;
-use crate::revision::AtomicRevision;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::Zalsa;
