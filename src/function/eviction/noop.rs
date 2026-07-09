@@ -8,16 +8,15 @@ use crate::{Id, function::EvictionPolicy};
 pub struct NoopEviction;
 
 impl EvictionPolicy for NoopEviction {
+    type Value<T: Send + Sync> = Option<T>;
+
     fn new(_cap: usize) -> Self {
         Self
     }
 
     #[inline(always)]
-    fn record_use(&self, _id: Id) {}
+    fn set_tuning(&mut self, _capacity: usize) {}
 
     #[inline(always)]
-    fn set_capacity(&mut self, _capacity: usize) {}
-
-    #[inline(always)]
-    fn for_each_evicted(&mut self, _cb: impl FnMut(Id)) {}
+    fn for_each_evicted(&mut self, _evict: impl FnMut(Id)) {}
 }

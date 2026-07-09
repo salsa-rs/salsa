@@ -6,6 +6,7 @@ use std::ptr::NonNull;
 use crate::cycle::{
     CycleHeads, CycleHeadsIterator, IterationStamp, ProvisionalStatus, empty_cycle_heads,
 };
+use crate::function::eviction::{EvictionPolicy, MemoValue};
 use crate::function::{Configuration, IngredientImpl};
 use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
@@ -29,9 +30,11 @@ impl<C: Configuration> IngredientImpl<C> {
         // for `'db` though as we delay their dropping to the end of a revision.
         let static_memo =
             unsafe { transmute::<NonNull<Memo<'db, C>>, NonNull<Memo<'static, C>>>(memo) };
-        let old_static_memo = zalsa
-            .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .insert(memo_ingredient_index, static_memo)?;
+        let old_static_memo = zalsa.memo_table_for::<C::SalsaStruct<'_>>(id).insert(
+            memo_ingredient_index,
+            static_memo,
+            C::Eviction::RETIRES_VALUES,
+        )?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe {
@@ -50,15 +53,15 @@ impl<C: Configuration> IngredientImpl<C> {
     ) -> Option<&'db Memo<'db, C>> {
         let static_memo = zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .get(memo_ingredient_index)?;
+            .get(memo_ingredient_index, C::Eviction::RETIRES_VALUES)?;
         // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
         // for `'db` though as we delay their dropping to the end of a revision.
         Some(unsafe { transmute::<&Memo<'static, C>, &'db Memo<'db, C>>(static_memo.as_ref()) })
     }
 
-    /// Evicts the existing memo for the given key, replacing it
-    /// with an equivalent memo that has no value. If the memo is untracked
-    /// or has values assigned as output of another query, this has no effect.
+    /// Evicts the value from the existing memo for the given key.
+    /// If the memo is untracked or has values assigned as output of another query,
+    /// this has no effect.
     pub(super) fn evict_value_from_memo_for(
         table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,
@@ -66,21 +69,50 @@ impl<C: Configuration> IngredientImpl<C> {
         let map = |memo: &mut Memo<'static, C>| {
             if memo.header.can_evict_value() {
                 // Set the memo value to `None`.
-                memo.value = None;
+                memo.value = <C::Eviction as EvictionPolicy>::Value::new(None);
             }
         };
 
         table.map_memo(memo_ingredient_index, map)
     }
+
+    /// Atomically clears the current memo's value while retaining its metadata.
+    pub(super) fn evict_value_from_memo(&self, zalsa: &Zalsa, id: Id) -> bool {
+        let _guard = zalsa.memo_read_guard();
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        let Some(old_memo) = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index) else {
+            return false;
+        };
+
+        if !old_memo.value.is_some() {
+            return false;
+        }
+
+        if !matches!(old_memo.header.origin(), QueryOriginRef::Derived(_)) {
+            return false;
+        }
+
+        if !old_memo.can_evict_volatile() {
+            return false;
+        }
+
+        // Cycle participation is fixed when a memo is published. An execution
+        // that newly enters a cycle publishes a different provisional memo, so
+        // concurrently clearing this value cannot erase its cycle state.
+        if old_memo.header.was_cycle_participant() {
+            return false;
+        }
+
+        old_memo.value.clear()
+    }
 }
 
-#[derive(Debug)]
 pub struct Memo<'db, C: Configuration> {
     /// Configuration-independent state used to validate and manage this memo.
     pub(super) header: MemoHeader,
 
     /// The result of the query, if we decide to memoize it.
-    pub(super) value: Option<C::Output<'db>>,
+    pub(super) value: <C::Eviction as EvictionPolicy>::Value<C::Output<'db>>,
 }
 
 #[derive(Debug)]
@@ -141,7 +173,7 @@ impl MemoHeader {
     /// Returns `true` if this memo was part of a cycle in it's last iteration.
     #[inline(always)]
     pub(super) fn was_cycle_participant(&self) -> bool {
-        !self.revisions.cycle_heads().is_empty()
+        self.revisions.participated_in_cycle()
     }
 
     /// Mark memo as having been verified in the `revision_now`, which should
@@ -186,6 +218,7 @@ impl MemoHeader {
                             &"None"
                         },
                     )
+                    .field("poisoned", &self.header.revisions.poisoned())
                     .field("verified_at", &self.header.verified_at)
                     .field("revisions", &self.header.revisions)
                     .finish()
@@ -217,9 +250,28 @@ impl<'db, C: Configuration> Memo<'db, C> {
         revisions: QueryRevisions,
     ) -> Self {
         Self {
-            value,
+            value: <C::Eviction as EvictionPolicy>::Value::new(value),
             header: MemoHeader::new(revision_now, revisions),
         }
+    }
+
+    pub(super) fn poisoned(revision_now: Revision, mut revisions: QueryRevisions) -> Self {
+        revisions.set_poisoned();
+
+        Self::new(None, revision_now, revisions)
+    }
+
+    /// Returns whether this memo supports within-revision volatile eviction.
+    ///
+    /// Accumulated values escape by reference and recomputing would duplicate
+    /// those side-channel results.
+    pub(super) fn can_evict_volatile(&self) -> bool {
+        #[cfg(feature = "accumulator")]
+        if self.header.revisions.accumulated().is_some() {
+            return false;
+        }
+
+        true
     }
 
     /// Returns `true` if this memo should be serialized.
@@ -245,19 +297,26 @@ where
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
         let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
-        let heap_size = if let Some(value) = self.value.as_ref() {
-            C::heap_size(value)
-        } else {
-            Some(0)
-        };
+        let output_size = std::mem::size_of::<C::Output<'static>>();
+        let (size_of_metadata, size_of_fields, heap_size_of_fields) =
+            if let Some(value) = self.value.load() {
+                let metadata = if C::Eviction::STORES_VALUE_INLINE {
+                    size_of - output_size
+                } else {
+                    size_of
+                };
+                (metadata, output_size, C::heap_size(&value))
+            } else {
+                (size_of, 0, Some(0))
+            };
 
         crate::database::MemoInfo {
             debug_name: C::DEBUG_NAME,
             output: crate::database::SlotInfo {
-                size_of_metadata: size_of - std::mem::size_of::<C::Output<'static>>(),
+                size_of_metadata,
                 debug_name: std::any::type_name::<C::Output<'static>>(),
-                size_of_fields: std::mem::size_of::<C::Output<'static>>(),
-                heap_size_of_fields: heap_size,
+                size_of_fields,
+                heap_size_of_fields,
                 memos: Vec::new(),
             },
         }
@@ -267,7 +326,8 @@ where
 #[cfg(feature = "persistence")]
 mod persistence {
     use crate::function::Configuration;
-    use crate::function::memo::{Memo, MemoHeader};
+    use crate::function::eviction::{EvictionPolicy, MemoValue};
+    use crate::function::memo::Memo;
     use crate::revision::AtomicRevision;
     use crate::zalsa_local::QueryRevisions;
     use crate::zalsa_local::persistence::{MappedQueryRevisions, PersistentQueryOrigin};
@@ -275,9 +335,18 @@ mod persistence {
     use serde::Deserialize;
     use serde::ser::SerializeStruct;
 
-    /// A reference to the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
-    pub(crate) struct MappedMemo<'memo, 'db, C: Configuration> {
-        pub(crate) value: Option<&'memo C::Output<'db>>,
+    type ValueStorage<'db, C> = <<C as Configuration>::Eviction as EvictionPolicy>::Value<
+        <C as Configuration>::Output<'db>,
+    >;
+    type ValueGuard<'memo, 'db, C> =
+        <ValueStorage<'db, C> as MemoValue<<C as Configuration>::Output<'db>>>::Guard<'memo>;
+
+    /// A view of the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
+    pub(crate) struct MappedMemo<'memo, 'db, C: Configuration>
+    where
+        ValueStorage<'db, C>: 'memo,
+    {
+        pub(crate) value: Option<ValueGuard<'memo, 'db, C>>,
         pub(crate) verified_at: AtomicRevision,
         pub(crate) revisions: MappedQueryRevisions<'memo>,
     }
@@ -287,26 +356,18 @@ mod persistence {
             &self,
             serialized_origin: PersistentQueryOrigin,
         ) -> MappedMemo<'_, 'db, C> {
-            let Memo {
-                ref value,
-                ref header,
-            } = *self;
-            let MemoHeader {
-                ref verified_at,
-                ref revisions,
-            } = *header;
-
             MappedMemo {
-                value: value.as_ref(),
-                verified_at: AtomicRevision::from(verified_at.load()),
-                revisions: revisions.with_origin(serialized_origin),
+                value: self.value.load(),
+                verified_at: AtomicRevision::from(self.header.verified_at.load()),
+                revisions: self.header.revisions.with_origin(serialized_origin),
             }
         }
     }
 
-    impl<C> serde::Serialize for MappedMemo<'_, '_, C>
+    impl<'memo, 'db, C> serde::Serialize for MappedMemo<'memo, 'db, C>
     where
         C: Configuration,
+        ValueStorage<'db, C>: 'memo,
     {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -332,9 +393,10 @@ mod persistence {
                 revisions,
             } = self;
 
-            let value = value.expect(
+            let value = value.as_ref().expect(
                 "attempted to serialize memo where `Memo::should_serialize` returned `false`",
             );
+            let value: &C::Output<'db> = std::ops::Deref::deref(value);
 
             let mut s = serializer.serialize_struct("Memo", 3)?;
             s.serialize_field("value", &SerializeValue::<C>(value))?;
@@ -379,13 +441,11 @@ mod persistence {
 
             let memo = DeserializeMemo::<C>::deserialize(deserializer)?;
 
-            Ok(Memo {
-                value: Some(memo.value.0),
-                header: MemoHeader {
-                    verified_at: memo.verified_at,
-                    revisions: memo.revisions,
-                },
-            })
+            Ok(Memo::new(
+                Some(memo.value.0),
+                memo.verified_at.load(),
+                memo.revisions,
+            ))
         }
     }
 }

@@ -51,6 +51,8 @@ impl AllowedOptions for TrackedFn {
     const CYCLE_RESULT: bool = true;
 
     const LRU: bool = true;
+    const SIEVE: bool = true;
+    const VOLATILE: bool = true;
 
     const CONSTRUCTOR_NAME: bool = false;
 
@@ -161,16 +163,74 @@ impl Macro {
             ));
         }
 
+        if let (Some(_), Some(token)) = (&self.args.sieve, &self.args.specify) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `specify` and `sieve` options cannot be used together",
+            ));
+        }
+
+        if let (Some(_), Some(token)) = (&self.args.lru, &self.args.sieve) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `lru` and `sieve` options cannot be used together",
+            ));
+        }
+
+        if let (Some(volatile), Some(_)) = (&self.args.volatile, &self.args.lru) {
+            return Err(syn::Error::new_spanned(
+                &volatile.ident,
+                "the `volatile` and `lru` options cannot be used together",
+            ));
+        }
+
+        if let (Some(_), Some(token)) = (&self.args.volatile, &self.args.specify) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `volatile` and `specify` options cannot be used together",
+            ));
+        }
+
+        if let (Some(_), Some(token)) = (&self.args.volatile, &self.args.non_update_types) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `volatile` and `unsafe(non_update_types)` options cannot be used together",
+            ));
+        }
+
+        if let (Some(volatile), Some(_)) = (&self.args.volatile, &self.args.sieve) {
+            return Err(syn::Error::new_spanned(
+                &volatile.ident,
+                "the `volatile` and `sieve` options cannot be used together",
+            ));
+        }
+
         let needs_interner = match function_type {
             FunctionType::Constant | FunctionType::RequiresInterning => true,
             FunctionType::SalsaStruct => false,
         };
 
-        let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
+        let eviction_capacity = self
+            .args
+            .lru
+            .or(self.args.sieve)
+            .or_else(|| {
+                self.args
+                    .volatile
+                    .as_ref()
+                    .map(|volatile| volatile.capacity)
+            })
+            .unwrap_or(0);
+        let eviction_capacity = Literal::usize_unsuffixed(eviction_capacity);
+        let is_volatile = self.args.volatile.is_some();
 
         // Determine the eviction policy type based on whether LRU capacity is specified
         let eviction_type = if self.args.lru.is_some() {
             quote!(::salsa::plumbing::function::Lru)
+        } else if self.args.sieve.is_some() {
+            quote!(::salsa::plumbing::function::Sieve)
+        } else if self.args.volatile.is_some() {
+            quote!(::salsa::plumbing::function::Volatile)
         } else {
             quote!(::salsa::plumbing::function::NoopEviction)
         };
@@ -192,9 +252,29 @@ impl Macro {
             ));
         }
 
+        if self.args.volatile.is_some()
+            && matches!(
+                return_mode.to_string().as_str(),
+                "ref" | "deref" | "as_ref" | "as_deref"
+            )
+        {
+            return Err(syn::Error::new(
+                return_mode.span(),
+                "the `volatile` option cannot be used with reference return modes",
+            ));
+        }
+
         let persist = self.args.persist();
 
-        let assert_types_are_update = if requires_update {
+        let assert_types_are_update = if self.args.volatile.is_some() {
+            let output = crate::update::assert_impl_update(&db_lt, &zalsa, &output_ty);
+            let inputs = needs_interner
+                .then(|| crate::update::assert_update(&db_lt, &zalsa, interned_input_tys.clone()));
+            quote! {
+                #output
+                #inputs
+            }
+        } else if requires_update {
             let mut assert_update = vec![output_ty.clone()];
             if needs_interner {
                 assert_update.extend(interned_input_tys.clone());
@@ -230,7 +310,8 @@ impl Macro {
                 needs_interner: #needs_interner,
                 heap_size_fn: #(#heap_size_fn)*,
                 eviction: #eviction_type,
-                lru: #lru,
+                lru: #eviction_capacity,
+                is_volatile: #is_volatile,
                 return_mode: #return_mode,
                 persist: #persist,
                 assert_types_are_update: { #assert_types_are_update },
