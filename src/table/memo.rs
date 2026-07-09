@@ -312,6 +312,38 @@ pub struct MemoTableWithTypes<'a> {
     memos: &'a MemoTable,
 }
 
+/// A memo table slot whose observed allocations remain valid for shared access for `'a`.
+pub(crate) struct MemoSlot<'a> {
+    table: MemoTableWithTypes<'a>,
+    memo_ingredient_index: MemoIngredientIndex,
+}
+
+impl<'a> MemoSlot<'a> {
+    /// Creates a memo slot with an allocation-lifetime guarantee.
+    ///
+    /// # Safety
+    ///
+    /// Any allocation observed in this slot must remain at the same address and valid for shared
+    /// access for `'a`.
+    #[inline]
+    pub(crate) unsafe fn new(
+        table: MemoTableWithTypes<'a>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Self {
+        Self {
+            table,
+            memo_ingredient_index,
+        }
+    }
+
+    /// Loads the erased memo currently stored in this slot.
+    #[inline]
+    pub(crate) fn get_erased(&self) -> Option<ErasedMemo<'a>> {
+        // SAFETY: Guaranteed by the caller of `MemoSlot::new`.
+        unsafe { self.table.get_erased(self.memo_ingredient_index) }
+    }
+}
+
 impl<'a> MemoTableWithTypes<'a> {
     pub(crate) fn insert<M: Memo>(
         self,
@@ -373,10 +405,10 @@ impl<'a> MemoTableWithTypes<'a> {
     /// # Safety
     ///
     /// Any allocation observed in the table entry must remain at the same address and valid for
-    /// shared access for `'a`, even if another thread replaces the entry.
+    /// shared access for `'a`.
     #[inline]
-    pub(crate) unsafe fn get_erased(
-        self,
+    unsafe fn get_erased(
+        &self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ErasedMemo<'a>> {
         let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
@@ -391,9 +423,10 @@ impl<'a> MemoTableWithTypes<'a> {
 
         let memo = NonNull::new(atomic_memo.load(Ordering::Acquire))?;
 
-        // SAFETY: `insert` type-checks and release-publishes a complete-allocation pointer paired
-        // with `type_`; the acquire load observes its initialization. The caller guarantees that
-        // the allocation remains valid for `'a`.
+        // SAFETY: `insert` type-checks and release-publishes a pointer to the memo allocation's
+        // base address, with spatial provenance covering the allocation, paired with `type_`; the
+        // acquire load observes its initialization. The caller guarantees that the allocation
+        // remains valid for `'a`.
         Some(unsafe { ErasedMemo::from_raw_parts(memo, type_.to_dyn_fn, type_.type_id) })
     }
 

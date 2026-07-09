@@ -2,11 +2,10 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, ProvisionalStatus};
 use crate::database::RawDatabase;
-use crate::function::memo::{
-    ErasedMemo, FunctionMemoTable, MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult,
-};
+use crate::function::memo::{ErasedMemo, MemoHeader, TryClaimCycleHeadsIter, TryClaimHeadsResult};
 use crate::function::sync::{ClaimGuard, ClaimResult};
 use crate::function::{Configuration, IngredientImpl, Reentrancy, SyncTable};
+use crate::table::memo::MemoSlot;
 use std::sync::atomic::Ordering;
 
 use crate::key::DatabaseKeyIndex;
@@ -158,10 +157,9 @@ where
             zalsa: &'db Zalsa,
             zalsa_local: &'db ZalsaLocal,
             db: RawDatabase<'db>,
-            memo_table: FunctionMemoTable<'db>,
+            memo_slot: MemoSlot<'db>,
             database_key_index: DatabaseKeyIndex,
             revision: Revision,
-            memo_ingredient_index: MemoIngredientIndex,
             cycle_recovery_strategy: CycleRecoveryStrategy,
         ) -> ColdResult<'db> {
             let claim_guard = match sync_table.try_claim(
@@ -186,7 +184,7 @@ where
 
             // Load the current memo after claiming the query because it may have changed while
             // this query was blocked on another thread.
-            let Some(old_memo) = memo_table.get_erased(memo_ingredient_index) else {
+            let Some(old_memo) = memo_slot.get_erased() else {
                 return ColdResult::Verified(VerifyResult::changed());
             };
 
@@ -225,15 +223,23 @@ where
             }
         }
 
+        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
+        // for `'db` though as we delay their dropping to the end of a revision.
+        let memo_slot = unsafe {
+            MemoSlot::new(
+                zalsa.memo_table_for::<C::SalsaStruct<'_>>(database_key_index.key_index()),
+                memo_ingredient_index,
+            )
+        };
+
         match inner(
             &self.sync_table,
             zalsa,
             zalsa_local,
             db.into(),
-            self.memo_table_for(zalsa, database_key_index.key_index()),
+            memo_slot,
             database_key_index,
             revision,
-            memo_ingredient_index,
             C::CYCLE_STRATEGY,
         ) {
             ColdResult::Retry => None,
