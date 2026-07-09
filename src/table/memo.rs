@@ -4,9 +4,15 @@ use std::mem;
 use std::ptr::{self, NonNull};
 
 use crate::DatabaseKeyIndex;
+use crate::function::ErasedMemo;
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
+
+/// Adds the registered concrete memo type's vtable without dereferencing the pointer.
+///
+/// Dereferencing the result requires a live, aligned allocation of the same concrete type.
+pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -42,6 +48,8 @@ impl MemoTable {
 }
 
 pub trait Memo: Any + Send + Sync {
+    fn has_value(&self) -> bool;
+
     /// Removes the outputs that were created when this query ran. This includes
     /// tracked structs and specified queries.
     fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex);
@@ -187,37 +195,19 @@ impl Drop for LazyMemoEntries {
     }
 }
 
+/// Type metadata for one memo-table slot.
+///
+/// Both fields describe the slot's concrete memo type, and the slot stores only that type.
 #[derive(Clone, Copy, Debug)]
 pub struct MemoEntryType {
     /// The `type_id` of the erased memo type `M`
     type_id: TypeId,
 
-    /// A type-coercion function for the erased memo type `M`
-    to_dyn_fn: fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
+    /// A type-coercion function for the erased memo type `M`.
+    to_dyn_fn: ToDynMemo,
 }
 
 impl MemoEntryType {
-    fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<DummyMemo> {
-        memo.cast()
-    }
-
-    unsafe fn from_dummy<M: Memo>(memo: NonNull<DummyMemo>) -> NonNull<M> {
-        memo.cast()
-    }
-
-    const fn to_dyn_fn<M: Memo>() -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
-        let f: fn(NonNull<M>) -> NonNull<dyn Memo> = |x| x;
-
-        // SAFETY: `M: Sized` and `DummyMemo: Sized`, as such they are ABI compatible behind a
-        // `NonNull` making it safe to do type erasure.
-        unsafe {
-            mem::transmute::<
-                fn(NonNull<M>) -> NonNull<dyn Memo>,
-                fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
-            >(f)
-        }
-    }
-
     #[inline]
     pub fn of<M: Memo>() -> Self {
         Self {
@@ -225,13 +215,39 @@ impl MemoEntryType {
             to_dyn_fn: Self::to_dyn_fn::<M>(),
         }
     }
+
+    fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<DummyMemo> {
+        memo.cast()
+    }
+
+    /// Restores a concrete pointer previously erased by [`MemoEntryType::to_dummy`].
+    ///
+    /// # Safety
+    ///
+    /// `memo` must have been produced by [`MemoEntryType::to_dummy`] from a live, aligned `M`.
+    unsafe fn from_dummy<M: Memo>(memo: NonNull<DummyMemo>) -> NonNull<M> {
+        memo.cast()
+    }
+
+    pub(crate) const fn to_dyn_fn<M: Memo>() -> ToDynMemo {
+        fn to_dyn<M: Memo>(memo: NonNull<DummyMemo>) -> NonNull<dyn Memo> {
+            let memo: NonNull<M> = memo.cast();
+            memo
+        }
+
+        to_dyn::<M>
+    }
 }
 
-/// Dummy placeholder type that we use when erasing the memo type `M` in [`MemoEntryData`][].
+/// Pointee marker for erased memo pointers; never instantiated or dereferenced.
 #[derive(Debug)]
-struct DummyMemo;
+pub(crate) struct DummyMemo;
 
 impl Memo for DummyMemo {
+    fn has_value(&self) -> bool {
+        unreachable!("DummyMemo is never stored in a memo table")
+    }
+
     fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
 
     #[cfg(feature = "salsa_unstable")]
@@ -296,7 +312,39 @@ pub struct MemoTableWithTypes<'a> {
     memos: &'a MemoTable,
 }
 
-impl MemoTableWithTypes<'_> {
+/// A memo table slot whose observed allocations remain valid for shared access for `'a`.
+pub(crate) struct MemoSlot<'a> {
+    table: MemoTableWithTypes<'a>,
+    memo_ingredient_index: MemoIngredientIndex,
+}
+
+impl<'a> MemoSlot<'a> {
+    /// Creates a memo slot with an allocation-lifetime guarantee.
+    ///
+    /// # Safety
+    ///
+    /// Any allocation observed in this slot must remain at the same address and valid for shared
+    /// access for `'a`.
+    #[inline]
+    pub(crate) unsafe fn new(
+        table: MemoTableWithTypes<'a>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Self {
+        Self {
+            table,
+            memo_ingredient_index,
+        }
+    }
+
+    /// Loads the erased memo currently stored in this slot.
+    #[inline]
+    pub(crate) fn get_erased(&self) -> Option<ErasedMemo<'a>> {
+        // SAFETY: Guaranteed by the caller of `MemoSlot::new`.
+        unsafe { self.table.get_erased(self.memo_ingredient_index) }
+    }
+}
+
+impl<'a> MemoTableWithTypes<'a> {
     pub(crate) fn insert<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
@@ -350,6 +398,36 @@ impl MemoTableWithTypes<'_> {
         NonNull::new(atomic_memo.load(Ordering::Acquire))
             // SAFETY: We asserted that the type is correct above.
             .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
+    }
+
+    /// Returns a type-erased view with the slot's registered type metadata.
+    ///
+    /// # Safety
+    ///
+    /// Any allocation observed in the table entry must remain at the same address and valid for
+    /// shared access for `'a`.
+    #[inline]
+    unsafe fn get_erased(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<ErasedMemo<'a>> {
+        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+
+        // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
+        // corresponding `MemoTableTypes`, by construction.
+        let type_ = unsafe {
+            self.types
+                .types
+                .get_unchecked(memo_ingredient_index.as_usize())
+        };
+
+        let memo = NonNull::new(atomic_memo.load(Ordering::Acquire))?;
+
+        // SAFETY: `insert` type-checks and release-publishes a pointer to the memo allocation's
+        // base address, with spatial provenance covering the allocation, paired with `type_`; the
+        // acquire load observes its initialization. The caller guarantees that the allocation
+        // remains valid for `'a`.
+        Some(unsafe { ErasedMemo::from_raw_parts(memo, type_.to_dyn_fn, type_.type_id) })
     }
 
     #[cfg(feature = "salsa_unstable")]

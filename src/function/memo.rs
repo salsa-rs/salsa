@@ -1,4 +1,6 @@
+use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
+use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use crate::cycle::{
@@ -9,7 +11,7 @@ use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
-use crate::table::memo::MemoTableWithTypesMut;
+use crate::table::memo::{DummyMemo, MemoTableWithTypesMut, ToDynMemo};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
@@ -62,13 +64,104 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 }
 
+/// A memoized query result.
+///
+/// # Layout
+///
+/// [`ErasedMemo`] retains a pointer to the base address of the `Memo` allocation, with spatial
+/// provenance covering the entire allocation, so that it can recover the typed memo. Placing
+/// `header` at offset zero also lets it access [`MemoHeader`] with a direct pointer cast. The C
+/// representation makes that offset stable.
+#[repr(C)]
 #[derive(Debug)]
 pub struct Memo<C: Configuration> {
     /// Configuration-independent state used to validate and manage this memo.
+    ///
+    /// Must be at offset zero for [`ErasedMemo::header`].
     pub(super) header: MemoHeader,
 
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<C::Output<'static>>,
+}
+
+/// A shared, type-erased handle to a [`Memo`].
+///
+/// `data` points to the base address of the `Memo<C>` allocation with spatial provenance
+/// covering the entire allocation, which remains valid for shared access for `'db`, even after
+/// replacement. `to_dyn_fn` and `type_id` describe the same `C`.
+#[derive(Clone, Copy)]
+pub struct ErasedMemo<'db> {
+    /// A pointer to the base address of the [`Memo`] allocation, with spatial provenance covering
+    /// the entire allocation.
+    data: NonNull<DummyMemo>,
+
+    /// Coerces `data` to a trait object using the vtable for its concrete memo type.
+    to_dyn_fn: ToDynMemo,
+
+    /// The concrete memo type, used to assert that downcasts match the registered memo type.
+    type_id: TypeId,
+
+    /// Binds shared access to the allocation lifetime.
+    _lifetime: PhantomData<&'db ()>,
+}
+
+impl<'memo> ErasedMemo<'memo> {
+    /// Constructs an erased handle from a memo allocation pointer and its type metadata.
+    ///
+    /// # Safety
+    ///
+    /// `data` must point to the base address of a live, aligned `Memo<C>` allocation, have
+    /// spatial provenance covering the entire allocation, and remain valid for shared access for
+    /// `'memo`. `to_dyn_fn` must be the trait-object coercion for `Memo<C>`, and `type_id` must be
+    /// `TypeId::of::<Memo<C>>()` for that same `C`.
+    #[inline]
+    pub(crate) unsafe fn from_raw_parts(
+        data: NonNull<DummyMemo>,
+        to_dyn_fn: ToDynMemo,
+        type_id: TypeId,
+    ) -> Self {
+        Self {
+            data,
+            to_dyn_fn,
+            type_id,
+            _lifetime: PhantomData,
+        }
+    }
+
+    /// Returns the configuration-independent header without a table lookup.
+    #[inline(always)]
+    pub(super) fn header(self) -> &'memo MemoHeader {
+        // SAFETY: `data` points to the base address of a `Memo` allocation valid for `'memo`, with
+        // spatial provenance covering the allocation, and `Memo::header` has offset zero.
+        unsafe { self.data.cast::<MemoHeader>().as_ref() }
+    }
+
+    /// Returns whether the memo currently contains a value.
+    #[inline]
+    pub(super) fn has_value(self) -> bool {
+        // SAFETY: `to_dyn_fn` matches the concrete memo allocation, which is valid for shared
+        // access for `'memo`.
+        unsafe { (self.to_dyn_fn)(self.data).as_ref() }.has_value()
+    }
+
+    /// Returns the concrete memo after asserting that it uses configuration `C`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the memo was created for a different configuration, matching
+    /// [`MemoTableWithTypes::get`](crate::table::memo::MemoTableWithTypes::get).
+    #[inline]
+    pub(super) fn downcast<C: Configuration>(self) -> &'memo Memo<C> {
+        assert_eq!(
+            self.type_id,
+            TypeId::of::<Memo<C>>(),
+            "ErasedMemo downcast with the wrong configuration",
+        );
+
+        // SAFETY: The type check proves that `data` points to `Memo<C>`; the handle guarantees
+        // that the allocation is valid for shared access for `'memo`.
+        unsafe { self.data.cast::<Memo<C>>().as_ref() }
+    }
 }
 
 #[derive(Debug)]
@@ -234,6 +327,10 @@ impl<C: Configuration> Memo<C> {
 }
 
 impl<C: Configuration> crate::table::memo::Memo for Memo<C> {
+    fn has_value(&self) -> bool {
+        self.value.is_some()
+    }
+
     fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
         self.header.remove_outputs(zalsa, executor);
     }
@@ -471,11 +568,20 @@ mod _memory_usage {
     use std::any::TypeId;
     use std::num::NonZeroUsize;
 
-    // Memo's are stored a lot, make sure their size doesn't randomly increase.
+    // Required by `ErasedMemo::header`.
+    const _: () = assert!(std::mem::offset_of!(super::Memo<DummyConfiguration>, header) == 0);
+    const _: () = assert!(
+        std::mem::offset_of!(super::Memo<DummyConfiguration>, value)
+            == std::mem::size_of::<super::MemoHeader>()
+    );
+
+    // Memos are stored a lot, make sure their size doesn't randomly increase.
     const _: [(); std::mem::size_of::<super::MemoHeader>()] =
         [(); std::mem::size_of::<[usize; 4]>()];
     const _: [(); std::mem::size_of::<super::Memo<DummyConfiguration>>()] =
         [(); std::mem::size_of::<[usize; 5]>()];
+    const _: [(); std::mem::size_of::<super::ErasedMemo<'static>>()] =
+        [(); std::mem::size_of::<[usize; 4]>()];
 
     struct DummyStruct;
 
