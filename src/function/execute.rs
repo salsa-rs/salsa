@@ -135,21 +135,31 @@ where
         let mut last_provisional_memo_opt: Option<&Memo<'db, C>> = None;
 
         let mut last_stale_tracked_ids: Vec<(Identity, Id)> = Vec::new();
+        let current_revision = zalsa.current_revision();
         let cancellation_count = zalsa.runtime().cancellation_count();
+        let mut opt_old_memo = opt_old_memo;
         let mut iteration = IterationStamp::initial(cancellation_count);
 
+        // An ordinary query doesn't memoize a cancelled execution. Match that behavior for
+        // fixpoint queries: a memo from an abandoned cancellation epoch in this revision doesn't
+        // seed the retry, while a memo from an older revision remains useful for backdating and
+        // output bookkeeping. Cancellation counts are only comparable within a revision.
         if let Some(old_memo) = opt_old_memo {
-            if let Some(previous_iteration) = old_memo.header.previous_iteration(
-                zalsa,
-                database_key_index,
-                cancellation_count,
-                old_memo.value.is_some(),
-            ) {
-                if previous_iteration.reuse_as_provisional {
-                    last_provisional_memo_opt = Some(old_memo);
-                }
+            if old_memo.header.verified_at.load() == current_revision {
+                match old_memo.header.previous_iteration(
+                    database_key_index,
+                    cancellation_count,
+                    old_memo.value.is_some(),
+                ) {
+                    Some(previous_iteration) => {
+                        if previous_iteration.reuse_as_provisional {
+                            last_provisional_memo_opt = Some(old_memo);
+                        }
 
-                iteration = previous_iteration.iteration;
+                        iteration = previous_iteration.iteration;
+                    }
+                    None => opt_old_memo = None,
+                }
             }
         }
 
@@ -291,11 +301,7 @@ where
             let new_memo = self.insert_memo(
                 zalsa,
                 id,
-                Memo::new(
-                    Some(new_value),
-                    zalsa.current_revision(),
-                    completed_query.revisions,
-                ),
+                Memo::new(Some(new_value), current_revision, completed_query.revisions),
                 memo_ingredient_index,
             );
 
@@ -359,14 +365,11 @@ enum QueryExecutionOutcome<'db> {
 impl MemoHeader {
     fn previous_iteration(
         &self,
-        zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         cancellation_count: u8,
         has_value: bool,
     ) -> Option<PreviousIteration> {
-        if self.verified_at.load() != zalsa.current_revision()
-            || self.revisions.iteration().cancellation_count() != cancellation_count
-        {
+        if self.revisions.iteration().cancellation_count() != cancellation_count {
             return None;
         }
 

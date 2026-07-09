@@ -3,6 +3,7 @@
 mod setup;
 mod signal;
 
+mod cancellation_in_fixpoint;
 mod cancellation_token_cycle_nested;
 mod cancellation_token_multi_blocked;
 mod cancellation_token_recomputes;
