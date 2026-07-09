@@ -16,10 +16,10 @@ use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
 
-const PAGE_LEN_BITS: usize = 10;
+const PAGE_LEN_BITS: usize = 7;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
-const MAX_PAGES: usize = 1 << (u32::BITS as usize - PAGE_LEN_BITS);
+const MAX_PAGES: usize = Id::MAX_USIZE / PAGE_LEN;
 
 /// A typed [`Page`] view.
 pub(crate) struct PageView<'p, T: Slot>(&'p Page, PhantomData<&'p T>);

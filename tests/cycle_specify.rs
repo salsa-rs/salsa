@@ -46,9 +46,9 @@ fn specified_value_inherits_cycle_heads() {
     db.assert_logs(expect![[r#"
         [
             "salsa_event(WillExecute { database_key: cycle(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_specified(Id(400)) })",
+            "salsa_event(WillExecute { database_key: read_specified(Id(80)) })",
             "salsa_event(WillIterateCycle { database_key: cycle(Id(0)), iteration: 1 })",
-            "salsa_event(WillExecute { database_key: read_specified(Id(400)) })",
+            "salsa_event(WillExecute { database_key: read_specified(Id(80)) })",
             "salsa_event(DidFinalizeCycle { database_key: cycle(Id(0)), iteration: 1 })",
         ]"#]]);
 }

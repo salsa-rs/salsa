@@ -90,7 +90,7 @@ ordered-float = "=5.3.0"
 
 # tests/benches
 annotate-snippets = "=0.12.16"
-divan = { package = "codspeed-divan-compat", version = "=5.0.0" }
+divan = { package = "codspeed-divan-compat", version = "=5.0.1" }
 expect-test = "=1.5.1"
 rustversion = "=1.0.22"
 test-log = { version = "=0.2.21", features = ["trace"] }
@@ -122,7 +122,11 @@ name = "dataflow"
 harness = false
 
 [[bench]]
-name = "lru"
+name = "eviction"
+harness = false
+
+[[bench]]
+name = "eviction_walltime"
 harness = false
 required-features = ["rayon"]
 
