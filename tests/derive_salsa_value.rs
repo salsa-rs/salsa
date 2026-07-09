@@ -125,6 +125,8 @@ fn derives_salsa_value() {
     assert_salsa_value::<std::ops::RangeInclusive<u32>>();
     assert_salsa_value::<std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>(
     );
+    assert_salsa_value::<rustc_hash::FxBuildHasher>();
+    assert_salsa_value::<rustc_hash::FxHashMap<String, String>>();
     assert_salsa_value::<
         std::collections::HashMap<
             String,

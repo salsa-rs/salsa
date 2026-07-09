@@ -102,6 +102,7 @@ salsa_values! {
     std::num::NonZeroU64,
     std::num::NonZeroU128,
     std::num::NonZeroUsize,
+    rustc_hash::FxBuildHasher,
     crate::Id,
 }
 
