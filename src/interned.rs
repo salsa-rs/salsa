@@ -119,7 +119,7 @@ struct IngredientShard {
     key_map: hashbrown::HashTable<Id>,
 
     /// An intrusive linked list for LRU.
-    lru: LinkedList<ValueHeaderAdapter>,
+    lru: LinkedList<LruEntryAdapter>,
 }
 
 impl Default for IngredientShard {
@@ -136,45 +136,33 @@ impl Default for IngredientShard {
 // holding that mutex.
 unsafe impl Send for IngredientShard {}
 
-// SAFETY: `fields`, `header.link`, and `header.shared` are mutated only while holding the ingredient
-// shard lock. `fields` is read only while holding that lock or after validation in the current
-// revision. `header.memos` supports concurrent shared access, and is mutated only with exclusive
-// access or after stale-slot reuse guarantees no shared references remain.
+// SAFETY: `shard` is immutable. `lru` and `durability` are accessed only while holding the owning
+// ingredient shard lock. `fields` is mutated only while holding that lock after stale-slot reuse
+// guarantees no references remain, and is read only while holding the lock or after validation in
+// the current revision. `memos` supports concurrent shared access, and is mutated only with
+// exclusive access or after stale-slot reuse guarantees no shared references remain.
 unsafe impl<C: Configuration> Sync for Value<C> {}
 
-intrusive_adapter!(ValueHeaderAdapter = UnsafeRef<ValueHeader>: ValueHeader { link => LinkedListLink });
+intrusive_adapter!(LruEntryAdapter = UnsafeRef<LruEntry>: LruEntry { link => LinkedListLink });
 
 /// Struct storing the interned fields.
-///
-/// # Layout
-///
-/// This type uses the C representation because the intrusive LRU stores pointers to `header`,
-/// and the stale-slot reuse path casts those pointers back to `Value<C>`.
-/// Therefore, `header` must remain the first field so that it has the same address as the
-/// containing `Value<C>`.
-#[repr(C)]
 pub struct Value<C>
 where
     C: Configuration,
 {
-    /// Configuration-independent state used to manage this value.
+    /// The index of the shard containing this value.
     ///
-    /// This must remain the first field; see the type's layout documentation.
-    header: ValueHeader,
+    /// This is immutable after construction and may be read to locate the protecting shard lock.
+    shard: u16,
+
+    /// Type-erased state used by the LRU scan.
+    lru: LruEntry,
 
     /// The interned fields for this value.
     ///
     /// These are valid for read-only access as long as the lock is held
     /// or the value has been validated in the current revision.
     fields: UnsafeCell<C::Fields<'static>>,
-}
-
-struct ValueHeader {
-    /// The index of the shard containing this value.
-    shard: u16,
-
-    /// An intrusive linked list for LRU.
-    link: LinkedListLink,
 
     /// Memos attached to this interned value.
     ///
@@ -182,15 +170,67 @@ struct ValueHeader {
     /// or the value has been validated in the current revision.
     memos: UnsafeCell<MemoTable>,
 
-    /// Data that can only be accessed while holding the lock for the
-    /// `key_map` shard containing the value ID.
-    shared: UnsafeCell<ValueShared>,
+    /// The minimum durability of all inputs consumed by the creator query.
+    ///
+    /// Durability determines whether the value is added to the LRU list, but the LRU scan does
+    /// not read it. Keeping this byte outside `LruEntry` lets it occupy padding in the outer value;
+    /// adding it to the already aligned entry would increase the entry's size.
+    /// This may only be accessed while holding the value's shard lock, or with exclusive access
+    /// to the database.
+    durability: UnsafeCell<Durability>,
 }
 
-/// Shared value data can only be read through the lock.
-#[repr(Rust, packed)] // Avoid padding around `durability` inside `ValueHeader`.
+/// Type-erased state stored in the intrusive LRU list.
+struct LruEntry {
+    /// Intrusive links, accessed only while holding the owning shard lock.
+    link: LinkedListLink,
+
+    /// Metadata used to decide whether and how this slot can be reused.
+    ///
+    /// This may only be accessed while holding the owning shard lock, or with exclusive access to
+    /// the database.
+    metadata: UnsafeCell<EntryMetadata>,
+}
+
+impl LruEntry {
+    /// Returns a pointer to `value.lru` with provenance derived from `value`.
+    #[inline]
+    fn ptr_from_value<C: Configuration>(value: &Value<C>) -> *const Self {
+        let value = std::ptr::from_ref(value).cast::<u8>();
+
+        // SAFETY: `lru` is a field within `value`, so adding its offset is in bounds. Starting from
+        // `value`, rather than `value.lru`, gives the result provenance that permits
+        // `value_from_ptr` to subtract the offset again.
+        unsafe { value.add(std::mem::offset_of!(Value<C>, lru)).cast() }
+    }
+
+    /// Recovers a value from its LRU entry.
+    ///
+    /// # Safety
+    ///
+    /// `entry` must have been produced by `Self::ptr_from_value` for the same configuration, and
+    /// its value must remain live for the returned lifetime.
+    #[inline]
+    unsafe fn value_from_ptr<'a, C: Configuration>(entry: *const Self) -> &'a Value<C> {
+        // SAFETY: `ptr_from_value` derives `entry` from the enclosing `Value<C>` pointer, so
+        // subtracting the same field offset recovers that pointer. The other requirements are
+        // guaranteed by the caller.
+        unsafe {
+            &*entry
+                .cast::<u8>()
+                .sub(std::mem::offset_of!(Value<C>, lru))
+                .cast::<Value<C>>()
+        }
+    }
+}
+
+/// Metadata read by the type-erased LRU scan.
+///
+/// Durability is deliberately not stored here: it determines whether an entry is added to the
+/// list, but is not needed once the scan begins. Keeping it on `Value` also lets Rust place the
+/// byte in outer padding instead of growing the aligned `LruEntry`.
 #[derive(Clone, Copy)]
-struct ValueShared {
+struct EntryMetadata {
     /// The interned ID for this value.
     ///
     /// Storing this on the value itself is necessary to identify slots
@@ -208,59 +248,46 @@ struct ValueShared {
 
     /// The revision the value was most-recently interned in.
     last_interned_at: Revision,
-
-    /// The minimum durability of all inputs consumed by the creator
-    /// query prior to creating this interned struct. If any of those
-    /// inputs changes, then the creator query may create this struct
-    /// with different values.
-    durability: Durability,
 }
 
-impl ValueShared {
-    /// Returns `true` if this value slot can be reused when interning, and should be added to the LRU.
-    fn is_reusable<C: Configuration>(&self) -> bool {
-        Self::is_reusable_with_durability::<C>(self.durability)
+/// Returns `true` if a value slot with the given durability can be reused when interning.
+///
+/// This intentionally remains generic so the compiler specializes the immortal and reusable
+/// configurations instead of branching on `REVISIONS` at runtime.
+fn is_reusable<C: Configuration>(durability: Durability) -> bool {
+    // Garbage collection is disabled.
+    if C::REVISIONS == IMMORTAL {
+        return false;
     }
 
-    /// Returns `true` if a value slot with the given durability can be reused when interning.
-    ///
-    /// This intentionally remains generic so the compiler specializes the immortal and reusable
-    /// configurations instead of branching on `REVISIONS` at runtime.
-    fn is_reusable_with_durability<C: Configuration>(durability: Durability) -> bool {
-        // Garbage collection is disabled.
-        if C::REVISIONS == IMMORTAL {
-            return false;
-        }
+    // Collecting higher durability values requires invalidating the revision for their
+    // durability (see `Database::synthetic_write`, which requires a mutable reference to
+    // the database) to avoid short-circuiting calls to `maybe_changed_after`. This is
+    // necessary because `maybe_changed_after` for interned values is not "pure"; it updates
+    // the `last_interned_at` field before validating a given value to ensure that it is not
+    // reused after read in the current revision.
+    durability == Durability::LOW
+}
 
-        // Collecting higher durability values requires invalidating the revision for their
-        // durability (see `Database::synthetic_write`, which requires a mutable reference to
-        // the database) to avoid short-circuiting calls to `maybe_changed_after`. This is
-        // necessary because `maybe_changed_after` for interned values is not "pure"; it updates
-        // the `last_interned_at` field before validating a given value to ensure that it is not
-        // reused after read in the current revision.
-        durability == Durability::LOW
-    }
-
-    /// Record a dependency on this value if its slot can be reused.
-    fn report_tracked_read_if_reusable<C: Configuration>(
-        zalsa_local: &ZalsaLocal,
-        index: DatabaseKeyIndex,
-        current_revision: Revision,
-        durability: Durability,
-    ) {
-        if Self::is_reusable_with_durability::<C>(durability) {
-            zalsa_local.report_tracked_read_simple(index, durability, current_revision);
-        } else {
-            // The value cannot be reused, so the dependency edge is unnecessary. Its durability
-            // is derived from the active query, but its revision must still contribute to the
-            // query's stamp because the interned ID may have changed due to reuse.
-            zalsa_local.report_tracked_read_revision(current_revision);
-        }
+/// Record a dependency on this value if its slot can be reused.
+fn report_tracked_read_if_reusable<C: Configuration>(
+    zalsa_local: &ZalsaLocal,
+    index: DatabaseKeyIndex,
+    current_revision: Revision,
+    durability: Durability,
+) {
+    if is_reusable::<C>(durability) {
+        zalsa_local.report_tracked_read_simple(index, durability, current_revision);
+    } else {
+        // The value cannot be reused, so the dependency edge is unnecessary. Its durability
+        // is derived from the active query, but its revision must still contribute to the
+        // query's stamp because the interned ID may have changed due to reuse.
+        zalsa_local.report_tracked_read_revision(current_revision);
     }
 }
 
 struct ReusableSlot {
-    header: *const ValueHeader,
+    entry: *const LruEntry,
     old_id: Id,
     new_id: Id,
 }
@@ -269,12 +296,6 @@ impl<C> Value<C>
 where
     C: Configuration,
 {
-    /// Returns a pointer to the header that retains provenance for the complete value.
-    #[inline]
-    fn header_ptr(&self) -> *const ValueHeader {
-        std::ptr::from_ref(self).cast()
-    }
-
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
     pub fn fields<'db>(&'db self) -> &'db C::Fields<'db> {
@@ -297,7 +318,7 @@ where
         let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
         // have at-least read-only access to the value's memos.
-        let memos = unsafe { &*self.header.memos.get() };
+        let memos = unsafe { &*self.memos.get() };
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(memos) };
 
@@ -449,12 +470,14 @@ where
 
             let index = self.database_key_index(id);
 
-            // SAFETY: We hold the lock for the shard containing the value.
-            let value_shared = unsafe { &mut *value.header.shared.get() };
+            // SAFETY: We hold the lock for the shard containing the value, giving us exclusive
+            // access to its entry metadata and durability.
+            let (metadata, durability) =
+                unsafe { (&mut *value.lru.metadata.get(), &mut *value.durability.get()) };
 
             // Validate the value in this revision to avoid reuse.
-            if { value_shared.last_interned_at } < current_revision {
-                value_shared.last_interned_at = current_revision;
+            if metadata.last_interned_at < current_revision {
+                metadata.last_interned_at = current_revision;
 
                 zalsa.event(&|| {
                     Event::new(EventKind::DidValidateInternedValue {
@@ -463,35 +486,35 @@ where
                     })
                 });
 
-                if value_shared.is_reusable::<C>() {
+                if is_reusable::<C>(*durability) {
                     // Move the value to the front of the LRU list.
                     //
                     // SAFETY: We hold the lock for the shard containing the value, and `value` is
                     // a reusable value that was previously interned, so is in the list.
-                    unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() };
+                    unsafe { shard.lru.cursor_mut_from_ptr(&value.lru).remove() };
 
                     // SAFETY: The value pointer is valid for the lifetime of the database
                     // and never accessed mutably directly.
                     unsafe {
                         shard
                             .lru
-                            .push_front(UnsafeRef::from_raw(value.header_ptr()))
+                            .push_front(UnsafeRef::from_raw(LruEntry::ptr_from_value(value)))
                     };
                 }
             }
 
             if let Some((_, stamp)) = zalsa_local.active_query() {
-                let was_reusable = value_shared.is_reusable::<C>();
+                let was_reusable = is_reusable::<C>(*durability);
 
                 // Record the maximum durability across all queries that intern this value.
-                value_shared.durability = std::cmp::max(value_shared.durability, stamp.durability);
+                *durability = std::cmp::max(*durability, stamp.durability);
 
                 // If the value is no longer reusable, i.e. the durability increased, remove it
                 // from the LRU.
-                if was_reusable && !value_shared.is_reusable::<C>() {
+                if was_reusable && !is_reusable::<C>(*durability) {
                     // SAFETY: We hold the lock for the shard containing the value, and `value`
                     // was previously reusable, so is in the list.
-                    unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() };
+                    unsafe { shard.lru.cursor_mut_from_ptr(&value.lru).remove() };
                 }
             }
 
@@ -500,14 +523,9 @@ where
             // See `intern_id_cold` for why we need to use `current_revision` here. Note that just
             // because this value was previously interned does not mean it was previously interned
             // by *our query*, so the same considerations apply.
-            ValueShared::report_tracked_read_if_reusable::<C>(
-                zalsa_local,
-                index,
-                current_revision,
-                value_shared.durability,
-            );
+            report_tracked_read_if_reusable::<C>(zalsa_local, index, current_revision, *durability);
 
-            return value_shared.id;
+            return metadata.id;
         }
 
         // Fill up the table for the first few revisions without attempting garbage collection.
@@ -540,9 +558,6 @@ where
             );
         };
 
-        // SAFETY: We hold the lock for the shard containing the value.
-        let value_shared = unsafe { &mut *value.header.shared.get() };
-
         // Record the durability of the current query on the interned value.
         let (durability, last_interned_at) = zalsa_local
             .active_query()
@@ -564,12 +579,7 @@ where
         // Record a dependency on the new value if its slot can be reused.
         //
         // See `intern_id_cold` for why we need to use `current_revision` here.
-        ValueShared::report_tracked_read_if_reusable::<C>(
-            zalsa_local,
-            index,
-            current_revision,
-            durability,
-        );
+        report_tracked_read_if_reusable::<C>(zalsa_local, index, current_revision, durability);
 
         // Insert the replacement while the old slot is still intact. `insert_unique`
         // currently performs any rehashing before inserting, so a panic in user hashing
@@ -580,7 +590,7 @@ where
 
         // Remove the value from the LRU list.
         // SAFETY: We hold the shard lock and `value` is currently in the LRU.
-        unsafe { shard.lru.cursor_mut_from_ptr(&value.header).remove() };
+        unsafe { shard.lru.cursor_mut_from_ptr(&value.lru).remove() };
 
         // Remove the previous value from the ID map.
         //
@@ -602,13 +612,17 @@ where
         let old_fields = unsafe { std::mem::replace(&mut *value.fields.get(), new_fields) };
 
         // Mark the slot as reused.
-        *value_shared = ValueShared {
-            id: slot.new_id,
-            durability,
-            last_interned_at,
-        };
+        // SAFETY: We still hold the lock for the shard containing the value, giving us exclusive
+        // access to its entry metadata and durability.
+        unsafe {
+            *value.lru.metadata.get() = EntryMetadata {
+                id: slot.new_id,
+                last_interned_at,
+            };
+            *value.durability.get() = durability;
+        }
 
-        if value_shared.is_reusable::<C>() {
+        if is_reusable::<C>(durability) {
             // Move the value to the front of the LRU list.
             //
             // SAFETY: The value pointer is valid for the lifetime of the database
@@ -616,13 +630,13 @@ where
             unsafe {
                 shard
                     .lru
-                    .push_front(UnsafeRef::from_raw(value.header_ptr()))
+                    .push_front(UnsafeRef::from_raw(LruEntry::ptr_from_value(value)))
             };
         }
 
         // SAFETY: `find_reusable_slot` guarantees that the value is reusable and stale, so no
         // references to its memos remain. We still hold the shard lock.
-        let memo_table = unsafe { &mut *value.header.memos.get() };
+        let memo_table = unsafe { &mut *value.memos.get() };
 
         // Free the memos associated with the previous interned value.
         //
@@ -671,20 +685,20 @@ where
 
         // Allocate the value slot.
         let (id, value) = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
-            header: ValueHeader {
-                shard: shard_index as u16,
+            shard: shard_index as u16,
+            lru: LruEntry {
                 link: LinkedListLink::new(),
-                // SAFETY: We only ever access the memos of a value that we allocated through
-                // our `MemoTableTypes`.
-                memos: UnsafeCell::new(unsafe { MemoTable::new(self.memo_table_types()) }),
-                shared: UnsafeCell::new(ValueShared {
+                metadata: UnsafeCell::new(EntryMetadata {
                     id,
-                    durability,
                     last_interned_at,
                 }),
             },
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
             fields: UnsafeCell::new(unsafe { self.to_internal_data(assemble(id, key)) }),
+            // SAFETY: We only ever access the memos of a value that we allocated through
+            // our `MemoTableTypes`.
+            memos: UnsafeCell::new(unsafe { MemoTable::new(self.memo_table_types()) }),
+            durability: UnsafeCell::new(durability),
         });
 
         // Insert the newly allocated ID.
@@ -702,12 +716,7 @@ where
         // the query has changed without a corresponding input changing. Using `current_revision`
         // for dependencies on interned values encodes the fact that interned IDs are not stable
         // across revisions.
-        ValueShared::report_tracked_read_if_reusable::<C>(
-            zalsa_local,
-            index,
-            current_revision,
-            durability,
-        );
+        report_tracked_read_if_reusable::<C>(zalsa_local, index, current_revision, durability);
 
         zalsa.event(&|| {
             Event::new(EventKind::DidInternValue {
@@ -737,21 +746,22 @@ where
         ///
         /// # Safety
         ///
-        /// The caller must hold `shard`'s lock. `header` must have been produced by
-        /// `Value::header_ptr` for the live value identified by `id` in this shard, `reusable` must
-        /// reflect whether that value is reusable, and `hasher` must hash values while that lock is
-        /// held.
+        /// The caller must hold `shard`'s lock. `entry` must have been produced by
+        /// `LruEntry::ptr_from_value` for the live value identified by `id` in this shard,
+        /// `reusable` must reflect whether that value is reusable, and `hasher` must hash values
+        /// while that lock is held.
         unsafe fn inner(
             id: Id,
             shard: &mut IngredientShard,
             hash: u64,
-            header: *const ValueHeader,
+            entry: *const LruEntry,
             reusable: bool,
             hasher: &dyn Fn(&Id) -> u64,
         ) {
             if reusable {
-                // SAFETY: Guaranteed by the caller, including full-value provenance.
-                unsafe { shard.lru.push_front(UnsafeRef::from_raw(header)) };
+                // SAFETY: The caller guarantees that `entry` points to a live `LruEntry` and was
+                // derived from its enclosing value.
+                unsafe { shard.lru.push_front(UnsafeRef::from_raw(entry)) };
             }
 
             insert_unique_erased(shard, hash, id, hasher);
@@ -760,16 +770,25 @@ where
         }
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let value_shared = unsafe { &mut *value.header.shared.get() };
-        let reusable = value_shared.is_reusable::<C>();
+        let durability = unsafe { *value.durability.get() };
+        let reusable = is_reusable::<C>(durability);
 
         // SAFETY: We hold the lock for the shard containing every value passed to `hasher`.
         let hasher = |id: &_| unsafe { self.value_hash(*id, zalsa) };
 
         // SAFETY: We hold the lock for `shard`; `value` is the live value identified by `id` in
-        // that shard, `reusable` was read from the value, and `header_ptr` retains provenance for
-        // the complete value.
-        unsafe { inner(id, shard, hash, value.header_ptr(), reusable, &hasher) };
+        // that shard, `reusable` was read from the value, and `ptr_from_value` derives the entry
+        // pointer from `value`, allowing the same value to be recovered later.
+        unsafe {
+            inner(
+                id,
+                shard,
+                hash,
+                LruEntry::ptr_from_value(value),
+                reusable,
+                &hasher,
+            )
+        };
     }
 
     /// Finds a reusable slot and reconstructs its typed value.
@@ -777,9 +796,9 @@ where
     /// # Safety
     ///
     /// `shard` must be a locked shard from this ingredient, and `current_revision` must be the
-    /// database's current revision. Every LRU entry must have been inserted from a live `Value<C>`
-    /// allocated for this ingredient using `Value::header_ptr`, which retains full-allocation
-    /// provenance. Those allocations must remain stable for the ingredient's lifetime.
+    /// database's current revision. Every LRU entry pointer must have been derived from its live
+    /// enclosing `Value<C>` using `LruEntry::ptr_from_value`, so subtracting the field offset
+    /// recovers that value. Those values must remain stable for the ingredient's lifetime.
     ///
     /// The LRU contains only reusable values. Therefore, a slot returned as stale has no
     /// outstanding references to its fields or memos and may be mutated while the lock is held.
@@ -793,7 +812,7 @@ where
         /// # Safety
         ///
         /// The caller must hold `shard`'s lock, and every pointer in its LRU must refer to a live
-        /// `ValueHeader` belonging to the shard.
+        /// `LruEntry` belonging to the shard.
         unsafe fn inner(
             revision_queue: &RevisionQueue,
             current_revision: Revision,
@@ -801,33 +820,33 @@ where
         ) -> Option<ReusableSlot> {
             let mut cursor = shard.lru.back_mut();
 
-            while let Some(header) = cursor.as_cursor().clone_pointer() {
-                let header = UnsafeRef::into_raw(header);
+            while let Some(entry) = cursor.as_cursor().clone_pointer() {
+                let entry = UnsafeRef::into_raw(entry);
 
-                // SAFETY: The caller guarantees that `header` points to a live value in this shard
-                // and that we hold the shard lock, which grants exclusive access to `shared`.
-                let value_shared = unsafe { &mut *(*header).shared.get() };
+                // SAFETY: The caller guarantees that `entry` points to a live value in this shard
+                // and that we hold the shard lock, which grants exclusive access to `metadata`.
+                let metadata = unsafe { &mut *(*entry).metadata.get() };
 
                 // The value must not have been read in the current revision to be collected
                 // soundly, but we also do not want to collect values that have been read recently.
                 //
                 // Note that the list is sorted by LRU, so if the tail of the list is not stale, we
                 // will not find any stale slots.
-                if !revision_queue.is_stale(value_shared.last_interned_at) {
+                if !revision_queue.is_stale(metadata.last_interned_at) {
                     return None;
                 }
 
                 // We should never reuse a value that was accessed in the current revision.
-                debug_assert!({ value_shared.last_interned_at } < current_revision);
+                debug_assert!(metadata.last_interned_at < current_revision);
 
-                let old_id = value_shared.id;
+                let old_id = metadata.id;
 
                 // Increment the generation of the ID, as if we allocated a new slot.
                 //
                 // If the ID is at its maximum generation, we are forced to leak the slot.
                 if let Some(new_id) = old_id.next_generation() {
                     return Some(ReusableSlot {
-                        header,
+                        entry,
                         old_id,
                         new_id,
                     });
@@ -845,10 +864,9 @@ where
         let slot = unsafe { inner(&self.revision_queue, current_revision, shard) }?;
 
         // SAFETY: The caller guarantees that this is a shard from `self`. Its LRU contains only
-        // header pointers produced by `Value<C>::header_ptr` for stable values allocated by this
-        // ingredient. `Value<C>` has the C representation and `header` is statically asserted to
-        // be at offset zero.
-        let value = unsafe { &*slot.header.cast::<Value<C>>() };
+        // entries produced by `LruEntry::ptr_from_value` for stable values allocated by this
+        // ingredient.
+        let value = unsafe { LruEntry::value_from_ptr::<C>(slot.entry) };
 
         Some((slot, value))
     }
@@ -974,15 +992,19 @@ where
 
         debug_assert!(
             {
-                let _shard = self.shards[value.header.shard as usize].lock();
+                let _shard = self.shards[value.shard as usize].lock();
 
-                // SAFETY: We hold the lock for the shard containing the value.
-                let value_shared = unsafe { &mut *value.header.shared.get() };
+                // SAFETY: We hold the lock for the shard containing the value, giving us shared
+                // access to its durability.
+                let durability = unsafe { *value.durability.get() };
 
-                !value_shared.is_reusable::<C>() || {
-                    let last_changed_revision =
-                        zalsa.last_changed_revision(value_shared.durability);
-                    ({ value_shared.last_interned_at }) >= last_changed_revision
+                !is_reusable::<C>(durability) || {
+                    // SAFETY: We hold the lock for the shard containing the value, giving us shared
+                    // access to its entry metadata.
+                    let last_interned_at = unsafe { (*value.lru.metadata.get()).last_interned_at };
+
+                    let last_changed_revision = zalsa.last_changed_revision(durability);
+                    last_interned_at >= last_changed_revision
                 }
             },
             "Data for reusable `{database_key:?}` was not interned in the latest revision for its durability.",
@@ -1032,14 +1054,14 @@ where
         zalsa.table().slots_of::<Value<C>>().map(move |(_, value)| {
             let id = if should_lock {
                 let _shard =
-                    // SAFETY: `value.header.shard` is guaranteed to be in-bounds for `self.shards`.
-                    unsafe { self.shards.get_unchecked(value.header.shard as usize) }.lock();
+                    // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
+                    unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
 
                 // SAFETY: We hold the lock for the shard containing the value.
-                unsafe { (*value.header.shared.get()).id }
+                unsafe { (*value.lru.metadata.get()).id }
             } else {
                 // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
-                unsafe { (*value.header.shared.get()).id }
+                unsafe { (*value.lru.metadata.get()).id }
             };
 
             StructEntry {
@@ -1134,19 +1156,19 @@ where
 
         let value = zalsa.table().get::<Value<C>>(input);
 
-        // SAFETY: `value.header.shard` is guaranteed to be in-bounds for `self.shards`.
-        let _shard = unsafe { self.shards.get_unchecked(value.header.shard as usize) }.lock();
+        // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
+        let _shard = unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let value_shared = unsafe { &mut *value.header.shared.get() };
+        let metadata = unsafe { &mut *value.lru.metadata.get() };
 
         // The slot was reused.
-        if value_shared.id.generation() > input.generation() {
+        if metadata.id.generation() > input.generation() {
             return VerifyResult::changed();
         }
 
         // Validate the value for the current revision to avoid reuse.
-        value_shared.last_interned_at = current_revision;
+        metadata.last_interned_at = current_revision;
 
         zalsa.event(&|| {
             let index = self.database_key_index(input);
@@ -1292,12 +1314,12 @@ where
         // SAFETY: The fact that we have a pointer to the `Value` means it must
         // have been interned, and thus validated, in the current revision.
         // Caller obligation demands this pointer to be valid.
-        unsafe { (*this).header.memos.get() }
+        unsafe { (*this).memos.get() }
     }
 
     #[inline(always)]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
-        self.header.memos.get_mut()
+        self.memos.get_mut()
     }
 }
 
@@ -1733,7 +1755,7 @@ mod persistence {
     use serde::ser::{SerializeMap, SerializeStruct};
     use serde::{Deserialize, de};
 
-    use super::{Configuration, IngredientImpl, Value, ValueHeader, ValueShared};
+    use super::{Configuration, EntryMetadata, IngredientImpl, LruEntry, Value};
     use crate::plumbing::Ingredient;
     use crate::table::memo::MemoTable;
     use crate::zalsa::Zalsa;
@@ -1768,7 +1790,7 @@ mod persistence {
             for (_, value) in zalsa.table().slots_of::<Value<C>>() {
                 // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
                 // to the database.
-                let id = unsafe { (*value.header.shared.get()).id };
+                let id = unsafe { (*value.lru.metadata.get()).id };
 
                 map.serialize_entry(&id.as_bits(), value)?;
             }
@@ -1787,13 +1809,14 @@ mod persistence {
         {
             let mut value = serializer.serialize_struct("Value,", 3)?;
 
-            let Value { fields, header } = self;
-            let ValueHeader {
-                shared,
+            let Value {
+                fields,
+                lru,
+                durability,
                 shard: _,
-                link: _,
                 memos: _,
-            } = header;
+            } = self;
+            let LruEntry { link: _, metadata } = lru;
 
             // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
             // to the database.
@@ -1801,11 +1824,14 @@ mod persistence {
 
             // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
             // to the database.
-            let ValueShared {
-                durability,
+            let durability = unsafe { *durability.get() };
+
+            // SAFETY: The safety invariant of `Ingredient::serialize` ensures we have exclusive access
+            // to the database.
+            let EntryMetadata {
                 last_interned_at,
                 id: _,
-            } = unsafe { *shared.get() };
+            } = unsafe { *metadata.get() };
 
             value.serialize_field("durability", &durability)?;
             value.serialize_field("last_interned_at", &last_interned_at)?;
@@ -1879,21 +1905,21 @@ mod persistence {
                 let shard = unsafe { &mut *ingredient.shards.get_unchecked(shard_index).lock() };
 
                 let value = Value::<C> {
-                    header: ValueHeader {
-                        shard: shard_index as u16,
+                    shard: shard_index as u16,
+                    lru: LruEntry {
                         link: LinkedListLink::new(),
-                        // SAFETY: We only ever access the memos of a value that we allocated through
-                        // our `MemoTableTypes`.
-                        memos: UnsafeCell::new(unsafe {
-                            MemoTable::new(ingredient.memo_table_types())
-                        }),
-                        shared: UnsafeCell::new(ValueShared {
+                        metadata: UnsafeCell::new(EntryMetadata {
                             id,
-                            durability: value.durability,
                             last_interned_at: value.last_interned_at,
                         }),
                     },
                     fields: UnsafeCell::new(value.fields.0),
+                    // SAFETY: We only ever access the memos of a value that we allocated through
+                    // our `MemoTableTypes`.
+                    memos: UnsafeCell::new(unsafe {
+                        MemoTable::new(ingredient.memo_table_types())
+                    }),
+                    durability: UnsafeCell::new(value.durability),
                 };
 
                 // Force initialize the relevant page.
@@ -1957,29 +1983,28 @@ mod persistence {
     }
 }
 
+#[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
 mod _static_assertions {
     use std::mem;
 
-    #[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
-    use super::ValueHeader;
+    use super::LruEntry;
     use super::{Configuration, Value};
     use crate::{Id, plumbing};
 
-    const _: [(); 0] = [(); mem::offset_of!(Value<DummyConfiguration>, header)];
+    const _: [(); mem::size_of::<LruEntry>()] = [(); mem::size_of::<[usize; 4]>()];
 
-    #[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
-    const _: [(); mem::size_of::<ValueHeader>()] = [(); mem::size_of::<[usize; 7]>()];
+    const _: [(); mem::size_of::<Value<DummyConfiguration>>()] = [(); mem::size_of::<[usize; 7]>()];
 
     struct DummyConfiguration;
 
-    // SAFETY: The fields are `()` for every database lifetime.
+    // SAFETY: The fields are `[u8; 1]` for every database lifetime.
     unsafe impl Configuration for DummyConfiguration {
         const LOCATION: crate::ingredient::Location =
             crate::ingredient::Location { file: "", line: 0 };
         const DEBUG_NAME: &'static str = "";
         const PERSIST: bool = false;
 
-        type Fields<'db> = ();
+        type Fields<'db> = [u8; 1];
         type Struct<'db> = Id;
 
         fn serialize<S>(_: &Self::Fields<'_>, _: S) -> Result<S::Ok, S::Error>
