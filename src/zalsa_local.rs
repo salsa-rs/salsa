@@ -1684,7 +1684,11 @@ impl QueryEdge {
 
 impl std::hash::Hash for QueryEdge {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let &Self { index, ingredient, generation: _ } = self;
+        let &Self {
+            index,
+            ingredient,
+            generation: _,
+        } = self;
         // A query should never depend on the same ingredient and index at different generations:
         // advancing the generation replaces the previous identity. If this assumption is ever
         // violated, `Eq` still compares the generation, so omitting it here only causes a hash
