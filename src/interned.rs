@@ -329,26 +329,19 @@ where
     C: Configuration,
 {
     pub fn new(ingredient_index: IngredientIndex) -> Self {
-        static SHARDS: OnceLock<usize> = OnceLock::new();
-        let shards = *SHARDS.get_or_init(|| {
-            let num_cpus = std::thread::available_parallelism()
-                .map(usize::from)
-                .unwrap_or(1);
-
-            (num_cpus * 4).next_power_of_two()
-        });
+        let shards = new_shards();
+        let shift = usize::BITS - shards.len().trailing_zeros();
 
         Self {
             ingredient_index,
             hasher: FxBuildHasher,
             memo_table_types: Arc::new(MemoTableTypes::default()),
             revision_queue: RevisionQueue::new(C::REVISIONS),
-            shift: usize::BITS - shards.trailing_zeros(),
-            shards: (0..shards).map(|_| Default::default()).collect(),
+            shift,
+            shards,
             _marker: PhantomData,
         }
     }
-
     /// Returns the shard for a given hash.
     ///
     /// Note that this value is guaranteed to be in-bounds for `self.shards`.
@@ -1046,6 +1039,23 @@ where
             }
         })
     }
+}
+
+/// Creates the sharded storage outside of the generic [`IngredientImpl::new`] context.
+///
+/// Keeping this helper non-generic avoids monomorphizing the `OnceLock` and iterator machinery for
+/// every interned struct configuration.
+fn new_shards() -> Box<[CachePadded<Mutex<IngredientShard>>]> {
+    static SHARDS: OnceLock<usize> = OnceLock::new();
+    let shards = *SHARDS.get_or_init(|| {
+        let num_cpus = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1);
+
+        (num_cpus * 4).next_power_of_two()
+    });
+
+    (0..shards).map(|_| Default::default()).collect()
 }
 
 /// Inserts an ID while keeping the hasher and rehashing logic independent of `C`.
