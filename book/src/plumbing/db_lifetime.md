@@ -201,6 +201,32 @@ This reference is linked to `db` and remains valid so long as the
 
 ## The `'db` lifetime at rest
 
+Salsa stores tracked and interned fields and memoized query results after the particular `&'db DB`
+borrow that produced them has ended. Internally, Salsa erases that lifetime while the value is in
+storage and restores the current database lifetime when the value is accessed again. The unsafe
+ingredient `Configuration` traits guarantee that their `Output<'db>` or `Fields<'db>` associated
+types can be stored with `'db` replaced by `'static` and later restored. The generated unsafe
+implementations are justified by checking that every lifetime-dependent value implements
+`SalsaValue`. This is the boundary that makes rebranding sound: an older value must remain safe to
+retain and use in a later revision, including through safe operations such as `PartialEq`.
+
+`#[derive(salsa::SalsaValue)]` checks the guarantee structurally. A field whose type is
+unconditionally `'static` is accepted directly. A field that borrows for `'db`, or is otherwise
+not `'static`, must implement `SalsaValue`. A direct database-lifetime reference such as `&'db T`
+does not implement the trait because its referent may be changed or freed in a later revision.
+Salsa handles do implement it because access to their data goes back through the current database
+state.
+
+The derive supports types with at most one lifetime parameter, as well as type and const
+parameters. Generated implementations require generic field types to implement `SalsaValue`;
+types that need different bounds can provide a manual implementation instead.
+
+If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
+`#[salsa_value(unsafe(prove_safe_to_retain_manually))]` skips the structural check for that field.
+The `unsafe` wrapper makes the proof obligation explicit: the author must ensure the field remains
+valid when Salsa retains it across revisions and rebinds its database lifetime. This manual
+assertion is supported by `derive(SalsaValue)` and directly on tracked and interned struct fields.
+
 ## Updating tracked struct fields across revisions
 
 ### The `XX`

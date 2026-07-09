@@ -13,7 +13,7 @@ struct MyInput {
     field: bool,
 }
 
-#[derive(Hash, Debug, Clone)]
+#[derive(Hash, Debug, Clone, salsa::SalsaValue)]
 struct NotEq {
     field: bool,
 }

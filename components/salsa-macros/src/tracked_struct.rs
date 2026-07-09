@@ -39,7 +39,7 @@ impl AllowedOptions for TrackedStruct {
 
     const NO_LIFETIME: bool = false;
 
-    const NON_UPDATE_TYPES: bool = false;
+    const NON_SALSA_VALUES: bool = false;
 
     const SINGLETON: bool = false;
 
@@ -71,8 +71,6 @@ impl AllowedOptions for TrackedStruct {
 impl SalsaStructAllowedOptions for TrackedStruct {
     const KIND: &'static str = "tracked";
 
-    const ALLOW_MAYBE_UPDATE: bool = true;
-
     const ALLOW_TRACKED: bool = true;
 
     const HAS_LIFETIME: bool = true;
@@ -80,6 +78,8 @@ impl SalsaStructAllowedOptions for TrackedStruct {
     const ELIDABLE_LIFETIME: bool = false;
 
     const ALLOW_DEFAULT: bool = false;
+
+    const ALLOW_MANUAL_RETENTION_PROOF: bool = true;
 }
 
 struct Macro {
@@ -120,29 +120,37 @@ impl Macro {
         let untracked_options = salsa_struct.untracked_options();
 
         let field_tys = salsa_struct.field_tys();
+        let field_manual_retention_proofs = salsa_struct.field_manual_retention_proofs();
+        let assert_fields_are_salsa_values = field_tys
+            .iter()
+            .zip(field_manual_retention_proofs)
+            .map(|(ty, has_manual_retention_proof)| {
+                crate::salsa_value::assert_salsa_value_field(
+                    &db_lt,
+                    &zalsa,
+                    ty,
+                    has_manual_retention_proof,
+                )
+            })
+            .collect::<TokenStream>();
         let tracked_tys = salsa_struct.tracked_tys();
         let untracked_tys = salsa_struct.untracked_tys();
 
         let tracked_field_unused_attrs = salsa_struct.tracked_field_attrs();
         let untracked_field_unused_attrs = salsa_struct.untracked_field_attrs();
 
-        let field_to_maybe_update = |(_, field): (usize, &SalsaField<'_>)| {
+        let field_to_equality = |(_, field): (usize, &SalsaField<'_>)| {
             let field_ty = &field.field.ty;
             if field.has_no_eq_attr {
-                quote! {(#zalsa::always_update::<#field_ty>)}
-            } else if let Some((with_token, maybe_update)) = &field.maybe_update_attr {
-                quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #maybe_update; maybe_update }) }
+                quote! {(|_: &#field_ty, _: &#field_ty| false)}
             } else {
-                quote! {(#zalsa::UpdateDispatch::<#field_ty>::maybe_update)}
+                quote_spanned! { field_ty.span() => (|old: &#field_ty, new: &#field_ty| old == new) }
             }
         };
 
-        let tracked_maybe_update = salsa_struct
-            .tracked_fields_iter()
-            .map(field_to_maybe_update);
-        let untracked_maybe_update = salsa_struct
-            .untracked_fields_iter()
-            .map(field_to_maybe_update);
+        let tracked_field_equalities = salsa_struct.tracked_fields_iter().map(field_to_equality);
+        let untracked_field_equalities =
+            salsa_struct.untracked_fields_iter().map(field_to_equality);
 
         let persist = self.args.persist();
         let serialize_fn = salsa_struct.serialize_fn();
@@ -176,6 +184,7 @@ impl Macro {
                     untracked_getters: [#(#untracked_vis #untracked_getter_ids),*],
 
                     field_tys: [#(#field_tys),*],
+                    assert_fields_are_salsa_values: {#assert_fields_are_salsa_values},
                     tracked_tys: [#(#tracked_tys),*],
                     untracked_tys: [#(#untracked_tys),*],
 
@@ -186,8 +195,8 @@ impl Macro {
 
                     absolute_untracked_indices: [#(#absolute_untracked_indices),*],
 
-                    tracked_maybe_updates: [#(#tracked_maybe_update),*],
-                    untracked_maybe_updates: [#(#untracked_maybe_update),*],
+                    tracked_field_equalities: [#(#tracked_field_equalities),*],
+                    untracked_field_equalities: [#(#untracked_field_equalities),*],
 
                     tracked_options: [#(#tracked_options),*],
                     untracked_options: [#(#untracked_options),*],

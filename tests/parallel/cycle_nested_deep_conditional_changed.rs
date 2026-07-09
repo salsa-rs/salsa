@@ -15,7 +15,7 @@
 //! Specifically, the maybe_changed_after flow.
 use crate::sync::thread;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 struct CycleValue(u32);
 
 const MIN: CycleValue = CycleValue(0);

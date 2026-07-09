@@ -32,6 +32,8 @@ macro_rules! setup_tracked_struct {
         // Field types, may reference `db_lt`.
         field_tys: [$($field_ty:ty),*],
 
+        assert_fields_are_salsa_values: {$($assert_fields_are_salsa_values:tt)*},
+
         // Tracked field types.
         tracked_tys: [$($tracked_ty:ty),*],
 
@@ -50,11 +52,11 @@ macro_rules! setup_tracked_struct {
         // Absolute indices of any untracked fields.
         absolute_untracked_indices: [$($absolute_untracked_index:tt),*],
 
-        // Tracked field types.
-        tracked_maybe_updates: [$($tracked_maybe_update:tt),*],
+        // Equality functions for tracked fields.
+        tracked_field_equalities: [$($tracked_field_equality:tt),*],
 
-        // Untracked field types.
-        untracked_maybe_updates: [$($untracked_maybe_update:tt),*],
+        // Equality functions for untracked fields.
+        untracked_field_equalities: [$($untracked_field_equality:tt),*],
 
         // A set of "field options" for each tracked field.
         //
@@ -121,6 +123,13 @@ macro_rules! setup_tracked_struct {
 
             type $Configuration = $Struct<'static>;
 
+            #[allow(unused_lifetimes)]
+            fn _assert_fields_are_salsa_values<$db_lt>() {
+                use $zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
+                $($assert_fields_are_salsa_values)*
+            }
+            let _ = _assert_fields_are_salsa_values;
+
             impl<$db_lt> $zalsa::HasJar for $Struct<$db_lt> {
                 type Jar = $zalsa_struct::JarImpl<$Configuration>;
                 const KIND: $zalsa::JarKind = $zalsa::JarKind::Struct;
@@ -130,7 +139,9 @@ macro_rules! setup_tracked_struct {
                 $zalsa::ErasedJar::erase::<$Struct<'static>>()
             }
 
-            impl $zalsa_struct::Configuration for $Configuration {
+            // SAFETY: The generated assertions above prove every field can be
+            // retained after erasing the database lifetime.
+            unsafe impl $zalsa_struct::Configuration for $Configuration {
                 const LOCATION: $zalsa::Location = $zalsa::Location {
                     file: file!(),
                     line: line!(),
@@ -161,30 +172,32 @@ macro_rules! setup_tracked_struct {
                     std::array::from_fn(|_| $zalsa::AtomicRevision::new(current_revision))
                 }
 
-                unsafe fn update_fields<$db_lt>(
+                fn update_fields<$db_lt>(
                     current_revision: $Revision,
                     revisions: &Self::Revisions,
-                    old_fields: *mut Self::Fields<$db_lt>,
+                    old_fields: &mut Self::Fields<$db_lt>,
                     new_fields: Self::Fields<$db_lt>,
                 ) -> bool {
-                    use $zalsa::UpdateFallback as _;
-                    unsafe {
-                        $(
-                            if $tracked_maybe_update(std::ptr::addr_of_mut!((*old_fields).$absolute_tracked_index), new_fields.$absolute_tracked_index) {
-                                revisions[$relative_tracked_index].store(current_revision);
-                            }
-                        )*;
+                    $(
+                        if $zalsa::update_field(
+                            &mut old_fields.$absolute_tracked_index,
+                            new_fields.$absolute_tracked_index,
+                            $tracked_field_equality,
+                        ) {
+                            revisions[$relative_tracked_index].store(current_revision);
+                        }
+                    )*;
 
-                        // If any untracked field has changed, return `true`, indicating that the tracked struct
-                        // itself should be considered changed.
-                        $(
-                            $untracked_maybe_update(
-                                &mut (*old_fields).$absolute_untracked_index,
-                                new_fields.$absolute_untracked_index,
-                            )
-                            |
-                        )* false
-                    }
+                    // If any identity field has changed, return `true`, indicating that the tracked
+                    // struct itself should be considered changed.
+                    $(
+                        $zalsa::update_field(
+                            &mut old_fields.$absolute_untracked_index,
+                            new_fields.$absolute_untracked_index,
+                            $untracked_field_equality,
+                        )
+                        |
+                    )* false
                 }
 
                 $(
@@ -325,16 +338,7 @@ macro_rules! setup_tracked_struct {
                 }
             }
 
-            unsafe impl $zalsa::Update for $Struct<'_> {
-                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
-                    if unsafe { *old_pointer } != new_value {
-                        unsafe { *old_pointer = new_value };
-                        true
-                    } else {
-                        false
-                    }
-                }
-            }
+            unsafe impl $zalsa::SalsaValue for $Struct<'_> {}
 
             impl<$db_lt> $Struct<$db_lt> {
                 pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self

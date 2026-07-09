@@ -29,7 +29,7 @@ where
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
 
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
-        let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
+        let memo_value = unsafe { memo.value().unwrap_unchecked() };
 
         self.eviction.record_use(id);
 
@@ -55,7 +55,7 @@ where
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         id: Id,
-    ) -> &'db Memo<'db, C> {
+    ) -> &'db Memo<C> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         loop {
@@ -78,7 +78,7 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
+    ) -> Option<&'db Memo<C>> {
         let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
 
         memo.value.as_ref()?;
@@ -108,7 +108,7 @@ where
         db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<'db, C>> {
+    ) -> Option<&'db Memo<C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let claim_guard = match self
@@ -160,7 +160,7 @@ where
         id: Id,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> &'db Memo<'db, C> {
+    ) -> &'db Memo<C> {
         // no provisional value; create/insert/return initial provisional value
         match C::CYCLE_STRATEGY {
             // SAFETY: We do not access the query stack reentrantly.

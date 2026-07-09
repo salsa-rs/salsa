@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, Debug, PartialEq, Eq, salsa::Update)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, salsa::SalsaValue)]
 pub struct Things<'db> {
     v: std::marker::PhantomData<&'db ()>,
 }
@@ -76,7 +76,7 @@ impl<'a> Things<'a> {
     // A higher-ranked function pointer return whose binder reuses `'db`; the db
     // lifetime must not be renamed into the binder. `no_eq` avoids comparing fn
     // pointers (which is unpredictable and only incidental to this test).
-    #[salsa::tracked(returns(copy), no_eq, unsafe(non_update_types))]
+    #[salsa::tracked(returns(copy), no_eq, unsafe(non_salsa_values))]
     fn hrtb(db: &'a dyn salsa::Database) -> for<'db> fn(&'a (), &'db ()) {
         _ = db;
         unimplemented!()

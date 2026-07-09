@@ -14,15 +14,14 @@ where
     /// on an old memo when a new memo has been produced to check whether there have been changed.
     pub(super) fn backdate_if_appropriate<'db>(
         &self,
-        old_memo: &Memo<'db, C>,
+        old_memo: &'db Memo<C>,
         index: DatabaseKeyIndex,
         revisions: &mut QueryRevisions,
         value: &C::Output<'db>,
     ) {
         if old_memo.header.can_backdate(revisions)
             && old_memo
-                .value
-                .as_ref()
+                .value()
                 .is_some_and(|old_value| C::values_equal(old_value, value))
         {
             old_memo.header.backdate(index, revisions);

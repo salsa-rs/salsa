@@ -7,7 +7,7 @@ use expect_test::expect;
 
 mod common;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 struct CycleValue(u32);
 
 impl std::ops::Add for CycleValue {

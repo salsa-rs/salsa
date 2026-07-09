@@ -37,7 +37,13 @@ const DEFAULT_REVISIONS: usize = 1;
 ///
 /// Implemented by the `#[salsa::interned]` macro when applied to
 /// a struct.
-pub trait Configuration: Sized + 'static {
+///
+/// # Safety
+///
+/// For every lifetime `'db`, `Fields<'db>` must be safe for Salsa to retain
+/// as `Fields<'static>` and later expose with the lifetime of a database
+/// borrow. Both types must have identical layouts and validity invariants.
+pub unsafe trait Configuration: Sized + 'static {
     const LOCATION: crate::ingredient::Location;
     const DEBUG_NAME: &'static str;
 
@@ -271,11 +277,13 @@ where
 
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
-    pub fn fields(&self) -> &C::Fields<'static> {
+    pub fn fields<'db>(&'db self) -> &'db C::Fields<'db> {
         // SAFETY: The fact that this function is safe is technically unsound. However, interned
         // values are only exposed if they have been validated in the current revision, which
         // ensures that they are not reused while being accessed.
-        unsafe { &*self.fields.get() }
+        // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
+        // bounded by the borrow of this interned value.
+        unsafe { std::mem::transmute::<&C::Fields<'static>, &C::Fields<'db>>(&*self.fields.get()) }
     }
 
     /// Returns memory usage information about the interned value.
@@ -295,8 +303,9 @@ where
 
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
-            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields<'_>>(),
-            size_of_fields: std::mem::size_of::<C::Fields<'_>>(),
+            size_of_metadata: std::mem::size_of::<Self>()
+                - std::mem::size_of::<C::Fields<'static>>(),
+            size_of_fields: std::mem::size_of::<C::Fields<'static>>(),
             heap_size_of_fields: heap_size,
             memos: memos.memory_usage(),
         }
@@ -356,14 +365,14 @@ where
     /// The `from_internal_data` function must be called to restore the correct lifetime
     /// before access.
     unsafe fn to_internal_data<'db>(&'db self, data: C::Fields<'db>) -> C::Fields<'static> {
-        // SAFETY: Guaranteed by caller.
-        unsafe { std::mem::transmute(data) }
+        // SAFETY: Guaranteed by `Configuration` and retained in this ingredient.
+        unsafe { std::mem::transmute::<C::Fields<'db>, C::Fields<'static>>(data) }
     }
 
     fn from_internal_data<'db>(data: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
-        // SAFETY: It's sound to go from `Data<'static>` to `Data<'db>`. We shrink the
-        // lifetime here to use a single lifetime in `Lookup::eq(&StructKey<'db>, &C::Data<'db>)`
-        unsafe { std::mem::transmute(data) }
+        // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
+        // bounded by the borrow of the retained data.
+        unsafe { std::mem::transmute::<&'db C::Fields<'static>, &'db C::Fields<'db>>(data) }
     }
 
     /// Intern data to a unique reference.
@@ -1816,7 +1825,7 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            C::serialize(self.0, serializer)
+            C::serialize(IngredientImpl::<C>::from_internal_data(self.0), serializer)
         }
     }
 
@@ -1963,7 +1972,8 @@ mod _static_assertions {
 
     struct DummyConfiguration;
 
-    impl Configuration for DummyConfiguration {
+    // SAFETY: The fields are `()` for every database lifetime.
+    unsafe impl Configuration for DummyConfiguration {
         const LOCATION: crate::ingredient::Location =
             crate::ingredient::Location { file: "", line: 0 };
         const DEBUG_NAME: &'static str = "";
@@ -1994,7 +2004,8 @@ mod tests {
 
     struct TestConfiguration;
 
-    impl Configuration for TestConfiguration {
+    // SAFETY: The fields are `()` for every database lifetime.
+    unsafe impl Configuration for TestConfiguration {
         const LOCATION: crate::ingredient::Location = crate::ingredient::Location {
             file: file!(),
             line: line!(),

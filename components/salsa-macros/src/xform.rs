@@ -13,12 +13,26 @@ use syn::visit_mut::VisitMut;
 /// binder is either bound by it or higher-ranked, and so is never the database
 /// lifetime.
 pub(crate) struct ChangeLt {
+    from: syn::Ident,
     to: syn::Lifetime,
+    skip_higher_ranked: bool,
 }
 
 impl ChangeLt {
     pub fn elided_to(db_lt: &syn::Lifetime) -> Self {
-        ChangeLt { to: db_lt.clone() }
+        ChangeLt {
+            from: syn::Ident::new("_", db_lt.span()),
+            to: db_lt.clone(),
+            skip_higher_ranked: true,
+        }
+    }
+
+    pub fn named_to(from: &syn::Lifetime, to: &syn::Lifetime) -> Self {
+        ChangeLt {
+            from: from.ident.clone(),
+            to: to.clone(),
+            skip_higher_ranked: false,
+        }
     }
 
     pub fn in_type(mut self, ty: &syn::Type) -> syn::Type {
@@ -30,17 +44,21 @@ impl ChangeLt {
 
 impl syn::visit_mut::VisitMut for ChangeLt {
     fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        if i.ident == "_" {
+        if i.ident == self.from {
             *i = self.to.clone();
         }
     }
 
     // Function-pointer lifetimes are independently bound.
-    fn visit_type_bare_fn_mut(&mut self, _: &mut syn::TypeBareFn) {}
+    fn visit_type_bare_fn_mut(&mut self, ty: &mut syn::TypeBareFn) {
+        if !self.skip_higher_ranked {
+            syn::visit_mut::visit_type_bare_fn_mut(self, ty);
+        }
+    }
 
     fn visit_trait_bound_mut(&mut self, i: &mut syn::TraitBound) {
         // Only `for<...>` introduces a higher-ranked binder.
-        if i.lifetimes.is_none() {
+        if !self.skip_higher_ranked || i.lifetimes.is_none() {
             syn::visit_mut::visit_trait_bound_mut(self, i);
         }
     }
@@ -50,18 +68,32 @@ impl syn::visit_mut::VisitMut for ChangeLt {
 /// rewritten by [`ChangeLt::elided_to`], i.e. one that is not bound by a
 /// higher-ranked `for<..>` binder.
 pub(crate) fn uses_elided_lifetime(ty: &syn::Type) -> bool {
-    let mut finder = ElidedLifetimeFinder { found: false };
+    finds_lifetime(ty, "_")
+}
+
+/// Returns `true` if `ty` mentions `lifetime` outside a higher-ranked
+/// `for<..>` binder.
+pub(crate) fn uses_lifetime(ty: &syn::Type, lifetime: &syn::Lifetime) -> bool {
+    finds_lifetime(ty, &lifetime.ident.to_string())
+}
+
+fn finds_lifetime(ty: &syn::Type, lifetime: &str) -> bool {
+    let mut finder = LifetimeFinder {
+        lifetime,
+        found: false,
+    };
     finder.visit_type(ty);
     finder.found
 }
 
-struct ElidedLifetimeFinder {
+struct LifetimeFinder<'a> {
+    lifetime: &'a str,
     found: bool,
 }
 
-impl<'ast> syn::visit::Visit<'ast> for ElidedLifetimeFinder {
+impl<'ast> syn::visit::Visit<'ast> for LifetimeFinder<'_> {
     fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
-        if i.ident == "_" {
+        if i.ident == self.lifetime {
             self.found = true;
         }
     }

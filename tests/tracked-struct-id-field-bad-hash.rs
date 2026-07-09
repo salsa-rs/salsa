@@ -17,7 +17,7 @@ struct MyInput {
     field: u64,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, salsa::SalsaValue)]
 struct BadHash {
     field: u64,
 }

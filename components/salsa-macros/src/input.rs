@@ -43,7 +43,7 @@ impl AllowedOptions for InputStruct {
 
     const NO_LIFETIME: bool = false;
 
-    const NON_UPDATE_TYPES: bool = false;
+    const NON_SALSA_VALUES: bool = false;
 
     const SINGLETON: bool = true;
 
@@ -75,8 +75,6 @@ impl AllowedOptions for InputStruct {
 impl SalsaStructAllowedOptions for InputStruct {
     const KIND: &'static str = "input";
 
-    const ALLOW_MAYBE_UPDATE: bool = false;
-
     const ALLOW_TRACKED: bool = false;
 
     const HAS_LIFETIME: bool = false;
@@ -84,6 +82,8 @@ impl SalsaStructAllowedOptions for InputStruct {
     const ELIDABLE_LIFETIME: bool = false;
 
     const ALLOW_DEFAULT: bool = true;
+
+    const ALLOW_MANUAL_RETENTION_PROOF: bool = false;
 }
 
 struct Macro {

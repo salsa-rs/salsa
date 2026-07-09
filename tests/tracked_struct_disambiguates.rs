@@ -31,7 +31,7 @@ struct TrackedStruct2<'db> {
     field: DumbHashable,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, salsa::SalsaValue)]
 pub struct DumbHashable {
     field: u32,
 }
