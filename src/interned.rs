@@ -115,21 +115,32 @@ pub struct IngredientImpl<C: Configuration> {
 struct IngredientShard {
     /// Maps from data to the existing interned value for that data.
     ///
-    /// The pointer is stable for the lifetime of the database and is the same size
-    /// as an `Id` on 64-bit targets. Storing it directly avoids a table lookup when
-    /// hashing or comparing an existing entry.
+    /// The pointer is stable for the lifetime of the database. Storing it directly avoids a table
+    /// lookup when hashing or comparing an existing entry.
     key_map: hashbrown::HashTable<ValueKey>,
 
     /// An intrusive linked list for LRU.
     lru: LinkedList<LruEntryAdapter>,
 }
 
+impl Default for IngredientShard {
+    fn default() -> Self {
+        Self {
+            lru: LinkedList::default(),
+            key_map: hashbrown::HashTable::new(),
+        }
+    }
+}
+
+// SAFETY: `IngredientShard` is only accessed through its mutex. Its LRU contains pointers to live,
+// stable values from this ingredient, and those pointers and their links are accessed only while
+// holding that mutex.
+unsafe impl Send for IngredientShard {}
+
 /// A stable pointer to an interned value allocated in the database table.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 struct ValueKey(NonNull<()>);
-
-const _: () = assert!(std::mem::size_of::<NonNull<()>>() <= std::mem::size_of::<Id>());
 
 impl ValueKey {
     fn new<C: Configuration>(value: &Value<C>) -> Self {
@@ -150,20 +161,6 @@ impl ValueKey {
 unsafe impl Send for ValueKey {}
 // SAFETY: See the `Send` implementation above.
 unsafe impl Sync for ValueKey {}
-
-impl Default for IngredientShard {
-    fn default() -> Self {
-        Self {
-            lru: LinkedList::default(),
-            key_map: hashbrown::HashTable::new(),
-        }
-    }
-}
-
-// SAFETY: `IngredientShard` is only accessed through its mutex. Its LRU contains pointers to live,
-// stable values from this ingredient, and those pointers and their links are accessed only while
-// holding that mutex.
-unsafe impl Send for IngredientShard {}
 
 // SAFETY: `shard` is immutable. `lru` and `durability` are accessed only while holding the owning
 // ingredient shard lock. `fields` is mutated only while holding that lock after stale-slot reuse
