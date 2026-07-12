@@ -137,31 +137,6 @@ impl Default for IngredientShard {
 // holding that mutex.
 unsafe impl Send for IngredientShard {}
 
-/// A stable pointer to an interned value allocated in the database table.
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-struct ValueKey(NonNull<()>);
-
-impl ValueKey {
-    fn new<C: Configuration>(value: &Value<C>) -> Self {
-        Self(NonNull::from(value).cast())
-    }
-
-    /// # Safety
-    ///
-    /// The database table containing this value must still be alive.
-    unsafe fn value<'db, C: Configuration>(&self) -> &'db Value<C> {
-        // SAFETY: Guaranteed by the caller. The erased pointer was created from a `Value<C>`.
-        unsafe { &*self.0.as_ptr().cast::<Value<C>>() }
-    }
-}
-
-// SAFETY: Values remain allocated until after the ingredient and its key map are dropped.
-// Access to their mutable state is synchronized by the corresponding shard lock.
-unsafe impl Send for ValueKey {}
-// SAFETY: See the `Send` implementation above.
-unsafe impl Sync for ValueKey {}
-
 // SAFETY: `shard` is immutable. `lru` and `durability` are accessed only while holding the owning
 // ingredient shard lock. `fields` is mutated only while holding that lock after stale-slot reuse
 // guarantees no references remain, and is read only while holding the lock or after validation in
@@ -1093,6 +1068,31 @@ fn new_shards() -> Box<[CachePadded<Mutex<IngredientShard>>]> {
 
     (0..shards).map(|_| Default::default()).collect()
 }
+
+/// A stable pointer to an interned value allocated in the database table.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct ValueKey(NonNull<()>);
+
+impl ValueKey {
+    fn new<C: Configuration>(value: &Value<C>) -> Self {
+        Self(NonNull::from(value).cast())
+    }
+
+    /// # Safety
+    ///
+    /// The database table containing this value must still be alive.
+    unsafe fn value<'db, C: Configuration>(&self) -> &'db Value<C> {
+        // SAFETY: Guaranteed by the caller. The erased pointer was created from a `Value<C>`.
+        unsafe { &*self.0.as_ptr().cast::<Value<C>>() }
+    }
+}
+
+// SAFETY: Values remain allocated until after the ingredient and its key map are dropped.
+// Access to their mutable state is synchronized by the corresponding shard lock.
+unsafe impl Send for ValueKey {}
+// SAFETY: See the `Send` implementation above.
+unsafe impl Sync for ValueKey {}
 
 /// Inserts a value pointer while keeping the hasher and rehashing logic independent of `C`.
 fn insert_unique_erased(
