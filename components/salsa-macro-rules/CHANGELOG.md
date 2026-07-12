@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.27.2...salsa-macro-rules-v0.28.0) - 2026-07-12
+
+### Added
+
+- replace `Update` with `SalsaValue` and `PartialEq` ([#1217](https://github.com/salsa-rs/salsa/pull/1217))
+
+### Other
+
+- reduce ingredient cache monomorphization ([#1207](https://github.com/salsa-rs/salsa/pull/1207))
+
 ## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.27.0...salsa-macro-rules-v0.27.1) - 2026-06-24
 
 ### Fixed

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.2...salsa-v0.28.0) - 2026-07-12
+
+### Added
+
+- replace `Update` with `SalsaValue` and `PartialEq` ([#1217](https://github.com/salsa-rs/salsa/pull/1217))
+- return references by default ([#1216](https://github.com/salsa-rs/salsa/pull/1216))
+- report per-ingredient page occupancy ([#1181](https://github.com/salsa-rs/salsa/pull/1181))
+
+### Fixed
+
+- restore compact interned value layout ([#1244](https://github.com/salsa-rs/salsa/pull/1244))
+- implement SalsaValue for FxBuildHasher ([#1241](https://github.com/salsa-rs/salsa/pull/1241))
+- restart fixpoint iteration after cancellation ([#1238](https://github.com/salsa-rs/salsa/pull/1238))
+- replace tracked method db-arg index panic with proper compile error ([#1228](https://github.com/salsa-rs/salsa/pull/1228))
+
+### Other
+
+- reduce memo validation monomorphization ([#1206](https://github.com/salsa-rs/salsa/pull/1206))
+- reduce interned constructor monomorphization ([#1208](https://github.com/salsa-rs/salsa/pull/1208))
+- avoid hashing query edge generations ([#1223](https://github.com/salsa-rs/salsa/pull/1223))
+- erase configuration from interned storage ([#1204](https://github.com/salsa-rs/salsa/pull/1204))
+- reduce table page size ([#1179](https://github.com/salsa-rs/salsa/pull/1179))
+- Add untracked field read benchmark ([#1225](https://github.com/salsa-rs/salsa/pull/1225))
+- Revise salsa benchmarks ([#1224](https://github.com/salsa-rs/salsa/pull/1224))
+- update Salsa book for current APIs ([#1215](https://github.com/salsa-rs/salsa/pull/1215))
+- document proc macros and Salsa concepts ([#1213](https://github.com/salsa-rs/salsa/pull/1213))
+- simplify specify origin handling ([#1214](https://github.com/salsa-rs/salsa/pull/1214))
+- reduce table monomorphization ([#1211](https://github.com/salsa-rs/salsa/pull/1211))
+- reduce ingredient cache monomorphization ([#1207](https://github.com/salsa-rs/salsa/pull/1207))
+- inline tracked struct revision loads ([#1202](https://github.com/salsa-rs/salsa/pull/1202))
+- avoid repeated cycle dependency lookups ([#1201](https://github.com/salsa-rs/salsa/pull/1201))
+
 ## [0.27.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.1...salsa-v0.27.2) - 2026-06-25
 
 ### Fixed
