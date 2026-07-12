@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.27.2...salsa-macros-v0.28.0) - 2026-07-12
+
+### Added
+
+- replace `Update` with `SalsaValue` and `PartialEq` ([#1217](https://github.com/salsa-rs/salsa/pull/1217))
+- return references by default ([#1216](https://github.com/salsa-rs/salsa/pull/1216))
+
+### Fixed
+
+- replace tracked method db-arg index panic with proper compile error ([#1228](https://github.com/salsa-rs/salsa/pull/1228))
+
+### Other
+
+- document proc macros and Salsa concepts ([#1213](https://github.com/salsa-rs/salsa/pull/1213))
+
 ## [0.27.1](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.27.0...salsa-macros-v0.27.1) - 2026-06-24
 
 ### Fixed
