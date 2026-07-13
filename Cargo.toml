@@ -82,7 +82,7 @@ salsa-macros = { version = "=0.28.0", path = "components/salsa-macros" }
 
 [dev-dependencies]
 # examples
-crossbeam-channel = "=0.5.15"
+crossbeam-channel = "=0.5.16"
 dashmap = { version = "=6.2.1", features = ["raw-api"] }
 eyre = "=0.6.12"
 notify-debouncer-mini = "=0.7.0"
