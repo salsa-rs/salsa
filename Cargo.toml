@@ -92,7 +92,7 @@ ordered-float = "=5.3.0"
 annotate-snippets = "=0.12.16"
 divan = { package = "codspeed-divan-compat", version = "=5.0.1" }
 expect-test = "=1.5.1"
-rustversion = "=1.0.22"
+rustversion = "=1.0.23"
 test-log = { version = "=0.2.21", features = ["trace"] }
 trybuild = "=1.0.117"
 serde_json = "=1.0.150"
