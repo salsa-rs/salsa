@@ -1,7 +1,8 @@
 mod lru;
 mod noop;
 
-pub use lru::{Lru, LruEntry};
+pub(super) use lru::ImmortalLru;
+pub use lru::{Lru, LruEntry, LruSelector, SelectLru};
 pub use noop::{NoopEntry, NoopEviction};
 
 use std::cell::UnsafeCell;
@@ -20,6 +21,9 @@ use super::{Configuration, HashEqLike, IngredientImpl, Value, ValueKey};
 
 /// Compile-time eviction policy for an interned ingredient.
 pub trait EvictionPolicy: Send + Sync + 'static {
+    /// Whether this policy can invalidate an interned dependency through slot reuse.
+    const CAN_REUSE: bool;
+
     /// Per-shard eviction state.
     type Shard: Default + Send;
 
@@ -137,9 +141,6 @@ pub trait EvictionPolicy: Send + Sync + 'static {
         current_revision: Revision,
         entry: &Self::Entry,
     ) -> VerifyResult;
-
-    /// Returns whether this policy can invalidate an interned dependency.
-    fn can_reuse(&self) -> bool;
 }
 
 /// Context for a lookup that found an existing interned value.
@@ -175,6 +176,7 @@ where
     Assemble: FnOnce(Id, Key) -> C::Fields<'db>,
 {
     /// Allocates a new interned value for this miss.
+    #[inline(always)]
     pub(super) fn intern_new(self) -> Id {
         let Self {
             ingredient,

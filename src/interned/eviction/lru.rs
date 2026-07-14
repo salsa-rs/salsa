@@ -67,6 +67,30 @@ pub struct Lru {
     revision_queue: RevisionQueue,
 }
 
+/// Selects the reusable or immortal LRU representation at compile time.
+#[doc(hidden)]
+pub struct LruSelector<const IMMORTAL: bool>;
+
+/// Maps an LRU revision configuration to its eviction policy.
+#[doc(hidden)]
+pub trait SelectLru {
+    type Eviction: EvictionPolicy;
+}
+
+impl SelectLru for LruSelector<false> {
+    type Eviction = Lru;
+}
+
+impl SelectLru for LruSelector<true> {
+    type Eviction = ImmortalLru;
+}
+
+/// LRU storage without slot reuse, selected for `revisions = usize::MAX`.
+#[doc(hidden)]
+pub struct ImmortalLru {
+    _lru: Lru,
+}
+
 /// Per-shard LRU state.
 #[derive(Default)]
 pub struct LruShard {
@@ -79,11 +103,14 @@ pub struct LruShard {
 unsafe impl Send for LruShard {}
 
 impl EvictionPolicy for Lru {
+    const CAN_REUSE: bool = true;
+
     type Shard = LruShard;
     type Entry = LruEntry;
     type Durability = UnsafeCell<Durability>;
 
     fn new(revisions: NonZeroUsize) -> Self {
+        debug_assert_ne!(revisions, IMMORTAL);
         Self {
             revision_queue: RevisionQueue::new(revisions),
         }
@@ -129,12 +156,12 @@ impl EvictionPolicy for Lru {
         unsafe { (*durability.get(), (*entry.metadata.get()).last_interned_at) }
     }
 
+    #[inline(always)]
     fn record_revision(&self, revision: Revision) {
-        if self.can_reuse() {
-            self.revision_queue.record(revision);
-        }
+        self.revision_queue.record(revision);
     }
 
+    #[inline(always)]
     unsafe fn intern_existing(&self, existing: InternExisting<'_, Self>) -> Id {
         let InternExisting {
             zalsa,
@@ -183,6 +210,7 @@ impl EvictionPolicy for Lru {
         metadata.id
     }
 
+    #[inline(always)]
     fn intern_missing<'db, C, Key, Assemble>(
         &self,
         missing: InternMissing<'_, 'db, C, Key, Assemble>,
@@ -348,9 +376,136 @@ impl EvictionPolicy for Lru {
 
         VerifyResult::unchanged()
     }
+}
 
-    fn can_reuse(&self) -> bool {
-        !self.revision_queue.revisions.is_empty()
+impl EvictionPolicy for ImmortalLru {
+    const CAN_REUSE: bool = false;
+
+    type Shard = LruShard;
+    type Entry = LruEntry;
+    type Durability = UnsafeCell<Durability>;
+
+    fn new(revisions: NonZeroUsize) -> Self {
+        debug_assert_eq!(revisions, IMMORTAL);
+        Self {
+            _lru: Lru {
+                revision_queue: RevisionQueue::new(revisions),
+            },
+        }
+    }
+
+    fn new_entry(id: Id, last_interned_at: Revision) -> Self::Entry {
+        Lru::new_entry(id, last_interned_at)
+    }
+
+    fn new_durability(durability: Durability) -> Self::Durability {
+        Lru::new_durability(durability)
+    }
+
+    fn initial_metadata(
+        zalsa_local: &ZalsaLocal,
+        current_revision: Revision,
+    ) -> (Durability, Revision) {
+        Lru::initial_metadata(zalsa_local, current_revision)
+    }
+
+    unsafe fn id(entry: &Self::Entry) -> Id {
+        // SAFETY: Guaranteed by the caller.
+        unsafe { Lru::id(entry) }
+    }
+
+    unsafe fn serialized_metadata(
+        entry: &Self::Entry,
+        durability: &Self::Durability,
+    ) -> (Durability, Revision) {
+        // SAFETY: Guaranteed by the caller.
+        unsafe { Lru::serialized_metadata(entry, durability) }
+    }
+
+    fn record_revision(&self, _revision: Revision) {}
+
+    unsafe fn intern_existing(&self, existing: InternExisting<'_, Self>) -> Id {
+        let InternExisting {
+            zalsa,
+            zalsa_local,
+            index,
+            current_revision,
+            entry,
+            durability,
+            shard: _,
+        } = existing;
+
+        // SAFETY: Guaranteed by the caller.
+        let (metadata, durability) =
+            unsafe { (&mut *(*entry).metadata.get(), &mut *durability.get()) };
+
+        if metadata.last_interned_at < current_revision {
+            metadata.last_interned_at = current_revision;
+            zalsa.event(&|| {
+                Event::new(EventKind::DidValidateInternedValue {
+                    key: index,
+                    revision: current_revision,
+                })
+            });
+        }
+
+        if let Some((_, stamp)) = zalsa_local.active_query() {
+            *durability = std::cmp::max(*durability, stamp.durability);
+        }
+
+        zalsa_local.report_tracked_read_revision(current_revision);
+        metadata.id
+    }
+
+    fn intern_missing<'db, C, Key, Assemble>(
+        &self,
+        missing: InternMissing<'_, 'db, C, Key, Assemble>,
+    ) -> Id
+    where
+        C: Configuration<Eviction = Self>,
+        Key: Hash,
+        C::Fields<'db>: HashEqLike<Key>,
+        Assemble: FnOnce(Id, Key) -> C::Fields<'db>,
+    {
+        missing.intern_new()
+    }
+
+    unsafe fn insert_entry(
+        &self,
+        _shard: &mut Self::Shard,
+        _entry: *const Self::Entry,
+        _durability: &Self::Durability,
+    ) {
+    }
+
+    unsafe fn report_tracked_read(
+        &self,
+        zalsa_local: &ZalsaLocal,
+        _index: DatabaseKeyIndex,
+        current_revision: Revision,
+        _durability: &Self::Durability,
+    ) {
+        zalsa_local.report_tracked_read_revision(current_revision);
+    }
+
+    unsafe fn is_valid(
+        &self,
+        _zalsa: &Zalsa,
+        _entry: &Self::Entry,
+        _durability: &Self::Durability,
+    ) -> bool {
+        true
+    }
+
+    unsafe fn maybe_changed_after(
+        &self,
+        _zalsa: &Zalsa,
+        _index: DatabaseKeyIndex,
+        _input: Id,
+        _current_revision: Revision,
+        _entry: &Self::Entry,
+    ) -> VerifyResult {
+        VerifyResult::unchanged()
     }
 }
 
@@ -358,7 +513,7 @@ impl Lru {
     fn is_reusable(&self, durability: Durability) -> bool {
         // Collecting higher durability values requires invalidating the revision for their
         // durability to avoid short-circuiting `maybe_changed_after`.
-        self.can_reuse() && durability == Durability::LOW
+        durability == Durability::LOW
     }
 
     fn report_tracked_read_value(

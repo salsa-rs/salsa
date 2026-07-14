@@ -19,6 +19,8 @@ pub struct NoopEntry {
 }
 
 impl EvictionPolicy for NoopEviction {
+    const CAN_REUSE: bool = false;
+
     type Shard = ();
     type Entry = NoopEntry;
     type Durability = ();
@@ -114,10 +116,5 @@ impl EvictionPolicy for NoopEviction {
         _entry: &Self::Entry,
     ) -> VerifyResult {
         VerifyResult::unchanged()
-    }
-
-    #[inline(always)]
-    fn can_reuse(&self) -> bool {
-        false
     }
 }

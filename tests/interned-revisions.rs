@@ -293,7 +293,9 @@ struct Immortal<'db> {
     field1: BadHash,
 }
 
-#[salsa::interned(eviction(revisions = usize::MAX))]
+const IMMORTAL_REVISIONS: usize = usize::MAX;
+
+#[salsa::interned(eviction(policy = lru, revisions = IMMORTAL_REVISIONS))]
 #[derive(Debug)]
 struct NestedImmortal<'db> {
     field1: BadHash,

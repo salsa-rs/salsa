@@ -25,7 +25,7 @@ use crate::{DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 mod eviction;
 
-pub use eviction::{EvictionPolicy, Lru, NoopEviction};
+pub use eviction::{EvictionPolicy, Lru, LruSelector, NoopEviction, SelectLru};
 
 #[cfg(not(test))]
 const DEFAULT_REVISIONS: usize = 3;
@@ -517,7 +517,7 @@ where
         let value = zalsa.table().get::<Value<C>>(id);
 
         debug_assert!(
-            !self.eviction.can_reuse() || {
+            !C::Eviction::CAN_REUSE || {
                 let _shard = self.shards[value.shard as usize].lock();
 
                 // SAFETY: We hold the lock for the shard containing the value.
@@ -690,7 +690,7 @@ where
         input: Id,
         _revision: Revision,
     ) -> VerifyResult {
-        if !self.eviction.can_reuse() {
+        if !C::Eviction::CAN_REUSE {
             return VerifyResult::unchanged();
         }
 
@@ -720,7 +720,7 @@ where
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         _visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
-        if C::PERSIST && self.eviction.can_reuse() {
+        if C::PERSIST && C::Eviction::CAN_REUSE {
             // If the interned struct is being persisted, it may be reachable through transitive queries.
             // Additionally, interned struct dependencies are impure in that garbage collection can
             // invalidate a dependency without a base input necessarily being updated. Thus, we must
@@ -1414,11 +1414,16 @@ mod persistence {
 mod _static_assertions {
     use std::mem;
 
-    use super::eviction::{LruEntry, NoopEntry};
+    use super::eviction::{ImmortalLru, LruEntry, NoopEntry};
     use super::{Configuration, EvictionPolicy, Lru, NoopEviction, Value};
     use crate::{Id, plumbing};
 
     const _: [(); mem::size_of::<LruEntry>()] = [(); mem::size_of::<[usize; 4]>()];
+    const _: [(); mem::size_of::<ImmortalLru>()] = [(); mem::size_of::<Lru>()];
+    const _: [(); mem::size_of::<<ImmortalLru as EvictionPolicy>::Shard>()] =
+        [(); mem::size_of::<<Lru as EvictionPolicy>::Shard>()];
+    const _: [(); mem::size_of::<<ImmortalLru as EvictionPolicy>::Entry>()] =
+        [(); mem::size_of::<LruEntry>()];
 
     const _: [(); mem::size_of::<Value<DummyConfiguration>>()] = [(); mem::size_of::<[usize; 7]>()];
 

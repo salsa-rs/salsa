@@ -142,7 +142,16 @@ impl Macro {
 
         let revisions = nested_revisions.or(legacy_revisions);
         let eviction_type = match eviction_policy {
-            InternedEvictionPolicy::Lru => quote!(::salsa::plumbing::interned::Lru),
+            InternedEvictionPolicy::Lru => revisions.map_or_else(
+                || quote!(::salsa::plumbing::interned::Lru),
+                |revisions| {
+                    quote!(
+                        <::salsa::plumbing::interned::LruSelector<
+                            { #revisions == ::core::usize::MAX }
+                        > as ::salsa::plumbing::interned::SelectLru>::Eviction
+                    )
+                },
+            ),
             InternedEvictionPolicy::NoEviction => {
                 quote!(::salsa::plumbing::interned::NoopEviction)
             }
