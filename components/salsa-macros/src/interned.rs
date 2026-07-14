@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 
 use crate::hygiene::Hygiene;
-use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
+use crate::options::{AllowedOptions, AllowedPersistOptions, InternedEvictionPolicy, Options};
 use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
 use crate::{db_lifetime, token_stream_with_error};
 
@@ -58,6 +58,7 @@ impl AllowedOptions for InternedStruct {
     const CYCLE_RESULT: bool = false;
 
     const LRU: bool = false;
+    const EVICTION: bool = true;
 
     const CONSTRUCTOR_NAME: bool = true;
 
@@ -116,7 +117,36 @@ impl Macro {
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let has_lifetime = salsa_struct.generate_lifetime();
         let id = salsa_struct.id();
-        let revisions = salsa_struct.revisions();
+        let legacy_revisions = salsa_struct.revisions().next();
+        let eviction = self.args.eviction.as_ref();
+        let nested_revisions = eviction.and_then(|eviction| eviction.revisions.as_ref());
+
+        if let (Some(_), Some(nested_revisions)) = (legacy_revisions, nested_revisions) {
+            return Err(syn::Error::new_spanned(
+                nested_revisions,
+                "`revisions` cannot be specified both inside and outside `eviction`",
+            ));
+        }
+
+        let eviction_policy = eviction
+            .map(|eviction| eviction.policy)
+            .unwrap_or(InternedEvictionPolicy::Lru);
+        if let (InternedEvictionPolicy::NoEviction, Some(revisions)) =
+            (eviction_policy, legacy_revisions)
+        {
+            return Err(syn::Error::new_spanned(
+                revisions,
+                "the `no_eviction` policy cannot be combined with `revisions`",
+            ));
+        }
+
+        let revisions = nested_revisions.or(legacy_revisions);
+        let eviction_type = match eviction_policy {
+            InternedEvictionPolicy::Lru => quote!(::salsa::plumbing::interned::Lru),
+            InternedEvictionPolicy::NoEviction => {
+                quote!(::salsa::plumbing::interned::NoopEviction)
+            }
+        };
 
         let (db_lt_arg, cfg, interior_lt) = if has_lifetime {
             (
@@ -175,7 +205,8 @@ impl Macro {
                     db_lt: #db_lt,
                     db_lt_arg: #db_lt_arg,
                     id: #id,
-                    revisions: #(#revisions)*,
+                    revisions: #revisions,
+                    eviction: #eviction_type,
                     interior_lt: #interior_lt,
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],

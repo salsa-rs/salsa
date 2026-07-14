@@ -15,7 +15,7 @@ struct Input {
     field1: usize,
 }
 
-#[salsa::interned(revisions = 3)]
+#[salsa::interned(eviction(revisions = 3))]
 #[derive(Debug)]
 struct Interned<'db> {
     field1: BadHash,
@@ -57,7 +57,7 @@ impl HashEqLike<PanickingLookup> for BadHash {
     }
 }
 
-#[salsa::interned(revisions = 1)]
+#[salsa::interned(eviction(revisions = 1))]
 struct PanickingInterned<'db> {
     value: BadHash,
 }
@@ -90,7 +90,7 @@ fn panic_during_reuse_does_not_orphan_slot() {
     assert_eq!(recovered_id, second_id.next_generation().unwrap());
 }
 
-#[salsa::interned]
+#[salsa::interned(eviction(policy = lru))]
 #[derive(Debug)]
 struct NestedInterned<'db> {
     #[returns(copy)]
@@ -293,7 +293,19 @@ struct Immortal<'db> {
     field1: BadHash,
 }
 
-#[salsa::interned(revisions = 4)]
+#[salsa::interned(eviction(revisions = usize::MAX))]
+#[derive(Debug)]
+struct NestedImmortal<'db> {
+    field1: BadHash,
+}
+
+#[salsa::interned(eviction(policy = no_eviction))]
+#[derive(Debug)]
+struct NoEviction<'db> {
+    field1: BadHash,
+}
+
+#[salsa::interned(eviction(policy = lru, revisions = 4))]
 #[derive(Debug)]
 struct SpilledInterned<'db> {
     field1: BadHash,
@@ -345,6 +357,90 @@ fn test_immortal() {
     // No values should ever be reused with `revisions = usize::MAX`.
     for i in 1..if cfg!(miri) { 50 } else { 1000 } {
         input.set_field1(&mut db).to(i);
+        let result = function(&db, input);
+        assert_eq!(result.field1(&db).0, i);
+        assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);
+    }
+}
+
+#[test]
+fn test_nested_immortal() {
+    #[salsa::tracked(returns(copy))]
+    fn function(db: &dyn Database, input: Input) -> NestedImmortal<'_> {
+        NestedImmortal::new(db, BadHash(input.field1(db)))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    for i in 0..if cfg!(miri) { 50 } else { 1000 } {
+        if i > 0 {
+            input.set_field1(&mut db).to(i);
+        }
+
+        let result = function(&db, input);
+        assert_eq!(result.field1(&db).0, i);
+        assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);
+    }
+}
+
+#[test]
+fn test_no_eviction_is_stable_and_does_not_validate() {
+    #[salsa::tracked(returns(copy))]
+    fn function(db: &dyn Database, input: Input) -> NoEviction<'_> {
+        let _ = input.field1(db);
+        NoEviction::new(db, BadHash(0))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    let first = function(&db, input);
+    let first_id = salsa::plumbing::AsId::as_id(&first);
+    assert_eq!(first.field1(&db).0, 0);
+    db.assert_logs(expect![[r#"
+        [
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "DidInternValue { key: NoEviction(Id(80)), revision: R1 }",
+        ]"#]]);
+
+    input.set_field1(&mut db).to(1);
+    let second = function(&db, input);
+    assert_eq!(salsa::plumbing::AsId::as_id(&second), first_id);
+    db.assert_logs(expect![[r#"
+        [
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+        ]"#]]);
+
+    db.synthetic_write(Durability::LOW);
+    let third = function(&db, input);
+    assert_eq!(salsa::plumbing::AsId::as_id(&third), first_id);
+    db.assert_logs(expect![[r#"
+        [
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "DidValidateMemoizedValue { database_key: function(Id(0)) }",
+        ]"#]]);
+}
+
+#[test]
+fn test_no_eviction_never_reuses_slots() {
+    #[salsa::tracked(returns(copy))]
+    fn function(db: &dyn Database, input: Input) -> NoEviction<'_> {
+        NoEviction::new(db, BadHash(input.field1(db)))
+    }
+
+    let mut db = common::LoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    for i in 0..if cfg!(miri) { 50 } else { 1000 } {
+        if i > 0 {
+            input.set_field1(&mut db).to(i);
+        }
+
         let result = function(&db, input);
         assert_eq!(result.field1(&db).0, i);
         assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);

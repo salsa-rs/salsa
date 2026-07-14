@@ -223,6 +223,8 @@ macro_rules! setup_tracked_fn {
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
 
+                        type Eviction = $zalsa::interned::Lru;
+
                         fn serialize<S: $zalsa::serde::Serializer>(
                             fields: &Self::Fields<'_>,
                             serializer: S,

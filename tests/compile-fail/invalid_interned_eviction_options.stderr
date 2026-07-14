@@ -1,0 +1,83 @@
+error: unexpected end of input, expected `policy` or `revisions`
+ --> tests/compile-fail/invalid_interned_eviction_options.rs:1:28
+  |
+1 | #[salsa::interned(eviction())]
+  |                            ^
+
+error: unknown interned eviction policy; expected `lru` or `no_eviction`
+ --> tests/compile-fail/invalid_interned_eviction_options.rs:6:37
+  |
+6 | #[salsa::interned(eviction(policy = random))]
+  |                                     ^^^^^^
+
+error: option `policy` provided twice
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:11:42
+   |
+11 | #[salsa::interned(eviction(policy = lru, policy = no_eviction))]
+   |                                          ^^^^^^
+
+error: option `revisions` provided twice
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:16:43
+   |
+16 | #[salsa::interned(eviction(revisions = 1, revisions = 2))]
+   |                                           ^^^^^^^^^
+
+error: unrecognized interned eviction option `capacity`
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:21:28
+   |
+21 | #[salsa::interned(eviction(capacity = 12))]
+   |                            ^^^^^^^^
+
+error: unrecognized interned eviction option `unknown`
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:26:28
+   |
+26 | #[salsa::interned(eviction(unknown = 12))]
+   |                            ^^^^^^^
+
+error: option `eviction` provided twice
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:31:43
+   |
+31 | #[salsa::interned(eviction(policy = lru), eviction(policy = no_eviction))]
+   |                                           ^^^^^^^^
+
+error: `revisions` cannot be specified both inside and outside `eviction`
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:36:55
+   |
+36 | #[salsa::interned(revisions = 1, eviction(revisions = 2))]
+   |                                                       ^
+
+error: the `no_eviction` policy cannot be combined with `revisions`
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:41:62
+   |
+41 | #[salsa::interned(eviction(policy = no_eviction, revisions = 2))]
+   |                                                              ^
+
+error: the `no_eviction` policy cannot be combined with `revisions`
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:46:31
+   |
+46 | #[salsa::interned(revisions = 2, eviction(policy = no_eviction))]
+   |                               ^
+
+error: `eviction` option not allowed here
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:51:16
+   |
+51 | #[salsa::input(eviction(policy = no_eviction))]
+   |                ^^^^^^^^
+
+error: `eviction` option not allowed here
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:56:18
+   |
+56 | #[salsa::tracked(eviction(policy = no_eviction))]
+   |                  ^^^^^^^^
+
+error: `eviction` option not allowed here
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:59:18
+   |
+59 | #[salsa::tracked(eviction(policy = no_eviction))]
+   |                  ^^^^^^^^
+
+error: `eviction` option not allowed here
+  --> tests/compile-fail/invalid_interned_eviction_options.rs:64:22
+   |
+64 | #[salsa::accumulator(eviction(policy = no_eviction))]
+   |                      ^^^^^^^^

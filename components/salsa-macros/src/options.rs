@@ -89,6 +89,9 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<usize>`.
     pub lru: Option<usize>,
 
+    /// Configures eviction for an interned struct.
+    pub eviction: Option<InternedEvictionOptions>,
+
     /// The `constructor = <ident>` option lets the user specify the name of
     /// the constructor of a salsa struct.
     ///
@@ -127,6 +130,84 @@ impl<A: AllowedOptions> Options<A> {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct InternedEvictionOptions {
+    pub policy: InternedEvictionPolicy,
+    pub revisions: Option<syn::Expr>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum InternedEvictionPolicy {
+    Lru,
+    NoEviction,
+}
+
+impl syn::parse::Parse for InternedEvictionOptions {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        if input.is_empty() {
+            return Err(input.error("expected `policy` or `revisions`"));
+        }
+
+        let mut policy = None;
+        let mut revisions = None;
+
+        while !input.is_empty() {
+            let option = syn::Ident::parse_any(input)?;
+            let _eq = Equals::parse(input)?;
+
+            if option == "policy" {
+                let ident = syn::Ident::parse_any(input)?;
+                let value = if ident == "lru" {
+                    InternedEvictionPolicy::Lru
+                } else if ident == "no_eviction" {
+                    InternedEvictionPolicy::NoEviction
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "unknown interned eviction policy; expected `lru` or `no_eviction`",
+                    ));
+                };
+
+                if policy.replace(value).is_some() {
+                    return Err(syn::Error::new(
+                        option.span(),
+                        "option `policy` provided twice",
+                    ));
+                }
+            } else if option == "revisions" {
+                let value = syn::Expr::parse(input)?;
+                if revisions.replace(value).is_some() {
+                    return Err(syn::Error::new(
+                        option.span(),
+                        "option `revisions` provided twice",
+                    ));
+                }
+            } else {
+                return Err(syn::Error::new(
+                    option.span(),
+                    format!("unrecognized interned eviction option `{option}`"),
+                ));
+            }
+
+            if input.is_empty() {
+                break;
+            }
+
+            let _comma = Comma::parse(input)?;
+        }
+
+        let policy = policy.unwrap_or(InternedEvictionPolicy::Lru);
+        if let (InternedEvictionPolicy::NoEviction, Some(revisions)) = (policy, &revisions) {
+            return Err(syn::Error::new_spanned(
+                revisions,
+                "the `no_eviction` policy cannot be combined with `revisions`",
+            ));
+        }
+
+        Ok(Self { policy, revisions })
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct PersistOptions {
     /// Path to a custom serialize function.
@@ -153,6 +234,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             constructor_name: Default::default(),
             phantom: Default::default(),
             lru: Default::default(),
+            eviction: Default::default(),
             singleton: Default::default(),
             id: Default::default(),
             revisions: Default::default(),
@@ -178,6 +260,7 @@ pub(crate) trait AllowedOptions {
     const CYCLE_INITIAL: bool;
     const CYCLE_RESULT: bool;
     const LRU: bool;
+    const EVICTION: bool;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
     const REVISIONS: bool;
@@ -460,6 +543,23 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`lru` option not allowed here",
                     ));
                 }
+            } else if ident == "eviction" {
+                if A::EVICTION {
+                    let content;
+                    parenthesized!(content in input);
+                    let value = content.parse()?;
+                    if options.eviction.replace(value).is_some() {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "option `eviction` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`eviction` option not allowed here",
+                    ));
+                }
             } else if ident == "constructor" {
                 if A::CONSTRUCTOR_NAME {
                     let _eq = Equals::parse(input)?;
@@ -568,6 +668,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             cycle_result,
             data,
             lru,
+            eviction,
             constructor_name,
             id,
             revisions,
@@ -614,6 +715,15 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         }
         if let Some(lru) = lru {
             tokens.extend(quote::quote! { lru = #lru, });
+        }
+        if let Some(eviction) = eviction {
+            let policy = match eviction.policy {
+                InternedEvictionPolicy::Lru => quote::quote!(lru),
+                InternedEvictionPolicy::NoEviction => quote::quote!(no_eviction),
+            };
+            let revisions = eviction.revisions.iter();
+            tokens
+                .extend(quote::quote! { eviction(policy = #policy #(, revisions = #revisions)*), });
         }
         if let Some(constructor_name) = constructor_name {
             tokens.extend(quote::quote! { constructor = #constructor_name, });

@@ -31,6 +31,9 @@ macro_rules! setup_interned_struct {
         // The minimum number of revisions to keep the value interned.
         revisions: $($revisions:expr)?,
 
+        // The eviction policy type for this interned struct.
+        eviction: $Eviction:ty,
+
         // the lifetime used in the desugared interned struct.
         // if the `db_lt_arg`, is present, this is `db_lt_arg`, but otherwise,
         // it is `'static`.
@@ -173,6 +176,7 @@ macro_rules! setup_interned_struct {
 
                 type Fields<'a> = $StructDataIdent<'a>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
+                type Eviction = $Eviction;
 
                 $(
                     fn heap_size(value: &Self::Fields<'_>) -> Option<usize> {

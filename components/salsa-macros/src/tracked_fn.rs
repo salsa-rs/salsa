@@ -52,6 +52,7 @@ impl AllowedOptions for TrackedFn {
     const CYCLE_RESULT: bool = true;
 
     const LRU: bool = true;
+    const EVICTION: bool = false;
 
     const CONSTRUCTOR_NAME: bool = false;
 

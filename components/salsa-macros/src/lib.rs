@@ -151,9 +151,12 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `debug` implements [`Debug`] using the field values when a database is attached to the current
 ///   thread. The generated `default_debug_fmt` method can also be called from a manual [`Debug`]
 ///   implementation.
-/// - `revisions = EXPR` sets the minimum number of active revisions an unused value is retained
-///   before its slot may be reused. The default is `3`. The value must be nonzero; `usize::MAX`
-///   disables reuse.
+/// - `eviction(policy = POLICY, revisions = EXPR)` configures interned-value eviction. `POLICY`
+///   is `lru` (the default) or `no_eviction`. `revisions` sets the minimum number of active
+///   revisions an unused LRU value is retained before its slot may be reused and defaults to `3`.
+///   The value must be nonzero; `usize::MAX` disables reuse while retaining LRU storage.
+///   `no_eviction` removes LRU storage and cannot be combined with `revisions`.
+/// - `revisions = EXPR` is the legacy spelling of `eviction(revisions = EXPR)`.
 /// - `heap_size = PATH` records heap use for Salsa's unstable memory-usage reporting. `PATH` must
 ///   accept a reference to the tuple of all fields and return its heap allocation size in bytes.
 /// - `persist` enables persistent caching when Salsa's `persistence` feature is enabled. Fields

@@ -124,7 +124,7 @@ pub enum EventKind {
         revision: Revision,
     },
 
-    /// Indicates that a previously interned value was read in a new revision.
+    /// Indicates that an LRU-enabled, previously interned value was read in a new revision.
     DidValidateInternedValue {
         // The key of the interned value.
         key: DatabaseKeyIndex,

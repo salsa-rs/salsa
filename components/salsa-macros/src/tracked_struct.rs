@@ -54,6 +54,7 @@ impl AllowedOptions for TrackedStruct {
     const CYCLE_RESULT: bool = false;
 
     const LRU: bool = false;
+    const EVICTION: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
 

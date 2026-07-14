@@ -114,10 +114,12 @@
 //! the new revision.
 //!
 //! Salsa may reclaim a low-durability interned value after it has not been used for the number of
-//! active revisions configured by the `revisions` option, which defaults to `3`. Reclaiming reuses
-//! its slot with a new ID generation so dependencies on the old value are invalidated. Values with
-//! higher durability are not reclaimed; `revisions = usize::MAX` disables reclamation for the
-//! interned type.
+//! active revisions configured by `eviction(revisions = ...)`, which defaults to `3`. Reclaiming
+//! reuses its slot with a new ID generation so dependencies on the old value are invalidated.
+//! Values with higher durability are not reclaimed; `eviction(revisions = usize::MAX)` disables
+//! reclamation while retaining LRU storage. `eviction(policy = no_eviction)` instead opts out of
+//! LRU storage and bookkeeping at compile time. The top-level `revisions = ...` option remains a
+//! compatibility spelling.
 //!
 //! See [interned structs in the Salsa book] for examples of canonicalizing names and other values.
 //!
@@ -408,7 +410,9 @@ pub mod plumbing {
     }
 
     pub mod interned {
-        pub use crate::interned::{Configuration, IngredientImpl, JarImpl, Value};
+        pub use crate::interned::{
+            Configuration, EvictionPolicy, IngredientImpl, JarImpl, Lru, NoopEviction, Value,
+        };
     }
 
     pub mod function {
