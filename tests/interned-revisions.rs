@@ -287,7 +287,9 @@ fn test_non_reusable_value_still_updates_query_stamp() {
     assert!(outer(&db, input));
 }
 
-#[salsa::interned(revisions = usize::MAX)]
+const IMMORTAL_REVISIONS: usize = usize::MAX;
+
+#[salsa::interned(revisions = IMMORTAL_REVISIONS)]
 #[derive(Debug)]
 struct Immortal<'db> {
     field1: BadHash,
@@ -349,6 +351,32 @@ fn test_immortal() {
         assert_eq!(result.field1(&db).0, i);
         assert_eq!(salsa::plumbing::AsId::as_id(&result).generation(), 0);
     }
+}
+
+#[test]
+fn test_reintern_immortal() {
+    #[salsa::tracked(returns(copy))]
+    fn function(db: &dyn Database, input: Input) -> Immortal<'_> {
+        let _ = input.field1(db);
+        Immortal::new(db, BadHash(0))
+    }
+
+    let mut db = common::EventLoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    let first = salsa::plumbing::AsId::as_id(&function(&db, input));
+    db.clear_logs();
+
+    input.set_field1(&mut db).to(1);
+    let second = salsa::plumbing::AsId::as_id(&function(&db, input));
+
+    assert_eq!(first, second);
+    db.assert_logs(expect![[r#"
+        [
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+        ]"#]]);
 }
 
 #[test]

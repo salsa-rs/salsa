@@ -90,6 +90,7 @@ const _: () = {
         const DEBUG_NAME: &'static str = "InternedString";
         type Fields<'a> = StructData<'a>;
         type Struct<'a> = InternedString<'a>;
+        type Eviction = zalsa_struct_::Lru;
 
         const PERSIST: bool = false;
 
