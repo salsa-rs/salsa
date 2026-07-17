@@ -408,7 +408,10 @@ pub mod plumbing {
     }
 
     pub mod interned {
-        pub use crate::interned::{Configuration, IngredientImpl, JarImpl, Value};
+        pub use crate::interned::{
+            Configuration, EvictionPolicy, EvictionSelector, IngredientImpl, JarImpl, Lru,
+            NoopEviction, SelectEviction, Value,
+        };
     }
 
     pub mod function {
