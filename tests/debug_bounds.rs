@@ -31,13 +31,13 @@ struct NotDebugInterned {
     field: NotDebug,
 }
 
-#[salsa::interned(no_lifetime, debug)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX, debug)]
 struct DebugInternedNoLifetime {
     #[returns(copy)]
     field: Debug,
 }
 
-#[salsa::interned(no_lifetime)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX)]
 struct NotDebugInternedNoLifetime {
     #[returns(copy)]
     field: NotDebug,

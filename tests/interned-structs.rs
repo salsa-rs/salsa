@@ -47,7 +47,7 @@ struct InternedPathBuf<'db> {
     data1: PathBuf,
 }
 
-#[salsa::interned(no_lifetime, debug)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX, debug)]
 struct InternedStringNoLifetime {
     data: String,
 }
@@ -80,7 +80,12 @@ struct InternedStringWithCustomId<'db> {
     data: String,
 }
 
-#[salsa::interned(id = SalsaIdWrapper, no_lifetime, debug)]
+#[salsa::interned(
+    id = SalsaIdWrapper,
+    unsafe(no_lifetime),
+    revisions = usize::MAX,
+    debug
+)]
 struct InternedStringWithCustomIdAndNoLifetime<'db> {
     data: String,
 }

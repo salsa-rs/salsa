@@ -2,7 +2,7 @@
 
 use salsa::{Durability, Setter};
 
-#[salsa::interned(no_lifetime)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX)]
 struct Interned {
     #[returns(copy)]
     field: u32,

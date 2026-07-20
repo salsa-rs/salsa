@@ -3,7 +3,7 @@
 //! Test that a `tracked` fn on a `salsa::interned`
 //! compiles and executes successfully.
 
-#[salsa::interned(no_lifetime, debug)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX, debug)]
 struct Name {
     name: String,
 }
@@ -13,7 +13,7 @@ struct NameAndAge<'db> {
     name_and_age: String,
 }
 
-#[salsa::interned(no_lifetime, debug)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX, debug)]
 struct Age {
     #[returns(copy)]
     age: u32,
