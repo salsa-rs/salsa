@@ -41,6 +41,24 @@ error: `#[tracked]` cannot be used with `#[salsa::interned]`
 34 | |     field: u32,
    | |______________^
 
+error: `no_lifetime` must be written as `unsafe(no_lifetime)`
+  --> tests/compile-fail/interned_struct_incompatibles.rs:42:19
+   |
+42 | #[salsa::interned(no_lifetime, revisions = usize::MAX)]
+   |                   ^^^^^^^^^^^
+
+error: `unsafe(no_lifetime)` requires `revisions = usize::MAX`
+  --> tests/compile-fail/interned_struct_incompatibles.rs:47:26
+   |
+47 | #[salsa::interned(unsafe(no_lifetime))]
+   |                          ^^^^^^^^^^^
+
+error: `unsafe(no_lifetime)` requires `revisions = usize::MAX`
+  --> tests/compile-fail/interned_struct_incompatibles.rs:52:52
+   |
+52 | #[salsa::interned(unsafe(no_lifetime), revisions = 3)]
+   |                                                    ^
+
 error: cannot find attribute `tracked` in this scope
   --> tests/compile-fail/interned_struct_incompatibles.rs:33:7
    |

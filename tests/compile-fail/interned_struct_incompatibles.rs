@@ -39,4 +39,19 @@ struct InternedWithZeroRevisions {
     field: u32,
 }
 
+#[salsa::interned(no_lifetime, revisions = usize::MAX)]
+struct InternedWithUnwrappedNoLifetime {
+    field: u32,
+}
+
+#[salsa::interned(unsafe(no_lifetime))]
+struct InternedWithReclaimableDefault {
+    field: u32,
+}
+
+#[salsa::interned(unsafe(no_lifetime), revisions = 3)]
+struct InternedWithReclaimableExplicit {
+    field: u32,
+}
+
 fn main() {}

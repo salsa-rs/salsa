@@ -171,11 +171,10 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `id = PATH` uses `PATH` as a legacy ID adapter instead of [`salsa::Id`]. The custom type must
 ///   implement [`Copy`] + [`Clone`] + [`PartialEq`] + [`Eq`] + [`Hash`] as well as
 ///   `salsa::plumbing::AsId` and `salsa::plumbing::FromId`.
-/// - **Unsafe: `no_lifetime` is strongly discouraged.** It adapts code that cannot carry the
-///   database lifetime by generating a struct without one. This bypasses the compile-time
-///   guarantee that an interned handle cannot outlive its database revision. The caller becomes
-///   responsible for ensuring every handle remains valid as revisions advance and interned slots
-///   may be reclaimed or reused.
+/// - **Unsafe: `unsafe(no_lifetime)` is strongly discouraged.** It adapts code that cannot carry
+///   the database lifetime by generating a struct without one. This bypasses the compile-time
+///   guarantee that an interned handle cannot outlive its database. It must be combined with
+///   `revisions = usize::MAX` so that interned slots are never reclaimed or reused.
 /// - **Unsafe: `unsafe(non_salsa_values)` is strongly discouraged.** It adapts field types that do
 ///   not implement [`salsa::SalsaValue`] by suppressing the generated checks. The caller becomes
 ///   responsible for ensuring retained values remain valid across revisions. Prefer adapting only

@@ -3,12 +3,12 @@
 
 use salsa::plumbing::ZalsaDatabase;
 
-#[salsa::interned(no_lifetime, debug)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX, debug)]
 struct Name {
     text: String,
 }
 
-#[salsa::interned(no_lifetime, debug)]
+#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX, debug)]
 struct Age {
     #[returns(copy)]
     value: u32,

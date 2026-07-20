@@ -251,38 +251,32 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     ));
                 }
             } else if ident == "no_lifetime" {
-                if A::NO_LIFETIME {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    "`no_lifetime` must be written as `unsafe(no_lifetime)`",
+                ));
+            } else if ident == "unsafe" {
+                let content;
+                parenthesized!(content in input);
+                let ident = syn::Ident::parse_any(&content)?;
+                if ident == "no_lifetime" && A::NO_LIFETIME {
                     if let Some(old) = options.no_lifetime.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `no_lifetime` provided twice",
                         ));
                     }
-                } else {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        "`no_lifetime` option not allowed here",
-                    ));
-                }
-            } else if ident == "unsafe" {
-                if A::NON_SALSA_VALUES {
-                    let content;
-                    parenthesized!(content in input);
-                    let ident = syn::Ident::parse_any(&content)?;
-                    if ident == "non_salsa_values" {
-                        if let Some(old) = options.non_salsa_values.replace(ident) {
-                            return Err(syn::Error::new(
-                                old.span(),
-                                "option `non_salsa_values` provided twice",
-                            ));
-                        }
-                    } else {
-                        return Err(syn::Error::new(ident.span(), "expected `non_salsa_values`"));
+                } else if ident == "non_salsa_values" && A::NON_SALSA_VALUES {
+                    if let Some(old) = options.non_salsa_values.replace(ident) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `non_salsa_values` provided twice",
+                        ));
                     }
                 } else {
                     return Err(syn::Error::new(
                         ident.span(),
-                        "`unsafe` options not allowed here",
+                        "unsafe option not allowed here",
                     ));
                 }
             } else if ident == "persist" {
@@ -549,9 +543,43 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             let _comma = Comma::parse(input)?;
         }
 
+        if let Some(no_lifetime) = &options.no_lifetime {
+            let Some(revisions) = &options.revisions else {
+                return Err(syn::Error::new(
+                    no_lifetime.span(),
+                    "`unsafe(no_lifetime)` requires `revisions = usize::MAX`",
+                ));
+            };
+            let syn::Expr::Path(revisions_path) = revisions else {
+                return Err(syn::Error::new(
+                    revisions.span(),
+                    "`unsafe(no_lifetime)` requires `revisions = usize::MAX`",
+                ));
+            };
+            let path = &revisions_path.path;
+            let is_usize_max =
+                revisions_path.qself.is_none()
+                    && path.leading_colon.is_none()
+                    && path.segments.len() == 2
+                    && path.segments.first().is_some_and(|segment| {
+                        segment.ident == "usize" && segment.arguments.is_none()
+                    })
+                    && path.segments.last().is_some_and(|segment| {
+                        segment.ident == "MAX" && segment.arguments.is_none()
+                    });
+
+            if !is_usize_max {
+                return Err(syn::Error::new(
+                    revisions.span(),
+                    "`unsafe(no_lifetime)` requires `revisions = usize::MAX`",
+                ));
+            }
+        }
+
         Ok(options)
     }
 }
+
 impl<A: AllowedOptions> quote::ToTokens for Options<A> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let Self {
@@ -586,7 +614,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             tokens.extend(quote::quote! { debug, });
         }
         if no_lifetime.is_some() {
-            tokens.extend(quote::quote! { no_lifetime, });
+            tokens.extend(quote::quote! { unsafe(no_lifetime), });
         }
         if singleton.is_some() {
             tokens.extend(quote::quote! { singleton, });
