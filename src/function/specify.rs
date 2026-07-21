@@ -5,6 +5,7 @@ use crate::function::memo::Memo;
 use crate::function::sync::{ClaimResult, Reentrancy};
 use crate::function::{Configuration, IngredientImpl};
 use crate::sync::atomic::AtomicBool;
+use crate::table::memo::MemoSlot;
 use crate::tracked_struct::TrackedStructInDb;
 use crate::zalsa::{Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{OriginAndExtra, QueryOriginRef, QueryRevisions};
@@ -151,41 +152,36 @@ where
         // Record that the current query *specified* a value for this cell.
         zalsa_local.add_output(database_key_index);
     }
+}
 
-    /// Invoked when the query `executor` has been validated as having green inputs
-    /// and `key` is a value that was specified by `executor`.
-    /// Marks `key` as valid in the current revision since if `executor` had re-executed,
-    /// it would have specified `key` again.
-    pub(super) fn validate_specified_value(
-        &self,
-        zalsa: &Zalsa,
-        executor: DatabaseKeyIndex,
-        key: Id,
-    ) {
-        let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
+/// Marks the value at `database_key_index` as valid after its assigning `executor` is found green.
+/// Re-executing a green executor would specify the same value again.
+pub(super) fn validate_specified_value(
+    zalsa: &Zalsa,
+    executor: DatabaseKeyIndex,
+    database_key_index: DatabaseKeyIndex,
+    memo_slot: MemoSlot<'_>,
+) {
+    let Some(memo) = memo_slot.get_erased() else {
+        return;
+    };
+    let header = memo.header();
 
-        let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
-            Some(m) => m,
-            None => return,
-        };
-
-        // If we are marking this as validated, it must be a value that was
-        // assigned by `executor`.
-        match memo.header.origin() {
-            QueryOriginRef::Assigned(by_query) => assert_eq!(by_query, executor),
-            _ => panic!(
-                "expected a query assigned by `{:?}`, not `{:?}`",
-                executor,
-                memo.header.origin(),
-            ),
-        }
-
-        let database_key_index = self.database_key_index(key);
-        memo.header.mark_as_verified(zalsa, database_key_index);
-        #[cfg(feature = "accumulator")]
-        memo.header
-            .revisions
-            .accumulated_inputs
-            .store(InputAccumulatedValues::Empty);
+    // If we are marking this as validated, it must be a value that was
+    // assigned by `executor`.
+    match header.origin() {
+        QueryOriginRef::Assigned(by_query) => assert_eq!(by_query, executor),
+        _ => panic!(
+            "expected a query assigned by `{:?}`, not `{:?}`",
+            executor,
+            header.origin(),
+        ),
     }
+
+    header.mark_as_verified(zalsa, database_key_index);
+    #[cfg(feature = "accumulator")]
+    header
+        .revisions
+        .accumulated_inputs
+        .store(InputAccumulatedValues::Empty);
 }

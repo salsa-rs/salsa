@@ -11,7 +11,7 @@ use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
-use crate::table::memo::{DummyMemo, MemoTableWithTypesMut, ToDynMemo};
+use crate::table::memo::{DummyMemo, MemoSlot, MemoTableWithTypesMut, ToDynMemo};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
@@ -44,6 +44,22 @@ impl<C: Configuration> IngredientImpl<C> {
             .get(memo_ingredient_index)?;
         // SAFETY: The memo table owns this allocation for at least `'db`.
         Some(unsafe { memo.as_ref() })
+    }
+
+    pub(super) fn memo_slot<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> MemoSlot<'db> {
+        // SAFETY: The table stores 'static memos (to support `Any`), but the memos remain valid
+        // for `'db` because dropping them is delayed until the end of the revision.
+        unsafe {
+            MemoSlot::new(
+                zalsa.memo_table_for::<C::SalsaStruct<'_>>(id),
+                memo_ingredient_index,
+            )
+        }
     }
 
     /// Evicts the existing memo for the given key, replacing it
