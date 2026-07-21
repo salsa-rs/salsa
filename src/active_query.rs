@@ -11,7 +11,9 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::{OriginAndExtra, QueryEdge, QueryRevisions, QueryRevisionsExtra};
+use crate::zalsa_local::{
+    OriginAndExtra, QueryEdge, QueryEdges, QueryRevisions, QueryRevisionsExtra,
+};
 use crate::{
     Id,
     cycle::{CycleHeads, IterationStamp},
@@ -72,7 +74,7 @@ impl ActiveQuery {
         &mut self,
         durability: Durability,
         changed_at: Revision,
-        edges: crate::zalsa_local::QueryEdges<'_>,
+        edges: QueryEdges<'_>,
         untracked_read: bool,
         active_tracked_ids: &[(Identity, Id)],
     ) {
@@ -91,6 +93,32 @@ impl ActiveQuery {
             .mark_all_active(active_tracked_ids.iter().copied());
         self.disambiguator_map
             .seed(active_tracked_ids.iter().map(|(id, _)| id));
+    }
+
+    pub(super) fn add_previous_memo_read(
+        &mut self,
+        durability: Durability,
+        current_revision: Revision,
+        edges: QueryEdges<'_>,
+        untracked_read: bool,
+        tracked_struct_ids: &[(Identity, Id)],
+        #[cfg(feature = "accumulator")] accumulated_inputs: InputAccumulatedValues,
+    ) {
+        self.input_outputs.extend(edges);
+        self.durability = self.durability.min(durability);
+        self.changed_at = self.changed_at.max(current_revision);
+        self.untracked_read |= untracked_read;
+        #[cfg(feature = "accumulator")]
+        {
+            self.accumulated_inputs |= accumulated_inputs;
+        }
+
+        // Mark all tracked structs from the previous revision as active and reserve
+        // their identities so that newly created structs receive later disambiguators.
+        self.tracked_struct_ids
+            .mark_all_active(tracked_struct_ids.iter().copied());
+        self.disambiguator_map
+            .seed(tracked_struct_ids.iter().map(|(id, _)| id));
     }
 
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
