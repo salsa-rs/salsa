@@ -84,6 +84,8 @@ impl SalsaStructAllowedOptions for InputStruct {
     const ALLOW_DEFAULT: bool = true;
 
     const ALLOW_MANUAL_RETENTION_PROOF: bool = false;
+
+    const ALLOW_LATE_INIT: bool = false;
 }
 
 struct Macro {

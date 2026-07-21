@@ -84,6 +84,8 @@ impl SalsaStructAllowedOptions for InternedStruct {
     const ALLOW_DEFAULT: bool = false;
 
     const ALLOW_MANUAL_RETENTION_PROOF: bool = true;
+
+    const ALLOW_LATE_INIT: bool = true;
 }
 
 struct Macro {
@@ -111,7 +113,6 @@ impl Macro {
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
         let field_manual_retention_proofs = salsa_struct.field_manual_retention_proofs();
-        let field_indexed_tys = salsa_struct.field_indexed_tys();
         let field_unused_attrs = salsa_struct.field_attrs();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let has_lifetime = salsa_struct.generate_lifetime();
@@ -145,6 +146,39 @@ impl Macro {
         let Configuration = self.hygiene.ident("Configuration");
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
+        let assembly_id = self.hygiene.ident("assembly_id");
+        let assembly_data = self.hygiene.ident("assembly_data");
+
+        let has_late_init = salsa_struct
+            .fields_iter()
+            .any(|(_, field)| field.has_late_init_attr);
+        let mut key_field_ids = Vec::new();
+        let mut key_field_tys = Vec::new();
+        let mut key_field_indices = Vec::new();
+        let mut key_indices = Vec::new();
+        let mut key_indexed_tys = Vec::new();
+        let mut field_param_tys = Vec::new();
+        let mut field_assembly = Vec::new();
+
+        for (field_index, field) in salsa_struct.fields_iter() {
+            let field_id = field.field.ident.as_ref().unwrap();
+            let field_ty = &field.field.ty;
+            if field.has_late_init_attr {
+                field_param_tys.push(quote!(impl FnOnce(Self) -> #field_ty));
+                field_assembly.push(quote!(#field_id(#zalsa::FromId::from_id(#assembly_id))));
+            } else {
+                let key_index = key_field_ids.len();
+                let indexed_ty = format_ident!("T{key_index}");
+                key_field_ids.push(field_id);
+                key_field_tys.push(field_ty);
+                key_field_indices.push(proc_macro2::Literal::usize_unsuffixed(field_index));
+                key_indices.push(proc_macro2::Literal::usize_unsuffixed(key_index));
+                key_indexed_tys.push(indexed_ty.clone());
+                field_param_tys.push(quote!(#indexed_ty));
+                let key_index = proc_macro2::Literal::usize_unsuffixed(key_index);
+                field_assembly.push(quote!(#zalsa::Lookup::into_owned(#assembly_data.#key_index)));
+            }
+        }
 
         let assert_fields_are_salsa_values = if self.args.non_salsa_values.is_some() {
             quote! {}
@@ -183,7 +217,16 @@ impl Macro {
                     field_getters: [#(#field_vis #field_getter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
-                    field_indexed_tys: [#(#field_indexed_tys),*],
+                    key_field_ids: [#(#key_field_ids),*],
+                    key_field_tys: [#(#key_field_tys),*],
+                    key_field_indices: [#(#key_field_indices),*],
+                    key_indices: [#(#key_indices),*],
+                    key_indexed_tys: [#(#key_indexed_tys),*],
+                    field_param_tys: [#(#field_param_tys),*],
+                    field_assembly: [#(#field_assembly),*],
+                    has_late_init: #has_late_init,
+                    assembly_id: #assembly_id,
+                    assembly_data: #assembly_data,
                     field_attrs: [#([#(#field_unused_attrs),*]),*],
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,

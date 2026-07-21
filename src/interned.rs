@@ -59,6 +59,11 @@ pub unsafe trait Configuration: Sized + 'static {
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;
 
+    /// Hashes the fields that determine the interned value's identity.
+    fn hash_fields<H: Hasher>(fields: &Self::Fields<'_>, state: &mut H) {
+        Hash::hash(fields, state);
+    }
+
     /// Returns the size of any heap allocations in the output value, in bytes.
     fn heap_size(_value: &Self::Fields<'_>) -> Option<usize> {
         None
@@ -953,8 +958,10 @@ where
         // to lookup all values, it will only happen rarely.
         let value = zalsa.table().get::<Value<C>>(id);
 
+        let mut hasher = self.hasher.build_hasher();
         // SAFETY: We hold the lock for the shard containing the value.
-        unsafe { self.hasher.hash_one(&*value.fields.get()) }
+        C::hash_fields(unsafe { &*value.fields.get() }, &mut hasher);
+        hasher.finish()
     }
 
     // Compares the value by its fields to the given key.
