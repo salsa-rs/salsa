@@ -67,6 +67,36 @@ fn intern_panicking(db: &dyn Database, input: Input) -> PanickingInterned<'_> {
     PanickingInterned::new(db, PanickingLookup(input.field1(db)))
 }
 
+#[salsa::interned(revisions = 1)]
+struct LateInitializedInterned<'db> {
+    value: BadHash,
+    #[returns(copy)]
+    #[late_init]
+    self_reference: LateInitializedInterned<'db>,
+}
+
+#[salsa::tracked(returns(copy))]
+fn intern_late_initialized(db: &dyn Database, input: Input) -> LateInitializedInterned<'_> {
+    LateInitializedInterned::new(db, BadHash(input.field1(db)), |this| this)
+}
+
+#[test]
+fn late_initialized_self_reference_tracks_reused_slot_generation() {
+    use salsa::plumbing::AsId;
+
+    let mut db = common::LoggerDatabase::default();
+    let input = Input::new(&db, 0);
+
+    let first = intern_late_initialized(&db, input);
+    let first_id = first.as_id();
+    assert!(first.self_reference(&db) == first);
+
+    input.set_field1(&mut db).to(1);
+    let second = intern_late_initialized(&db, input);
+    assert_eq!(second.as_id(), first_id.next_generation().unwrap());
+    assert!(second.self_reference(&db) == second);
+}
+
 #[test]
 fn panic_during_reuse_does_not_orphan_slot() {
     use std::panic::{AssertUnwindSafe, catch_unwind};

@@ -577,7 +577,7 @@ where
         let new_fields = unsafe { self.to_internal_data(assemble(slot.new_id, key)) };
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let old_hash = self.hasher.hash_one(unsafe { &*value.fields.get() });
+        let old_hash = Self::fields_hash(self.hasher, unsafe { &*value.fields.get() });
 
         let index = self.database_key_index(slot.new_id);
 
@@ -948,6 +948,12 @@ where
         }
     }
 
+    fn fields_hash(hasher: FxBuildHasher, fields: &C::Fields<'_>) -> u64 {
+        let mut hasher = hasher.build_hasher();
+        C::hash_fields(fields, &mut hasher);
+        hasher.finish()
+    }
+
     // Hashes the value by its fields.
     //
     // # Safety
@@ -958,10 +964,8 @@ where
         // to lookup all values, it will only happen rarely.
         let value = zalsa.table().get::<Value<C>>(id);
 
-        let mut hasher = self.hasher.build_hasher();
         // SAFETY: We hold the lock for the shard containing the value.
-        C::hash_fields(unsafe { &*value.fields.get() }, &mut hasher);
-        hasher.finish()
+        Self::fields_hash(self.hasher, unsafe { &*value.fields.get() })
     }
 
     // Compares the value by its fields to the given key.
@@ -1756,7 +1760,6 @@ impl<T: Clone> Lookup<Vec<T>> for Cow<'_, [T]> {
 mod persistence {
     use std::cell::UnsafeCell;
     use std::fmt;
-    use std::hash::BuildHasher;
 
     use intrusive_collections::LinkedListLink;
     use serde::ser::{SerializeMap, SerializeStruct};
@@ -1905,7 +1908,7 @@ mod persistence {
                 let (page_idx, _) = crate::table::split_id(id);
 
                 // Determine the value shard.
-                let hash = ingredient.hasher.hash_one(&value.fields.0);
+                let hash = <IngredientImpl<C>>::fields_hash(ingredient.hasher, &value.fields.0);
                 let shard_index = ingredient.shard(hash);
 
                 // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.

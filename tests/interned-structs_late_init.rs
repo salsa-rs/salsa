@@ -48,7 +48,7 @@ fn late_initializer_is_not_invoked_for_an_existing_key() {
 #[test]
 fn multiple_interleaved_late_initialized_fields() {
     let db = salsa::DatabaseImpl::new();
-    let value = Mixed::new(&db, |this| this.as_id(), "first", |this| Some(this), 1);
+    let value = Mixed::new(&db, |this| this.as_id(), "first", Some, 1);
 
     assert!(*value.allocated_id(&db) == value.as_id());
     assert!(value.first_key(&db) == "first");
@@ -62,7 +62,7 @@ fn multiple_interleaved_late_initialized_fields() {
         |_| panic!("second late initializer invoked for an existing key"),
         1,
     );
-    let other_value = Mixed::new(&db, |this| this.as_id(), "first", |this| Some(this), 2);
+    let other_value = Mixed::new(&db, |this| this.as_id(), "first", Some, 2);
 
     assert!(value == same_value);
     assert!(value != other_value);
