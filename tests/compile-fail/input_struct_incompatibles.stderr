@@ -31,7 +31,7 @@ error: unrecognized option `recover_fn`
 error: `lru` option not allowed here
   --> tests/compile-fail/input_struct_incompatibles.rs:16:16
    |
-16 | #[salsa::input(lru =12)]
+16 | #[salsa::input(lru = 12)]
    |                ^^^
 
 error: `revisions` option not allowed here
@@ -46,6 +46,19 @@ error: `#[tracked]` cannot be used with `#[salsa::input]`
 24 | /     #[tracked]
 25 | |     field: u32,
    | |______________^
+
+error: `#[late_init]` cannot be used with `#[salsa::input]`
+  --> tests/compile-fail/input_struct_incompatibles.rs:30:5
+   |
+30 | /     #[late_init]
+31 | |     field: u32,
+   | |______________^
+
+error: cannot find attribute `late_init` in this scope
+  --> tests/compile-fail/input_struct_incompatibles.rs:30:7
+   |
+30 |     #[late_init]
+   |       ^^^^^^^^^
 
 error: cannot find attribute `tracked` in this scope
   --> tests/compile-fail/input_struct_incompatibles.rs:24:7

@@ -39,3 +39,16 @@ error: `revisions` option not allowed here
    |
 31 | #[salsa::tracked(revisions = 12)]
    |                  ^^^^^^^^^
+
+error: `#[late_init]` cannot be used with `#[salsa::tracked]`
+  --> tests/compile-fail/tracked_struct_incompatibles.rs:38:5
+   |
+38 | /     #[late_init]
+39 | |     field: u32,
+   | |______________^
+
+error: cannot find attribute `late_init` in this scope
+  --> tests/compile-fail/tracked_struct_incompatibles.rs:38:7
+   |
+38 |     #[late_init]
+   |       ^^^^^^^^^
