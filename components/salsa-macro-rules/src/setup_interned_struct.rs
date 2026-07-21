@@ -217,6 +217,16 @@ macro_rules! setup_interned_struct {
                         CACHE.get_or_create::<$zalsa_struct::JarImpl<$Configuration>, 0>(zalsa)
                     }
                 }
+
+                #[inline]
+                fn ingredient_in_db<'db, $Db>(db: &'db $Db) -> $zalsa::IngredientInDb<'db, $Db, $zalsa_struct::IngredientImpl<Self>>
+                where
+                    $Db: ?Sized + $zalsa::Database,
+                {
+                    // SAFETY: `ingredient` looks up the interned ingredient in the `Zalsa`
+                    // supplied by `IngredientInDb`.
+                    unsafe { $zalsa::IngredientInDb::new_unchecked(db, Self::ingredient) }
+                }
             }
 
             impl< $($db_lt_arg)? > $zalsa::AsId for $Struct< $($db_lt_arg)? > {
@@ -323,8 +333,7 @@ macro_rules! setup_interned_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let zalsa = db.zalsa();
-                        let fields = $Configuration::ingredient(zalsa).fields(zalsa, self);
+                        let fields = $Configuration::ingredient_in_db(db).fields(self);
                         $zalsa::return_mode_expression!(
                             $field_option,
                             $field_ty,

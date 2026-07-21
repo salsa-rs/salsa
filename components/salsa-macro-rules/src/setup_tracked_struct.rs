@@ -237,6 +237,26 @@ macro_rules! setup_tracked_struct {
                     Self::ingredient_(db.zalsa())
                 }
 
+                #[inline]
+                fn ingredient_in_db<'db, $Db>(db: &'db $Db) -> $zalsa::IngredientInDb<'db, $Db, $zalsa_struct::IngredientImpl<Self>>
+                where
+                    $Db: ?Sized + $zalsa::Database,
+                {
+                    // SAFETY: `ingredient_` looks up the tracked-struct ingredient in the `Zalsa`
+                    // supplied by `IngredientInDb`.
+                    unsafe { $zalsa::IngredientInDb::new_unchecked(db, Self::ingredient_) }
+                }
+
+                #[inline]
+                fn ingredient_in_db_with_zalsa_local<'db, $Db>(db: &'db $Db) -> ($zalsa::IngredientInDb<'db, $Db, $zalsa_struct::IngredientImpl<Self>>, &'db $zalsa::ZalsaLocal)
+                where
+                    $Db: ?Sized + $zalsa::Database,
+                {
+                    // SAFETY: `ingredient_` looks up the tracked-struct ingredient in the `Zalsa`
+                    // supplied by `IngredientInDb`.
+                    unsafe { $zalsa::IngredientInDb::new_unchecked_with_zalsa_local(db, Self::ingredient_) }
+                }
+
                 fn ingredient_(zalsa: &$zalsa::Zalsa) -> &$zalsa_struct::IngredientImpl<Self> {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
@@ -360,8 +380,8 @@ macro_rules! setup_tracked_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let (zalsa, zalsa_local) = db.zalsas();
-                        let fields = $Configuration::ingredient_(zalsa).tracked_field(zalsa, zalsa_local, self, $relative_tracked_index);
+                        let (ingredient, zalsa_local) = $Configuration::ingredient_in_db_with_zalsa_local(db);
+                        let fields = ingredient.tracked_field(zalsa_local, self, $relative_tracked_index);
                         $crate::return_mode_expression!(
                             $tracked_option,
                             $tracked_ty,
@@ -377,8 +397,7 @@ macro_rules! setup_tracked_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let zalsa = db.zalsa();
-                        let fields = $Configuration::ingredient_(zalsa).untracked_field(zalsa, self);
+                        let fields = $Configuration::ingredient_in_db(db).untracked_field(self);
                         $crate::return_mode_expression!(
                             $untracked_option,
                             $untracked_ty,

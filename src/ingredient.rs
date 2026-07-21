@@ -7,10 +7,12 @@ use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
 use crate::runtime::Running;
 use crate::sync::Arc;
-use crate::table::Table;
 use crate::table::memo::MemoTableTypes;
-use crate::zalsa::{IngredientIndex, JarKind, Zalsa, transmute_data_mut_ptr, transmute_data_ptr};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::table::{Slot, Table};
+use crate::zalsa::{
+    IngredientIndex, JarKind, Zalsa, ZalsaDatabase, transmute_data_mut_ptr, transmute_data_ptr,
+};
+use crate::zalsa_local::{QueryEdge, QueryOriginRef, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
@@ -33,6 +35,112 @@ pub trait Jar: Any {
 pub struct Location {
     pub file: &'static str,
     pub line: u32,
+}
+
+/// An ingredient bound to the database that registered it.
+#[doc(hidden)]
+pub struct IngredientInDb<'db, Db: ?Sized, I> {
+    ingredient: &'db I,
+    db: &'db Db,
+    zalsa: &'db Zalsa,
+}
+
+impl<'db, Db, I> IngredientInDb<'db, Db, I>
+where
+    Db: ?Sized + ZalsaDatabase,
+    I: Ingredient,
+{
+    /// Creates an ingredient bound to a database.
+    ///
+    /// # Safety
+    ///
+    /// `get_ingredient` must return an ingredient registered in the `Zalsa` it receives.
+    #[inline]
+    pub unsafe fn new_unchecked(
+        db: &'db Db,
+        get_ingredient: impl FnOnce(&'db Zalsa) -> &'db I,
+    ) -> Self {
+        Self::new_unchecked_with_zalsa(db, db.zalsa(), get_ingredient)
+    }
+
+    /// Creates an ingredient bound to a database and returns its thread-local state.
+    ///
+    /// # Safety
+    ///
+    /// `get_ingredient` must return an ingredient registered in the `Zalsa` it receives.
+    #[inline]
+    pub unsafe fn new_unchecked_with_zalsa_local(
+        db: &'db Db,
+        get_ingredient: impl FnOnce(&'db Zalsa) -> &'db I,
+    ) -> (Self, &'db ZalsaLocal) {
+        let (zalsa, zalsa_local) = db.zalsas();
+        (
+            Self::new_unchecked_with_zalsa(db, zalsa, get_ingredient),
+            zalsa_local,
+        )
+    }
+
+    fn new_unchecked_with_zalsa(
+        db: &'db Db,
+        zalsa: &'db Zalsa,
+        get_ingredient: impl FnOnce(&'db Zalsa) -> &'db I,
+    ) -> Self {
+        let ingredient = get_ingredient(zalsa);
+
+        debug_assert!(std::ptr::eq(
+            ingredient,
+            zalsa
+                .lookup_ingredient(ingredient.ingredient_index())
+                .assert_type::<I>()
+        ));
+
+        Self {
+            ingredient,
+            db,
+            zalsa,
+        }
+    }
+}
+
+impl<'db, Db: ?Sized, I> IngredientInDb<'db, Db, I> {
+    #[inline(always)]
+    pub(crate) fn ingredient(&self) -> &'db I {
+        self.ingredient
+    }
+
+    #[inline(always)]
+    pub(crate) fn db(&self) -> &'db Db {
+        self.db
+    }
+
+    #[inline(always)]
+    pub fn zalsa(&self) -> &'db Zalsa {
+        self.zalsa
+    }
+}
+
+impl<'db, Db: ?Sized, I: TableIngredient> IngredientInDb<'db, Db, I> {
+    #[inline(always)]
+    pub(crate) fn slot(&self, id: Id) -> &'db I::Slot {
+        // SAFETY: `IngredientInDb` guarantees that `ingredient` is registered in `zalsa`.
+        // `TableIngredient` guarantees that pages owned by the ingredient store `I::Slot`.
+        unsafe {
+            self.zalsa
+                .table()
+                .get_for_ingredient(id, self.ingredient.ingredient_index())
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn slot_raw(&self, id: Id) -> *mut I::Slot {
+        // SAFETY: `IngredientInDb` guarantees that `ingredient` is registered in `zalsa`.
+        // `TableIngredient` guarantees that pages owned by the ingredient store `I::Slot`.
+        unsafe {
+            self.zalsa
+                .table()
+                .get_raw_for_ingredient(id, self.ingredient.ingredient_index())
+        }
+    }
 }
 
 pub trait Ingredient: Any + fmt::Debug + Send + Sync {
@@ -282,6 +390,16 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
             "called `deserialize` on ingredient where `should_serialize` returns `false`"
         )
     }
+}
+
+/// Associates a table-owning ingredient with the type stored in its pages.
+///
+/// # Safety
+///
+/// Every table page owned by an implementation's ingredient index must store `Self::Slot`.
+#[doc(hidden)]
+pub unsafe trait TableIngredient: Ingredient {
+    type Slot: Slot;
 }
 
 impl dyn Ingredient {

@@ -512,7 +512,11 @@ where
     ) {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster().downcast_unchecked(db) };
-        self.accumulated_map(db, key_index)
+        // SAFETY: The caller guarantees that `self` is registered in the `Zalsa` owned by `db`.
+        let (ingredient, zalsa_local) = unsafe {
+            crate::ingredient::IngredientInDb::new_unchecked_with_zalsa_local(db, |_| self)
+        };
+        ingredient.accumulated_map(zalsa_local, key_index)
     }
 
     fn is_persistable(&self) -> bool {

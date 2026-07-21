@@ -111,6 +111,22 @@ pub struct IngredientImpl<C: Configuration> {
     _marker: PhantomData<fn() -> C>,
 }
 
+impl<'db, Db: ?Sized, C: Configuration>
+    crate::ingredient::IngredientInDb<'db, Db, IngredientImpl<C>>
+{
+    /// Lookup the fields from an interned struct.
+    #[inline]
+    pub fn fields(&self, s: C::Struct<'db>) -> &'db C::Fields<'db> {
+        self.data(AsId::as_id(&s))
+    }
+
+    fn data(&self, id: Id) -> &'db C::Fields<'db> {
+        let ingredient = self.ingredient();
+        let value = self.slot(id);
+        ingredient.data_from_value(self.zalsa(), id, value)
+    }
+}
+
 struct IngredientShard {
     /// Maps from data to the existing interned ID for that data.
     ///
@@ -990,6 +1006,15 @@ where
     pub fn data<'db>(&'db self, zalsa: &'db Zalsa, id: Id) -> &'db C::Fields<'db> {
         let value = zalsa.table().get::<Value<C>>(id);
 
+        self.data_from_value(zalsa, id, value)
+    }
+
+    fn data_from_value<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        id: Id,
+        value: &'db Value<C>,
+    ) -> &'db C::Fields<'db> {
         debug_assert!(
             {
                 let _shard = self.shards[value.shard as usize].lock();
@@ -1299,6 +1324,11 @@ where
             .field("index", &self.ingredient_index)
             .finish()
     }
+}
+
+// SAFETY: `IngredientImpl<C>` only allocates pages containing `Value<C>`.
+unsafe impl<C: Configuration> crate::ingredient::TableIngredient for IngredientImpl<C> {
+    type Slot = Value<C>;
 }
 
 // SAFETY: `Value<C>` is our private type branded over the unique configuration `C`.

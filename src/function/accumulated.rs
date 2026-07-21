@@ -2,21 +2,22 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::accumulator::{self};
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
-use crate::zalsa::ZalsaDatabase;
-use crate::zalsa_local::QueryOriginRef;
+use crate::ingredient::IngredientInDb;
+use crate::zalsa_local::{QueryOriginRef, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
 
-impl<C> IngredientImpl<C>
+impl<'db, C> IngredientInDb<'db, C::DbView, IngredientImpl<C>>
 where
     C: Configuration,
 {
-    /// Helper used by `accumulate` functions. Computes the results accumulated by `database_key_index`
-    /// and its inputs.
-    pub fn accumulated_by<'db, A>(&self, db: &'db C::DbView, key: Id) -> Vec<&'db A>
+    /// Helper used by `accumulate` functions. Computes the results accumulated by
+    /// `database_key_index` and its inputs.
+    pub fn accumulated_by<A>(&self, zalsa_local: &'db ZalsaLocal, key: Id) -> Vec<&'db A>
     where
         A: accumulator::Accumulator,
     {
-        let (zalsa, zalsa_local) = db.zalsas();
+        let zalsa = self.zalsa();
+        let db = self.db();
 
         // NOTE: We don't have a precise way to track accumulated values at present,
         // so we report any read of them as an untracked read.
@@ -37,9 +38,9 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch(db, zalsa, zalsa_local, key);
+        self.fetch(zalsa_local, key);
 
-        let db_key = self.database_key_index(key);
+        let db_key = self.ingredient().database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
         let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
 
@@ -53,7 +54,7 @@ where
 
             let ingredient = zalsa.lookup_ingredient(k.ingredient_index());
             // Extend `output` with any values accumulated by `k`.
-            // SAFETY: `db` owns the `ingredient`
+            // SAFETY: `ingredient` and `k` belong to the `Zalsa` obtained from `db`.
             let (accumulated_map, input) =
                 unsafe { ingredient.accumulated(db.into(), k.key_index()) };
             if let Some(accumulated_map) = accumulated_map {
@@ -87,14 +88,13 @@ where
         output
     }
 
-    pub(super) fn accumulated_map<'db>(
-        &'db self,
-        db: &'db C::DbView,
+    pub(super) fn accumulated_map(
+        &self,
+        zalsa_local: &'db ZalsaLocal,
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        let (zalsa, zalsa_local) = db.zalsas();
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
-        let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
+        let memo = self.refresh_memo(zalsa_local, key);
         (
             memo.header.revisions.accumulated(),
             memo.header.revisions.accumulated_inputs.load(),
