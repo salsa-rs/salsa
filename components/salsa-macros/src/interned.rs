@@ -152,6 +152,13 @@ impl Macro {
         let has_late_init = salsa_struct
             .fields_iter()
             .any(|(_, field)| field.has_late_init_attr);
+        if let Some(debug) = self.args.debug.as_ref().filter(|_| has_late_init) {
+            return Err(syn::Error::new_spanned(
+                debug,
+                "the `debug` option cannot be used with `#[late_init]` fields",
+            ));
+        }
+
         let mut key_field_ids = Vec::new();
         let mut key_field_tys = Vec::new();
         let mut key_field_indices = Vec::new();

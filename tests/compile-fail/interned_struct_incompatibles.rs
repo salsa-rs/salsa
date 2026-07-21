@@ -54,4 +54,11 @@ struct InternedWithReclaimableExplicit {
     field: u32,
 }
 
+#[salsa::interned(debug)]
+struct InternedWithLateInitDebug {
+    key: u32,
+    #[late_init]
+    value: u32,
+}
+
 fn main() {}

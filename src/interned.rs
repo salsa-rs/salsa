@@ -409,8 +409,9 @@ where
     /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
     /// interned value. The resulting [`C::Data`] will then be interned.
     ///
-    /// Note: Using the database within the `assemble` function may result in a deadlock if
-    /// the database ends up trying to intern or allocate a new value.
+    /// `assemble` runs while holding an interned-table shard lock. It should only compute from its
+    /// arguments and captured data; accessing the database may deadlock if it attempts to intern or
+    /// allocate a value.
     pub fn intern<'db, Key>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -433,8 +434,9 @@ where
     /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
     /// interned value. The resulting [`C::Data`] will then be interned.
     ///
-    /// Note: Using the database within the `assemble` function may result in a deadlock if
-    /// the database ends up trying to intern or allocate a new value.
+    /// `assemble` runs while holding an interned-table shard lock. It should only compute from its
+    /// arguments and captured data; accessing the database may deadlock if it attempts to intern or
+    /// allocate a value.
     pub fn intern_id<'db, Key>(
         &'db self,
         zalsa: &'db Zalsa,
