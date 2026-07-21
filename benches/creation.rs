@@ -42,6 +42,22 @@ fn intern_distinct_many(bencher: divan::Bencher) {
         });
 }
 
+/// Interns many distinct values with garbage collection disabled.
+#[divan::bench]
+fn intern_immortal_distinct_many(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let db = salsa::DatabaseImpl::default();
+            warm_db(&db);
+            let input = InternInput::new(black_box(&db), black_box(MANY), black_box(1));
+            (db, input)
+        })
+        .bench_local_refs(|(db, input)| {
+            let sum = intern_immortal_distinct_values(black_box(db), black_box(*input));
+            assert_eq!(black_box(sum), MANY);
+        });
+}
+
 /// Interns the same value many times inside a query.
 #[divan::bench]
 fn intern_same_many(bencher: divan::Bencher) {
@@ -59,6 +75,26 @@ fn intern_same_many(bencher: divan::Bencher) {
         })
         .bench_local_refs(|(db, input)| {
             let sum = intern_same_value(black_box(db), black_box(*input));
+            assert_eq!(black_box(sum), MANY);
+        });
+}
+
+/// Interns the same value many times with garbage collection disabled.
+#[divan::bench]
+fn intern_immortal_same_many(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let db = salsa::DatabaseImpl::default();
+            warm_db(&db);
+            let warm_input = InternInput::new(black_box(&db), black_box(MANY), black_box(1));
+            let sum = intern_immortal_same_value(black_box(&db), black_box(warm_input));
+
+            assert_eq!(black_box(sum), MANY);
+            let input = InternInput::new(black_box(&db), black_box(MANY), black_box(1));
+            (db, input)
+        })
+        .bench_local_refs(|(db, input)| {
+            let sum = intern_immortal_same_value(black_box(db), black_box(*input));
             assert_eq!(black_box(sum), MANY);
         });
 }
@@ -157,6 +193,12 @@ struct InternedValue<'db> {
     value: usize,
 }
 
+#[salsa::interned(revisions = usize::MAX)]
+struct ImmortalInternedValue<'db> {
+    #[returns(copy)]
+    value: usize,
+}
+
 #[salsa::input]
 struct TrackedInput {
     #[returns(copy)]
@@ -215,6 +257,38 @@ fn intern_same_value(db: &dyn salsa::Database, input: InternInput) -> usize {
 
     for _ in 0..count {
         let interned = InternedValue::new(db, value);
+        black_box(interned);
+        sum += value;
+    }
+
+    sum
+}
+
+#[salsa::tracked(returns(copy))]
+#[inline(never)]
+fn intern_immortal_distinct_values(db: &dyn salsa::Database, input: InternInput) -> usize {
+    let count = input.count(db);
+    let value = input.value(db);
+    let mut sum = 0;
+
+    for offset in 0..count {
+        let interned = ImmortalInternedValue::new(db, value + offset);
+        black_box(interned);
+        sum += value;
+    }
+
+    sum
+}
+
+#[salsa::tracked(returns(copy))]
+#[inline(never)]
+fn intern_immortal_same_value(db: &dyn salsa::Database, input: InternInput) -> usize {
+    let count = input.count(db);
+    let value = input.value(db);
+    let mut sum = 0;
+
+    for _ in 0..count {
+        let interned = ImmortalInternedValue::new(db, value);
         black_box(interned);
         sum += value;
     }

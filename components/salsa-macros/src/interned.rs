@@ -116,7 +116,17 @@ impl Macro {
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let has_lifetime = salsa_struct.generate_lifetime();
         let id = salsa_struct.id();
-        let revisions = salsa_struct.revisions();
+        let revisions = salsa_struct.revisions().next();
+        let eviction = revisions.map_or_else(
+            || quote!(::salsa::plumbing::interned::Lru),
+            |revisions| {
+                quote!(
+                    <::salsa::plumbing::interned::EvictionSelector<
+                        { #revisions == ::core::usize::MAX }
+                    > as ::salsa::plumbing::interned::SelectEviction>::Eviction
+                )
+            },
+        );
 
         let (db_lt_arg, cfg, interior_lt) = if has_lifetime {
             (
@@ -175,7 +185,8 @@ impl Macro {
                     db_lt: #db_lt,
                     db_lt_arg: #db_lt_arg,
                     id: #id,
-                    revisions: #(#revisions)*,
+                    revisions: #revisions,
+                    eviction: #eviction,
                     interior_lt: #interior_lt,
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],
