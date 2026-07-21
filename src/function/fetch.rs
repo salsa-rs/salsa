@@ -1,8 +1,10 @@
-use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
+use crate::cycle::IterationStamp;
+use crate::function::cycle_strategy::{CycleStrategy, FetchCycleContext};
 use crate::function::eviction::EvictionPolicy;
-use crate::function::memo::Memo;
+use crate::function::execute::CycleState;
+use crate::function::memo::{ErasedMemo, Memo};
 use crate::function::sync::ClaimResult;
-use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::function::{Configuration, FunctionIngredient, IngredientImpl, Reentrancy};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
@@ -125,17 +127,16 @@ where
             }
             ClaimResult::Cycle { .. } => {
                 return Some(self.fetch_cold_cycle(
+                    db,
                     zalsa,
                     zalsa_local,
-                    db,
-                    id,
                     database_key_index,
                     memo_ingredient_index,
                 ));
             }
         };
 
-        // Now that we've claimed the item, check again to see if there's a "hot" value.
+        // Now that we've claimed the item, check again to see if there's a hot value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
         if let Some(old_memo) = opt_old_memo {
@@ -143,102 +144,104 @@ where
                 && old_memo.header.verify_memo(
                     db.into(),
                     &claim_guard,
-                    C::CYCLE_STRATEGY,
+                    C::CYCLE_RECOVERY_STRATEGY,
                     #[cfg(feature = "detailed-trace")]
                     true,
                 )
             {
-                // SAFETY: memo is present in memo_map and we have verified that it is
-                // still valid for the current revision.
+                // SAFETY: The memo is present in the memo table, and we verified that it is valid
+                // for the current revision.
                 return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
             }
         }
 
-        self.execute(db, claim_guard, opt_old_memo)
+        self.execute(db, claim_guard, opt_old_memo, memo_ingredient_index)
     }
 
     #[cold]
-    #[inline(never)]
     fn fetch_cold_cycle<'db>(
         &'db self,
+        db: &'db C::DbView,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
-        db: &'db C::DbView,
-        id: Id,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db Memo<C> {
-        // no provisional value; create/insert/return initial provisional value
-        match C::CYCLE_STRATEGY {
-            // SAFETY: We do not access the query stack reentrantly.
-            CycleRecoveryStrategy::Panic => unsafe {
-                zalsa_local.with_query_stack_unchecked(|stack| {
-                    panic!(
-                        "dependency graph cycle when querying {database_key_index:#?}, \
-                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                    Query stack:\n{stack:#?}",
-                    );
-                })
-            },
-            CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
-                let cancellation_count = zalsa.runtime().cancellation_count();
-                // check if there's a provisional value for this query
-                // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
-                // existing provisional memo if it exists
-                let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-                if let Some(memo) = &memo_guard {
-                    let revisions = &memo.header.revisions;
-                    // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
-                    // but that would require inserting itself as a cycle head, which either requires clone
-                    // on the value OR a concurrent `Vec` for cycle heads.
-                    if memo.header.verified_at.load() == zalsa.current_revision()
-                        && memo.value.is_some()
-                        && revisions.iteration().cancellation_count() == cancellation_count
-                        && revisions.cycle_heads().contains(&database_key_index)
-                    {
-                        revisions
-                            .cycle_heads()
-                            .remove_all_except(database_key_index);
-
-                        crate::tracing::debug!(
-                            "hit cycle at {database_key_index:#?}, \
-                                returning last provisional value: {:#?}",
-                            revisions
-                        );
-
-                        // SAFETY: memo is present in memo_map.
-                        return unsafe { self.extend_memo_lifetime(memo) };
-                    }
-                }
-
-                crate::tracing::debug!(
-                    "hit cycle at {database_key_index:#?}, \
-                    inserting and returning fixpoint initial value"
-                );
-
-                let iteration = memo_guard
-                    .and_then(|old_memo| {
-                        let revisions = &old_memo.header.revisions;
-                        if old_memo.header.verified_at.load() == zalsa.current_revision()
-                            && old_memo.value.is_some()
-                            && revisions.iteration().cancellation_count() == cancellation_count
-                        {
-                            Some(revisions.iteration())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
-                let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
-
-                let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                self.insert_memo(
-                    zalsa,
-                    id,
-                    Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
-                    memo_ingredient_index,
-                )
-            }
-        }
+        <C::CycleStrategy as CycleStrategy<C>>::fetch_cold_cycle(FetchCycleContext {
+            ingredient: self,
+            db,
+            zalsa,
+            zalsa_local,
+            database_key_index,
+            memo_ingredient_index,
+        })
     }
+}
+
+pub(super) fn fetch_cold_cycle_panic(
+    zalsa_local: &ZalsaLocal,
+    database_key_index: DatabaseKeyIndex,
+) -> ! {
+    // SAFETY: We do not access the query stack reentrantly.
+    unsafe {
+        zalsa_local.with_query_stack_unchecked(|stack| {
+            panic!(
+                "dependency graph cycle when querying {database_key_index:#?}, \
+                set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                Query stack:\n{stack:#?}",
+            );
+        })
+    }
+}
+
+pub(super) fn fetch_cold_cycle_recoverable_erased<'db>(
+    state: &mut dyn CycleState<'db>,
+    ingredient: &'db dyn FunctionIngredient,
+    zalsa: &'db Zalsa,
+    database_key_index: DatabaseKeyIndex,
+) -> ErasedMemo<'db> {
+    let id = database_key_index.key_index();
+
+    let cancellation_count = zalsa.runtime().cancellation_count();
+    // Don't validate provisional memos here: an existing value should be reused.
+    let current_memo = ingredient.memo(zalsa, id).filter(|memo| {
+        let header = memo.header();
+        header.verified_at.load() == zalsa.current_revision()
+            && memo.has_value()
+            && header.revisions.iteration().cancellation_count() == cancellation_count
+    });
+
+    // Ideally, any current provisional value could be reused. Reusing a value that was not a
+    // cycle head in the last iteration would require inserting itself as a head, which in turn
+    // requires cloning the value or making the cycle-head list concurrent.
+    if let Some(memo) = current_memo.filter(|memo| {
+        memo.header()
+            .revisions
+            .cycle_heads()
+            .contains(&database_key_index)
+    }) {
+        memo.header()
+            .revisions
+            .cycle_heads()
+            .remove_all_except(database_key_index);
+
+        crate::tracing::debug!(
+            "hit cycle at {database_key_index:#?}, \
+                    returning last provisional value: {:#?}",
+            memo.header().revisions
+        );
+        return memo;
+    }
+
+    crate::tracing::debug!(
+        "hit cycle at {database_key_index:#?}, \
+        inserting and returning fixpoint initial value"
+    );
+
+    let iteration = current_memo
+        .map(|memo| memo.header().revisions.iteration())
+        .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
+    let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
+    state.use_fallback(zalsa, id);
+    state.insert_provisional_memo(zalsa, id, zalsa.current_revision(), revisions)
 }

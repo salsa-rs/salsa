@@ -8,31 +8,33 @@ use std::ptr::NonNull;
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
+use self::cycle_strategy::CycleStrategy as _;
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
 use crate::hash::{FxHashSet, FxIndexSet};
-use crate::ingredient::{Ingredient, WaitForResult};
+use crate::ingredient::Ingredient;
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{self, MemoIngredientMap};
 use crate::salsa_struct::SalsaStructInDb;
 use crate::sync::Arc;
 use crate::table::Table;
-use crate::table::memo::MemoTableTypes;
+use crate::table::memo::{MemoSlot, MemoTableTypes};
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryEdge, QueryOriginRef};
+use crate::zalsa_local::QueryEdge;
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
 mod accumulated;
 mod backdate;
+#[doc(hidden)]
+pub mod cycle_strategy;
 mod delete;
 mod diff_outputs;
 mod eviction;
 mod execute;
 mod fetch;
-mod inputs;
 mod maybe_changed_after;
 mod memo;
 mod specify;
@@ -50,7 +52,7 @@ pub type Memo<C> = memo::Memo<C>;
 /// after erasing `'db` and to use after rebranding it with a later database
 /// lifetime. This is guaranteed when the output implements [`crate::SalsaValue`]
 /// or when it is the same `'static` type for every `'db`.
-pub unsafe trait Configuration: Any {
+pub unsafe trait Configuration: Any + Sized {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
     const PERSIST: bool;
@@ -74,7 +76,9 @@ pub unsafe trait Configuration: Any {
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
-    const CYCLE_STRATEGY: CycleRecoveryStrategy;
+    type CycleStrategy: cycle_strategy::CycleStrategy<Self>;
+
+    const CYCLE_RECOVERY_STRATEGY: CycleRecoveryStrategy = Self::CycleStrategy::RECOVERY_STRATEGY;
 
     /// Invokes after a new result `new_value` has been computed for which an older memoized value
     /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
@@ -157,6 +161,35 @@ pub unsafe trait Configuration: Any {
     fn deserialize<'de, D>(deserializer: D) -> Result<Self::Output<'static>, D::Error>
     where
         D: plumbing::serde::Deserializer<'de>;
+}
+
+/// The function-specific interface for an [`Ingredient`].
+///
+/// This type is public because it appears in the public [`Ingredient`] trait, but it can only be
+/// constructed and used inside salsa.
+#[doc(hidden)]
+pub struct FunctionIngredientRef<'db> {
+    ingredient: &'db dyn FunctionIngredient,
+}
+
+impl<'db> FunctionIngredientRef<'db> {
+    fn new(ingredient: &'db dyn FunctionIngredient) -> Self {
+        Self { ingredient }
+    }
+
+    pub(crate) fn memo(&self, zalsa: &'db Zalsa, input: Id) -> Option<ErasedMemo<'db>> {
+        self.ingredient.memo(zalsa, input)
+    }
+
+    pub(crate) fn sync_table(&self) -> &'db SyncTable {
+        self.ingredient.sync_table()
+    }
+}
+
+pub(crate) trait FunctionIngredient: Send + Sync {
+    fn memo<'db>(&'db self, zalsa: &'db Zalsa, input: Id) -> Option<ErasedMemo<'db>>;
+
+    fn sync_table(&self) -> &SyncTable;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -313,6 +346,28 @@ where
     }
 }
 
+impl<C> FunctionIngredient for IngredientImpl<C>
+where
+    C: Configuration,
+{
+    fn memo<'db>(&'db self, zalsa: &'db Zalsa, input: Id) -> Option<ErasedMemo<'db>> {
+        // SAFETY: `self` is borrowed for `'db`, so `deleted_entries` retains every allocation
+        // observed in this slot for that lifetime.
+        let memo_slot = unsafe {
+            MemoSlot::new(
+                zalsa.memo_table_for::<C::SalsaStruct<'_>>(input),
+                self.memo_ingredient_index(zalsa, input),
+            )
+        };
+
+        memo_slot.get_erased()
+    }
+
+    fn sync_table(&self) -> &SyncTable {
+        &self.sync_table
+    }
+}
+
 impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
@@ -344,52 +399,11 @@ where
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
-        let input = edge.key().key_index();
-
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return;
-        };
-
-        memo.header
-            .collect_minimum_serialized_edges(zalsa, edge, serialized_edges, visited_edges);
+        collect_minimum_serialized_edges(self, zalsa, edge, serialized_edges, visited_edges);
     }
 
-    /// Returns `final` if the memo has the `verified_final` flag set.
-    ///
-    /// Otherwise, the value is still provisional. For both final and provisional, it also
-    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
-    fn provisional_status<'db>(
-        &self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        let memo =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
-
-        Some(memo.header.provisional_status())
-    }
-
-    fn set_cycle_iteration_count(&self, zalsa: &Zalsa, input: Id, iteration: IterationStamp) {
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return;
-        };
-
-        memo.header
-            .set_cycle_iteration_count(self.database_key_index(input), iteration);
-    }
-
-    fn finalize_cycle_head(&self, zalsa: &Zalsa, input: Id) {
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return;
-        };
-
-        memo.header.finalize_cycle_head();
+    fn as_function(&self) -> Option<FunctionIngredientRef<'_>> {
+        Some(FunctionIngredientRef::new(self))
     }
 
     fn flatten_cycle_head_dependencies(
@@ -399,54 +413,14 @@ where
         flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
         seen: &mut FxHashSet<DatabaseKeyIndex>,
     ) {
-        let memo_index = self.memo_ingredient_index(zalsa, id);
-        let Some(memo) = self.get_memo_from_table_for(zalsa, id, memo_index) else {
-            return;
-        };
-
-        memo.header.flatten_cycle_head_dependencies(
+        flatten_cycle_head_dependencies(
+            self,
             zalsa,
             self.database_key_index(id),
-            C::CYCLE_STRATEGY,
+            C::CYCLE_RECOVERY_STRATEGY,
             flattened_input_outputs,
             seen,
         );
-    }
-
-    fn cycle_converged(&self, zalsa: &Zalsa, input: Id) -> bool {
-        let Some(memo) =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-        else {
-            return true;
-        };
-
-        memo.header.cycle_converged()
-    }
-
-    fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
-        self.sync_table.mark_as_transfer_target(key_index)
-    }
-
-    /// Attempts to claim `key_index` without blocking.
-    ///
-    /// * [`WaitForResult::Running`] if the `key_index` is running on another thread. It's up to the caller to block on the other thread
-    ///   to wait until the result becomes available.
-    /// * [`WaitForResult::Available`] It is (or at least was) possible to claim the `key_index`
-    /// * [`WaitResult::Cycle`] Claiming the `key_index` results in a cycle because it's on the current's thread query stack or
-    ///   running on another thread that is blocked on this thread.
-    fn wait_for<'me>(&'me self, zalsa: &'me Zalsa, key_index: Id) -> WaitForResult<'me> {
-        match self
-            .sync_table
-            .peek_claim(zalsa, key_index, Reentrancy::Deny)
-        {
-            ClaimResult::Running(blocked_on) => WaitForResult::Running(blocked_on),
-            ClaimResult::Cycle { inner } => WaitForResult::Cycle { inner },
-            ClaimResult::Claimed(()) => WaitForResult::Available,
-        }
-    }
-
-    fn origin<'db>(&self, zalsa: &'db Zalsa, key: Id) -> Option<QueryOriginRef<'db>> {
-        self.origin(zalsa, key)
     }
 
     fn mark_validated_output(
@@ -566,38 +540,97 @@ where
     }
 }
 
-impl memo::MemoHeader {
-    fn collect_minimum_serialized_edges(
-        &self,
-        zalsa: &Zalsa,
-        edge: QueryEdge,
-        serialized_edges: &mut FxIndexSet<QueryEdge>,
-        visited_edges: &mut FxHashSet<QueryEdge>,
-    ) {
-        visited_edges.insert(edge);
+fn collect_minimum_serialized_edges(
+    ingredient: &dyn FunctionIngredient,
+    zalsa: &Zalsa,
+    edge: QueryEdge,
+    serialized_edges: &mut FxIndexSet<QueryEdge>,
+    visited_edges: &mut FxHashSet<QueryEdge>,
+) {
+    let Some(memo) = ingredient.memo(zalsa, edge.key().key_index()) else {
+        return;
+    };
 
-        // Collect the minimum dependency tree.
-        for edge in self.origin().edges() {
-            // Avoid forming cycles.
-            if visited_edges.contains(&edge) {
-                continue;
-            }
+    visited_edges.insert(edge);
 
-            // Avoid flattening edges that we're going to serialize directly.
-            if serialized_edges.contains(&edge) {
-                continue;
-            }
-
-            let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
-            dependency.collect_minimum_serialized_edges(
-                zalsa,
-                edge,
-                serialized_edges,
-                visited_edges,
-            );
+    // Collect the minimum dependency tree.
+    for edge in memo.header().origin().edges() {
+        // Avoid forming cycles.
+        if visited_edges.contains(&edge) {
+            continue;
         }
+
+        // Avoid flattening edges that we're going to serialize directly.
+        if serialized_edges.contains(&edge) {
+            continue;
+        }
+
+        let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+        dependency.collect_minimum_serialized_edges(zalsa, edge, serialized_edges, visited_edges);
+    }
+}
+
+fn flatten_cycle_head_dependencies(
+    ingredient: &dyn FunctionIngredient,
+    zalsa: &Zalsa,
+    database_key_index: DatabaseKeyIndex,
+    cycle_recovery_strategy: CycleRecoveryStrategy,
+    flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
+    seen: &mut FxHashSet<DatabaseKeyIndex>,
+) {
+    let Some(memo) = ingredient.memo(zalsa, database_key_index.key_index()) else {
+        return;
+    };
+
+    let memo_header = memo.header();
+
+    // Only flatten dependencies of provisional queries, because only those
+    // contain cyclic dependencies.
+    if !memo_header.may_be_provisional() {
+        flattened_input_outputs.insert(QueryEdge::input(database_key_index));
+        return;
     }
 
+    // There's nothing to do if we've visited this query before.
+    if !seen.insert(database_key_index) {
+        return;
+    }
+
+    let inputs = memo_header.origin().inputs();
+
+    match cycle_recovery_strategy {
+        // Queries with cycle handling already flattened their own dependencies when completing
+        // the query. Cycle participants commonly share most of those inputs, often in long
+        // contiguous runs, so compare by ordered index to avoid a hash-table lookup for every
+        // edge. On a mismatch, `insert_full` preserves insertion order and resynchronizes the
+        // expected index.
+        CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
+            let mut expected_index = 0;
+            for input in inputs.map(QueryEdge::input) {
+                if flattened_input_outputs.get_index(expected_index) == Some(&input) {
+                    expected_index += 1;
+                } else {
+                    let (index, _) = flattened_input_outputs.insert_full(input);
+                    expected_index = index + 1;
+                }
+            }
+        }
+        // For regular queries, recurse
+        CycleRecoveryStrategy::Panic => {
+            for input in inputs {
+                let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
+                ingredient.flatten_cycle_head_dependencies(
+                    zalsa,
+                    input.key_index(),
+                    flattened_input_outputs,
+                    seen,
+                );
+            }
+        }
+    }
+}
+
+impl memo::MemoHeader {
     fn provisional_status(&self) -> ProvisionalStatus<'_> {
         let iteration = self.revisions.iteration();
         let verified_at = self.verified_at.load();
@@ -627,60 +660,6 @@ impl memo::MemoHeader {
 
     fn finalize_cycle_head(&self) {
         self.revisions.verified_final.store(true, Ordering::Release);
-    }
-
-    fn flatten_cycle_head_dependencies(
-        &self,
-        zalsa: &Zalsa,
-        database_key_index: DatabaseKeyIndex,
-        cycle_recovery_strategy: CycleRecoveryStrategy,
-        flattened_input_outputs: &mut FxIndexSet<QueryEdge>,
-        seen: &mut FxHashSet<DatabaseKeyIndex>,
-    ) {
-        // Only flatten dependencies of provisional queries, because only those
-        // contain cyclic dependencies.
-        if !self.may_be_provisional() {
-            flattened_input_outputs.insert(QueryEdge::input(database_key_index));
-            return;
-        }
-
-        // There's nothing to do if we've visited this query before.
-        if !seen.insert(database_key_index) {
-            return;
-        }
-
-        let inputs = self.origin().inputs();
-
-        match cycle_recovery_strategy {
-            // Queries with cycle handling already flattened their own dependencies when completing
-            // the query. Cycle participants commonly share most of those inputs, often in long
-            // contiguous runs, so compare by ordered index to avoid a hash-table lookup for every
-            // edge. On a mismatch, `insert_full` preserves insertion order and resynchronizes the
-            // expected index.
-            CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
-                let mut expected_index = 0;
-                for input in inputs.map(QueryEdge::input) {
-                    if flattened_input_outputs.get_index(expected_index) == Some(&input) {
-                        expected_index += 1;
-                    } else {
-                        let (index, _) = flattened_input_outputs.insert_full(input);
-                        expected_index = index + 1;
-                    }
-                }
-            }
-            // For regular queries, recurse
-            CycleRecoveryStrategy::Panic => {
-                for input in inputs {
-                    let ingredient = zalsa.lookup_ingredient(input.ingredient_index());
-                    ingredient.flatten_cycle_head_dependencies(
-                        zalsa,
-                        input.key_index(),
-                        flattened_input_outputs,
-                        seen,
-                    );
-                }
-            }
-        }
     }
 
     fn cycle_converged(&self) -> bool {

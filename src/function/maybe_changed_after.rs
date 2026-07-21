@@ -240,7 +240,7 @@ where
             memo_slot,
             database_key_index,
             revision,
-            C::CYCLE_STRATEGY,
+            C::CYCLE_RECOVERY_STRATEGY,
         ) {
             ColdResult::Retry => None,
             ColdResult::Verified(result) => Some(result),
@@ -254,7 +254,7 @@ where
                     return Some(VerifyResult::changed());
                 }
 
-                let memo = self.execute(db, claim_guard, Some(old_memo))?;
+                let memo = self.execute(db, claim_guard, Some(old_memo), memo_ingredient_index)?;
                 let changed_at = memo.header.revisions.changed_at;
 
                 // Always assume that a provisional value has changed.
@@ -668,7 +668,9 @@ fn validate_provisional(
     for cycle_head in cycle_heads {
         let Some(provisional_status) = zalsa
             .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
-            .provisional_status(zalsa, cycle_head.database_key_index.key_index())
+            .as_function()
+            .and_then(|function| function.memo(zalsa, cycle_head.database_key_index.key_index()))
+            .map(|memo| memo.header().provisional_status())
         else {
             return false;
         };
