@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.0...salsa-v0.28.1) - 2026-07-22
+
+### Other
+
+- avoid table lookups when interning values ([#1192](https://github.com/salsa-rs/salsa/pull/1192))
+- Require immortal storage for lifetime-free interned values ([#1259](https://github.com/salsa-rs/salsa/pull/1259))
+
 ## [0.28.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.27.2...salsa-v0.28.0) - 2026-07-12
 
 ### Added
