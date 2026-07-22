@@ -11,7 +11,7 @@ use crate::ingredient::WaitForResult;
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
-use crate::table::memo::{DummyMemo, MemoTableWithTypesMut, ToDynMemo};
+use crate::table::memo::{DummyMemo, ToDynMemo};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
@@ -46,21 +46,11 @@ impl<C: Configuration> IngredientImpl<C> {
         Some(unsafe { memo.as_ref() })
     }
 
-    /// Evicts the existing memo for the given key, replacing it
-    /// with an equivalent memo that has no value. If the memo is untracked
-    /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict_value_from_memo_for(
-        table: MemoTableWithTypesMut<'_>,
-        memo_ingredient_index: MemoIngredientIndex,
-    ) {
-        let map = |memo: &mut Memo<C>| {
-            if memo.header.can_evict_value() {
-                // Set the memo value to `None`.
-                memo.value = None;
-            }
-        };
-
-        table.map_memo(memo_ingredient_index, map)
+    /// Evicts the memoized value unless it cannot be reconstructed.
+    pub(super) fn evict_value_from_memo(memo: &mut Memo<C>) {
+        if memo.header.can_evict_value() {
+            memo.value = None;
+        }
     }
 }
 

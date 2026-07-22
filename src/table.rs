@@ -11,7 +11,8 @@ use rustc_hash::FxHashMap;
 
 use crate::sync::atomic::{AtomicUsize, Ordering};
 use crate::sync::{Arc, Mutex};
-use crate::table::memo::{MemoTableTypes, MemoTableWithTypes, MemoTableWithTypesMut};
+use crate::table::memo::{Memo, MemoTableTypes, MemoTableWithTypes};
+use crate::zalsa::MemoIngredientIndex;
 use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
@@ -351,18 +352,17 @@ impl Table {
         unsafe { page.memo_types.attach_memos(memos) }
     }
 
-    /// Get the memo table associated with `id`
-    pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypesMut<'_> {
-        let (page, slot) = split_id(id);
-        let page_index = page.0;
-        let page = self
-            .pages
-            .get_mut(page_index)
-            .unwrap_or_else(|| panic!("index `{page_index}` is uninitialized"));
-        // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
-        let memos = unsafe { &mut *(page.slot_vtable.memos_mut)(page.get(slot)) };
-        // SAFETY: The `Page` keeps the correct memo types.
-        unsafe { page.memo_types.attach_memos_mut(memos) }
+    /// Returns a cursor that caches page metadata while mutating memos of type `M`.
+    pub(crate) fn memo_cursor_mut<M, F>(&mut self, memo_index: F) -> MemoCursorMut<'_, M, F>
+    where
+        M: Memo,
+        F: FnMut(IngredientIndex) -> MemoIngredientIndex,
+    {
+        MemoCursorMut {
+            table: self,
+            memo_index,
+            resolved_page: None,
+        }
     }
 
     pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = (Id, &T)> + '_ {
@@ -405,6 +405,87 @@ impl Table {
             .entry(ingredient)
             .or_default()
             .push(page);
+    }
+}
+
+/// Typed mutable access to one memo ingredient across a stream of table IDs.
+pub(crate) struct MemoCursorMut<'t, M, F> {
+    table: &'t mut Table,
+    memo_index: F,
+    resolved_page: Option<ResolvedPage<M>>,
+}
+
+impl<M, F> MemoCursorMut<'_, M, F>
+where
+    M: Memo,
+    F: FnMut(IngredientIndex) -> MemoIngredientIndex,
+{
+    /// Calls `f` on the memo for `id`, if present.
+    #[inline]
+    pub(crate) fn map(&mut self, id: Id, f: impl FnOnce(&mut M)) {
+        let (page_index, slot) = split_id(id);
+        if self
+            .resolved_page
+            .as_ref()
+            .is_none_or(|page| page.page_index != page_index)
+        {
+            self.resolve_page(page_index);
+        }
+
+        self.resolved_page.as_ref().unwrap().map(slot, f);
+    }
+
+    #[cold]
+    fn resolve_page(&mut self, page_index: PageIndex) {
+        let index = page_index.0;
+        let page = self
+            .table
+            .pages
+            .get(index)
+            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+        let memo_index = (self.memo_index)(page.ingredient);
+        page.memo_types.assert_type::<M>(memo_index);
+
+        self.resolved_page = Some(ResolvedPage {
+            page_index,
+            data: page.data,
+            initialized: page.allocated.load(Ordering::Acquire),
+            slot_size: page.slot_vtable.layout.size(),
+            memos_mut: page.slot_vtable.memos_mut,
+            memo_index,
+            marker: PhantomData,
+        });
+    }
+}
+
+struct ResolvedPage<M> {
+    page_index: PageIndex,
+    data: NonNull<()>,
+    initialized: usize,
+    slot_size: usize,
+    memos_mut: SlotMemosMutFnErased,
+    memo_index: MemoIngredientIndex,
+    marker: PhantomData<M>,
+}
+
+impl<M: Memo> ResolvedPage<M> {
+    #[inline]
+    fn map(&self, slot: SlotIndex, f: impl FnOnce(&mut M)) {
+        assert!(
+            slot.0 < self.initialized,
+            "out of bounds access `{slot:?}` (maximum slot `{}`)",
+            self.initialized
+        );
+
+        // SAFETY: The cursor holds exclusive access to the table, and `slot` was checked against
+        // the initialized length captured when this page was resolved.
+        let slot = unsafe { self.data.as_ptr().byte_add(slot.0 * self.slot_size) };
+        // SAFETY: `slot` belongs to the page whose slot vtable supplied `memos_mut`.
+        let memos = unsafe { &mut *(self.memos_mut)(slot) };
+        // SAFETY: The memo type was validated against this page's types during resolution.
+        if let Some(memo) = unsafe { memos.get_mut_unchecked(self.memo_index) } {
+            f(memo);
+        }
     }
 }
 
@@ -608,4 +689,150 @@ pub fn split_id(id: Id) -> (PageIndex, SlotIndex) {
     let slot = index & PAGE_LEN_MASK;
     let page = index >> PAGE_LEN_BITS;
     (PageIndex::new(page), SlotIndex::new(slot))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DatabaseKeyIndex;
+    use crate::table::memo::{MemoEntryType, MemoTable};
+    use crate::zalsa::Zalsa;
+
+    #[test]
+    fn memo_cursor_caches_pages_with_ingredient_specific_memo_indices() {
+        let mut table = Table::default();
+        let ingredient_a = IngredientIndex::new(1);
+        let ingredient_b = IngredientIndex::new(2);
+        let memo_a = MemoIngredientIndex::from_usize(0);
+        let memo_b = MemoIngredientIndex::from_usize(1);
+        let types_a = memo_types([MemoEntryType::of::<TestMemo>()]);
+        let types_b = memo_types([
+            MemoEntryType::of::<OtherMemo>(),
+            MemoEntryType::of::<TestMemo>(),
+        ]);
+        let page_a = table.push_page::<TestSlot>(ingredient_a, types_a.clone());
+        let page_b = table.push_page::<TestSlot>(ingredient_b, types_b.clone());
+
+        let a0 = allocate_slot(&table, page_a, &types_a);
+        let a1 = allocate_slot(&table, page_a, &types_a);
+        let missing = allocate_slot(&table, page_a, &types_a);
+        let b0 = allocate_slot(&table, page_b, &types_b);
+        let b1 = allocate_slot(&table, page_b, &types_b);
+        insert_memo(&table, a0, memo_a, 0);
+        insert_memo(&table, a1, memo_a, 1);
+        insert_memo(&table, b0, memo_b, 2);
+        insert_memo(&table, b1, memo_b, 3);
+
+        let mut resolutions = Vec::new();
+        let mut values = Vec::new();
+        {
+            let mut cursor = table.memo_cursor_mut::<TestMemo, _>(|ingredient| {
+                resolutions.push(ingredient);
+                match ingredient {
+                    index if index == ingredient_a => memo_a,
+                    index if index == ingredient_b => memo_b,
+                    _ => unreachable!(),
+                }
+            });
+
+            for id in [a1, a0, b1, b0, a0, missing] {
+                cursor.map(id, |memo| {
+                    values.push(memo.0);
+                    memo.0 += 10;
+                });
+            }
+        }
+
+        assert_eq!(resolutions, [ingredient_a, ingredient_b, ingredient_a]);
+        assert_eq!(values, [1, 0, 3, 2, 10]);
+    }
+
+    #[test]
+    #[should_panic(expected = "inconsistent type-id")]
+    fn memo_cursor_validates_the_memo_type_when_resolving_a_page() {
+        let mut table = Table::default();
+        let ingredient = IngredientIndex::new(1);
+        let memo_index = MemoIngredientIndex::from_usize(0);
+        let types = memo_types([MemoEntryType::of::<TestMemo>()]);
+        let page = table.push_page::<TestSlot>(ingredient, types.clone());
+        let id = allocate_slot(&table, page, &types);
+        let mut cursor = table.memo_cursor_mut::<OtherMemo, _>(|_| memo_index);
+
+        cursor.map(id, |_| unreachable!());
+    }
+
+    fn memo_types<const N: usize>(entries: [MemoEntryType; N]) -> Arc<MemoTableTypes> {
+        let mut types = MemoTableTypes::default();
+        for (index, entry) in entries.into_iter().enumerate() {
+            types.set(MemoIngredientIndex::from_usize(index), entry);
+        }
+        Arc::new(types)
+    }
+
+    fn allocate_slot(table: &Table, page: PageIndex, types: &MemoTableTypes) -> Id {
+        // SAFETY: Tests allocate sequentially and are the only writers to the page.
+        let result = unsafe {
+            table.page::<TestSlot>(page).allocate(page, |_| TestSlot {
+                // SAFETY: The slot is only accessed with `types`.
+                memos: MemoTable::new(types),
+            })
+        };
+        let Ok((id, _)) = result else {
+            panic!("test page is full")
+        };
+        id
+    }
+
+    fn insert_memo(table: &Table, id: Id, memo_index: MemoIngredientIndex, value: usize) {
+        let memo = NonNull::from(Box::leak(Box::new(TestMemo(value))));
+        // SAFETY: Test slots ignore the revision, and `memo_index` matches the page's types.
+        let memos = unsafe { table.memos::<TestSlot>(id, Revision::start()) };
+        let old = memos.insert(memo_index, memo);
+        assert!(old.is_none());
+    }
+
+    struct TestSlot {
+        memos: MemoTable,
+    }
+
+    // SAFETY: `TestSlot` is private to this test module and has one slot type per ingredient.
+    unsafe impl Slot for TestSlot {
+        unsafe fn memos(slot: *const Self, _: Revision) -> *const MemoTable {
+            // SAFETY: The caller provides a valid slot pointer.
+            unsafe { &raw const (*slot).memos }
+        }
+
+        fn memos_mut(&mut self) -> &mut MemoTable {
+            &mut self.memos
+        }
+    }
+
+    struct TestMemo(usize);
+    struct OtherMemo;
+
+    impl Memo for TestMemo {
+        fn has_value(&self) -> bool {
+            true
+        }
+
+        fn remove_outputs(&self, _: &Zalsa, _: DatabaseKeyIndex) {}
+
+        #[cfg(feature = "salsa_unstable")]
+        fn memory_usage(&self) -> crate::database::MemoInfo {
+            unimplemented!()
+        }
+    }
+
+    impl Memo for OtherMemo {
+        fn has_value(&self) -> bool {
+            true
+        }
+
+        fn remove_outputs(&self, _: &Zalsa, _: DatabaseKeyIndex) {}
+
+        #[cfg(feature = "salsa_unstable")]
+        fn memory_usage(&self) -> crate::database::MemoInfo {
+            unimplemented!()
+        }
+    }
 }
