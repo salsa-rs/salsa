@@ -59,6 +59,18 @@ error: `unsafe(no_lifetime)` requires `revisions = usize::MAX`
 52 | #[salsa::interned(unsafe(no_lifetime), revisions = 3)]
    |                                                    ^
 
+error: the `debug` option cannot be used with `#[late_init]` fields
+  --> tests/compile-fail/interned_struct_incompatibles.rs:57:19
+   |
+57 | #[salsa::interned(debug)]
+   |                   ^^^^^
+
+error: cannot find attribute `late_init` in this scope
+  --> tests/compile-fail/interned_struct_incompatibles.rs:60:7
+   |
+60 |     #[late_init]
+   |       ^^^^^^^^^
+
 error: cannot find attribute `tracked` in this scope
   --> tests/compile-fail/interned_struct_incompatibles.rs:33:7
    |

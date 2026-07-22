@@ -80,6 +80,8 @@ impl SalsaStructAllowedOptions for TrackedStruct {
     const ALLOW_DEFAULT: bool = false;
 
     const ALLOW_MANUAL_RETENTION_PROOF: bool = true;
+
+    const ALLOW_LATE_INIT: bool = false;
 }
 
 struct Macro {

@@ -60,6 +60,11 @@ pub unsafe trait Configuration: Sized + 'static {
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;
 
+    /// Hashes the fields that determine the interned value's identity.
+    fn hash_fields<H: Hasher>(fields: &Self::Fields<'_>, state: &mut H) {
+        Hash::hash(fields, state);
+    }
+
     /// Returns the size of any heap allocations in the output value, in bytes.
     fn heap_size(_value: &Self::Fields<'_>) -> Option<usize> {
         None
@@ -405,8 +410,9 @@ where
     /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
     /// interned value. The resulting [`C::Data`] will then be interned.
     ///
-    /// Note: Using the database within the `assemble` function may result in a deadlock if
-    /// the database ends up trying to intern or allocate a new value.
+    /// `assemble` runs while holding an interned-table shard lock. It should only compute from its
+    /// arguments and captured data; accessing the database may deadlock if it attempts to intern or
+    /// allocate a value.
     pub fn intern<'db, Key>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -429,8 +435,9 @@ where
     /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
     /// interned value. The resulting [`C::Data`] will then be interned.
     ///
-    /// Note: Using the database within the `assemble` function may result in a deadlock if
-    /// the database ends up trying to intern or allocate a new value.
+    /// `assemble` runs while holding an interned-table shard lock. It should only compute from its
+    /// arguments and captured data; accessing the database may deadlock if it attempts to intern or
+    /// allocate a value.
     pub fn intern_id<'db, Key>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -570,7 +577,7 @@ where
         let new_fields = unsafe { self.to_internal_data(assemble(slot.new_id, key)) };
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let old_hash = self.hasher.hash_one(unsafe { &*value.fields.get() });
+        let old_hash = Self::fields_hash(self.hasher, unsafe { &*value.fields.get() });
 
         let index = self.database_key_index(slot.new_id);
 
@@ -935,6 +942,12 @@ where
         }
     }
 
+    fn fields_hash(hasher: FxBuildHasher, fields: &C::Fields<'_>) -> u64 {
+        let mut hasher = hasher.build_hasher();
+        C::hash_fields(fields, &mut hasher);
+        hasher.finish()
+    }
+
     // Hashes the value by its fields.
     //
     // # Safety
@@ -942,7 +955,7 @@ where
     // The lock must be held for the shard containing the value.
     unsafe fn value_hash(&self, value: &Value<C>) -> u64 {
         // SAFETY: We hold the lock for the shard containing the value.
-        unsafe { self.hasher.hash_one(&*value.fields.get()) }
+        Self::fields_hash(self.hasher, unsafe { &*value.fields.get() })
     }
 
     // Compares the value by its fields to the given key.
@@ -1754,7 +1767,6 @@ impl<T: Clone> Lookup<Vec<T>> for Cow<'_, [T]> {
 mod persistence {
     use std::cell::UnsafeCell;
     use std::fmt;
-    use std::hash::BuildHasher;
 
     use intrusive_collections::LinkedListLink;
     use serde::ser::{SerializeMap, SerializeStruct};
@@ -1903,7 +1915,7 @@ mod persistence {
                 let (page_idx, _) = crate::table::split_id(id);
 
                 // Determine the value shard.
-                let hash = ingredient.hasher.hash_one(&value.fields.0);
+                let hash = <IngredientImpl<C>>::fields_hash(ingredient.hasher, &value.fields.0);
                 let shard_index = ingredient.shard(hash);
 
                 // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.

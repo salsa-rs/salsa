@@ -132,8 +132,10 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Defines an interned struct.
 ///
-/// All fields jointly determine the struct's identity. Within a revision, every occurrence of equal
-/// field values maps to the same compact handle. Interned fields are immutable.
+/// By default, all fields jointly determine the struct's identity. Within a revision, every
+/// occurrence of equal key field values maps to the same compact handle. Interned fields are
+/// immutable. Fields marked `#[late_init]` are assembled from the allocated handle and do not
+/// participate in identity.
 ///
 /// The annotated item must be a struct with named fields. It may declare one lifetime parameter,
 /// which Salsa treats as the database lifetime, but no type or const parameters. The generated
@@ -150,7 +152,8 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `constructor = IDENT` renames the generated constructor from `new` to `IDENT`.
 /// - `debug` implements [`Debug`] using the field values when a database is attached to the current
 ///   thread. The generated `default_debug_fmt` method can also be called from a manual [`Debug`]
-///   implementation.
+///   implementation. This option cannot be combined with `#[late_init]` fields because they may
+///   introduce cycles in the generated formatting.
 /// - `revisions = EXPR` sets the minimum number of active revisions an unused value is retained
 ///   before its slot may be reused. The default is `3`. The value must be nonzero; `usize::MAX`
 ///   disables reuse.
@@ -192,6 +195,12 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   [`salsa::SalsaAsDeref`] to return borrowed forms such as `Option<&T>` and
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
 /// - `#[get(IDENT)]` renames the generated getter.
+/// - `#[late_init]` removes the field from the interned key and changes its constructor argument to
+///   `impl FnOnce(Self) -> FieldTy`. Salsa invokes the closure with the newly allocated handle when
+///   the key is first interned; it does not invoke the closure when the key already exists. Salsa
+///   runs the closure while holding an interned-table shard lock. The closure should only compute
+///   from captured data and the supplied handle; accessing the database may deadlock if it attempts
+///   to intern or allocate a value.
 /// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the retention
 ///   check for this field. The caller must ensure Salsa can retain the field and expose it with a
 ///   later database lifetime.
@@ -199,7 +208,7 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```ignore
 /// #[salsa::interned(debug)]
@@ -210,6 +219,15 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///     #[get(disambiguator)]
 ///     index: u32,
 /// }
+///
+/// #[salsa::interned]
+/// struct Cycle<'db> {
+///     key: String,
+///     #[late_init]
+///     next: Cycle<'db>,
+/// }
+///
+/// let cycle = Cycle::new(db, "cycle", std::convert::identity);
 /// ```
 ///
 /// [`Debug`]: std::fmt::Debug

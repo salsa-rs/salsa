@@ -33,4 +33,11 @@ struct TrackedStructWithRevisions {
     field: u32,
 }
 
+#[salsa::tracked]
+struct TrackedStructWithLateInitField<'db> {
+    #[late_init]
+    field: u32,
+    marker: std::marker::PhantomData<&'db ()>,
+}
+
 fn main() {}

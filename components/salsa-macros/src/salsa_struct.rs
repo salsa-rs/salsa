@@ -55,6 +55,9 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
 
     /// Is `#[salsa_value(unsafe(prove_safe_to_retain_manually))]` allowed on fields?
     const ALLOW_MANUAL_RETENTION_PROOF: bool;
+
+    /// Are `#[late_init]` fields allowed?
+    const ALLOW_LATE_INIT: bool;
 }
 
 pub(crate) struct SalsaField<'s> {
@@ -65,6 +68,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
     pub(crate) has_manual_retention_proof: bool,
+    pub(crate) has_late_init_attr: bool,
     get_name: syn::Ident,
     set_name: syn::Ident,
     unknown_attrs: Vec<&'s syn::Attribute>,
@@ -92,6 +96,10 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
     }),
     ("no_eq", |_, ef| {
         ef.has_no_eq_attr = true;
+        Ok(())
+    }),
+    ("late_init", |_, ef| {
+        ef.has_late_init_attr = true;
         Ok(())
     }),
     ("salsa_value", |attr, ef| {
@@ -143,6 +151,7 @@ where
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
         this.maybe_disallow_manual_retention_proofs()?;
+        this.maybe_disallow_late_init_fields()?;
 
         this.check_generics()?;
 
@@ -240,6 +249,23 @@ where
         Ok(())
     }
 
+    fn maybe_disallow_late_init_fields(&self) -> syn::Result<()> {
+        if A::ALLOW_LATE_INIT {
+            return Ok(());
+        }
+
+        for field in &self.fields {
+            if field.has_late_init_attr {
+                return Err(syn::Error::new_spanned(
+                    field.field,
+                    format!("`#[late_init]` cannot be used with `#[salsa::{}]`", A::KIND),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Check that the generic parameters look as expected for this kind of struct.
     fn check_generics(&self) -> syn::Result<()> {
         if A::HAS_LIFETIME {
@@ -251,6 +277,10 @@ where
         } else {
             db_lifetime::require_no_generics(&self.struct_item.generics)
         }
+    }
+
+    pub(crate) fn fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+        self.fields.iter().enumerate()
     }
 
     pub(crate) fn field_ids(&self) -> Vec<&syn::Ident> {
@@ -373,14 +403,6 @@ where
             .collect()
     }
 
-    pub(crate) fn field_indexed_tys(&self) -> Vec<syn::Ident> {
-        self.fields
-            .iter()
-            .enumerate()
-            .map(|(i, _)| quote::format_ident!("T{i}"))
-            .collect()
-    }
-
     pub(crate) fn field_attrs(&self) -> Vec<&[&syn::Attribute]> {
         self.fields.iter().map(|f| &*f.unknown_attrs).collect()
     }
@@ -487,6 +509,7 @@ impl<'s> SalsaField<'s> {
             has_default_attr: false,
             has_no_eq_attr: false,
             has_manual_retention_proof: false,
+            has_late_init_attr: false,
             get_name,
             set_name,
             unknown_attrs: Default::default(),

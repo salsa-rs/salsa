@@ -54,8 +54,33 @@ macro_rules! setup_interned_struct {
         // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
         field_indices: [$($field_index:tt),*],
 
-        // Indexed types for each field (T0, T1, ...)
-        field_indexed_tys: [$($indexed_ty:ident),*],
+        // Field names included in the interned key.
+        key_field_ids: [$($key_field_id:ident),*],
+
+        // Field types included in the interned key.
+        key_field_tys: [$($key_field_ty:ty),*],
+
+        // Indices of key fields in the stored data tuple.
+        key_field_indices: [$($key_field_index:tt),*],
+
+        // Indices of key fields in the lookup key tuple.
+        key_indices: [$($key_index:tt),*],
+
+        // Indexed lookup types for key fields (T0, T1, ...).
+        key_indexed_tys: [$($key_indexed_ty:ident),*],
+
+        // Constructor parameter types for every field.
+        field_param_tys: [$($field_param_ty:ty),*],
+
+        // Expressions assembling every stored field.
+        field_assembly: [$($field_assembly:expr),*],
+
+        // Whether any field is assembled from the allocated interned ID.
+        has_late_init: $has_late_init:tt,
+
+        // Names used by the assembly closure.
+        assembly_id: $assembly_id:ident,
+        assembly_data: $assembly_data:ident,
 
         // Attrs for each field.
         field_attrs: [$([$(#[$field_attr:meta]),*]),*],
@@ -128,32 +153,23 @@ macro_rules! setup_interned_struct {
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
             /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
             #[derive(Hash)]
-            struct StructKey<$db_lt, $($indexed_ty),*>(
-                $($indexed_ty,)*
+            struct StructKey<$db_lt, $($key_indexed_ty),*>(
+                $($key_indexed_ty,)*
                 ::std::marker::PhantomData<&$db_lt ()>,
             );
 
-            impl<$db_lt, $($indexed_ty,)*> $zalsa::HashEqLike<StructKey<$db_lt, $($indexed_ty),*>>
+            impl<$db_lt, $($key_indexed_ty,)*> $zalsa::HashEqLike<StructKey<$db_lt, $($key_indexed_ty),*>>
                 for $StructDataIdent<$db_lt>
                 where
-                $($field_ty: $zalsa::HashEqLike<$indexed_ty>),*
+                $($key_field_ty: $zalsa::HashEqLike<$key_indexed_ty>),*
                 {
 
                 fn hash<H: ::std::hash::Hasher>(&self, h: &mut H) {
-                    $($zalsa::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
+                    $($zalsa::HashEqLike::<$key_indexed_ty>::hash(&self.$key_field_index, &mut *h);)*
                 }
 
-                fn eq(&self, data: &StructKey<$db_lt, $($indexed_ty),*>) -> bool {
-                    ($($zalsa::HashEqLike::<$indexed_ty>::eq(&self.$field_index, &data.$field_index) && )* true)
-                }
-            }
-
-            impl<$db_lt, $($indexed_ty: $zalsa::Lookup<$field_ty>),*> $zalsa::Lookup<$StructDataIdent<$db_lt>>
-                for StructKey<$db_lt, $($indexed_ty),*> {
-
-                #[allow(unused_unit)]
-                fn into_owned(self) -> $StructDataIdent<$db_lt> {
-                    ($($zalsa::Lookup::into_owned(self.$field_index),)*)
+                fn eq(&self, data: &StructKey<$db_lt, $($key_indexed_ty),*>) -> bool {
+                    ($($zalsa::HashEqLike::<$key_indexed_ty>::eq(&self.$key_field_index, &data.$key_index) && )* true)
                 }
             }
 
@@ -173,6 +189,15 @@ macro_rules! setup_interned_struct {
 
                 type Fields<'a> = $StructDataIdent<'a>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
+
+                $zalsa::macro_if! { $has_late_init =>
+                    fn hash_fields<H: ::std::hash::Hasher>(
+                        fields: &Self::Fields<'_>,
+                        state: &mut H,
+                    ) {
+                        $(::std::hash::Hash::hash(&fields.$key_field_index, state);)*
+                    }
+                }
 
                 $(
                     fn heap_size(value: &Self::Fields<'_>) -> Option<usize> {
@@ -303,17 +328,21 @@ macro_rules! setup_interned_struct {
             unsafe impl< $($db_lt_arg)? > $zalsa::SalsaValue for $Struct< $($db_lt_arg)? > {}
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
-                pub fn $new_fn<$Db, $($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
+                pub fn $new_fn<$Db, $($key_indexed_ty: $zalsa::Lookup<$key_field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db, $($field_id: $field_param_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + ::salsa::Database,
                     $(
-                        $field_ty: $zalsa::HashEqLike<$indexed_ty>,
+                        $key_field_ty: $zalsa::HashEqLike<$key_indexed_ty>,
                     )*
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
-                    $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
-                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| $zalsa::Lookup::into_owned(data))
+                    $Configuration::ingredient(zalsa).intern(
+                        zalsa,
+                        zalsa_local,
+                        StructKey::<$db_lt>($($key_field_id,)* ::std::marker::PhantomData::default()),
+                        |$assembly_id, $assembly_data| ($($field_assembly,)*),
+                    )
                 }
 
                 $(
