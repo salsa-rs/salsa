@@ -70,7 +70,11 @@ where
             // output vector, we want to push in execution order, so reverse order to
             // ensure the first child that was executed will be the first child popped
             // from the stack.
-            let Some(origin) = ingredient.origin(zalsa, k.key_index()) else {
+            let Some(origin) = ingredient
+                .as_function()
+                .and_then(|function| function.memo(zalsa, k.key_index()))
+                .map(|memo| memo.header().origin())
+            else {
                 continue;
             };
 
