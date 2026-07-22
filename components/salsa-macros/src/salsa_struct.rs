@@ -101,8 +101,16 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
                 "multiple `#[salsa_value]` attributes on field",
             ));
         }
-        crate::salsa_value::parse_manual_retention_proof(attr)
-            .map_err(|error| syn::Error::new_spanned(ef.field, error.to_string()))?;
+        let proof = crate::salsa_value::parse_manual_retention_proof(attr)?;
+        if matches!(
+            proof,
+            crate::salsa_value::ManualRetentionProof::Conditional(_)
+        ) {
+            return Err(syn::Error::new_spanned(
+                ef.field,
+                "conditional retention proofs are only supported by `derive(SalsaValue)`",
+            ));
+        }
         ef.has_manual_retention_proof = true;
         Ok(())
     }),
