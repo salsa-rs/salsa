@@ -506,6 +506,11 @@ pub enum ProvisionalStatus<'db> {
         verified_at: Revision,
         cycle_heads: &'db CycleHeads,
     },
+    /// A provisional memo whose value was cleared while unwinding from a panic.
+    Poisoned {
+        iteration: IterationStamp,
+        verified_at: Revision,
+    },
     Final {
         iteration: IterationStamp,
         verified_at: Revision,
@@ -516,7 +521,9 @@ impl<'db> ProvisionalStatus<'db> {
     pub(crate) fn cycle_heads(&self) -> &'db CycleHeads {
         match self {
             ProvisionalStatus::Provisional { cycle_heads, .. } => cycle_heads,
-            ProvisionalStatus::Final { .. } => empty_cycle_heads(),
+            ProvisionalStatus::Poisoned { .. } | ProvisionalStatus::Final { .. } => {
+                empty_cycle_heads()
+            }
         }
     }
 

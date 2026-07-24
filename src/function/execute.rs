@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::active_query::CompletedQuery;
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp};
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp, ProvisionalStatus};
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, Configuration, IngredientImpl};
@@ -649,6 +649,17 @@ fn collect_all_cycle_heads(
         let provisional_status = ingredient
             .provisional_status(zalsa, current_head.key_index())
             .expect("cycle head memo must have been created during the execution");
+
+        if let ProvisionalStatus::Poisoned {
+            iteration,
+            verified_at,
+        } = provisional_status
+        {
+            tracing::warn!(
+                "Propagating panic for poisoned cycle head {current_head:?} from {verified_at:?} at {iteration:?}"
+            );
+            Cancelled::PropagatedPanic.throw();
+        }
 
         // A query should only ever depend on other heads that are provisional.
         // If this invariant is violated, it means that this query participates in a cycle,

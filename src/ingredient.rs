@@ -70,7 +70,8 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
 
     /// Returns information about the current provisional status of `input`.
     ///
-    /// Is it a provisional value or has it been finalized and in which iteration.
+    /// Is it a provisional value, a poisoned provisional memo, or has it been finalized and in
+    /// which iteration.
     ///
     /// Returns `None` if `input` doesn't exist.
     fn provisional_status<'db>(

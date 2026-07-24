@@ -674,7 +674,9 @@ fn validate_provisional(
         };
 
         match provisional_status {
-            ProvisionalStatus::Provisional { .. } => return false,
+            ProvisionalStatus::Provisional { .. } | ProvisionalStatus::Poisoned { .. } => {
+                return false;
+            }
             ProvisionalStatus::Final {
                 iteration,
                 verified_at,
