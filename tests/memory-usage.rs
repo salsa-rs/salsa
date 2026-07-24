@@ -320,7 +320,7 @@ fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
     let before = &before.queries["input_to_length"];
     assert_eq!(before.count(), 1);
 
-    db.trigger_lru_eviction();
+    db.trigger_eviction();
 
     assert_eq!(input_to_length(&db, input2), 150);
     let after = <dyn salsa::Database>::memory_usage(&db);

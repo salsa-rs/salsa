@@ -41,7 +41,7 @@ impl AllowedOptions for Accumulator {
     const CYCLE_FN: bool = false;
     const CYCLE_INITIAL: bool = false;
     const CYCLE_RESULT: bool = false;
-    const LRU: bool = false;
+    const EVICTION: bool = false;
     const CONSTRUCTOR_NAME: bool = false;
     const ID: bool = false;
     const REVISIONS: bool = false;

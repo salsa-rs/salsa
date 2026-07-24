@@ -351,18 +351,24 @@ impl Table {
         unsafe { page.memo_types.attach_memos(memos) }
     }
 
-    /// Get the memo table associated with `id`
-    pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypesMut<'_> {
+    /// Get the ingredient index and memo table associated with `id`.
+    pub(crate) fn ingredient_and_memos_mut(
+        &mut self,
+        id: Id,
+    ) -> (IngredientIndex, MemoTableWithTypesMut<'_>) {
         let (page, slot) = split_id(id);
         let page_index = page.0;
         let page = self
             .pages
             .get_mut(page_index)
             .unwrap_or_else(|| panic!("index `{page_index}` is uninitialized"));
+        let ingredient = page.ingredient;
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
         let memos = unsafe { &mut *(page.slot_vtable.memos_mut)(page.get(slot)) };
         // SAFETY: The `Page` keeps the correct memo types.
-        unsafe { page.memo_types.attach_memos_mut(memos) }
+        (ingredient, unsafe {
+            page.memo_types.attach_memos_mut(memos)
+        })
     }
 
     pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = (Id, &T)> + '_ {

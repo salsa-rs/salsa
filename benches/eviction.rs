@@ -35,7 +35,7 @@ fn main() {
 /// small per-hit costs can add up. Every result remains resident, which isolates
 /// hit-path bookkeeping. `NoEviction` shows the tracked-query cost without an
 /// eviction policy.
-#[divan::bench(args = [Policy::NoEviction, Policy::Lru])]
+#[divan::bench(args = [Policy::NoEviction, Policy::Lru, Policy::Sieve])]
 fn fast_path(bencher: divan::Bencher, policy: Policy) {
     const ITEMS: usize = 1_024;
 
@@ -59,7 +59,7 @@ fn fast_path(bencher: divan::Bencher, policy: Policy) {
 /// tracked function. This measures the remaining disabled-policy branch on the
 /// hit path. `NoEviction` is the policy-free reference for how cheap this path
 /// could be.
-#[divan::bench(args = [Policy::NoEviction, Policy::Lru])]
+#[divan::bench(args = [Policy::NoEviction, Policy::Lru, Policy::Sieve])]
 fn disabled_eviction(bencher: divan::Bencher, policy: Policy) {
     const ITEMS: usize = 1_024;
 
@@ -82,7 +82,7 @@ fn disabled_eviction(bencher: divan::Bencher, policy: Policy) {
 /// reads a fully resident working set and then triggers a sweep, separating
 /// steady-state sweep bookkeeping from victim selection and destruction.
 #[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
+    args = [Policy::NoEviction, Policy::Lru, Policy::Sieve],
     sample_count = 20,
     sample_size = 1
 )]
@@ -99,7 +99,7 @@ fn fast_path_and_sweep(bencher: divan::Bencher, policy: Policy) {
         })
         .bench_local_refs(|(db, items)| {
             let result = access_all(policy, &*db, items.iter().copied());
-            db.trigger_lru_eviction();
+            db.trigger_eviction();
             black_box(result)
         });
 }
@@ -116,7 +116,7 @@ fn fast_path_and_sweep(bencher: divan::Bencher, policy: Policy) {
 /// selection, and value destruction. `NoEviction` provides the computation
 /// baseline; setup and final database destruction remain outside timing.
 #[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
+    args = [Policy::NoEviction, Policy::Lru, Policy::Sieve],
     sample_count = 20,
     sample_size = 1
 )]
@@ -133,7 +133,7 @@ fn fill_and_evict(bencher: divan::Bencher, policy: Policy) {
         })
         .bench_local_refs(|(db, items)| {
             let result = access_all(policy, &*db, items.iter().copied());
-            db.trigger_lru_eviction();
+            db.trigger_eviction();
             black_box(result)
         });
 }

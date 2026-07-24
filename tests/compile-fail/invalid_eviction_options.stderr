@@ -1,0 +1,11 @@
+error: unexpected end of input, missing required `capacity` option
+ --> tests/compile-fail/invalid_eviction_options.rs:1:41
+  |
+1 | #[salsa::tracked(eviction(policy = sieve))]
+  |                                         ^
+
+error: unknown eviction policy; expected `sieve` or `lru`
+ --> tests/compile-fail/invalid_eviction_options.rs:4:36
+  |
+4 | #[salsa::tracked(eviction(policy = random, capacity = 128))]
+  |                                    ^^^^^^

@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 use syn::{Ident, ItemFn};
 
 use crate::hygiene::Hygiene;
-use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
+use crate::options::{AllowedOptions, AllowedPersistOptions, EvictionPolicy, Options};
 use crate::xform::ChangeLt;
 use crate::{db_lifetime, fn_util};
 
@@ -51,7 +51,7 @@ impl AllowedOptions for TrackedFn {
 
     const CYCLE_RESULT: bool = true;
 
-    const LRU: bool = true;
+    const EVICTION: bool = true;
 
     const CONSTRUCTOR_NAME: bool = false;
 
@@ -150,10 +150,10 @@ impl Macro {
             }
         }
 
-        if let (Some(_), Some(token)) = (&self.args.lru, &self.args.specify) {
+        if let (Some(_), Some(token)) = (&self.args.eviction, &self.args.specify) {
             return Err(syn::Error::new_spanned(
                 token,
-                "the `specify` and `lru` options cannot be used together",
+                "the `specify` and `eviction` options cannot be used together",
             ));
         }
 
@@ -162,14 +162,17 @@ impl Macro {
             FunctionType::SalsaStruct => false,
         };
 
-        let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
-
-        // Determine the eviction policy type based on whether LRU capacity is specified
-        let eviction_type = if self.args.lru.is_some() {
-            quote!(::salsa::plumbing::function::Lru)
-        } else {
-            quote!(::salsa::plumbing::function::NoopEviction)
+        let (eviction_type, eviction_capacity) = match &self.args.eviction {
+            Some(eviction) => {
+                let policy = match eviction.policy {
+                    EvictionPolicy::Lru => quote!(::salsa::plumbing::function::Lru),
+                    EvictionPolicy::Sieve => quote!(::salsa::plumbing::function::Sieve),
+                };
+                (policy, eviction.capacity)
+            }
+            None => (quote!(::salsa::plumbing::function::NoopEviction), 0),
         };
+        let eviction_capacity = Literal::usize_unsuffixed(eviction_capacity);
 
         let return_mode = self
             .args
@@ -232,7 +235,7 @@ impl Macro {
                 needs_interner: #needs_interner,
                 heap_size_fn: #(#heap_size_fn)*,
                 eviction: #eviction_type,
-                lru: #lru,
+                eviction_capacity: #eviction_capacity,
                 return_mode: #return_mode,
                 persist: #persist,
                 assert_interned_inputs_are_salsa_values: { #assert_interned_inputs_are_salsa_values },
