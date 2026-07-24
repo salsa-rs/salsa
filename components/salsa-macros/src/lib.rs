@@ -521,9 +521,13 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// A field accepts at most one `#[salsa_value(...)]` attribute:
 ///
+/// - **Unsafe: `#[salsa_value(unsafe(prove(Predicate, ...)))]`** suppresses the generated retention
+///   check for this field and adds the predicates to the generated `SalsaValue` implementation. The
+///   compiler verifies the predicates, but the author must ensure they imply that Salsa can replace
+///   the field's database lifetime with `'static` for storage and safely restore it later.
 /// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the generated
-///   retention check for this field. The author must ensure Salsa can replace its database lifetime
-///   with `'static` for storage and safely restore it later.
+///   retention check without adding predicates. The author must ensure the field is safe for every
+///   generic instantiation accepted by the enclosing type.
 ///
 /// # Safety
 ///
@@ -533,12 +537,23 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 /// valid when Salsa retains the value across revisions and rebinds its database
 /// lifetime.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```ignore
 /// #[derive(salsa::SalsaValue)]
 /// struct QueryValue<'db> {
 ///     item: MyInterned<'db>,
+/// }
+/// ```
+///
+/// A conditional proof narrows the generated implementation when an unmodifiable field type does
+/// not implement `SalsaValue`:
+///
+/// ```ignore
+/// #[derive(salsa::SalsaValue)]
+/// struct QueryValue<T> {
+///     #[salsa_value(unsafe(prove(T: salsa::SalsaValue)))]
+///     value: ForeignContainer<T>,
 /// }
 /// ```
 ///
@@ -558,5 +573,6 @@ pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error
 }
 
 mod kw {
+    syn::custom_keyword!(prove);
     syn::custom_keyword!(prove_safe_to_retain_manually);
 }

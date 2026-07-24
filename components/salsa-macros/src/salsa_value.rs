@@ -1,10 +1,20 @@
 use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
-use syn::{Attribute, spanned::Spanned, visit::Visit};
+use syn::{Attribute, parse::Parse, spanned::Spanned, visit::Visit};
 
 use crate::kw;
 use crate::xform::{ChangeLt, ChangeSelfPath};
+
+pub(crate) enum ManualRetentionProof {
+    Conditional(Vec<syn::WherePredicate>),
+    Unconditional,
+}
+
+struct CheckedField<'a> {
+    ty: &'a syn::Type,
+    proof: Option<ManualRetentionProof>,
+}
 
 pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenStream> {
     if let syn::Data::Union(union) = &input.data {
@@ -26,16 +36,16 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
             "`derive(SalsaValue)` supports at most one lifetime parameter",
         ));
     }
-    let mut checked_field_types = Vec::new();
+    let mut checked_fields = Vec::new();
 
     match &input.data {
         syn::Data::Struct(data) => {
-            collect_checked_field_types(&data.fields, &mut checked_field_types)?;
+            collect_checked_field_types(&data.fields, &mut checked_fields)?;
         }
         syn::Data::Enum(data) => {
             for variant in &data.variants {
                 reject_salsa_value_attributes(&variant.attrs, "variant")?;
-                collect_checked_field_types(&variant.fields, &mut checked_field_types)?;
+                collect_checked_field_types(&variant.fields, &mut checked_fields)?;
             }
         }
         syn::Data::Union(_) => unreachable!(),
@@ -46,7 +56,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
     let derived_type = syn::parse_quote!(#ident #type_generics);
     let zalsa = quote::format_ident!("__salsa_plumbing");
 
-    let generics = add_field_bounds(input.generics.clone(), &checked_field_types);
+    let generics = add_field_bounds(input.generics.clone(), &checked_fields, &derived_type);
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     let implementation = quote! {
@@ -60,19 +70,11 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
         return Ok(crate::debug::dump_tokens(&input.ident, implementation));
     };
 
-    let field_assertions =
-        checked_field_types
-            .iter()
-            .map(|(field_type, has_manual_retention_proof)| {
-                let field_type = replace_self_type(field_type, &derived_type);
+    let field_assertions = checked_fields.iter().map(|CheckedField { ty, proof }| {
+        let ty = replace_self_type(ty, &derived_type);
 
-                assert_salsa_value_field(
-                    &assertion_lifetime,
-                    &zalsa,
-                    &field_type,
-                    *has_manual_retention_proof,
-                )
-            });
+        assert_salsa_value_field(&assertion_lifetime, &zalsa, &ty, proof.is_some())
+    });
 
     let tokens = quote! {
         #implementation
@@ -93,26 +95,32 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
 
 fn add_field_bounds(
     mut generics: syn::Generics,
-    checked_field_types: &[(&syn::Type, bool)],
+    checked_fields: &[CheckedField<'_>],
+    derived_type: &syn::Type,
 ) -> syn::Generics {
     let type_params = generics
         .type_params()
         .map(|parameter| parameter.ident.clone())
         .collect::<HashSet<_>>();
 
-    for (field_type, has_manual_retention_proof) in checked_field_types {
-        if *has_manual_retention_proof {
-            continue;
+    for CheckedField { ty, proof } in checked_fields {
+        match proof {
+            Some(ManualRetentionProof::Conditional(predicates)) => {
+                generics.make_where_clause().predicates.extend(
+                    predicates
+                        .iter()
+                        .map(|predicate| replace_self_in_predicate(predicate, derived_type)),
+                );
+            }
+            Some(ManualRetentionProof::Unconditional) => {}
+            None if type_uses_type_param(ty, &type_params) => {
+                generics
+                    .make_where_clause()
+                    .predicates
+                    .push(syn::parse_quote!(#ty: ::salsa::SalsaValue));
+            }
+            None => {}
         }
-
-        if !type_uses_type_param(field_type, &type_params) {
-            continue;
-        }
-
-        generics
-            .make_where_clause()
-            .predicates
-            .push(syn::parse_quote!(#field_type: ::salsa::SalsaValue));
     }
 
     generics
@@ -148,22 +156,25 @@ fn type_uses_type_param(ty: &syn::Type, type_params: &HashSet<syn::Ident>) -> bo
 
 fn collect_checked_field_types<'a>(
     fields: &'a syn::Fields,
-    checked_field_types: &mut Vec<(&'a syn::Type, bool)>,
+    checked_fields: &mut Vec<CheckedField<'a>>,
 ) -> syn::Result<()> {
     for field in fields {
-        checked_field_types.push((&field.ty, field_has_manual_retention_proof(field)?));
+        checked_fields.push(CheckedField {
+            ty: &field.ty,
+            proof: field_manual_retention_proof(field)?,
+        });
     }
 
     Ok(())
 }
 
-fn field_has_manual_retention_proof(field: &syn::Field) -> syn::Result<bool> {
+fn field_manual_retention_proof(field: &syn::Field) -> syn::Result<Option<ManualRetentionProof>> {
     let mut attrs = field
         .attrs
         .iter()
         .filter(|attr| attr.path().is_ident("salsa_value"));
     let Some(attr) = attrs.next() else {
-        return Ok(false);
+        return Ok(None);
     };
 
     if attrs.next().is_some() {
@@ -173,20 +184,40 @@ fn field_has_manual_retention_proof(field: &syn::Field) -> syn::Result<bool> {
         ));
     }
 
-    parse_manual_retention_proof(attr)
-        .map_err(|error| syn::Error::new_spanned(field, error.to_string()))?;
-    Ok(true)
+    parse_manual_retention_proof(attr).map(Some)
 }
 
-pub(crate) fn parse_manual_retention_proof(attr: &Attribute) -> syn::Result<()> {
+pub(crate) fn parse_manual_retention_proof(attr: &Attribute) -> syn::Result<ManualRetentionProof> {
     attr.parse_args_with(|input: syn::parse::ParseStream<'_>| {
+        if input.peek(kw::prove) {
+            return Err(input.error("`prove(...)` must be wrapped in `unsafe(...)`"));
+        }
+
         let _: syn::Token![unsafe] = input.parse()?;
         let content;
         syn::parenthesized!(content in input);
-        content.parse::<kw::prove_safe_to_retain_manually>()?;
+
+        let proof = if content.peek(kw::prove) {
+            content.parse::<kw::prove>()?;
+            let predicates;
+            syn::parenthesized!(predicates in content);
+            if predicates.is_empty() {
+                return Err(predicates.error("`prove(...)` requires at least one predicate"));
+            }
+
+            ManualRetentionProof::Conditional(
+                predicates
+                    .parse_terminated(syn::WherePredicate::parse, syn::Token![,])?
+                    .into_iter()
+                    .collect(),
+            )
+        } else {
+            content.parse::<kw::prove_safe_to_retain_manually>()?;
+            ManualRetentionProof::Unconditional
+        };
 
         if content.is_empty() {
-            Ok(())
+            Ok(proof)
         } else {
             Err(content.error("unexpected token"))
         }
@@ -211,6 +242,18 @@ fn reject_salsa_value_attributes(attrs: &[Attribute], target: &str) -> syn::Resu
         Some(error) => Err(error),
         None => Ok(()),
     }
+}
+
+fn replace_self_in_predicate(
+    predicate: &syn::WherePredicate,
+    self_type: &syn::Type,
+) -> syn::WherePredicate {
+    let mut predicate = predicate.clone();
+    syn::visit_mut::VisitMut::visit_where_predicate_mut(
+        &mut ChangeSelfPath::new(self_type, None),
+        &mut predicate,
+    );
+    predicate
 }
 
 fn replace_self_type(ty: &syn::Type, self_type: &syn::Type) -> syn::Type {
