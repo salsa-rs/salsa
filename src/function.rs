@@ -358,8 +358,9 @@ where
 
     /// Returns `final` if the memo has the `verified_final` flag set.
     ///
-    /// Otherwise, the value is still provisional. For both final and provisional, it also
-    /// returns the iteration in which this memo was created (always 0 except for cycle heads).
+    /// Otherwise, the value is still provisional or the provisional memo has been poisoned. It
+    /// also returns the iteration in which this memo was created (always 0 except for cycle
+    /// heads).
     fn provisional_status<'db>(
         &self,
         zalsa: &'db Zalsa,
@@ -367,6 +368,13 @@ where
     ) -> Option<ProvisionalStatus<'db>> {
         let memo =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
+
+        if memo.value.is_none() && memo.header.may_be_provisional() {
+            return Some(ProvisionalStatus::Poisoned {
+                iteration: memo.header.revisions.iteration(),
+                verified_at: memo.header.verified_at.load(),
+            });
+        }
 
         Some(memo.header.provisional_status())
     }

@@ -5,7 +5,7 @@ use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
-use crate::{DatabaseKeyIndex, Id};
+use crate::{Cancelled, DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -188,6 +188,15 @@ where
                 let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
                 if let Some(memo) = &memo_guard {
                     let revisions = &memo.header.revisions;
+                    // Don't replace a poisoned memo from this execution with a new initial value.
+                    if memo.value.is_none()
+                        && memo.header.may_be_provisional()
+                        && memo.header.verified_at.load() == zalsa.current_revision()
+                        && revisions.iteration().cancellation_count() == cancellation_count
+                    {
+                        Cancelled::PropagatedPanic.throw();
+                    }
+
                     // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
                     // but that would require inserting itself as a cycle head, which either requires clone
                     // on the value OR a concurrent `Vec` for cycle heads.

@@ -14,7 +14,7 @@ use crate::sync::atomic::Ordering;
 use crate::table::memo::{DummyMemo, MemoTableWithTypesMut, ToDynMemo};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
-use crate::{Event, EventKind, Id, Revision};
+use crate::{Cancelled, Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
@@ -538,6 +538,19 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                         iteration,
                         verified_at,
                     } => (iteration, verified_at),
+                    ProvisionalStatus::Poisoned {
+                        iteration,
+                        verified_at,
+                    } => {
+                        if verified_at == self.zalsa.current_revision()
+                            && iteration.cancellation_count()
+                                == self.zalsa.runtime().cancellation_count()
+                        {
+                            Cancelled::PropagatedPanic.throw();
+                        }
+
+                        return Some(TryClaimHeadsResult::Available);
+                    }
                 };
 
                 Some(TryClaimHeadsResult::Cycle {
