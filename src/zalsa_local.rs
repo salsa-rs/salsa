@@ -15,7 +15,7 @@ use thin_vec::ThinVec;
 #[cfg(feature = "accumulator")]
 use crate::accumulator::{
     Accumulator,
-    accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
+    accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
 };
 use crate::active_query::{CompletedQuery, DetachedInputOutputs, QueryCompletion, QueryStack};
 use crate::cycle::{AtomicIterationStamp, CycleHeads, IterationStamp, empty_cycle_heads};
@@ -387,6 +387,33 @@ impl ZalsaLocal {
             self.with_query_stack_unchecked_mut(|stack| {
                 if let Some(top_query) = stack.last_mut() {
                     top_query.add_changed_at(changed_at);
+                }
+            })
+        }
+    }
+
+    pub(crate) fn report_previous_memo_read(
+        &self,
+        durability: Durability,
+        edges: QueryEdges<'_>,
+        untracked_read: bool,
+        tracked_struct_ids: &[(Identity, Id)],
+        #[cfg(feature = "accumulator")] accumulated_inputs: InputAccumulatedValues,
+        current_revision: Revision,
+    ) {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.with_query_stack_unchecked_mut(|stack| {
+                if let Some(top_query) = stack.last_mut() {
+                    top_query.add_previous_memo_read(
+                        durability,
+                        current_revision,
+                        edges,
+                        untracked_read,
+                        tracked_struct_ids,
+                        #[cfg(feature = "accumulator")]
+                        accumulated_inputs,
+                    );
                 }
             })
         }

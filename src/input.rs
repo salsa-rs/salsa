@@ -272,6 +272,7 @@ pub struct StructEntry<'db, C>
 where
     C: Configuration,
 {
+    #[cfg_attr(not(feature = "salsa_unstable"), expect(dead_code))]
     value: &'db Value<C>,
     key: DatabaseKeyIndex,
 }
