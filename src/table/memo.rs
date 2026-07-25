@@ -400,6 +400,31 @@ impl<'a> MemoTableWithTypes<'a> {
             .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
     }
 
+    /// Returns a pointer to the memo at the given index, if one has been inserted, without
+    /// checking its registered type.
+    ///
+    /// # Safety
+    ///
+    /// `M` must be the type registered for `memo_ingredient_index`.
+    #[inline]
+    pub(crate) unsafe fn get_unchecked<M: Memo>(
+        self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<NonNull<M>> {
+        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+
+        debug_assert_eq!(
+            self.types.types[memo_ingredient_index.as_usize()].type_id,
+            TypeId::of::<M>(),
+            "inconsistent type-id for `{memo_ingredient_index:?}`"
+        );
+
+        NonNull::new(atomic_memo.load(Ordering::Acquire))
+            // SAFETY: The caller guarantees that the registered type is `M`, and `insert` checks
+            // the registered type before storing the pointer.
+            .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
+    }
+
     /// Returns a type-erased view with the slot's registered type metadata.
     ///
     /// # Safety

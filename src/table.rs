@@ -197,6 +197,60 @@ impl Table {
         page_ref.page_data()[slot.0].get().cast::<T>()
     }
 
+    /// Get a reference to the data for `id`, checking its page owner instead of its type.
+    ///
+    /// # Safety
+    ///
+    /// Pages owned by `ingredient` must store values of type `T`.
+    #[inline(always)]
+    pub(crate) unsafe fn get_for_ingredient<T: Slot>(
+        &self,
+        id: Id,
+        ingredient: IngredientIndex,
+    ) -> &T {
+        let (page, slot) = split_id(id);
+        // SAFETY: Guaranteed by the caller.
+        let page_ref = unsafe { self.page_for_ingredient::<T>(page, ingredient) };
+        &page_ref.data()[slot.0]
+    }
+
+    /// Get a raw pointer to the data for `id`, checking its page owner instead of its type.
+    ///
+    /// # Safety
+    ///
+    /// Pages owned by `ingredient` must store values of type `T`. See [`Page::get_raw`][].
+    #[inline(always)]
+    pub(crate) unsafe fn get_raw_for_ingredient<T: Slot>(
+        &self,
+        id: Id,
+        ingredient: IngredientIndex,
+    ) -> *mut T {
+        let (page, slot) = split_id(id);
+        // SAFETY: Guaranteed by the caller.
+        let page_ref = unsafe { self.page_for_ingredient::<T>(page, ingredient) };
+        page_ref.page_data()[slot.0].get().cast::<T>()
+    }
+
+    /// Gets a typed view of a page owned by `ingredient`.
+    ///
+    /// # Safety
+    ///
+    /// Pages owned by `ingredient` must store values of type `T`.
+    #[inline(always)]
+    unsafe fn page_for_ingredient<T: Slot>(
+        &self,
+        page: PageIndex,
+        ingredient: IngredientIndex,
+    ) -> PageView<'_, T> {
+        let page = &self.pages[page.0];
+        if page.ingredient != ingredient {
+            ingredient_assert_failed(page, ingredient);
+        }
+
+        debug_assert_eq!(page.slot_type_id, TypeId::of::<T>());
+        PageView(page, PhantomData)
+    }
+
     /// Returns the number of pages that have been allocated.
     pub fn page_count(&self) -> usize {
         self.pages.count()
@@ -570,6 +624,16 @@ fn type_assert_failed<T: 'static>(page: &Page) -> ! {
         "page has slot type `{:?}` but `{:?}` was expected",
         (page.slot_vtable.type_name)(),
         std::any::type_name::<T>(),
+    )
+}
+
+/// This function is explicitly outlined to keep debug machinery out of the hot path.
+#[cold]
+#[inline(never)]
+fn ingredient_assert_failed(page: &Page, expected: IngredientIndex) -> ! {
+    panic!(
+        "page belongs to ingredient `{:?}` but ingredient `{expected:?}` was expected",
+        page.ingredient,
     )
 }
 

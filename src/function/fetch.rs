@@ -3,35 +3,32 @@ use crate::function::eviction::EvictionPolicy;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::ingredient::IngredientInDb;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
 use crate::{DatabaseKeyIndex, Id};
 
-impl<C> IngredientImpl<C>
+impl<'db, C> IngredientInDb<'db, C::DbView, IngredientImpl<C>>
 where
     C: Configuration,
 {
     #[inline]
-    pub fn fetch<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        id: Id,
-    ) -> &'db C::Output<'db> {
+    pub fn fetch(&self, zalsa_local: &'db ZalsaLocal, id: Id) -> &'db C::Output<'db> {
+        let zalsa = self.zalsa();
+
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
-        let database_key_index = self.database_key_index(id);
+        let database_key_index = self.ingredient().database_key_index(id);
 
         #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
-        let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+        let memo = self.refresh_memo(zalsa_local, id);
 
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value().unwrap_unchecked() };
 
-        self.eviction.record_use(id);
+        self.ingredient().eviction.record_use(id);
 
         let revisions = &memo.header.revisions;
         zalsa_local.report_tracked_read(
@@ -49,41 +46,46 @@ where
     }
 
     #[inline(always)]
-    pub(super) fn refresh_memo<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        id: Id,
-    ) -> &'db Memo<C> {
-        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+    pub(super) fn refresh_memo(&self, zalsa_local: &'db ZalsaLocal, id: Id) -> &'db Memo<C> {
+        let ingredient = self.ingredient();
+        let db = self.db();
+        let zalsa = self.zalsa();
+        let memo_ingredient_index = ingredient.memo_ingredient_index(zalsa, id);
 
         loop {
             // Keep the hot and cold probes in distinct control-flow blocks. Using `or_else`
             // here can outline both into one function, making hot hits pay for the cold path's
             // stack frame.
-            if let Some(memo) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
+            if let Some(memo) = self.fetch_hot(id, memo_ingredient_index) {
                 return memo;
             }
 
-            if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index) {
+            if let Some(memo) =
+                ingredient.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)
+            {
                 return memo;
             }
         }
     }
 
     #[inline(always)]
-    fn fetch_hot<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
+    fn fetch_hot(
+        &self,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C>> {
-        let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
+        let ingredient = self.ingredient();
+        let zalsa = self.zalsa();
 
-        memo.value.as_ref()?;
+        // SAFETY: `IngredientInDb` guarantees that the ingredient is registered in `zalsa`, and
+        // `memo_ingredient_index` was read from that ingredient's memo map.
+        let memo = unsafe {
+            ingredient.get_memo_from_table_for_unchecked(zalsa, id, memo_ingredient_index)?
+        };
 
-        let database_key_index = self.database_key_index(id);
+        memo.value()?;
+
+        let database_key_index = ingredient.database_key_index(id);
 
         let can_shallow_update = memo.header.shallow_verify_memo(
             zalsa,
@@ -98,12 +100,17 @@ where
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.
-            unsafe { Some(self.extend_memo_lifetime(memo)) }
+            unsafe { Some(ingredient.extend_memo_lifetime(memo)) }
         } else {
             None
         }
     }
+}
 
+impl<C> IngredientImpl<C>
+where
+    C: Configuration,
+{
     fn fetch_cold<'db>(
         &'db self,
         zalsa: &'db Zalsa,

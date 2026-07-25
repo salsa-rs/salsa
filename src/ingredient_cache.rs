@@ -56,7 +56,8 @@ mod imp {
             &self,
             zalsa: &'db Zalsa,
         ) -> &'db I {
-            let mut ingredient_index = self.ingredient_index.load(Ordering::Acquire);
+            // The cached number does not publish any other state.
+            let mut ingredient_index = self.ingredient_index.load(Ordering::Relaxed);
             if ingredient_index == Self::UNINITIALIZED {
                 ingredient_index = get_or_create_index_slow(
                     &self.ingredient_index,
@@ -101,7 +102,7 @@ mod imp {
 
         // It doesn't matter if we overwrite any stores, as the jar lookup should
         // always return the same index when the `inventory` feature is enabled.
-        cached_index.store(ingredient_index.as_u32(), Ordering::Release);
+        cached_index.store(ingredient_index.as_u32(), Ordering::Relaxed);
 
         ingredient_index
     }
@@ -194,7 +195,8 @@ mod imp {
                 mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
             );
 
-            let cached_data = self.cached_data.load(Ordering::Acquire);
+            // The cached number does not publish any other state.
+            let cached_data = self.cached_data.load(Ordering::Relaxed);
             if cached_data == UNINITIALIZED {
                 return get_or_create_index_slow(
                     &self.cached_data,
@@ -243,7 +245,7 @@ mod imp {
         debug_assert_ne!(packed, UNINITIALIZED);
 
         // Discard the result, whether we won over the cache or not doesn't matter.
-        _ = cache.compare_exchange(UNINITIALIZED, packed, Ordering::Release, Ordering::Relaxed);
+        _ = cache.compare_exchange(UNINITIALIZED, packed, Ordering::Relaxed, Ordering::Relaxed);
 
         // Use our locally computed index regardless of which one was cached.
         index
