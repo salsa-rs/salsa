@@ -121,15 +121,13 @@ impl Macro {
 
         let field_tys = salsa_struct.field_tys();
         let field_manual_retention_proofs = salsa_struct.field_manual_retention_proofs();
+        let self_type = syn::parse_quote!(#struct_ident<#db_lt>);
         let assert_fields_are_salsa_values = field_tys
             .iter()
             .zip(field_manual_retention_proofs)
-            .map(|(ty, has_manual_retention_proof)| {
-                crate::salsa_value::assert_salsa_value_field(
-                    &db_lt,
-                    &zalsa,
-                    ty,
-                    has_manual_retention_proof,
+            .map(|(ty, proof)| {
+                crate::salsa_value::assert_salsa_value_field_with_proof(
+                    &db_lt, &zalsa, ty, proof, &self_type,
                 )
             })
             .collect::<TokenStream>();

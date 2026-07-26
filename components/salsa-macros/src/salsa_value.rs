@@ -296,6 +296,34 @@ pub(crate) fn assert_salsa_value_field(
     }
 }
 
+pub(crate) fn assert_salsa_value_field_with_proof(
+    db_lt: &syn::Lifetime,
+    zalsa: &syn::Ident,
+    ty: &syn::Type,
+    proof: Option<&ManualRetentionProof>,
+    self_type: &syn::Type,
+) -> TokenStream {
+    match proof {
+        None => assert_salsa_value_or_static_expr(db_lt, zalsa, ty),
+        Some(ManualRetentionProof::Unconditional) => quote! {},
+        Some(ManualRetentionProof::Conditional(predicates)) => {
+            let predicates = predicates
+                .iter()
+                .map(|predicate| replace_self_in_predicate(predicate, self_type));
+            quote! {
+                {
+                    #[allow(unused_lifetimes)]
+                    fn _assert_manual_retention_proof<#db_lt>()
+                    where
+                        #(#predicates,)*
+                    {}
+                    _assert_manual_retention_proof::<#db_lt>();
+                }
+            }
+        }
+    }
+}
+
 fn assert_tracked_output_is_salsa_value(
     db_lt: &syn::Lifetime,
     zalsa: &syn::Ident,

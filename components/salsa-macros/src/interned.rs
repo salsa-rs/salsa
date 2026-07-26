@@ -146,22 +146,24 @@ impl Macro {
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
 
-        let assert_fields_are_salsa_values = if self.args.non_salsa_values.is_some() {
-            quote! {}
+        let self_type = if has_lifetime {
+            syn::parse_quote!(#struct_ident<#db_lt>)
         } else {
-            field_tys
-                .iter()
-                .zip(field_manual_retention_proofs)
-                .map(|(field_ty, has_manual_retention_proof)| {
-                    crate::salsa_value::assert_salsa_value_field(
-                        &db_lt,
-                        &zalsa,
-                        field_ty,
-                        has_manual_retention_proof,
-                    )
-                })
-                .collect()
+            syn::parse_quote!(#struct_ident)
         };
+        let assert_fields_are_salsa_values: TokenStream = field_tys
+            .iter()
+            .zip(field_manual_retention_proofs)
+            .map(|(field_ty, proof)| {
+                if self.args.non_salsa_values.is_some() && proof.is_none() {
+                    quote! {}
+                } else {
+                    crate::salsa_value::assert_salsa_value_field_with_proof(
+                        &db_lt, &zalsa, field_ty, proof, &self_type,
+                    )
+                }
+            })
+            .collect();
 
         Ok(crate::debug::dump_tokens(
             struct_ident,

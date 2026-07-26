@@ -30,51 +30,19 @@ error: expected `:`
 28 |     #[salsa_value(unsafe(prove(T salsa::SalsaValue)))]
    |                                  ^^^^^
 
-error: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]` cannot be used with `#[salsa::input]`
+error: `#[salsa_value(...)]` cannot be used with `#[salsa::input]`
   --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:34:5
    |
 34 | /     #[salsa_value(unsafe(prove_safe_to_retain_manually))]
 35 | |     field: String,
    | |_________________^
 
-error: conditional retention proofs are only supported by `derive(SalsaValue)`
+error: `#[salsa_value(...)]` cannot be used with `#[salsa::input]`
   --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:40:5
    |
 40 | /     #[salsa_value(unsafe(prove(String: salsa::SalsaValue)))]
 41 | |     field: String,
    | |_________________^
-
-error: conditional retention proofs are only supported by `derive(SalsaValue)`
-  --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:46:5
-   |
-46 | /     #[salsa_value(unsafe(prove(String: salsa::SalsaValue)))]
-47 | |     field: String,
-   | |_________________^
-
-error: conditional retention proofs are only supported by `derive(SalsaValue)`
-  --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:52:5
-   |
-52 | /     #[salsa_value(unsafe(prove(
-53 | |         std::marker::PhantomData<&'db ()>: salsa::SalsaValue
-54 | |     )))]
-55 | |     field: std::marker::PhantomData<&'db ()>,
-   | |____________________________________________^
-
-error: cannot find attribute `salsa_value` in this scope
-  --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:52:7
-   |
-52 |     #[salsa_value(unsafe(prove(
-   |       ^^^^^^^^^^^
-   |
-   = note: `salsa_value` is an attribute that can be used by the derive macro `SalsaValue`, you might be missing a `derive` attribute
-
-error: cannot find attribute `salsa_value` in this scope
-  --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:46:7
-   |
-46 |     #[salsa_value(unsafe(prove(String: salsa::SalsaValue)))]
-   |       ^^^^^^^^^^^
-   |
-   = note: `salsa_value` is an attribute that can be used by the derive macro `SalsaValue`, you might be missing a `derive` attribute
 
 error: cannot find attribute `salsa_value` in this scope
   --> tests/compile-fail/salsa_value_invalid_field_attributes.rs:40:7

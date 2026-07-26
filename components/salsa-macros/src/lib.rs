@@ -192,10 +192,13 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   [`salsa::SalsaAsDeref`] to return borrowed forms such as `Option<&T>` and
 ///   `Option<&T::Target>`. Every borrowed result is tied to the database borrow.
 /// - `#[get(IDENT)]` renames the generated getter.
+/// - **Unsafe: `#[salsa_value(unsafe(prove(Predicate, ...)))]`** replaces the retention check with
+///   predicates that must hold for every database lifetime. The compiler verifies the predicates,
+///   but the caller must ensure they imply that Salsa can retain the field and expose it with a later
+///   database lifetime.
 /// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the retention
-///   check for this field. The caller must ensure Salsa can retain the field and expose it with a
-///   later database lifetime. Conditional `unsafe(prove(...))` proofs are not supported on interned
-///   struct fields; they are only supported by `derive(SalsaValue)`.
+///   check for this field without adding predicates. The caller must ensure Salsa can retain the
+///   field and expose it with a later database lifetime.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -393,10 +396,13 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   recreated, avoiding the [`PartialEq`] requirement. It is most useful together with
 ///   `#[tracked]`: because the field does not contribute to identity, the struct can retain its
 ///   identity when recreated, while readers of the field are always invalidated.
+/// - **Unsafe: `#[salsa_value(unsafe(prove(Predicate, ...)))]`** replaces the retention check with
+///   predicates that must hold for every database lifetime. The compiler verifies the predicates,
+///   but the caller must ensure they imply that Salsa can retain the field and expose it with a later
+///   database lifetime.
 /// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the retention
-///   check for this field. The caller must ensure Salsa can retain the field and expose it with a
-///   later database lifetime. Conditional `unsafe(prove(...))` proofs are not supported on tracked
-///   struct fields; they are only supported by `derive(SalsaValue)`.
+///   check for this field without adding predicates. The caller must ensure Salsa can retain the
+///   field and expose it with a later database lifetime.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -524,9 +530,10 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// # Field attributes
 ///
-/// These field attributes are supported only by `derive(SalsaValue)`. Salsa's `tracked` and
-/// `interned` struct macros support the unconditional proof below, but not conditional
-/// `unsafe(prove(...))` predicates. The `input` macro supports neither form.
+/// These field attributes are supported by `derive(SalsaValue)` and by Salsa's `tracked` and
+/// `interned` struct macros. On a derived type, conditional predicates become bounds on the
+/// generated `SalsaValue` implementation. On tracked and interned structs, they must hold for every
+/// database lifetime. The `input` macro supports neither form.
 ///
 /// A field accepts at most one `#[salsa_value(...)]` attribute:
 ///

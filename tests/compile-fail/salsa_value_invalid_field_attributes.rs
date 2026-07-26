@@ -41,18 +41,4 @@ struct ConditionalDisallowed {
     field: String,
 }
 
-#[salsa::interned(unsafe(no_lifetime), revisions = usize::MAX)]
-struct ConditionalInterned {
-    #[salsa_value(unsafe(prove(String: salsa::SalsaValue)))]
-    field: String,
-}
-
-#[salsa::tracked]
-struct ConditionalTracked<'db> {
-    #[salsa_value(unsafe(prove(
-        std::marker::PhantomData<&'db ()>: salsa::SalsaValue
-    )))]
-    field: std::marker::PhantomData<&'db ()>,
-}
-
 fn main() {}

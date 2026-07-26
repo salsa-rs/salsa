@@ -219,19 +219,15 @@ state.
 
 The derive supports types with at most one lifetime parameter, as well as type and const
 parameters. Generated implementations require generic field types to implement `SalsaValue`.
-The available field proofs depend on how the enclosing type is declared:
+Retention proofs are supported by `derive(SalsaValue)` and on tracked and interned struct fields;
+input fields do not support them.
 
-| Enclosing declaration | `unsafe(prove(...))` | `unsafe(prove_safe_to_retain_manually)` |
-| --- | --- | --- |
-| `derive(SalsaValue)` | Supported | Supported |
-| `#[salsa::tracked]` struct | Not supported | Supported |
-| `#[salsa::interned]` struct | Not supported | Supported |
-| `#[salsa::input]` struct | Not supported | Not supported |
-
-Conditional proofs add predicates to a generated `SalsaValue` implementation. Only
-`derive(SalsaValue)` generates an implementation whose generic bounds can be narrowed this way.
-When an unmodifiable field type cannot implement `SalsaValue`, a conditional proof can replace the
-field check with narrower predicates:
+On a type using `derive(SalsaValue)`, conditional proofs add predicates to the generated
+`SalsaValue` implementation, narrowing the generic instantiations that implement the trait. Tracked
+and interned structs do not support type or const parameters, so their predicates are instead
+verified for every database lifetime by the generated field assertions. When an unmodifiable field
+type cannot implement `SalsaValue`, a conditional proof can replace the field check with narrower
+predicates:
 
 ```rust,ignore
 #[derive(salsa::SalsaValue)]
@@ -247,9 +243,8 @@ implies `ForeignContainer<T>` remains valid when Salsa retains it across revisio
 database lifetime.
 
 An unconditional `#[salsa_value(unsafe(prove_safe_to_retain_manually))]` proof skips the structural
-check without adding predicates. It is supported by `derive(SalsaValue)` and directly on tracked and
-interned struct fields. The author must ensure the field is safe for every generic instantiation
-accepted by the enclosing type.
+check without adding predicates. The author must ensure the field is safe for every generic
+instantiation accepted by the enclosing type.
 
 ## Updating tracked struct fields across revisions
 

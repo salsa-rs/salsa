@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct Foreign<T>(T);
 struct ForeignMarker<T>(PhantomData<fn() -> T>);
 
@@ -52,6 +53,29 @@ impl Family for StringFamily {
 struct AssociatedTypePredicate<F: Family> {
     #[salsa_value(unsafe(prove(F::Value: salsa::SalsaValue, Self: Sized)))]
     value: Foreign<F::Value>,
+}
+
+#[salsa::interned]
+struct InternedValue<'db> {
+    text: String,
+}
+
+#[salsa::interned]
+struct ConditionalInterned<'db> {
+    #[salsa_value(unsafe(prove(
+        InternedValue<'db>: salsa::SalsaValue,
+        Self: Sized,
+    )))]
+    value: Foreign<InternedValue<'db>>,
+}
+
+#[salsa::tracked]
+struct ConditionalTracked<'db> {
+    #[salsa_value(unsafe(prove(
+        InternedValue<'db>: salsa::SalsaValue,
+        Self: Sized,
+    )))]
+    value: Foreign<InternedValue<'db>>,
 }
 
 fn assert_salsa_value<T: salsa::SalsaValue>() {}

@@ -53,7 +53,7 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// Are `#[default]` fields allowed?
     const ALLOW_DEFAULT: bool;
 
-    /// Is `#[salsa_value(unsafe(prove_safe_to_retain_manually))]` allowed on fields?
+    /// Are manual `#[salsa_value(...)]` retention proofs allowed on fields?
     const ALLOW_MANUAL_RETENTION_PROOF: bool;
 }
 
@@ -64,7 +64,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) has_default_attr: bool,
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
-    pub(crate) has_manual_retention_proof: bool,
+    pub(crate) manual_retention_proof: Option<crate::salsa_value::ManualRetentionProof>,
     get_name: syn::Ident,
     set_name: syn::Ident,
     unknown_attrs: Vec<&'s syn::Attribute>,
@@ -95,23 +95,13 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
         Ok(())
     }),
     ("salsa_value", |attr, ef| {
-        if ef.has_manual_retention_proof {
+        if ef.manual_retention_proof.is_some() {
             return Err(syn::Error::new_spanned(
                 ef.field,
                 "multiple `#[salsa_value]` attributes on field",
             ));
         }
-        let proof = crate::salsa_value::parse_manual_retention_proof(attr)?;
-        if matches!(
-            proof,
-            crate::salsa_value::ManualRetentionProof::Conditional(_)
-        ) {
-            return Err(syn::Error::new_spanned(
-                ef.field,
-                "conditional retention proofs are only supported by `derive(SalsaValue)`",
-            ));
-        }
-        ef.has_manual_retention_proof = true;
+        ef.manual_retention_proof = Some(crate::salsa_value::parse_manual_retention_proof(attr)?);
         Ok(())
     }),
     ("get", |attr, ef| {
@@ -234,11 +224,11 @@ where
         }
 
         for field in &self.fields {
-            if field.has_manual_retention_proof {
+            if field.manual_retention_proof.is_some() {
                 return Err(syn::Error::new_spanned(
                     field.field,
                     format!(
-                        "`#[salsa_value(unsafe(prove_safe_to_retain_manually))]` cannot be used with `#[salsa::{}]`",
+                        "`#[salsa_value(...)]` cannot be used with `#[salsa::{}]`",
                         A::KIND
                     ),
                 ));
@@ -362,10 +352,12 @@ where
         self.fields.iter().map(|f| &f.field.ty).collect()
     }
 
-    pub(crate) fn field_manual_retention_proofs(&self) -> Vec<bool> {
+    pub(crate) fn field_manual_retention_proofs(
+        &self,
+    ) -> Vec<Option<&crate::salsa_value::ManualRetentionProof>> {
         self.fields
             .iter()
-            .map(|field| field.has_manual_retention_proof)
+            .map(|field| field.manual_retention_proof.as_ref())
             .collect()
     }
 
@@ -494,7 +486,7 @@ impl<'s> SalsaField<'s> {
             returns,
             has_default_attr: false,
             has_no_eq_attr: false,
-            has_manual_retention_proof: false,
+            manual_retention_proof: None,
             get_name,
             set_name,
             unknown_attrs: Default::default(),
