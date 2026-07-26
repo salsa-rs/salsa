@@ -219,6 +219,17 @@ state.
 
 The derive supports types with at most one lifetime parameter, as well as type and const
 parameters. Generated implementations require generic field types to implement `SalsaValue`.
+The available field proofs depend on how the enclosing type is declared:
+
+| Enclosing declaration | `unsafe(prove(...))` | `unsafe(prove_safe_to_retain_manually)` |
+| --- | --- | --- |
+| `derive(SalsaValue)` | Supported | Supported |
+| `#[salsa::tracked]` struct | Not supported | Supported |
+| `#[salsa::interned]` struct | Not supported | Supported |
+| `#[salsa::input]` struct | Not supported | Not supported |
+
+Conditional proofs add predicates to a generated `SalsaValue` implementation. Only
+`derive(SalsaValue)` generates an implementation whose generic bounds can be narrowed this way.
 When an unmodifiable field type cannot implement `SalsaValue`, a conditional proof can replace the
 field check with narrower predicates:
 

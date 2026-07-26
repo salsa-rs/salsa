@@ -194,7 +194,8 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `#[get(IDENT)]` renames the generated getter.
 /// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the retention
 ///   check for this field. The caller must ensure Salsa can retain the field and expose it with a
-///   later database lifetime.
+///   later database lifetime. Conditional `unsafe(prove(...))` proofs are not supported on interned
+///   struct fields; they are only supported by `derive(SalsaValue)`.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -324,6 +325,9 @@ pub fn supertype(input: TokenStream) -> TokenStream {
 /// - `#[default]` initializes the field with [`Default::default`], omits it from the constructor's
 ///   arguments, and adds a builder method for overriding the default.
 ///
+/// Input fields do not support `#[salsa_value(...)]`. Input field types are stored without database
+/// lifetime rebinding, so neither conditional nor unconditional retention proofs apply.
+///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
 ///
@@ -391,7 +395,8 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   identity when recreated, while readers of the field are always invalidated.
 /// - **Unsafe: `#[salsa_value(unsafe(prove_safe_to_retain_manually))]`** suppresses the retention
 ///   check for this field. The caller must ensure Salsa can retain the field and expose it with a
-///   later database lifetime.
+///   later database lifetime. Conditional `unsafe(prove(...))` proofs are not supported on tracked
+///   struct fields; they are only supported by `derive(SalsaValue)`.
 ///
 /// Other attributes, including documentation and lint attributes, are copied to the generated
 /// getter.
@@ -518,6 +523,10 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 /// unions are not. Named fields, tuple fields, unit structs, and enum variants are supported.
 ///
 /// # Field attributes
+///
+/// These field attributes are supported only by `derive(SalsaValue)`. Salsa's `tracked` and
+/// `interned` struct macros support the unconditional proof below, but not conditional
+/// `unsafe(prove(...))` predicates. The `input` macro supports neither form.
 ///
 /// A field accepts at most one `#[salsa_value(...)]` attribute:
 ///
