@@ -60,6 +60,11 @@ pub unsafe trait Configuration: Sized + 'static {
     /// The end user struct
     type Struct<'db>: Copy + FromId + AsId;
 
+    /// Hashes the fields that determine the struct's identity.
+    fn hash_fields<H: Hasher>(value: &Self::Fields<'_>, h: &mut H) {
+        value.hash(h);
+    }
+
     /// Returns the size of any heap allocations in the output value, in bytes.
     fn heap_size(_value: &Self::Fields<'_>) -> Option<usize> {
         None
@@ -570,7 +575,7 @@ where
         let new_fields = unsafe { self.to_internal_data(assemble(slot.new_id, key)) };
 
         // SAFETY: We hold the lock for the shard containing the value.
-        let old_hash = self.hasher.hash_one(unsafe { &*value.fields.get() });
+        let old_hash = unsafe { self.value_hash(value) };
 
         let index = self.database_key_index(slot.new_id);
 
@@ -942,7 +947,13 @@ where
     // The lock must be held for the shard containing the value.
     unsafe fn value_hash(&self, value: &Value<C>) -> u64 {
         // SAFETY: We hold the lock for the shard containing the value.
-        unsafe { self.hasher.hash_one(&*value.fields.get()) }
+        self.fields_hash(unsafe { &*value.fields.get() })
+    }
+
+    fn fields_hash(&self, fields: &C::Fields<'_>) -> u64 {
+        let mut hasher = self.hasher.build_hasher();
+        C::hash_fields(fields, &mut hasher);
+        hasher.finish()
     }
 
     // Compares the value by its fields to the given key.
@@ -957,7 +968,10 @@ where
         // SAFETY: We hold the lock for the shard containing the value.
         let fields = unsafe { &*value.fields.get() };
 
-        HashEqLike::eq(Self::from_internal_data(fields), key)
+        // SAFETY: We hold the lock for the shard containing the value.
+        let id = unsafe { (*value.lru.metadata.get()).id };
+
+        HashEqLike::eq(Self::from_internal_data(fields), id, key)
     }
 
     /// Returns the database key index for an interned value with the given id.
@@ -1419,10 +1433,12 @@ impl RevisionQueue {
     }
 }
 
-/// A trait for types that hash and compare like `O`.
+/// Compares a stored value with a lookup value of type `O`.
+///
+/// The stored and lookup values must produce the same hash when they compare equal. The ID passed
+/// to [`HashEqLike::eq`] identifies the interned value containing the stored value.
 pub trait HashEqLike<O> {
-    fn hash<H: Hasher>(&self, h: &mut H);
-    fn eq(&self, data: &O) -> bool;
+    fn eq(&self, id: Id, data: &O) -> bool;
 }
 
 /// The `Lookup` trait is a more flexible variant on [`std::borrow::Borrow`]
@@ -1438,7 +1454,7 @@ pub trait HashEqLike<O> {
 /// multiple keys accumulated into a struct, like `ViewStruct: Lookup<(K1, ...)>`,
 /// where `struct ViewStruct<L1: Lookup<K1>...>(K1...)`. The `Borrow` trait
 /// requires that `&(K1...)` be convertible to `&ViewStruct` which just isn't
-/// possible. `Lookup` instead offers direct `hash` and `eq` methods.
+/// possible. [`HashEqLike`] instead compares the stored and lookup representations directly.
 pub trait Lookup<O> {
     fn into_owned(self) -> O;
 }
@@ -1453,11 +1469,7 @@ impl<T> HashEqLike<T> for T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h);
-    }
-
-    fn eq(&self, data: &T) -> bool {
+    fn eq(&self, _id: Id, data: &T) -> bool {
         self == data
     }
 }
@@ -1466,11 +1478,7 @@ impl<T> HashEqLike<T> for &T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(*self, &mut *h);
-    }
-
-    fn eq(&self, data: &T) -> bool {
+    fn eq(&self, _id: Id, data: &T) -> bool {
         **self == *data
     }
 }
@@ -1479,11 +1487,7 @@ impl<T> HashEqLike<&T> for T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h);
-    }
-
-    fn eq(&self, data: &&T) -> bool {
+    fn eq(&self, _id: Id, data: &&T) -> bool {
         *self == **data
     }
 }
@@ -1502,10 +1506,7 @@ where
     T: ?Sized + Hash + Eq,
     Box<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
-    fn eq(&self, data: &&T) -> bool {
+    fn eq(&self, _id: Id, data: &&T) -> bool {
         **self == **data
     }
 }
@@ -1525,10 +1526,7 @@ where
     T: ?Sized + Hash + Eq,
     Arc<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(&**self, &mut *h)
-    }
-    fn eq(&self, data: &&T) -> bool {
+    fn eq(&self, _id: Id, data: &&T) -> bool {
         **self == **data
     }
 }
@@ -1549,10 +1547,7 @@ where
     T: ?Sized + Hash + Eq,
     triomphe::Arc<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(&**self, &mut *h)
-    }
-    fn eq(&self, data: &&T) -> bool {
+    fn eq(&self, _id: Id, data: &&T) -> bool {
         **self == **data
     }
 }
@@ -1583,22 +1578,14 @@ impl Lookup<compact_str::CompactString> for &str {
 
 #[cfg(feature = "compact_str")]
 impl HashEqLike<&str> for compact_str::CompactString {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
-
-    fn eq(&self, data: &&str) -> bool {
+    fn eq(&self, _id: Id, data: &&str) -> bool {
         self == *data
     }
 }
 
 #[cfg(feature = "compact_str")]
 impl HashEqLike<Cow<'_, str>> for compact_str::CompactString {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_str().hash(h);
-    }
-
-    fn eq(&self, data: &Cow<'_, str>) -> bool {
+    fn eq(&self, _id: Id, data: &Cow<'_, str>) -> bool {
         self.as_str() == data.as_ref()
     }
 }
@@ -1611,21 +1598,13 @@ impl Lookup<compact_str::CompactString> for Cow<'_, str> {
 }
 
 impl HashEqLike<&str> for String {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
-
-    fn eq(&self, data: &&str) -> bool {
+    fn eq(&self, _id: Id, data: &&str) -> bool {
         self == *data
     }
 }
 
 impl<A, T: Hash + Eq + PartialEq<A>> HashEqLike<&[A]> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
-    fn eq(&self, data: &&[A]) -> bool {
+    fn eq(&self, _id: Id, data: &&[A]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
 }
@@ -1637,11 +1616,7 @@ impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A]
 }
 
 impl<const N: usize, A, T: Hash + Eq + PartialEq<A>> HashEqLike<[A; N]> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
-    fn eq(&self, data: &[A; N]) -> bool {
+    fn eq(&self, _id: Id, data: &[A; N]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
 }
@@ -1655,11 +1630,7 @@ impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<
 }
 
 impl HashEqLike<&Path> for PathBuf {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
-    fn eq(&self, data: &&Path) -> bool {
+    fn eq(&self, _id: Id, data: &&Path) -> bool {
         self == data
     }
 }
@@ -1671,11 +1642,7 @@ impl Lookup<PathBuf> for &Path {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, T>> for T {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
-    fn eq(&self, data: &Cow<'_, T>) -> bool {
+    fn eq(&self, _id: Id, data: &Cow<'_, T>) -> bool {
         self == data.as_ref()
     }
 }
@@ -1687,11 +1654,7 @@ impl<T: Clone> Lookup<T> for Cow<'_, T> {
 }
 
 impl HashEqLike<Cow<'_, str>> for String {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_str().hash(h);
-    }
-
-    fn eq(&self, data: &Cow<'_, str>) -> bool {
+    fn eq(&self, _id: Id, data: &Cow<'_, str>) -> bool {
         self.as_str() == data.as_ref()
     }
 }
@@ -1703,11 +1666,7 @@ impl Lookup<String> for Cow<'_, str> {
 }
 
 impl HashEqLike<Cow<'_, Path>> for PathBuf {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_path().hash(h);
-    }
-
-    fn eq(&self, data: &Cow<'_, Path>) -> bool {
+    fn eq(&self, _id: Id, data: &Cow<'_, Path>) -> bool {
         self.as_path() == data.as_ref()
     }
 }
@@ -1719,11 +1678,7 @@ impl Lookup<PathBuf> for Cow<'_, Path> {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Box<[T]> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_ref().hash(h);
-    }
-
-    fn eq(&self, data: &Cow<'_, [T]>) -> bool {
+    fn eq(&self, _id: Id, data: &Cow<'_, [T]>) -> bool {
         self.as_ref() == data.as_ref()
     }
 }
@@ -1735,11 +1690,7 @@ impl<T: Clone> Lookup<Box<[T]>> for Cow<'_, [T]> {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_slice().hash(h);
-    }
-
-    fn eq(&self, data: &Cow<'_, [T]>) -> bool {
+    fn eq(&self, _id: Id, data: &Cow<'_, [T]>) -> bool {
         self.as_slice() == data.as_ref()
     }
 }
@@ -1754,7 +1705,6 @@ impl<T: Clone> Lookup<Vec<T>> for Cow<'_, [T]> {
 mod persistence {
     use std::cell::UnsafeCell;
     use std::fmt;
-    use std::hash::BuildHasher;
 
     use intrusive_collections::LinkedListLink;
     use serde::ser::{SerializeMap, SerializeStruct};
@@ -1903,7 +1853,7 @@ mod persistence {
                 let (page_idx, _) = crate::table::split_id(id);
 
                 // Determine the value shard.
-                let hash = ingredient.hasher.hash_one(&value.fields.0);
+                let hash = ingredient.fields_hash(&value.fields.0);
                 let shard_index = ingredient.shard(hash);
 
                 // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.

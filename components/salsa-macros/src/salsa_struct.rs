@@ -55,6 +55,9 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
 
     /// Are manual `#[salsa_value(...)]` retention proofs allowed on fields?
     const ALLOW_MANUAL_RETENTION_PROOF: bool;
+
+    /// Are `#[self_ref]` fields allowed?
+    const ALLOW_SELF_REF: bool;
 }
 
 pub(crate) struct SalsaField<'s> {
@@ -65,6 +68,7 @@ pub(crate) struct SalsaField<'s> {
     pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
     pub(crate) manual_retention_proof: Option<crate::salsa_value::ManualRetentionProof>,
+    pub(crate) has_self_ref_attr: bool,
     get_name: syn::Ident,
     set_name: syn::Ident,
     unknown_attrs: Vec<&'s syn::Attribute>,
@@ -92,6 +96,19 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
     }),
     ("no_eq", |_, ef| {
         ef.has_no_eq_attr = true;
+        Ok(())
+    }),
+    ("self_ref", |attr, ef| {
+        match &attr.meta {
+            syn::Meta::Path(_) => {}
+            syn::Meta::List(_) | syn::Meta::NameValue(_) => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "`#[self_ref]` does not accept arguments",
+                ));
+            }
+        }
+        ef.has_self_ref_attr = true;
         Ok(())
     }),
     ("salsa_value", |attr, ef| {
@@ -141,6 +158,7 @@ where
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
         this.maybe_disallow_manual_retention_proofs()?;
+        this.maybe_disallow_self_ref_fields()?;
 
         this.check_generics()?;
 
@@ -211,6 +229,23 @@ where
                 return Err(syn::Error::new_spanned(
                     ef.field,
                     format!("`#[default]` cannot be used with `#[salsa::{}]`", A::KIND),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn maybe_disallow_self_ref_fields(&self) -> syn::Result<()> {
+        if A::ALLOW_SELF_REF {
+            return Ok(());
+        }
+
+        for field in &self.fields {
+            if field.has_self_ref_attr {
+                return Err(syn::Error::new_spanned(
+                    field.field,
+                    format!("`#[self_ref]` cannot be used with `#[salsa::{}]`", A::KIND),
                 ));
             }
         }
@@ -373,14 +408,6 @@ where
             .collect()
     }
 
-    pub(crate) fn field_indexed_tys(&self) -> Vec<syn::Ident> {
-        self.fields
-            .iter()
-            .enumerate()
-            .map(|(i, _)| quote::format_ident!("T{i}"))
-            .collect()
-    }
-
     pub(crate) fn field_attrs(&self) -> Vec<&[&syn::Attribute]> {
         self.fields.iter().map(|f| &*f.unknown_attrs).collect()
     }
@@ -421,18 +448,24 @@ where
         self.args.no_lifetime.is_none()
     }
 
+    pub fn fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+        self.fields.iter().enumerate()
+    }
+
     pub fn tracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
-        self.fields
-            .iter()
-            .enumerate()
-            .filter(|(_, f)| f.has_tracked_attr)
+        self.fields_iter().filter(|(_, f)| f.has_tracked_attr)
     }
 
     pub fn untracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
-        self.fields
-            .iter()
-            .enumerate()
-            .filter(|(_, f)| !f.has_tracked_attr)
+        self.fields_iter().filter(|(_, f)| !f.has_tracked_attr)
+    }
+
+    pub fn self_ref_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+        self.fields_iter().filter(|(_, f)| f.has_self_ref_attr)
+    }
+
+    pub fn non_self_ref_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+        self.fields_iter().filter(|(_, f)| !f.has_self_ref_attr)
     }
 
     /// Returns the path to the `serialize` function as an optional iterator.
@@ -487,6 +520,7 @@ impl<'s> SalsaField<'s> {
             has_default_attr: false,
             has_no_eq_attr: false,
             manual_retention_proof: None,
+            has_self_ref_attr: false,
             get_name,
             set_name,
             unknown_attrs: Default::default(),
@@ -521,7 +555,15 @@ impl<'s> SalsaField<'s> {
         Ok(result)
     }
 
-    fn options(&self) -> TokenStream {
+    pub(crate) fn getter_name(&self) -> &syn::Ident {
+        &self.get_name
+    }
+
+    pub(crate) fn attrs(&self) -> &[&syn::Attribute] {
+        &self.unknown_attrs
+    }
+
+    pub(crate) fn options(&self) -> TokenStream {
         let returns = &self.returns;
 
         let default_ident = if self.has_default_attr {
