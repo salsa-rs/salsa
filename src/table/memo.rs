@@ -45,6 +45,24 @@ impl MemoTable {
     pub fn reset(&mut self) {
         self.memos.clear();
     }
+
+    /// Returns the memo at `memo_ingredient_index` without validating its erased type.
+    ///
+    /// # Safety
+    ///
+    /// `M` must match the type registered for `memo_ingredient_index` in the
+    /// [`MemoTableTypes`] associated with this table.
+    #[inline]
+    pub(super) unsafe fn get_mut_unchecked<M: Memo>(
+        &mut self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&mut M> {
+        let MemoEntry { atomic_memo } = self.memos.get_mut(memo_ingredient_index.as_usize())?;
+        let memo = NonNull::new(*atomic_memo.get_mut())?;
+
+        // SAFETY: The caller guarantees that `M` matches the entry's registered type.
+        Some(unsafe { MemoEntryType::from_dummy(memo).as_mut() })
+    }
 }
 
 pub trait Memo: Any + Send + Sync {
@@ -284,6 +302,18 @@ impl MemoTableTypes {
         self.types.len()
     }
 
+    /// Validates the memo type registered at `memo_ingredient_index`.
+    #[inline]
+    pub(super) fn assert_type<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex) {
+        let Some(type_) = self.types.get(memo_ingredient_index.as_usize()) else {
+            type_assert_failed(memo_ingredient_index);
+        };
+
+        if type_.type_id != TypeId::of::<M>() {
+            type_assert_failed(memo_ingredient_index);
+        }
+    }
+
     /// # Safety
     ///
     /// The types table must be the correct one of `memos`.
@@ -457,41 +487,6 @@ pub(crate) struct MemoTableWithTypesMut<'a> {
 }
 
 impl MemoTableWithTypesMut<'_> {
-    /// Calls `f` on the memo at `memo_ingredient_index`.
-    ///
-    /// If the memo is not present, `f` is not called.
-    pub(crate) fn map_memo<M: Memo>(
-        self,
-        memo_ingredient_index: MemoIngredientIndex,
-        f: impl FnOnce(&mut M),
-    ) {
-        let Some(MemoEntry { atomic_memo }) =
-            self.memos.memos.get_mut(memo_ingredient_index.as_usize())
-        else {
-            return;
-        };
-
-        // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
-        // corresponding `MemoTableTypes`, by construction.
-        let type_ = unsafe {
-            self.types
-                .types
-                .get_unchecked(memo_ingredient_index.as_usize())
-        };
-
-        // Verify that the we are casting to the correct type.
-        if type_.type_id != TypeId::of::<M>() {
-            type_assert_failed(memo_ingredient_index);
-        }
-
-        let Some(memo) = NonNull::new(*atomic_memo.get_mut()) else {
-            return;
-        };
-
-        // SAFETY: We asserted that the type is correct above.
-        f(unsafe { MemoEntryType::from_dummy(memo).as_mut() });
-    }
-
     /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.
     ///
     /// Note that calling this multiple times is safe, dropping an uninitialized entry is a no-op.
