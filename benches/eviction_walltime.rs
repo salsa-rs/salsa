@@ -22,7 +22,7 @@ mod support;
 
 use support::{
     Item, Policy, Value, access_all, access_all_with, lru_value, new_items, no_eviction_value,
-    prewarm,
+    prewarm, sieve_value,
 };
 
 fn main() {
@@ -64,7 +64,7 @@ fn main() {
 /// active entries that did not survive and how quickly the policy stabilizes
 /// around the smaller working set.
 #[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
+    args = [Policy::NoEviction, Policy::Lru, Policy::Sieve],
     sample_count = 20,
     sample_size = 1
 )]
@@ -125,7 +125,7 @@ fn project_check_then_incremental(bencher: divan::Bencher, policy: Policy) {
 /// recurring-only round charges for entries displaced by the last scan.
 /// `NoEviction` shows the cost when recurring values are never displaced.
 #[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
+    args = [Policy::NoEviction, Policy::Lru, Policy::Sieve],
     sample_count = 20,
     sample_size = 1
 )]
@@ -201,7 +201,7 @@ fn scan_resistance(bencher: divan::Bencher, policy: Policy) {
 /// provides the computation baseline; retaining cold entries cannot create hits
 /// because they are never accessed again.
 #[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
+    args = [Policy::NoEviction, Policy::Lru, Policy::Sieve],
     sample_count = 20,
     sample_size = 1
 )]
@@ -256,7 +256,7 @@ fn one_hit_wonders(bencher: divan::Bencher, policy: Policy) {
 /// the policy-free baseline: it retains both phases, but only the second phase
 /// is accessed after the switch.
 #[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
+    args = [Policy::NoEviction, Policy::Lru, Policy::Sieve],
     sample_count = 20,
     sample_size = 1
 )]
@@ -295,7 +295,7 @@ fn phase_change(bencher: divan::Bencher, policy: Policy) {
 /// misses and contention on the query itself. This isolates contention in the
 /// eviction policy's hit bookkeeping; `NoEviction` provides the baseline.
 #[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
+    args = [Policy::NoEviction, Policy::Lru, Policy::Sieve],
     sample_count = 20,
     sample_size = 1
 )]
@@ -349,6 +349,7 @@ impl Workload {
         match policy {
             Policy::NoEviction => self.run_with(no_eviction_value),
             Policy::Lru => self.run_with(lru_value),
+            Policy::Sieve => self.run_with(sieve_value),
         }
     }
 
@@ -373,6 +374,7 @@ fn parallel_access_repeated(
             parallel_access_repeated_with(jobs, accesses_per_item, no_eviction_value)
         }
         Policy::Lru => parallel_access_repeated_with(jobs, accesses_per_item, lru_value),
+        Policy::Sieve => parallel_access_repeated_with(jobs, accesses_per_item, sieve_value),
     }
 }
 

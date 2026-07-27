@@ -1,50 +1,65 @@
 # Tuning Salsa
 
-## Cache Eviction (LRU)
+## Cache eviction
 
-Salsa supports Least Recently Used (LRU) cache eviction for tracked functions.
-By default, memoized values are never evicted (unbounded cache). You can enable
-LRU eviction by specifying a capacity at compile time:
+By default, tracked functions retain every memoized value for as long as its key
+remains in the database. Configure an eviction policy to bound the number of
+values retained by a function:
 
 ```rust
-#[salsa::tracked(lru = 128)]
+#[salsa::tracked(eviction(policy = sieve, capacity = 128))]
 fn parse(db: &dyn Db, input: SourceFile) -> Ast {
     // ...
 }
 ```
 
-With `lru = 128`, Salsa will keep at most 128 memoized values for this function.
-When the cache exceeds this capacity, the least recently used values are evicted
-at the start of each new revision.
+With `capacity = 128`, Salsa will keep at most 128 memoized values for this
+function. When the cache exceeds this capacity, Salsa uses the configured policy
+to choose which values to evict at the start of the next revision. The optional
+`policy` defaults to `sieve`. Salsa supports two policies:
+
+- `sieve` is recommended. Its lock-free cache-hit path avoids serializing
+  concurrent accesses, and it often achieves better cache efficiency (a lower
+  miss ratio) than LRU.
+- `lru` maintains exact least-recently-used order, but takes an exclusive lock on
+  every access.
+
+See [eviction policies] for their behavior and tradeoffs.
+
+Eviction drops memoized values while retaining query keys and dependency
+metadata. A later access can therefore recompute an evicted value, while queries
+that depend on it can still determine whether their own values may have changed.
+
+[eviction policies]: ./plumbing/terminology/eviction.md
 
 ### Zero-Cost When Disabled
 
-When no `lru` capacity is specified (the default), Salsa uses a no-op eviction
-policy that is completely optimized away by the compiler. This means there is
-zero runtime overhead for functions that don't need cache eviction.
+When `eviction` is absent, Salsa uses a no-op policy that is optimized away by
+the compiler. Functions without cache eviction therefore have no eviction-policy
+bookkeeping.
 
 ### Runtime Capacity Adjustment
 
-For functions with LRU enabled, you can adjust the capacity at runtime:
+For functions with eviction configured, you can adjust the capacity at runtime:
 
 ```rust
-#[salsa::tracked(lru = 128)]
+#[salsa::tracked(eviction(capacity = 128))]
 fn my_query(db: &dyn Db, input: MyInput) -> Output {
     // ...
 }
 
 // Later, adjust the capacity:
-my_query::set_lru_capacity(&mut db, 256);
+my_query::set_eviction_capacity(&mut db, 256);
 ```
 
-**Note:** The `set_lru_capacity` method is only generated for functions that have
-an `lru` attribute. Functions without LRU enabled do not have this method.
+The `set_eviction_capacity` method is only generated for functions with an
+`eviction` option. Setting the capacity to zero disables eviction by that policy.
 
 ### Memory Management
 
-LRU evicts memoized values, not query keys or dependency metadata. Salsa also
-reclaims stale tracked outputs and unused low-durability interned values. Input
-identities remain until the database is dropped.
+Eviction removes memoized values, not query keys or dependency metadata. Salsa
+also reclaims stale tracked outputs and unused low-durability interned values.
+Input identities remain until the database is dropped.
 
 ## Intern Queries
 

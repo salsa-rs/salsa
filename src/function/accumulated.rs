@@ -1,5 +1,6 @@
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::accumulator::{self};
+use crate::function::eviction::EvictionPolicy;
 use crate::function::{Configuration, IngredientImpl};
 use crate::hash::FxHashSet;
 use crate::zalsa::ZalsaDatabase;
@@ -93,8 +94,8 @@ where
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let (zalsa, zalsa_local) = db.zalsas();
-        // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
+        self.eviction.record_use(key);
         (
             memo.header.revisions.accumulated(),
             memo.header.revisions.accumulated_inputs.load(),

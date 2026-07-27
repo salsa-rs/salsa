@@ -5,36 +5,42 @@
 
 mod lru;
 mod noop;
+mod sieve;
 
 pub use lru::Lru;
 pub use noop::NoopEviction;
+pub use sieve::Sieve;
 
 use crate::Id;
 
-/// Trait for cache eviction strategies.
+/// Cache eviction policy for memoized function values.
 ///
-/// Implementations control when memoized values are evicted from the cache.
-/// The eviction policy is selected at compile time via the `Configuration` trait.
+/// Implementations control which memoized values are evicted from the cache.
+/// The eviction policy is selected at compile time by the `Configuration`
+/// trait.
 pub trait EvictionPolicy: Send + Sync {
-    /// Create a new eviction policy with the given capacity.
+    /// Creates an eviction policy with the given capacity.
+    ///
+    /// A value of zero disables eviction.
     fn new(capacity: usize) -> Self;
 
-    /// Record that an item was accessed.
-    fn record_use(&self, id: Id);
+    /// Records that a memoized value was accessed.
+    fn record_use(&self, _id: Id) {}
 
-    /// Set the maximum capacity.
-    fn set_capacity(&mut self, capacity: usize);
-
-    /// Iterate over items that should be evicted.
+    /// Invokes `evict` for each value selected for eviction.
     ///
-    /// Called once per revision during `reset_for_new_revision`.
-    /// The callback `cb` should be invoked for each item to evict.
-    fn for_each_evicted(&mut self, cb: impl FnMut(Id));
+    /// Salsa calls this once per revision during `reset_for_new_revision`.
+    fn for_each_evicted(&mut self, evict: impl FnMut(Id));
 }
 
-/// Marker trait for eviction policies that have a configurable capacity.
+/// An eviction policy whose capacity can be changed at runtime.
 ///
-/// This trait is used to conditionally generate the `set_lru_capacity` method
+/// This trait is used to conditionally generate the `set_eviction_capacity` method
 /// on tracked functions. Only policies that implement this trait will expose
-/// runtime capacity configuration.
-pub trait HasCapacity: EvictionPolicy {}
+/// runtime capacity changes.
+pub trait HasCapacity: EvictionPolicy {
+    /// Sets the maximum capacity.
+    ///
+    /// A value of zero disables eviction.
+    fn set_capacity(&mut self, capacity: usize);
+}

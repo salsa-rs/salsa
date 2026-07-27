@@ -36,9 +36,9 @@ fn cycle_initial(_db: &dyn KnobsDatabase, _id: salsa::Id, _input: Input) -> u32 
     0
 }
 
-/// Test that `trigger_lru_eviction` during cycle iteration causes the query to recompute.
+/// Test that `trigger_eviction` during cycle iteration causes the query to recompute.
 #[test]
-fn lru_eviction_recomputes_cycle_query() {
+fn eviction_recomputes_cycle_query() {
     let db = Knobs::default();
 
     // Create clones BEFORE setting up signal handlers
@@ -52,7 +52,7 @@ fn lru_eviction_recomputes_cycle_query() {
     // Set up: when cancellation flag is set, signal stage 2 so thread 1 can continue
     db.signal_on_did_cancel(2);
 
-    // Drop the original db so trigger_lru_eviction can complete
+    // Drop the original db so trigger_eviction can complete
     // (it waits for all snapshots to be dropped)
     drop(db);
 
@@ -62,17 +62,17 @@ fn lru_eviction_recomputes_cycle_query() {
     // Wait for thread 1 to enter the cycle query and signal stage 1
     db_waiter.wait_for(1);
 
-    // Drop waiter so trigger_lru_eviction can proceed after t1 drops its handle
+    // Drop waiter so trigger_eviction can proceed after t1 drops its handle
     drop(db_waiter);
 
-    // Thread 2: Trigger LRU eviction, which will:
+    // Thread 2: Trigger eviction, which will:
     // 1. Set the cancellation flag (this signals stage 2, letting thread 1 continue)
     // 2. Wait for thread 1 to drop its snapshot (thread 1 will check cancellation and panic)
     // 3. NOT bump the revision
     let t2 = thread::spawn({
         let mut db_writer = db_writer;
         move || {
-            db_writer.trigger_lru_eviction();
+            db_writer.trigger_eviction();
             db_writer
         }
     });
@@ -159,7 +159,7 @@ fn revision_bump_after_cancellation_recomputes_cycle_query() {
     // Set up: when cancellation flag is set, signal stage 2 so thread 1 can continue
     db.signal_on_did_cancel(2);
 
-    // Drop the original db so trigger_lru_eviction can complete
+    // Drop the original db so trigger_eviction can complete
     drop(db);
 
     // Thread 1: Start a cycle query that will be interrupted
@@ -168,14 +168,14 @@ fn revision_bump_after_cancellation_recomputes_cycle_query() {
     // Wait for thread 1 to enter the cycle query
     db_waiter.wait_for(1);
 
-    // Drop waiter so trigger_lru_eviction can proceed
+    // Drop waiter so trigger_eviction can proceed
     drop(db_waiter);
 
-    // Thread 2: Trigger LRU eviction
+    // Thread 2: Trigger eviction
     let t2 = thread::spawn({
         let mut db_writer = db_writer;
         move || {
-            db_writer.trigger_lru_eviction();
+            db_writer.trigger_eviction();
             db_writer
         }
     });

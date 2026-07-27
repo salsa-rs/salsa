@@ -46,9 +46,9 @@ impl<C: Configuration> IngredientImpl<C> {
         Some(unsafe { memo.as_ref() })
     }
 
-    /// Evicts the existing memo for the given key, replacing it
-    /// with an equivalent memo that has no value. If the memo is untracked
-    /// or has values assigned as output of another query, this has no effect.
+    /// Evicts the value from the existing memo for the given key.
+    /// If the memo is untracked or has values assigned as output of another query,
+    /// this has no effect.
     pub(super) fn evict_value_from_memo_for(
         table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,

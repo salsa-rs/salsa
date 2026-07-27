@@ -30,7 +30,7 @@ fn mixed_input_value(db: &dyn Database, immutable_input: MyInput, mutable_input:
     immutable_input.value(db) + mutable_input.value(db)
 }
 
-#[salsa::tracked(returns(copy), lru = 1)]
+#[salsa::tracked(returns(copy), eviction(policy = lru, capacity = 1))]
 #[cfg(not(feature = "persistence"))]
 fn immutable_value_with_lru(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("immutable_value_with_lru({})", input.value(db)));
@@ -57,7 +57,7 @@ fn output(db: &dyn Database, input: MyInput) -> Output<'_> {
     output
 }
 
-#[salsa::tracked(returns(copy), lru = 1)]
+#[salsa::tracked(returns(copy), eviction(policy = lru, capacity = 1))]
 fn output_with_lru(db: &dyn Database, input: MyInput) -> Output<'_> {
     let output = Output::new(db, input.value(db));
     specified::specify(db, output, input.value(db) + 1);

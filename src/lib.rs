@@ -161,9 +161,9 @@
 //!
 //! A memo stores one current result, not a history. By default, each key that remains in the
 //! database retains its result. Re-execution may update or replace the value; reclaiming the key or
-//! dropping the database removes it. The `lru` option additionally evicts least-recently-used
-//! results at the start of a new revision, but retains their memo entries so a later call can
-//! recompute the value.
+//! dropping the database removes it. The `eviction` option bounds retained results using either
+//! the recommended SIEVE policy or LRU. Eviction drops result values but retains their memo
+//! entries so a later call can recompute the value.
 //!
 //! The [return mode](#return-modes) controls whether callers receive an owned result or borrow it
 //! from the memo.
@@ -184,7 +184,7 @@
 //! tracked struct, not an input or interned struct. `specify` must be called during the same tracked
 //! query invocation that created the key. Salsa records the specified memo as an output of that
 //! creating query, so validating or re-executing the creator also validates or replaces the
-//! specified result. The `specify` and `lru` options cannot currently be combined.
+//! specified result. The `specify` and `eviction` options cannot currently be combined.
 //!
 //! See [specifying query results in the Salsa book] for an example.
 //!
@@ -239,7 +239,7 @@
 //! [`'db` database lifetime]: https://salsa-rs.github.io/salsa/plumbing/db_lifetime.html
 //! [accumulators in the Salsa book]: https://salsa-rs.github.io/salsa/tutorial/accumulators.html
 //! [backdating]: https://salsa-rs.github.io/salsa/reference/algorithm.html#backdating-sometimes-we-can-be-smarter
-//! [cache tuning]: https://salsa-rs.github.io/salsa/tuning.html#cache-eviction-lru
+//! [cache tuning]: https://salsa-rs.github.io/salsa/tuning.html#cache-eviction
 //! [durability reference]: https://salsa-rs.github.io/salsa/reference/durability.html
 //! [input structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#inputs
 //! [interned structs in the Salsa book]: https://salsa-rs.github.io/salsa/overview.html#interned-structs
@@ -413,7 +413,7 @@ pub mod plumbing {
 
     pub mod function {
         pub use crate::function::{Configuration, IngredientImpl, Memo};
-        pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
+        pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction, Sieve};
         pub use crate::table::memo::MemoEntryType;
     }
 

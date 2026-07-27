@@ -38,7 +38,7 @@ mod memo;
 mod specify;
 mod sync;
 
-pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
+pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction, Sieve};
 
 pub type Memo<C> = memo::Memo<C>;
 
@@ -248,7 +248,9 @@ where
         DatabaseKeyIndex::new(self.index, key)
     }
 
-    /// Set eviction capacity. Only available when eviction policy supports it.
+    /// Sets the eviction policy's capacity.
+    ///
+    /// Only available when the eviction policy supports runtime capacity changes.
     pub fn set_capacity(&mut self, capacity: usize)
     where
         C::Eviction: HasCapacity,
@@ -475,9 +477,9 @@ where
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
         self.eviction.for_each_evicted(|evict| {
-            let ingredient_index = table.ingredient_index(evict);
+            let (ingredient_index, memos) = table.ingredient_and_memos_mut(evict);
             Self::evict_value_from_memo_for(
-                table.memos_mut(evict),
+                memos,
                 self.memo_ingredient_indices.get(ingredient_index),
             )
         });

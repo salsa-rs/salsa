@@ -1,6 +1,6 @@
 //! No-op eviction policy - cache grows unbounded.
 //!
-//! This is the default eviction policy when no LRU capacity is specified.
+//! This is the default eviction policy when eviction is not configured.
 
 use crate::{Id, function::EvictionPolicy};
 
@@ -16,8 +16,5 @@ impl EvictionPolicy for NoopEviction {
     fn record_use(&self, _id: Id) {}
 
     #[inline(always)]
-    fn set_capacity(&mut self, _capacity: usize) {}
-
-    #[inline(always)]
-    fn for_each_evicted(&mut self, _cb: impl FnMut(Id)) {}
+    fn for_each_evicted(&mut self, _evict: impl FnMut(Id)) {}
 }

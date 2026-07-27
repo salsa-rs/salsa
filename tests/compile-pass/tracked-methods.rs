@@ -17,7 +17,7 @@ impl Things<'_> {
         todo!()
     }
 
-    #[salsa::tracked(returns(copy))]
+    #[salsa::tracked(returns(copy), eviction(capacity = 128))]
     pub fn implicit2(db: &dyn salsa::Database, _: Other<'_>) -> Things<'_> {
         _ = db;
         todo!()

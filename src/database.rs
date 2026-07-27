@@ -36,15 +36,21 @@ impl<'db, Db: Database + ?Sized> From<&'db mut Db> for RawDatabase<'db> {
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]`(`crate::db`) procedural macro.
 pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
-    /// Enforces current LRU limits, evicting entries if necessary.
+    /// Applies configured eviction policies, evicting entries if necessary.
     ///
     /// **WARNING:** Just like an ordinary write, this method triggers
     /// cancellation. If you invoke it while a snapshot exists, it
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
-    fn trigger_lru_eviction(&mut self) {
+    fn trigger_eviction(&mut self) {
         let zalsa_mut = self.zalsa_mut();
-        zalsa_mut.evict_lru();
+        zalsa_mut.apply_eviction();
+    }
+
+    /// Deprecated alias for [`Database::trigger_eviction`].
+    #[deprecated(note = "use `Database::trigger_eviction` instead")]
+    fn trigger_lru_eviction(&mut self) {
+        self.trigger_eviction();
     }
 
     /// A "synthetic write" causes the system to act *as though* some

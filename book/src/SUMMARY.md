@@ -43,7 +43,7 @@
     - [Durability](./plumbing/terminology/durability.md)
     - [Input query](./plumbing/terminology/input_query.md)
     - [Ingredient](./plumbing/terminology/ingredient.md)
-    - [LRU](./plumbing/terminology/LRU.md)
+    - [Eviction](./plumbing/terminology/eviction.md)
     - [Memo](./plumbing/terminology/memo.md)
     - [Query](./plumbing/terminology/query.md)
     - [Query function](./plumbing/terminology/query_function.md)
