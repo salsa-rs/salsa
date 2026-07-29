@@ -16,6 +16,29 @@ struct GenericPhantom<T>(std::marker::PhantomData<T>);
 #[derive(salsa::SalsaValue)]
 struct ConstGeneric<const N: usize>([u8; N]);
 
+struct Foreign<T>(T);
+struct ForeignPair<T, U>(T, U);
+
+#[derive(salsa::SalsaValue)]
+struct ConditionallySafe<T> {
+    #[salsa_value(unsafe(prove(T: salsa::SalsaValue)))]
+    value: Foreign<T>,
+}
+
+#[derive(salsa::SalsaValue)]
+struct ConditionallyStatic<T> {
+    #[salsa_value(unsafe(prove(T: 'static)))]
+    value: Foreign<T>,
+}
+
+#[derive(salsa::SalsaValue)]
+struct ConditionallyMixed<T, U> {
+    #[salsa_value(unsafe(prove(T: salsa::SalsaValue, U: 'static,)))]
+    value: ForeignPair<T, U>,
+}
+
+struct StaticNotSalsaValue;
+
 #[derive(salsa::SalsaValue)]
 struct ContainsPhantomRef<'db> {
     marker: std::marker::PhantomData<&'db ()>,
@@ -69,6 +92,12 @@ where
 {
 }
 
+fn assert_conditional_non_static<'db>()
+where
+    ConditionallySafe<ContainsPhantomRef<'db>>: salsa::SalsaValue,
+{
+}
+
 fn assert_generic_phantom<'db>()
 where
     GenericPhantom<&'db ()>: salsa::SalsaValue,
@@ -85,6 +114,24 @@ where
 
 #[test]
 fn derives_salsa_value() {
+    let ConditionallySafe {
+        value: Foreign(value),
+    } = ConditionallySafe {
+        value: Foreign(String::new()),
+    };
+    let _ = value;
+    let ConditionallyStatic {
+        value: Foreign(value),
+    } = ConditionallyStatic {
+        value: Foreign(StaticNotSalsaValue),
+    };
+    let _ = value;
+    let ConditionallyMixed {
+        value: ForeignPair(value, static_value),
+    } = ConditionallyMixed {
+        value: ForeignPair(String::new(), StaticNotSalsaValue),
+    };
+    let _ = (value, static_value);
     let contains_phantom_ref = ContainsPhantomRef {
         marker: std::marker::PhantomData,
     };
@@ -94,6 +141,7 @@ fn derives_salsa_value() {
     let _ = contains_invariant.value.0;
     assert_contains_phantom_ref(contains_phantom_ref.marker);
     assert_invariant_container_output();
+    assert_conditional_non_static();
     let recursive = Recursive::Cons(Box::new(Recursive::Nil));
     let Recursive::Cons(recursive) = recursive else {
         unreachable!()
@@ -109,6 +157,9 @@ fn derives_salsa_value() {
     assert_non_static_standard_values();
     assert_salsa_value::<Generic<String>>();
     assert_salsa_value::<Generic<ContainsPhantomRef<'static>>>();
+    assert_salsa_value::<ConditionallySafe<String>>();
+    assert_salsa_value::<ConditionallyStatic<StaticNotSalsaValue>>();
+    assert_salsa_value::<ConditionallyMixed<String, StaticNotSalsaValue>>();
     assert_salsa_value::<GenericRecursive<String>>();
     assert_salsa_value::<ConstGeneric<4>>();
     assert_salsa_value::<ContainsPhantomRef<'static>>();

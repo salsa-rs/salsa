@@ -218,14 +218,33 @@ Salsa handles do implement it because access to their data goes back through the
 state.
 
 The derive supports types with at most one lifetime parameter, as well as type and const
-parameters. Generated implementations require generic field types to implement `SalsaValue`;
-types that need different bounds can provide a manual implementation instead.
+parameters. Generated implementations require generic field types to implement `SalsaValue`.
+Retention proofs are supported by `derive(SalsaValue)` and on tracked and interned struct fields;
+input fields do not support them.
 
-If a field is known to satisfy the guarantee but its type cannot implement `SalsaValue`,
-`#[salsa_value(unsafe(prove_safe_to_retain_manually))]` skips the structural check for that field.
-The `unsafe` wrapper makes the proof obligation explicit: the author must ensure the field remains
-valid when Salsa retains it across revisions and rebinds its database lifetime. This manual
-assertion is supported by `derive(SalsaValue)` and directly on tracked and interned struct fields.
+On a type using `derive(SalsaValue)`, conditional proofs add predicates to the generated
+`SalsaValue` implementation, narrowing the generic instantiations that implement the trait. Tracked
+and interned structs do not support type or const parameters, so their predicates are instead
+verified for every database lifetime by the generated field assertions. When an unmodifiable field
+type cannot implement `SalsaValue`, a conditional proof can replace the field check with narrower
+predicates:
+
+```rust,ignore
+#[derive(salsa::SalsaValue)]
+struct QueryValue<T> {
+    #[salsa_value(unsafe(prove(T: salsa::SalsaValue)))]
+    value: ForeignContainer<T>,
+}
+```
+
+The predicates are added to the generated implementation, so `QueryValue<T>` only implements
+`SalsaValue` when `T` does. The compiler verifies that premise; the author asserts that the premise
+implies `ForeignContainer<T>` remains valid when Salsa retains it across revisions and rebinds its
+database lifetime.
+
+An unconditional `#[salsa_value(unsafe(prove_safe_to_retain_manually))]` proof skips the structural
+check without adding predicates. The author must ensure the field is safe for every generic
+instantiation accepted by the enclosing type.
 
 ## Updating tracked struct fields across revisions
 
