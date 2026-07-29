@@ -80,7 +80,9 @@ impl Macro {
         };
 
         let trait_ = match &impl_item.trait_ {
-            Some((None, path, _)) => Some((path, member_idents)),
+            Some((path, _)) if impl_item.modifiers.polarity.is_none() => {
+                Some((path, member_idents))
+            }
             _ => None,
         };
         let mut change = ChangeSelfPath::new(self_ty, trait_);
@@ -372,36 +374,28 @@ impl Macro {
             ));
         }
 
-        let syn::FnArg::Receiver(syn::Receiver {
-            attrs: _,
-            self_token,
-            reference,
-            mutability: _,
-            colon_token,
-            ty: _,
-        }) = &fn_item.sig.inputs[0]
-        else {
+        let syn::FnArg::Receiver(receiver) = &fn_item.sig.inputs[0] else {
             return Err(syn::Error::new_spanned(
                 &fn_item.sig.inputs[0],
                 "tracked methods must take a `self` argument",
             ));
         };
 
-        if let Some(colon_token) = colon_token {
-            return Err(syn::Error::new_spanned(
+        match &receiver.kind {
+            syn::ReceiverKind::Value => Ok(&receiver.self_token),
+            syn::ReceiverKind::Typed(colon_token, _) => Err(syn::Error::new_spanned(
                 colon_token,
                 "tracked method's `self` argument must not have an explicit type",
-            ));
-        }
-
-        if let Some((and_token, _)) = reference {
-            return Err(syn::Error::new_spanned(
+            )),
+            syn::ReceiverKind::Reference(and_token, _, _) => Err(syn::Error::new_spanned(
                 and_token,
                 "tracked methods's first argument must be declared as `self`, not `&self` or `&mut self`",
-            ));
+            )),
+            _ => Err(syn::Error::new_spanned(
+                receiver,
+                "tracked methods's first argument must be declared as `self`, not `&self` or `&mut self`",
+            )),
         }
-
-        Ok(self_token)
     }
 
     fn check_db_argument<'syn>(
@@ -483,9 +477,6 @@ impl Macro {
         db_lt: &syn::Lifetime,
     ) -> syn::Result<()> {
         self.update_db_argument_lifetime(sig, db_input_index, db_lt)?;
-        if let Some(syn::FnArg::Receiver(receiver)) = sig.inputs.first_mut() {
-            *receiver.ty = ChangeLt::elided_to(db_lt).in_type(&receiver.ty);
-        }
         if let Some(input) = sig.inputs.iter_mut().nth(db_input_index) {
             let syn::FnArg::Typed(typed) = input else {
                 return Err(syn::Error::new_spanned(

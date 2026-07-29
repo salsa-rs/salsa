@@ -424,8 +424,9 @@ pub fn check_db_argument<'arg>(
 
                 let syn::TypeParamBound::Trait(syn::TraitBound {
                     paren_token,
-                    modifier,
                     lifetimes,
+                    modifiers,
+                    maybe,
                     path,
                 }) = &d.bounds[0]
                 else {
@@ -436,9 +437,9 @@ pub fn check_db_argument<'arg>(
                     return Err(p.span.open());
                 }
 
-                let syn::TraitBoundModifier::None = modifier else {
+                if modifiers.require_empty().is_err() || maybe.is_some() {
                     return Err(d.span());
-                };
+                }
 
                 if let Some(lt) = lifetimes {
                     return Err(lt.span());

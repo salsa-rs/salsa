@@ -123,7 +123,7 @@ impl DbMacro {
     }
 
     fn add_salsa_view_method_impl(&self, input: &mut syn::ItemImpl) -> syn::Result<()> {
-        let Some((_, TraitPath, _)) = &input.trait_ else {
+        let Some((TraitPath, _)) = &input.trait_ else {
             return Err(syn::Error::new_spanned(
                 &input.self_ty,
                 "impl must be on a trait",

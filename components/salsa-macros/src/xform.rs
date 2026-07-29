@@ -50,9 +50,9 @@ impl syn::visit_mut::VisitMut for ChangeLt {
     }
 
     // Function-pointer lifetimes are independently bound.
-    fn visit_type_bare_fn_mut(&mut self, ty: &mut syn::TypeBareFn) {
+    fn visit_type_fn_ptr_mut(&mut self, ty: &mut syn::TypeFnPtr) {
         if !self.skip_higher_ranked {
-            syn::visit_mut::visit_type_bare_fn_mut(self, ty);
+            syn::visit_mut::visit_type_fn_ptr_mut(self, ty);
         }
     }
 
@@ -98,7 +98,7 @@ impl<'ast> syn::visit::Visit<'ast> for LifetimeFinder<'_> {
         }
     }
 
-    fn visit_type_bare_fn(&mut self, _: &'ast syn::TypeBareFn) {}
+    fn visit_type_fn_ptr(&mut self, _: &'ast syn::TypeFnPtr) {}
 
     fn visit_trait_bound(&mut self, i: &'ast syn::TraitBound) {
         if i.lifetimes.is_none() {
@@ -123,7 +123,10 @@ impl ChangeSelfPath<'_> {
 
 impl syn::visit_mut::VisitMut for ChangeSelfPath<'_> {
     fn visit_type_mut(&mut self, i: &mut syn::Type) {
-        if let syn::Type::Path(syn::TypePath { qself: None, path }) = i {
+        if let syn::Type::Path(syn::TypePath {
+            qself: None, path, ..
+        }) = i
+        {
             if path.segments.len() == 1 && path.segments.first().is_some_and(|s| s.ident == "Self")
             {
                 let span = path.segments.first().unwrap().span();
