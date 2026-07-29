@@ -11,6 +11,7 @@ mod cycle_a_t1_b_t2;
 mod cycle_a_t1_b_t2_fallback;
 mod cycle_ab_peeping_c;
 mod cycle_iteration_mismatch;
+mod cycle_merge_after_panic;
 mod cycle_nested_deep;
 mod cycle_nested_deep_conditional;
 mod cycle_nested_deep_conditional_changed;
