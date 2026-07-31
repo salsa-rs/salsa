@@ -34,8 +34,8 @@ macro_rules! setup_accumulator_impl {
                 static $CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Struct>> =
                     $zalsa::IngredientCache::new();
 
-                // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
-                // ingredient created by our jar is the struct ingredient.
+                // SAFETY: The ingredient at offset 0 in `JarImpl<$Struct>` has type
+                // `IngredientImpl<$Struct>`.
                 unsafe { $CACHE.get_or_create::<$zalsa_struct::JarImpl<$Struct>, 0>(zalsa) }
             }
 

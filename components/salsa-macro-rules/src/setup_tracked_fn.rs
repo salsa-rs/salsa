@@ -273,8 +273,8 @@ macro_rules! setup_tracked_fn {
 
                 #[inline]
                 fn fn_ingredient_<'z>(db: &dyn $Db, zalsa: &'z $zalsa::Zalsa) -> &'z $zalsa::function::IngredientImpl<$Configuration> {
-                    // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the first
-                    // ingredient created by our jar is the function ingredient.
+                    // SAFETY: The ingredient at offset 0 in `$fn_name` has type
+                    // `function::IngredientImpl<$Configuration>`.
                     unsafe {
                         $FN_CACHE.get_or_create::<$fn_name, 0>(zalsa)
                     }
@@ -302,8 +302,8 @@ macro_rules! setup_tracked_fn {
                     fn intern_ingredient_<'z>(
                         zalsa: &'z $zalsa::Zalsa
                     ) -> &'z $zalsa::interned::IngredientImpl<$Configuration> {
-                        // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the second
-                        // ingredient created by our jar is the interned ingredient (given `needs_interner`).
+                        // SAFETY: When an interner is needed, the ingredient at offset 1 in
+                        // `$fn_name` has type `interned::IngredientImpl<$Configuration>`.
                         unsafe {
                             $INTERN_CACHE.get_or_create::<$fn_name, 1>(zalsa)
                         }
