@@ -9,7 +9,7 @@ use crate::runtime::{
     BlockOnTransferredOwner, BlockResult, BlockTransferredResult, Running, WaitResult,
 };
 use crate::sync::thread::{self};
-use crate::sync::{Mutex, shard_count};
+use crate::sync::{Mutex, max_parallelism};
 use crate::tracing;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
@@ -62,8 +62,10 @@ pub(crate) struct SyncState {
 
 impl SyncTable {
     pub(crate) fn new(ingredient: IngredientIndex) -> Self {
+        let shard_count = max_parallelism().next_power_of_two().max(2);
+
         Self {
-            syncs: (0..shard_count()).map(|_| CachePadded::default()).collect(),
+            syncs: (0..shard_count).map(|_| CachePadded::default()).collect(),
             ingredient,
         }
     }

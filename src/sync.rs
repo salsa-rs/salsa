@@ -1,14 +1,12 @@
 pub use shim::*;
 
-pub(crate) fn shard_count() -> usize {
-    static SHARDS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+pub(crate) fn max_parallelism() -> usize {
+    static MAX_PARALLELISM: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
 
-    *SHARDS.get_or_init(|| {
-        let num_cpus = std::thread::available_parallelism()
+    *MAX_PARALLELISM.get_or_init(|| {
+        std::thread::available_parallelism()
             .map(usize::from)
-            .unwrap_or(1);
-
-        (num_cpus * 4).next_power_of_two()
+            .unwrap_or(1)
     })
 }
 

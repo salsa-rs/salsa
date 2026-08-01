@@ -20,7 +20,7 @@ use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
 use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::revision::AtomicRevision;
-use crate::sync::{Arc, Mutex, shard_count};
+use crate::sync::{Arc, Mutex, max_parallelism};
 use crate::table::Slot;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
@@ -1057,7 +1057,8 @@ where
 /// Keeping this helper non-generic avoids monomorphizing the iterator machinery for every interned
 /// struct configuration.
 fn new_shards() -> Box<[CachePadded<Mutex<IngredientShard>>]> {
-    (0..shard_count()).map(|_| Default::default()).collect()
+    let shard_count = (max_parallelism() * 4).next_power_of_two();
+    (0..shard_count).map(|_| Default::default()).collect()
 }
 
 /// A stable pointer to an interned value allocated in the database table.
