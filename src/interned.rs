@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::fmt;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -1421,7 +1421,6 @@ impl RevisionQueue {
 
 /// A trait for types that hash and compare like `O`.
 pub trait HashEqLike<O> {
-    fn hash<H: Hasher>(&self, h: &mut H);
     fn eq(&self, data: &O) -> bool;
 }
 
@@ -1453,10 +1452,6 @@ impl<T> HashEqLike<T> for T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h);
-    }
-
     fn eq(&self, data: &T) -> bool {
         self == data
     }
@@ -1466,10 +1461,6 @@ impl<T> HashEqLike<T> for &T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(*self, &mut *h);
-    }
-
     fn eq(&self, data: &T) -> bool {
         **self == *data
     }
@@ -1479,10 +1470,6 @@ impl<T> HashEqLike<&T> for T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h);
-    }
-
     fn eq(&self, data: &&T) -> bool {
         *self == **data
     }
@@ -1502,9 +1489,6 @@ where
     T: ?Sized + Hash + Eq,
     Box<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
     fn eq(&self, data: &&T) -> bool {
         **self == **data
     }
@@ -1525,9 +1509,6 @@ where
     T: ?Sized + Hash + Eq,
     Arc<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(&**self, &mut *h)
-    }
     fn eq(&self, data: &&T) -> bool {
         **self == **data
     }
@@ -1611,20 +1592,12 @@ impl Lookup<compact_str::CompactString> for Cow<'_, str> {
 }
 
 impl HashEqLike<&str> for String {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
-
     fn eq(&self, data: &&str) -> bool {
         self == *data
     }
 }
 
 impl<A, T: Hash + Eq + PartialEq<A>> HashEqLike<&[A]> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &&[A]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
@@ -1637,10 +1610,6 @@ impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A]
 }
 
 impl<const N: usize, A, T: Hash + Eq + PartialEq<A>> HashEqLike<[A; N]> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &[A; N]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
@@ -1655,10 +1624,6 @@ impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<
 }
 
 impl HashEqLike<&Path> for PathBuf {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &&Path) -> bool {
         self == data
     }
@@ -1671,10 +1636,6 @@ impl Lookup<PathBuf> for &Path {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, T>> for T {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &Cow<'_, T>) -> bool {
         self == data.as_ref()
     }
@@ -1687,10 +1648,6 @@ impl<T: Clone> Lookup<T> for Cow<'_, T> {
 }
 
 impl HashEqLike<Cow<'_, str>> for String {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_str().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, str>) -> bool {
         self.as_str() == data.as_ref()
     }
@@ -1703,10 +1660,6 @@ impl Lookup<String> for Cow<'_, str> {
 }
 
 impl HashEqLike<Cow<'_, Path>> for PathBuf {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_path().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, Path>) -> bool {
         self.as_path() == data.as_ref()
     }
@@ -1719,10 +1672,6 @@ impl Lookup<PathBuf> for Cow<'_, Path> {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Box<[T]> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_ref().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, [T]>) -> bool {
         self.as_ref() == data.as_ref()
     }
@@ -1735,10 +1684,6 @@ impl<T: Clone> Lookup<Box<[T]>> for Cow<'_, [T]> {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_slice().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, [T]>) -> bool {
         self.as_slice() == data.as_ref()
     }
