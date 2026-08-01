@@ -14,8 +14,8 @@
 //! concurrent benchmark uses four synchronized workers.
 
 use std::hint::black_box;
+use std::sync::Mutex;
 
-use crossbeam_queue::SegQueue;
 use salsa::Database as _;
 
 #[path = "eviction/support.rs"]
@@ -27,7 +27,6 @@ use support::{
 };
 
 const PARALLEL_WORKERS: usize = 4;
-const PARALLEL_SAMPLES: usize = 20;
 
 fn main() {
     divan::main();
@@ -298,7 +297,7 @@ fn phase_change(bencher: divan::Bencher, policy: Policy) {
 #[divan::bench(
     args = [Policy::NoEviction, Policy::Lru],
     threads = PARALLEL_WORKERS,
-    sample_count = PARALLEL_SAMPLES as u32,
+    sample_count = 20,
     sample_size = 1
 )]
 fn parallel_fast_path(bencher: divan::Bencher, policy: Policy) {
@@ -309,13 +308,14 @@ fn parallel_fast_path(bencher: divan::Bencher, policy: Policy) {
     let items = new_items(&db, PARALLEL_WORKERS);
     prewarm(policy, &db, &items);
 
-    let jobs = SegQueue::new();
-    for item in items.iter().copied().cycle().take(PARALLEL_SAMPLES) {
-        jobs.push((db.clone(), item));
-    }
+    let jobs = items
+        .into_iter()
+        .map(|item| (db.clone(), item))
+        .collect::<Vec<_>>();
+    let jobs = Mutex::new(jobs.into_iter().cycle());
 
     bencher
-        .with_inputs(|| jobs.pop().expect("one prepared database handle per sample"))
+        .with_inputs(|| jobs.lock().unwrap().next().unwrap())
         .bench_refs(|(db, item)| {
             black_box(access_all(
                 policy,
