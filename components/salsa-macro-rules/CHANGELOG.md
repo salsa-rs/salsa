@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.28.1...salsa-macro-rules-v0.28.2) - 2026-08-01
+
+### Other
+
+- clarify ingredient cache safety invariants ([#1270](https://github.com/salsa-rs/salsa/pull/1270))
+
 ## [0.28.0](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.27.2...salsa-macro-rules-v0.28.0) - 2026-07-12
 
 ### Added
