@@ -9,12 +9,13 @@
 //! cheap the workload could be without eviction bookkeeping or capacity-driven
 //! recomputation.
 //!
-//! Database-owning benchmarks use single-iteration samples to avoid batching
-//! multiple databases, and 20 samples to keep their setup cost bounded.
+//! Revision-changing benchmarks use single-iteration samples to avoid batching
+//! multiple databases, and 20 samples to keep their setup cost bounded. The
+//! concurrent benchmark uses four synchronized workers.
 
 use std::hint::black_box;
 
-use rayon::prelude::*;
+use crossbeam_queue::SegQueue;
 use salsa::Database as _;
 
 #[path = "eviction/support.rs"]
@@ -25,12 +26,10 @@ use support::{
     prewarm,
 };
 
-fn main() {
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(4)
-        .build_global()
-        .unwrap();
+const PARALLEL_WORKERS: usize = 4;
+const PARALLEL_SAMPLES: usize = 20;
 
+fn main() {
     divan::main();
 }
 
@@ -294,29 +293,35 @@ fn phase_change(bencher: divan::Bencher, policy: Policy) {
 /// Each worker repeatedly accesses a different prewarmed query, avoiding both
 /// misses and contention on the query itself. This isolates contention in the
 /// eviction policy's hit bookkeeping; `NoEviction` provides the baseline.
+/// Divan synchronizes the workers before each timed sample, avoiding variance
+/// from Rayon task dispatch and workers joining the workload at different times.
 #[divan::bench(
     args = [Policy::NoEviction, Policy::Lru],
-    sample_count = 20,
+    threads = PARALLEL_WORKERS,
+    sample_count = PARALLEL_SAMPLES as u32,
     sample_size = 1
 )]
 fn parallel_fast_path(bencher: divan::Bencher, policy: Policy) {
     const ACCESSES_PER_WORKER: usize = 4_096;
 
-    bencher
-        .with_inputs(|| {
-            let worker_count = rayon::current_num_threads();
-            let mut db = salsa::DatabaseImpl::new();
-            policy.set_capacity(&mut db, worker_count);
-            let items = new_items(&db, worker_count);
-            prewarm(policy, &db, &items);
+    let mut db = salsa::DatabaseImpl::new();
+    policy.set_capacity(&mut db, PARALLEL_WORKERS);
+    let items = new_items(&db, PARALLEL_WORKERS);
+    prewarm(policy, &db, &items);
 
-            items
-                .into_iter()
-                .map(|item| (db.clone(), item))
-                .collect::<Vec<_>>()
-        })
-        .bench_local_refs(|jobs| {
-            black_box(parallel_access_repeated(policy, jobs, ACCESSES_PER_WORKER))
+    let jobs = SegQueue::new();
+    for item in items.iter().copied().cycle().take(PARALLEL_SAMPLES) {
+        jobs.push((db.clone(), item));
+    }
+
+    bencher
+        .with_inputs(|| jobs.pop().expect("one prepared database handle per sample"))
+        .bench_refs(|(db, item)| {
+            black_box(access_all(
+                policy,
+                db,
+                std::iter::repeat_n(*item, ACCESSES_PER_WORKER),
+            ))
         });
 }
 
@@ -361,31 +366,4 @@ impl Workload {
         }
         Value(sum)
     }
-}
-
-fn parallel_access_repeated(
-    policy: Policy,
-    jobs: &mut [(salsa::DatabaseImpl, Item)],
-    accesses_per_item: usize,
-) -> Value {
-    match policy {
-        Policy::NoEviction => {
-            parallel_access_repeated_with(jobs, accesses_per_item, no_eviction_value)
-        }
-        Policy::Lru => parallel_access_repeated_with(jobs, accesses_per_item, lru_value),
-    }
-}
-
-fn parallel_access_repeated_with(
-    jobs: &mut [(salsa::DatabaseImpl, Item)],
-    accesses_per_item: usize,
-    fetch: impl Fn(&dyn salsa::Database, Item) -> Value + Copy + Send + Sync,
-) -> Value {
-    let sum = jobs
-        .par_iter_mut()
-        .map(|(db, item)| {
-            access_all_with(db, std::iter::repeat_n(*item, accesses_per_item), fetch).0
-        })
-        .reduce(|| 0, u64::wrapping_add);
-    Value(sum)
 }
