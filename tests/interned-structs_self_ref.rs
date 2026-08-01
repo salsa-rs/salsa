@@ -112,8 +112,8 @@ const _: () = {
             static CACHE: zalsa_::IngredientCache<zalsa_struct_::IngredientImpl<Configuration_>> =
                 zalsa_::IngredientCache::new();
 
-            // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
-            // ingredient created by our jar is the struct ingredient.
+            // SAFETY: The ingredient at offset 0 in `JarImpl<Configuration_>` has type
+            // `IngredientImpl<Configuration_>`.
             unsafe { CACHE.get_or_create::<zalsa_struct_::JarImpl<Configuration_>, 0>(zalsa) }
         }
     }

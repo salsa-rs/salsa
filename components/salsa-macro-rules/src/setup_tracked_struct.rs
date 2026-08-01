@@ -241,8 +241,8 @@ macro_rules! setup_tracked_struct {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
 
-                    // SAFETY: `lookup_jar_by_type` returns a valid ingredient index, and the only
-                    // ingredient created by our jar is the struct ingredient.
+                    // SAFETY: The ingredient at offset 0 in `JarImpl<$Configuration>` has type
+                    // `IngredientImpl<$Configuration>`.
                     unsafe {
                         CACHE.get_or_create::<$zalsa_struct::JarImpl<$Configuration>, 0>(zalsa)
                     }
