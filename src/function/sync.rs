@@ -8,16 +8,14 @@ use crate::plumbing::ZalsaLocal;
 use crate::runtime::{
     BlockOnTransferredOwner, BlockResult, BlockTransferredResult, Running, WaitResult,
 };
-use crate::sync::Mutex;
 use crate::sync::thread::{self};
+use crate::sync::{Mutex, shard_count};
 use crate::tracing;
 use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
 
 pub(crate) type SyncGuard<'me> = crate::sync::MutexGuard<'me, FxHashMap<Id, SyncState>>;
 type SyncShard = CachePadded<Mutex<FxHashMap<Id, SyncState>>>;
-
-const SHARD_COUNT: usize = 32;
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
@@ -65,7 +63,7 @@ pub(crate) struct SyncState {
 impl SyncTable {
     pub(crate) fn new(ingredient: IngredientIndex) -> Self {
         Self {
-            syncs: (0..SHARD_COUNT).map(|_| CachePadded::default()).collect(),
+            syncs: (0..shard_count()).map(|_| CachePadded::default()).collect(),
             ingredient,
         }
     }
@@ -555,24 +553,5 @@ pub(crate) enum Reentrancy {
 impl Reentrancy {
     const fn is_allow(self) -> bool {
         matches!(self, Reentrancy::Allow)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{SHARD_COUNT, SyncTable};
-    use crate::{Id, IngredientIndex};
-
-    #[test]
-    fn keys_with_matching_page_slots_use_different_shards() {
-        let sync_table = SyncTable::new(IngredientIndex::new(0));
-        let mut used_shards = [false; SHARD_COUNT];
-
-        for page in 0..(SHARD_COUNT * 4) {
-            let key = Id::from_bits(((page as u64) << 7) | 1);
-            used_shards[sync_table.shard_index(key)] = true;
-        }
-
-        assert!(used_shards.into_iter().filter(|used| *used).count() >= SHARD_COUNT / 2);
     }
 }

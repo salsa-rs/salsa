@@ -1,5 +1,17 @@
 pub use shim::*;
 
+pub(crate) fn shard_count() -> usize {
+    static SHARDS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+    *SHARDS.get_or_init(|| {
+        let num_cpus = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1);
+
+        (num_cpus * 4).next_power_of_two()
+    })
+}
+
 #[cfg(feature = "shuttle")]
 pub mod shim {
     pub use shuttle::sync::*;
