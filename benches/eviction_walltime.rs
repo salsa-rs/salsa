@@ -14,7 +14,10 @@
 //! concurrent benchmark uses four synchronized workers.
 
 use std::hint::black_box;
-use std::sync::Mutex;
+use std::sync::{
+    Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use salsa::Database as _;
 
@@ -308,14 +311,14 @@ fn parallel_fast_path(bencher: divan::Bencher, policy: Policy) {
     let items = new_items(&db, PARALLEL_WORKERS);
     prewarm(policy, &db, &items);
 
-    let jobs = items
-        .into_iter()
-        .map(|item| (db.clone(), item))
-        .collect::<Vec<_>>();
-    let jobs = Mutex::new(jobs.into_iter().cycle());
+    let db = Mutex::new(db);
+    let next_worker = AtomicUsize::new(0);
 
     bencher
-        .with_inputs(|| jobs.lock().unwrap().next().unwrap())
+        .with_inputs(|| {
+            let worker = next_worker.fetch_add(1, Ordering::Relaxed);
+            (db.lock().unwrap().clone(), items[worker % items.len()])
+        })
         .bench_refs(|(db, item)| {
             black_box(access_all(
                 policy,
