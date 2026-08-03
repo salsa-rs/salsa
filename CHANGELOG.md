@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.1...salsa-v0.28.2) - 2026-08-01
+
+### Added
+
+- Add conditional SalsaValue derive proofs ([#1261](https://github.com/salsa-rs/salsa/pull/1261))
+
+### Fixed
+
+- propagate poisoned cycle heads ([#1263](https://github.com/salsa-rs/salsa/pull/1263))
+- migrate procedural macros to syn 3 ([#1265](https://github.com/salsa-rs/salsa/pull/1265))
+
+### Other
+
+- reduce function ingredient monomorphization ([#1210](https://github.com/salsa-rs/salsa/pull/1210))
+- clarify ingredient cache safety invariants ([#1270](https://github.com/salsa-rs/salsa/pull/1270))
+- reduce specified value validation monomorphization ([#1209](https://github.com/salsa-rs/salsa/pull/1209))
+
 ## [0.28.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.0...salsa-v0.28.1) - 2026-07-22
 
 ### Other
