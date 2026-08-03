@@ -82,6 +82,7 @@ pub(crate) fn salsa_value_derive(input: syn::DeriveInput) -> syn::Result<TokenSt
             use #zalsa::{SalsaValueDispatch, SalsaValueFallback as _};
 
             #[allow(dead_code)]
+            #[allow(unused_lifetimes)]
             fn _assert_fields_are_salsa_values #impl_generics () #where_clause {
                 #(#field_assertions)*
             }
