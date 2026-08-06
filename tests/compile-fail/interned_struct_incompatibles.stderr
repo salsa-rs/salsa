@@ -58,9 +58,3 @@ error: `unsafe(no_lifetime)` requires `revisions = usize::MAX`
    |
 52 | #[salsa::interned(unsafe(no_lifetime), revisions = 3)]
    |                                                    ^
-
-error: cannot find attribute `tracked` in this scope
-  --> tests/compile-fail/interned_struct_incompatibles.rs:33:7
-   |
-33 |     #[tracked]
-   |       ^^^^^^^
