@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, ZalsaDatabase};
 use crate::zalsa_local::CancellationToken;
-use crate::{CancellationRegistration, Durability, Revision};
+use crate::{Durability, Revision};
 
 #[derive(Copy, Clone)]
 #[repr(transparent)]
@@ -78,31 +78,17 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
         self.zalsa_local().cancellation_token()
     }
 
-    /// Registers a callback for cancellation of the current database revision.
+    /// Returns a receiver that disconnects when the current database revision is cancelled.
     ///
-    /// The callback runs whenever Salsa cancels a revision, after it sets its cancellation flag
-    /// and before it waits for other database handles to be dropped. If cancellation has already
-    /// been requested, the callback also runs before this method returns. It remains registered
-    /// until [`CancellationRegistration::unregister`] is called, even if the registration is
-    /// dropped. Local cancellation through [`CancellationToken::cancel`] does not invoke this
-    /// callback.
+    /// Receivers for the same revision share a channel. Salsa disconnects all of them after
+    /// setting its cancellation flag and before waiting for other database handles to be dropped.
+    /// This lets blocking computations wait for cancellation alongside other work without holding
+    /// a database handle on another thread.
     ///
-    /// **WARNING:** The callback must not retain a database handle, access the database, or wait
-    /// for a computation holding a database handle. Cancellation waits for other handles to be
-    /// dropped, so any of these can deadlock. Callbacks must also avoid panicking because they run
-    /// synchronously on the thread requesting cancellation.
-    fn on_cancellation(
-        &self,
-        callback: Box<dyn Fn() + Send + Sync + 'static>,
-    ) -> CancellationRegistration {
-        let runtime = self.zalsa().runtime();
-        let registration = runtime.register_cancellation_callback(callback);
-
-        if runtime.load_cancellation_flag() {
-            registration.notify();
-        }
-
-        registration
+    /// Obtain a new receiver after cancellation to observe a later revision. Local cancellation
+    /// through [`CancellationToken::cancel`] does not disconnect the receiver.
+    fn cancellation_receiver(&self) -> crossbeam_channel::Receiver<()> {
+        self.zalsa().runtime().cancellation_receiver()
     }
 
     /// Reports that the query depends on some state unknown to salsa.

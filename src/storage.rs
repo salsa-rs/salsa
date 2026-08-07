@@ -167,10 +167,7 @@ impl<Db: Database> Storage<Db> {
         {
             let _cancellation_flag = CancellationFlagGuard::new(&self.handle.zalsa_impl);
 
-            self.handle
-                .zalsa_impl
-                .runtime()
-                .notify_cancellation_callbacks();
+            self.handle.zalsa_impl.runtime().notify_cancellation();
 
             self.handle
                 .zalsa_impl

@@ -5,15 +5,12 @@ mod common;
 
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::{
-        Arc, Barrier,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc,
-    },
+    sync::Barrier,
     thread,
     time::Duration,
 };
 
+use crossbeam_channel::{RecvTimeoutError, TryRecvError};
 use expect_test::expect;
 use salsa::{Cancelled, Database, DatabaseImpl};
 
@@ -101,148 +98,83 @@ fn cancellation_is_restored_after_cycle_panic() {
 }
 
 #[test]
-fn callback_runs_every_time_revision_is_cancelled() {
+fn cancellation_receiver_disconnects_when_revision_is_cancelled() {
     let mut db = DatabaseImpl::default();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let registration = db.on_cancellation(Box::new({
-        let calls = Arc::clone(&calls);
-        move || {
-            calls.fetch_add(1, Ordering::Relaxed);
-        }
-    }));
+    let receiver = db.cancellation_receiver();
 
+    assert_eq!(receiver.try_recv(), Err(TryRecvError::Empty));
     db.trigger_cancellation();
-    db.trigger_cancellation();
-
-    assert_eq!(calls.load(Ordering::Relaxed), 2);
-
-    registration.unregister();
+    assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
 }
 
 #[test]
-fn local_cancellation_does_not_notify_revision_callbacks() {
+fn receivers_for_same_revision_share_channel() {
     let db = DatabaseImpl::default();
-    let called = Arc::new(AtomicBool::new(false));
-    let registration = db.on_cancellation(Box::new({
-        let called = Arc::clone(&called);
-        move || called.store(true, Ordering::Relaxed)
-    }));
+    let first = db.cancellation_receiver();
+    let second = db.cancellation_receiver();
+
+    assert!(first.same_channel(&second));
+}
+
+#[test]
+fn later_revision_gets_fresh_cancellation_receiver() {
+    let mut db = DatabaseImpl::default();
+    let first = db.cancellation_receiver();
+
+    db.trigger_cancellation();
+
+    let second = db.cancellation_receiver();
+    assert!(!first.same_channel(&second));
+    assert_eq!(second.try_recv(), Err(TryRecvError::Empty));
+
+    db.trigger_cancellation();
+    assert_eq!(second.try_recv(), Err(TryRecvError::Disconnected));
+}
+
+#[test]
+fn local_cancellation_does_not_disconnect_revision_receiver() {
+    let db = DatabaseImpl::default();
+    let receiver = db.cancellation_receiver();
 
     db.cancellation_token().cancel();
 
-    assert!(!called.load(Ordering::Relaxed));
-
-    registration.unregister();
+    assert_eq!(receiver.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[test]
-fn callback_runs_before_pending_write_waits_for_snapshots() {
+fn receiver_disconnects_before_pending_write_waits_for_snapshots() {
     let mut db = DatabaseImpl::default();
     let snapshot = db.clone();
-    let (sender, receiver) = mpsc::channel();
-    let registration = snapshot.on_cancellation(Box::new(move || {
-        sender.send(()).unwrap();
-    }));
+    let receiver = snapshot.cancellation_receiver();
 
     let writer = thread::spawn(move || db.trigger_cancellation());
 
-    receiver
-        .recv_timeout(Duration::from_secs(5))
-        .expect("cancellation callback must run before the writer waits for snapshots");
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)),
+        Err(RecvTimeoutError::Disconnected)
+    );
 
     let cancelled = Cancelled::catch(|| snapshot.unwind_if_revision_cancelled());
     assert!(matches!(cancelled, Err(Cancelled::PendingWrite)));
 
-    registration.unregister();
     drop(snapshot);
-
     writer.join().unwrap();
 }
 
 #[test]
-fn unregistering_prevents_callback() {
-    let mut db = DatabaseImpl::default();
-    let called = Arc::new(AtomicBool::new(false));
-    let registration = db.on_cancellation(Box::new({
-        let called = Arc::clone(&called);
-        move || called.store(true, Ordering::Relaxed)
-    }));
-
-    registration.unregister();
-    db.trigger_cancellation();
-
-    assert!(!called.load(Ordering::Relaxed));
-}
-
-#[test]
-fn dropping_registration_does_not_unregister_callback() {
-    let mut db = DatabaseImpl::default();
-    let called = Arc::new(AtomicBool::new(false));
-    let registration = db.on_cancellation(Box::new({
-        let called = Arc::clone(&called);
-        move || called.store(true, Ordering::Relaxed)
-    }));
-
-    drop(registration);
-    db.trigger_cancellation();
-
-    assert!(called.load(Ordering::Relaxed));
-}
-
-#[test]
-fn registration_does_not_keep_callbacks_alive_after_database_is_dropped() {
-    let db = DatabaseImpl::default();
-    let captured = Arc::new(());
-    let registration = db.on_cancellation(Box::new({
-        let captured = Arc::clone(&captured);
-        move || {
-            let _ = Arc::strong_count(&captured);
-        }
-    }));
-
-    assert_eq!(Arc::strong_count(&captured), 2);
-    drop(db);
-    assert_eq!(Arc::strong_count(&captured), 1);
-
-    registration.unregister();
-}
-
-#[test]
-fn callback_registered_after_revision_cancellation_runs_immediately() {
+fn receiver_created_after_revision_cancellation_is_disconnected() {
     let mut db = DatabaseImpl::default();
     let snapshot = db.clone();
-    let (sender, receiver) = mpsc::channel();
-    let pending_registration = snapshot.on_cancellation(Box::new(move || {
-        sender.send(()).unwrap();
-    }));
+    let pending = snapshot.cancellation_receiver();
 
     let writer = thread::spawn(move || db.trigger_cancellation());
-    receiver
-        .recv_timeout(Duration::from_secs(5))
-        .expect("cancellation callback must run before the writer waits for snapshots");
+    assert_eq!(
+        pending.recv_timeout(Duration::from_secs(5)),
+        Err(RecvTimeoutError::Disconnected)
+    );
 
-    let called = Arc::new(AtomicBool::new(false));
-    let registration = snapshot.on_cancellation(Box::new({
-        let called = Arc::clone(&called);
-        move || called.store(true, Ordering::Relaxed)
-    }));
-
-    assert!(called.load(Ordering::Relaxed));
-
-    registration.unregister();
-    pending_registration.unregister();
+    let receiver = snapshot.cancellation_receiver();
+    assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
     drop(snapshot);
     writer.join().unwrap();
-}
-
-#[test]
-fn cancellation_callback_panic_does_not_leave_database_cancelled() {
-    let mut db = DatabaseImpl::default();
-    let registration = db.on_cancellation(Box::new(|| panic!("cancellation callback panic")));
-
-    let result = catch_unwind(AssertUnwindSafe(|| db.trigger_cancellation()));
-    assert!(result.is_err());
-
-    registration.unregister();
-    db.unwind_if_revision_cancelled();
 }

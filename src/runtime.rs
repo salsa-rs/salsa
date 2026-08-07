@@ -1,5 +1,4 @@
 use self::dependency_graph::DependencyGraph;
-use crate::cancellation::CancellationCallbacks;
 use crate::durability::Durability;
 use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
@@ -8,9 +7,14 @@ use crate::sync::thread::{self, ThreadId};
 use crate::sync::{Mutex, OnceLock};
 use crate::table::Table;
 use crate::zalsa::Zalsa;
-use crate::{CancellationRegistration, Cancelled, Event, EventKind, Revision};
+use crate::{Cancelled, Event, EventKind, Revision};
 
 mod dependency_graph;
+
+type CancellationChannel = (
+    crossbeam_channel::Sender<()>,
+    crossbeam_channel::Receiver<()>,
+);
 
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct Runtime {
@@ -20,9 +24,9 @@ pub struct Runtime {
     #[cfg_attr(feature = "persistence", serde(skip))]
     revision_cancelled: AtomicBool,
 
-    /// Callbacks waiting for cancellation of the current database revision.
+    /// Channel shared by receivers waiting for cancellation of the current database revision.
     #[cfg_attr(feature = "persistence", serde(skip))]
-    cancellation_callbacks: OnceLock<CancellationCallbacks>,
+    cancellation_channel: OnceLock<Mutex<Option<CancellationChannel>>>,
 
     /// Distinguishes provisional cycle results created before and after cancelling other handles
     /// within the same revision. Reset when the revision advances.
@@ -203,7 +207,7 @@ impl Default for Runtime {
         Runtime {
             revisions: [Revision::start(); Durability::LEN],
             revision_cancelled: Default::default(),
-            cancellation_callbacks: Default::default(),
+            cancellation_channel: Default::default(),
             cancellation_count: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
@@ -272,18 +276,25 @@ impl Runtime {
         self.revision_cancelled.store(true, Ordering::Release);
     }
 
-    pub(crate) fn register_cancellation_callback(
-        &self,
-        callback: Box<dyn Fn() + Send + Sync + 'static>,
-    ) -> CancellationRegistration {
-        self.cancellation_callbacks
-            .get_or_init(CancellationCallbacks::default)
-            .register(callback)
+    pub(crate) fn cancellation_receiver(&self) -> crossbeam_channel::Receiver<()> {
+        let mut channel = self.cancellation_channel.get_or_init(Mutex::default).lock();
+
+        if self.load_cancellation_flag() {
+            let (sender, receiver) = crossbeam_channel::bounded(0);
+            drop(sender);
+            return receiver;
+        }
+
+        channel
+            .get_or_insert_with(|| crossbeam_channel::bounded(0))
+            .1
+            .clone()
     }
 
-    pub(crate) fn notify_cancellation_callbacks(&self) {
-        if let Some(callbacks) = self.cancellation_callbacks.get() {
-            callbacks.notify();
+    pub(crate) fn notify_cancellation(&self) {
+        if let Some(channel) = self.cancellation_channel.get() {
+            let channel = channel.lock().take();
+            drop(channel);
         }
     }
 
