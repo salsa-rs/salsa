@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.2...salsa-v0.28.3) - 2026-08-07
+
+### Other
+
+- Fix SalsaValue unused lifetime warning ([#1274](https://github.com/salsa-rs/salsa/pull/1274))
+
 ## [0.28.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.1...salsa-v0.28.2) - 2026-08-01
 
 ### Added
