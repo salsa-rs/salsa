@@ -6,7 +6,7 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
 };
-use crate::hash::FxIndexSet;
+use crate::hash::{FxIndexSet, should_discard_retained_capacity};
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
@@ -276,7 +276,7 @@ impl ActiveQuery {
             #[cfg(feature = "accumulator")]
                 accumulated_inputs: _,
         } = self;
-        input_outputs.clear();
+        clear_input_outputs(input_outputs);
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
@@ -402,7 +402,9 @@ impl QueryStack {
             push_len,
         );
         let completion = active_query.prepare_completion(iteration, false);
-        completion.finish(active_query.input_outputs.drain(..))
+        let completed_query = completion.finish(active_query.input_outputs.iter().copied());
+        clear_input_outputs(&mut active_query.input_outputs);
+        completed_query
     }
 
     pub(crate) fn pop_detached_completion(
@@ -420,7 +422,7 @@ impl QueryStack {
         );
         let completion = active_query.prepare_completion(iteration, force_extra);
         let DetachedInputOutputs(mut reusable_frame_input_outputs) = detached_input_outputs;
-        reusable_frame_input_outputs.clear();
+        clear_input_outputs(&mut reusable_frame_input_outputs);
         active_query.input_outputs = reusable_frame_input_outputs;
         completion
     }
@@ -446,6 +448,14 @@ impl QueryStack {
         let active_query = &mut self.stack[self.len];
         debug_assert_eq!(active_query.database_key_index, key, "unbalanced push/pop");
         active_query
+    }
+}
+
+fn clear_input_outputs(input_outputs: &mut FxIndexSet<QueryEdge>) {
+    if should_discard_retained_capacity(input_outputs.len(), input_outputs.capacity()) {
+        *input_outputs = Default::default();
+    } else {
+        input_outputs.clear();
     }
 }
 

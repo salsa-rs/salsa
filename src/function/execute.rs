@@ -5,7 +5,7 @@ use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp, Provisiona
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, ClaimResult, Configuration, IngredientImpl, Reentrancy};
-use crate::hash::{FxHashSet, FxIndexSet};
+use crate::hash::{FxHashSet, FxIndexSet, should_discard_retained_capacity};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
@@ -945,9 +945,18 @@ fn complete_cycle_query(
         &mut seen,
     );
 
-    seen.clear();
+    if should_discard_retained_capacity(seen.len(), seen.capacity()) {
+        seen = Default::default();
+    } else {
+        seen.clear();
+    }
     let completion = detached_query.pop_completion(iteration, true);
-    let completed_query = completion.finish(flattened.drain(..));
+    let completed_query = completion.finish(flattened.iter().copied());
+    if should_discard_retained_capacity(flattened.len(), flattened.capacity()) {
+        flattened = Default::default();
+    } else {
+        flattened.clear();
+    }
     #[cfg(feature = "accumulator")]
     assert!(
         completed_query
