@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::sync::atomic::{AtomicUsize, Ordering};
-use crate::sync::{Arc, Mutex};
+use crate::sync::{Arc, Mutex, Weak};
 
 /// Identifies a registered revision-cancellation callback.
 ///
@@ -9,7 +9,7 @@ use crate::sync::{Arc, Mutex};
 /// [`Self::unregister`]. Dropping the registration does not remove the callback.
 #[must_use = "keep the registration to unregister its cancellation callback"]
 pub struct CancellationRegistration {
-    callbacks: Arc<Mutex<Vec<RegisteredCallback>>>,
+    callbacks: Weak<Mutex<Vec<RegisteredCallback>>>,
     id: usize,
 }
 
@@ -18,8 +18,12 @@ impl CancellationRegistration {
     ///
     /// A callback already running on another thread may finish after this method returns.
     pub fn unregister(&self) {
+        let Some(callbacks) = self.callbacks.upgrade() else {
+            return;
+        };
+
         let callback = {
-            let mut callbacks = self.callbacks.lock();
+            let mut callbacks = callbacks.lock();
             callbacks
                 .iter()
                 .position(|callback| callback.id == self.id)
@@ -30,8 +34,11 @@ impl CancellationRegistration {
     }
 
     pub(crate) fn notify(&self) {
-        let callback = self
-            .callbacks
+        let Some(callbacks) = self.callbacks.upgrade() else {
+            return;
+        };
+
+        let callback = callbacks
             .lock()
             .iter()
             .find(|callback| callback.id == self.id)
@@ -69,7 +76,7 @@ impl CancellationCallbacks {
         });
 
         CancellationRegistration {
-            callbacks: Arc::clone(&self.callbacks),
+            callbacks: Arc::downgrade(&self.callbacks),
             id,
         }
     }

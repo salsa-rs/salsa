@@ -190,6 +190,24 @@ fn dropping_registration_does_not_unregister_callback() {
 }
 
 #[test]
+fn registration_does_not_keep_callbacks_alive_after_database_is_dropped() {
+    let db = DatabaseImpl::default();
+    let captured = Arc::new(());
+    let registration = db.on_cancellation(Box::new({
+        let captured = Arc::clone(&captured);
+        move || {
+            let _ = Arc::strong_count(&captured);
+        }
+    }));
+
+    assert_eq!(Arc::strong_count(&captured), 2);
+    drop(db);
+    assert_eq!(Arc::strong_count(&captured), 1);
+
+    registration.unregister();
+}
+
+#[test]
 fn callback_registered_after_revision_cancellation_runs_immediately() {
     let mut db = DatabaseImpl::default();
     let snapshot = db.clone();
