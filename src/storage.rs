@@ -169,6 +169,11 @@ impl<Db: Database> Storage<Db> {
 
             self.handle
                 .zalsa_impl
+                .runtime()
+                .notify_cancellation_callbacks();
+
+            self.handle
+                .zalsa_impl
                 .event(&|| Event::new(EventKind::DidSetCancellationFlag));
 
             let mut clones = self.handle.coordinate.clones.lock();

@@ -256,6 +256,7 @@
 mod accumulator;
 mod active_query;
 mod attach;
+mod cancellation;
 mod cancelled;
 mod cycle;
 mod database;
@@ -297,6 +298,7 @@ pub use self::database::{IngredientInfo, PageInfo};
 #[cfg(feature = "accumulator")]
 pub use self::accumulator::Accumulator;
 pub use self::active_query::Backtrace;
+pub use self::cancellation::CancellationRegistration;
 pub use self::cancelled::Cancelled;
 
 pub use self::cycle::Cycle;

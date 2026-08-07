@@ -1,13 +1,14 @@
 use self::dependency_graph::DependencyGraph;
+use crate::cancellation::CancellationCallbacks;
 use crate::durability::Durability;
 use crate::function::{SyncGuard, SyncOwner};
 use crate::key::DatabaseKeyIndex;
-use crate::sync::Mutex;
 use crate::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use crate::sync::thread::{self, ThreadId};
+use crate::sync::{Mutex, OnceLock};
 use crate::table::Table;
 use crate::zalsa::Zalsa;
-use crate::{Cancelled, Event, EventKind, Revision};
+use crate::{CancellationRegistration, Cancelled, Event, EventKind, Revision};
 
 mod dependency_graph;
 
@@ -18,6 +19,10 @@ pub struct Runtime {
     /// is set back to false once the input has been changed.
     #[cfg_attr(feature = "persistence", serde(skip))]
     revision_cancelled: AtomicBool,
+
+    /// Callbacks waiting for cancellation of the current database revision.
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    cancellation_callbacks: OnceLock<CancellationCallbacks>,
 
     /// Distinguishes provisional cycle results created before and after cancelling other handles
     /// within the same revision. Reset when the revision advances.
@@ -198,6 +203,7 @@ impl Default for Runtime {
         Runtime {
             revisions: [Revision::start(); Durability::LEN],
             revision_cancelled: Default::default(),
+            cancellation_callbacks: Default::default(),
             cancellation_count: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
@@ -264,6 +270,21 @@ impl Runtime {
     pub(crate) fn set_cancellation_flag(&self) {
         crate::tracing::trace!("set_cancellation_flag");
         self.revision_cancelled.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn register_cancellation_callback(
+        &self,
+        callback: Box<dyn Fn() + Send + Sync + 'static>,
+    ) -> CancellationRegistration {
+        self.cancellation_callbacks
+            .get_or_init(CancellationCallbacks::default)
+            .register(callback)
+    }
+
+    pub(crate) fn notify_cancellation_callbacks(&self) {
+        if let Some(callbacks) = self.cancellation_callbacks.get() {
+            callbacks.notify();
+        }
     }
 
     pub(crate) fn reset_cancellation_flag(&self) {
