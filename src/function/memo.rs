@@ -10,7 +10,7 @@ use crate::function::{ClaimResult, Configuration, IngredientImpl, Reentrancy};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
-use crate::table::memo::{DummyMemo, MemoSlot, MemoTableWithTypesMut, ToDynMemo};
+use crate::table::memo::{DummyMemo, MemoEntryType, MemoSlot, MemoTableWithTypesMut, ToDynMemo};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOriginRef, QueryRevisions};
 use crate::{Cancelled, Event, EventKind, Id, Revision};
@@ -105,7 +105,7 @@ pub struct Memo<C: Configuration> {
 /// covering the entire allocation, which remains valid for shared access for `'db`, even after
 /// replacement. `to_dyn_fn` and `type_id` describe the same `C`.
 #[derive(Clone, Copy)]
-pub(crate) struct ErasedMemo<'db> {
+pub struct ErasedMemo<'db> {
     /// A pointer to the base address of the [`Memo`] allocation, with spatial provenance covering
     /// the entire allocation.
     data: NonNull<DummyMemo>,
@@ -157,6 +157,21 @@ impl<'memo> ErasedMemo<'memo> {
         // SAFETY: `to_dyn_fn` matches the concrete memo allocation, which is valid for shared
         // access for `'memo`.
         unsafe { (self.to_dyn_fn)(self.data).as_ref() }.has_value()
+    }
+
+    /// Returns whether this memo is provisional, finalized, or poisoned.
+    #[inline]
+    pub(super) fn provisional_status(self) -> ProvisionalStatus<'memo> {
+        let header = self.header();
+
+        if !self.has_value() && header.may_be_provisional() {
+            return ProvisionalStatus::Poisoned {
+                iteration: header.revisions.iteration(),
+                verified_at: header.verified_at.load(),
+            };
+        }
+
+        header.provisional_status()
     }
 
     /// Returns the concrete memo after asserting that it uses configuration `C`.
@@ -234,7 +249,7 @@ impl MemoHeader {
         }
     }
 
-    /// Returns `true` if this memo was part of a cycle in it's last iteration.
+    /// Returns `true` if this memo was part of a cycle in its last iteration.
     #[inline(always)]
     pub(super) fn was_cycle_participant(&self) -> bool {
         !self.revisions.cycle_heads().is_empty()
@@ -323,10 +338,25 @@ impl<C: Configuration> Memo<C> {
 
     pub(super) fn value(&self) -> Option<&C::Output<'_>> {
         self.value.as_ref().map(|value| {
-            // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
-            // bounded by the borrow of this memo.
+            // SAFETY: Guaranteed by Configuration; the restored lifetime is bounded by the
+            // borrow of this memo.
             unsafe { std::mem::transmute::<&C::Output<'static>, &C::Output<'_>>(value) }
         })
+    }
+
+    /// Returns a type-erased handle to this memo.
+    pub(super) fn erase(&self) -> ErasedMemo<'_> {
+        let data = NonNull::from(self).cast::<DummyMemo>();
+
+        // SAFETY: `data` retains the provenance of this complete memo allocation and remains
+        // valid for the lifetime of the shared borrow. Both metadata values describe `C`.
+        unsafe {
+            ErasedMemo::from_raw_parts(
+                data,
+                MemoEntryType::to_dyn_fn::<Memo<C>>(),
+                TypeId::of::<Memo<C>>(),
+            )
+        }
     }
 
     /// Returns `true` if this memo should be serialized.
@@ -547,7 +577,8 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
                 crate::tracing::trace!("Waiting for {head_database_key:?} results in a cycle");
 
                 let provisional_status = function
-                    .provisional_status(self.zalsa, head_key_index)
+                    .memo(self.zalsa, head_key_index)
+                    .map(|memo| memo.provisional_status())
                     .expect("cycle head memo to exist");
                 let (current_iteration, verified_at) = match provisional_status {
                     ProvisionalStatus::Provisional {
@@ -592,7 +623,6 @@ impl Iterator for TryClaimCycleHeadsIter<'_> {
 
 #[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
 mod _memory_usage {
-    use crate::cycle::CycleRecoveryStrategy;
     use crate::ingredient::Location;
     use crate::plumbing::{self, IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
     use crate::table::memo::MemoTableWithTypes;
@@ -647,13 +677,13 @@ mod _memory_usage {
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
         const PERSIST: bool = false;
-        const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
 
         type DbView = dyn Database;
         type SalsaStruct<'db> = DummyStruct;
         type Input<'db> = ();
         type Output<'db> = NonZeroUsize;
         type Eviction = crate::function::eviction::NoopEviction;
+        type CycleStrategy = crate::function::cycle_strategy::Panic;
 
         fn values_equal<'db>(_: &Self::Output<'db>, _: &Self::Output<'db>) -> bool {
             unimplemented!()
