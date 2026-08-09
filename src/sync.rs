@@ -1,5 +1,15 @@
 pub use shim::*;
 
+pub(crate) fn max_parallelism() -> usize {
+    static MAX_PARALLELISM: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+    *MAX_PARALLELISM.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+    })
+}
+
 #[cfg(feature = "shuttle")]
 pub mod shim {
     pub use shuttle::sync::*;

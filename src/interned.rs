@@ -20,7 +20,7 @@ use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
 use crate::plumbing::{self, Jar, ZalsaLocal};
 use crate::revision::AtomicRevision;
-use crate::sync::{Arc, Mutex, OnceLock};
+use crate::sync::{Arc, Mutex, max_parallelism};
 use crate::table::Slot;
 use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
 use crate::zalsa::{IngredientIndex, JarKind, Zalsa};
@@ -1054,19 +1054,11 @@ where
 
 /// Creates the sharded storage outside of the generic [`IngredientImpl::new`] context.
 ///
-/// Keeping this helper non-generic avoids monomorphizing the `OnceLock` and iterator machinery for
-/// every interned struct configuration.
+/// Keeping this helper non-generic avoids monomorphizing the iterator machinery for every interned
+/// struct configuration.
 fn new_shards() -> Box<[CachePadded<Mutex<IngredientShard>>]> {
-    static SHARDS: OnceLock<usize> = OnceLock::new();
-    let shards = *SHARDS.get_or_init(|| {
-        let num_cpus = std::thread::available_parallelism()
-            .map(usize::from)
-            .unwrap_or(1);
-
-        (num_cpus * 4).next_power_of_two()
-    });
-
-    (0..shards).map(|_| Default::default()).collect()
+    let shard_count = (max_parallelism() * 4).next_power_of_two();
+    (0..shard_count).map(|_| Default::default()).collect()
 }
 
 /// A stable pointer to an interned value allocated in the database table.
