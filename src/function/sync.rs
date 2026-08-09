@@ -16,12 +16,18 @@ use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex};
 
 pub(crate) type SyncGuard<'me> = crate::sync::MutexGuard<'me, HashTable<SyncState>>;
-type SyncShard = CachePadded<Mutex<HashTable<SyncState>>>;
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
 pub(crate) struct SyncTable {
-    syncs: Box<[SyncShard]>,
+    shards: Box<[CachePadded<SyncShard>]>,
+    ingredient: IngredientIndex,
+}
+
+struct SyncShard {
+    syncs: Mutex<HashTable<SyncState>>,
+
+    /// Fits into the shard's cache-line padding and keeps it out of `ClaimGuard`.
     ingredient: IngredientIndex,
 }
 
@@ -69,7 +75,14 @@ impl SyncTable {
         let shard_count = max_parallelism().next_power_of_two().max(2);
 
         Self {
-            syncs: (0..shard_count).map(|_| CachePadded::default()).collect(),
+            shards: (0..shard_count)
+                .map(|_| {
+                    CachePadded::new(SyncShard {
+                        syncs: Mutex::default(),
+                        ingredient,
+                    })
+                })
+                .collect(),
             ingredient,
         }
     }
@@ -77,13 +90,13 @@ impl SyncTable {
     #[inline]
     fn shard_index(&self, hash: u64) -> usize {
         let hash = hash as usize;
-        let shift = usize::BITS - self.syncs.len().trailing_zeros();
+        let shift = usize::BITS - self.shards.len().trailing_zeros();
         (hash << 7) >> shift
     }
 
     #[inline]
-    fn syncs_for(&self, hash: u64) -> &Mutex<HashTable<SyncState>> {
-        &self.syncs[self.shard_index(hash)]
+    fn shard_for(&self, hash: u64) -> &SyncShard {
+        &self.shards[self.shard_index(hash)]
     }
 
     /// Claims the given key index, or blocks if it is running on another thread.
@@ -95,8 +108,8 @@ impl SyncTable {
         reentrant: Reentrancy,
     ) -> ClaimResult<'me> {
         let hash = FxBuildHasher.hash_one(key_index);
-        let syncs = self.syncs_for(hash);
-        let mut write = syncs.lock();
+        let shard = self.shard_for(hash);
+        let mut write = shard.syncs.lock();
         match write.entry(
             hash,
             |state| state.key == key_index,
@@ -110,8 +123,7 @@ impl SyncTable {
                             zalsa,
                             zalsa_local,
                             occupied_entry,
-                            syncs,
-                            hash,
+                            shard,
                             reentrant,
                         ) {
                             Ok(claimed) => claimed,
@@ -151,11 +163,9 @@ impl SyncTable {
                 });
                 ClaimResult::Claimed(ClaimGuard {
                     key_index,
-                    ingredient: self.ingredient,
-                    hash,
                     zalsa,
                     zalsa_local,
-                    syncs,
+                    shard,
                     mode: ReleaseMode::Default,
                 })
             }
@@ -170,7 +180,7 @@ impl SyncTable {
         reentrant: Reentrancy,
     ) -> ClaimResult<'me, ()> {
         let hash = FxBuildHasher.hash_one(key_index);
-        let mut write = self.syncs_for(hash).lock();
+        let mut write = self.shard_for(hash).syncs.lock();
         match write.find_entry(hash, |state| state.key == key_index) {
             Ok(occupied_entry) => {
                 let id = match occupied_entry.get().id {
@@ -215,8 +225,7 @@ impl SyncTable {
         zalsa: &'me Zalsa,
         zalsa_local: &'me ZalsaLocal,
         mut entry: OccupiedEntry<SyncState>,
-        syncs: &'me Mutex<HashTable<SyncState>>,
-        hash: u64,
+        shard: &'me SyncShard,
         reentrant: Reentrancy,
     ) -> Result<ClaimResult<'me>, Box<BlockOnTransferredOwner<'me>>> {
         let key_index = entry.get().key;
@@ -238,11 +247,9 @@ impl SyncTable {
 
                 Ok(ClaimResult::Claimed(ClaimGuard {
                     key_index,
-                    ingredient: self.ingredient,
-                    hash,
                     zalsa,
                     zalsa_local,
-                    syncs,
+                    shard,
                     mode: ReleaseMode::SelfOnly,
                 }))
             }
@@ -261,11 +268,9 @@ impl SyncTable {
                 };
                 Ok(ClaimResult::Claimed(ClaimGuard {
                     key_index,
-                    ingredient: self.ingredient,
-                    hash,
                     zalsa,
                     zalsa_local,
-                    syncs,
+                    shard,
                     mode: ReleaseMode::Default,
                 }))
             }
@@ -308,7 +313,7 @@ impl SyncTable {
     /// is currently blocked on this thread (claiming `key_index` from this thread results in a cycle).
     pub(super) fn mark_as_transfer_target(&self, key_index: Id) -> Option<SyncOwner> {
         let hash = FxBuildHasher.hash_one(key_index);
-        let mut syncs = self.syncs_for(hash).lock();
+        let mut syncs = self.shard_for(hash).syncs.lock();
         syncs
             .find_mut(hash, |state| state.key == key_index)
             .map(|state| {
@@ -346,10 +351,8 @@ pub enum SyncOwner {
 #[must_use]
 pub(crate) struct ClaimGuard<'me> {
     key_index: Id,
-    ingredient: IngredientIndex,
-    hash: u64,
     zalsa: &'me Zalsa,
-    syncs: &'me Mutex<HashTable<SyncState>>,
+    shard: &'me SyncShard,
     mode: ReleaseMode,
     zalsa_local: &'me ZalsaLocal,
 }
@@ -364,19 +367,25 @@ impl<'me> ClaimGuard<'me> {
     }
 
     pub(crate) const fn database_key_index(&self) -> DatabaseKeyIndex {
-        DatabaseKeyIndex::new(self.ingredient, self.key_index)
+        DatabaseKeyIndex::new(self.shard.ingredient, self.key_index)
     }
 
     pub(crate) fn set_release_mode(&mut self, mode: ReleaseMode) {
         self.mode = mode;
     }
 
+    #[inline]
+    fn hash(&self) -> u64 {
+        FxBuildHasher.hash_one(self.key_index)
+    }
+
     #[cold]
     #[inline(never)]
     fn release_panicking(&self) {
-        let mut syncs = self.syncs.lock();
+        let hash = self.hash();
+        let mut syncs = self.shard.syncs.lock();
         let state = syncs
-            .find_entry(self.hash, |state| state.key == self.key_index)
+            .find_entry(hash, |state| state.key == self.key_index)
             .expect("key claimed twice?")
             .remove()
             .0;
@@ -423,8 +432,9 @@ impl<'me> ClaimGuard<'me> {
     #[cold]
     #[inline(never)]
     fn release_self(&self) {
-        let mut syncs = self.syncs.lock();
-        let Ok(mut state) = syncs.find_entry(self.hash, |state| state.key == self.key_index) else {
+        let hash = self.hash();
+        let mut syncs = self.shard.syncs.lock();
+        let Ok(mut state) = syncs.find_entry(hash, |state| state.key == self.key_index) else {
             panic!("key should only be claimed/released once");
         };
 
@@ -439,6 +449,8 @@ impl<'me> ClaimGuard<'me> {
     #[cold]
     #[inline(never)]
     pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) -> bool {
+        let hash = self.hash();
+
         // Get the owning thread of `new_owner`.
         // The thread id is guaranteed to not be stale because `new_owner` must be blocked on `self_key`
         // or `transfer_lock` will panic (at least in debug builds).
@@ -451,9 +463,10 @@ impl<'me> ClaimGuard<'me> {
             .mark_as_transfer_target(new_owner.key_index())
         else {
             self.release(
-                self.syncs
+                self.shard
+                    .syncs
                     .lock()
-                    .find_entry(self.hash, |state| state.key == self.key_index)
+                    .find_entry(hash, |state| state.key == self.key_index)
                     .expect("key should only be claimed/released once")
                     .remove()
                     .0,
@@ -463,7 +476,7 @@ impl<'me> ClaimGuard<'me> {
             panic!("new owner to be a locked query")
         };
 
-        let mut syncs = self.syncs.lock();
+        let mut syncs = self.shard.syncs.lock();
 
         let self_key = self.database_key_index();
         tracing::debug!(
@@ -473,7 +486,7 @@ impl<'me> ClaimGuard<'me> {
         let SyncState {
             id, claimed_twice, ..
         } = syncs
-            .find_mut(self.hash, |state| state.key == self.key_index)
+            .find_mut(hash, |state| state.key == self.key_index)
             .expect("key should only be claimed/released once");
 
         *id = SyncOwner::Transferred;
@@ -499,9 +512,10 @@ impl<'me> ClaimGuard<'me> {
     fn drop_impl(&mut self) -> bool {
         match self.mode {
             ReleaseMode::Default => {
-                let mut syncs = self.syncs.lock();
+                let hash = self.hash();
+                let mut syncs = self.shard.syncs.lock();
                 let state = syncs
-                    .find_entry(self.hash, |state| state.key == self.key_index)
+                    .find_entry(hash, |state| state.key == self.key_index)
                     .expect("key should only be claimed/released once")
                     .remove()
                     .0;
@@ -570,6 +584,13 @@ impl std::fmt::Debug for ClaimGuard<'_> {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
+const _: [(); std::mem::size_of::<ClaimGuard<'static>>()] = [(); std::mem::size_of::<[usize; 6]>()];
+
+#[cfg(all(not(feature = "shuttle"), target_pointer_width = "64"))]
+const _: [(); std::mem::size_of::<CachePadded<SyncShard>>()] =
+    [(); std::mem::size_of::<CachePadded<Mutex<HashTable<SyncState>>>>()];
 
 /// Controls whether this thread can claim a query that transferred its ownership to a query
 /// this thread currently holds the lock for.
