@@ -13,17 +13,21 @@ concurrency:
 
 jobs:
   test:
-    name: Test
+    name: ${{ matrix.name }}
     strategy:
       matrix:
-        rust:
-          - 1.88.0
-          - stable
-          - beta
-        experimental:
-          - false
         include:
-          - rust: nightly
+          - name: MSRV
+            rust: msrv
+            experimental: false
+          - name: Stable
+            rust: stable
+            experimental: false
+          - name: Beta
+            rust: beta
+            experimental: false
+          - name: Nightly
+            rust: nightly
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     runs-on: ubuntu-latest
@@ -33,15 +37,21 @@ jobs:
       - name: Setup Rust toolchain
         shell: bash
         run: |
-          if [[ "${{ matrix.rust }}" == "stable" ]]; then
+          rust="${{ matrix.rust }}"
+          if [[ "$rust" == "msrv" ]]; then
+            rust="$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)"
+            test -n "$rust"
+          fi
+
+          if [[ "$rust" == "stable" ]]; then
             rustup component add rustfmt clippy
           else
             args=(--component rustfmt --component clippy)
-            if [[ "${{ matrix.rust }}" == "nightly" ]]; then
+            if [[ "$rust" == "nightly" ]]; then
               args+=(--allow-downgrade)
             fi
-            rustup toolchain install "${{ matrix.rust }}" "${args[@]}"
-            rustup override set "${{ matrix.rust }}"
+            rustup toolchain install "$rust" "${args[@]}"
+            rustup override set "$rust"
           fi
           rustup show active-toolchain
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
