@@ -400,13 +400,13 @@ pub fn check_db_argument<'arg>(
                 return Err(syn::Error::new(typed.ty.span(), tykind_error_msg));
             };
 
-            if let Some(lt) = explicit_lt {
-                if ref_type.lifetime.is_none() {
-                    return Err(syn::Error::new_spanned(
-                        ref_type.and_token,
-                        format!("must have a `{}` lifetime", lt.lifetime.to_token_stream()),
-                    ));
-                }
+            if let Some(lt) = explicit_lt
+                && ref_type.lifetime.is_none()
+            {
+                return Err(syn::Error::new_spanned(
+                    ref_type.and_token,
+                    format!("must have a `{}` lifetime", lt.lifetime.to_token_stream()),
+                ));
             }
 
             let extract_db_path = || -> Result<&'arg syn::Path, Span> {

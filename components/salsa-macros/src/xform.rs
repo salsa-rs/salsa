@@ -126,12 +126,11 @@ impl syn::visit_mut::VisitMut for ChangeSelfPath<'_> {
         if let syn::Type::Path(syn::TypePath {
             qself: None, path, ..
         }) = i
+            && path.segments.len() == 1
+            && path.segments.first().is_some_and(|s| s.ident == "Self")
         {
-            if path.segments.len() == 1 && path.segments.first().is_some_and(|s| s.ident == "Self")
-            {
-                let span = path.segments.first().unwrap().span();
-                *i = respan(self.self_ty, span);
-            }
+            let span = path.segments.first().unwrap().span();
+            *i = respan(self.self_ty, span);
         }
         syn::visit_mut::visit_type_mut(self, i);
     }

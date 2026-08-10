@@ -9,10 +9,10 @@ pub fn input_ids(hygiene: &Hygiene, sig: &syn::Signature, skip: usize) -> Vec<sy
         .skip(skip)
         .zip(0..)
         .map(|(input, index)| {
-            if let syn::FnArg::Typed(typed) = input {
-                if let syn::Pat::Ident(ident) = &*typed.pat {
-                    return ident.ident.clone();
-                }
+            if let syn::FnArg::Typed(typed) = input
+                && let syn::Pat::Ident(ident) = &*typed.pat
+            {
+                return ident.ident.clone();
             }
 
             hygiene.ident(format!("input{index}"))

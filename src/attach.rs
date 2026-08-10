@@ -75,11 +75,11 @@ impl Attached {
             #[inline]
             fn drop(&mut self) {
                 // Reset database to null if we did anything in `DbGuard::new`.
-                if let Some(attached) = self.state {
-                    if let Some(prev) = attached.database.replace(None) {
-                        // SAFETY: `prev` is a valid pointer to a database.
-                        unsafe { prev.as_ref().zalsa_local().uncancel() };
-                    }
+                if let Some(attached) = self.state
+                    && let Some(prev) = attached.database.replace(None)
+                {
+                    // SAFETY: `prev` is a valid pointer to a database.
+                    unsafe { prev.as_ref().zalsa_local().uncancel() };
                 }
             }
         }
@@ -141,11 +141,11 @@ impl Attached {
             #[inline]
             fn drop(&mut self) {
                 // Reset database to null if we did anything in `DbGuard::new`.
-                if let Some(attached) = self.state {
-                    if let Some(prev) = attached.database.replace(self.prev) {
-                        // SAFETY: `prev` is a valid pointer to a database.
-                        unsafe { prev.as_ref().zalsa_local().uncancel() };
-                    }
+                if let Some(attached) = self.state
+                    && let Some(prev) = attached.database.replace(self.prev)
+                {
+                    // SAFETY: `prev` is a valid pointer to a database.
+                    unsafe { prev.as_ref().zalsa_local().uncancel() };
                 }
             }
         }

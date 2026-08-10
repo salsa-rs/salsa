@@ -76,8 +76,7 @@ fn multiple_threads_blocked_on_cancelled() {
     let r1_cancelled = r1.unwrap_err().downcast::<salsa::Cancelled>().map(|c| *c);
     assert!(
         matches!(r1_cancelled, Ok(Cancelled::Local)),
-        "t1 should be locally cancelled, got: {:?}",
-        r1_cancelled
+        "t1 should be locally cancelled, got: {r1_cancelled:?}"
     );
 
     // t2 and t3 should both succeed with the correct value

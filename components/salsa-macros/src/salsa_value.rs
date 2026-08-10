@@ -135,10 +135,10 @@ fn type_uses_type_param(ty: &syn::Type, type_params: &HashSet<syn::Ident>) -> bo
 
     impl<'ast> Visit<'ast> for UsesTypeParam<'_> {
         fn visit_type_path(&mut self, path: &'ast syn::TypePath) {
-            if path.qself.is_none() {
-                if let Some(segment) = path.path.segments.first() {
-                    self.result |= self.type_params.contains(&segment.ident);
-                }
+            if path.qself.is_none()
+                && let Some(segment) = path.path.segments.first()
+            {
+                self.result |= self.type_params.contains(&segment.ident);
             }
 
             if !self.result {

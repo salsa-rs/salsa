@@ -37,11 +37,11 @@ fn root(db: &dyn salsa::Database, input: Input) -> Vec<usize> {
 fn infer_expression<'db>(db: &'db dyn salsa::Database, expression: Expression<'db>) -> usize {
     let number = expression.number(db);
 
-    if number % 10 == 0 {
+    if number.is_multiple_of(10) {
         Diagnostic(format!("Number is {number}")).accumulate(db);
     }
 
-    if number != 0 && number % 2 == 0 {
+    if number != 0 && number.is_multiple_of(2) {
         let sub_expression = Expression::new(db, number / 2);
         let _ = infer_expression(db, sub_expression);
     }
