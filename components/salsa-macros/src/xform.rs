@@ -143,17 +143,18 @@ impl syn::visit_mut::VisitMut for ChangeSelfPath<'_> {
         }
 
         // A single path `Self` case is handled in `visit_type_mut`
-        if i.path.segments.first().is_some_and(|s| s.ident == "Self") && i.path.segments.len() > 1 {
-            let span = i.path.segments.first().unwrap().span();
+        if let Some(first) = i.path.segments.first()
+            && first.ident == "Self"
+            && let Some(second) = i.path.segments.iter().nth(1)
+        {
+            let span = first.span();
             let ty = Box::new(respan::<syn::Type>(self.self_ty, span));
             let lt_token = syn::Token![<](span);
             let gt_token = syn::Token![>](span);
             match self.trait_ {
                 // If the next segment's ident is a trait member, replace `Self::` with
                 // `<ActualTy as Trait>::`
-                Some((trait_, member_idents))
-                    if member_idents.contains(&i.path.segments.iter().nth(1).unwrap().ident) =>
-                {
+                Some((trait_, member_idents)) if member_idents.contains(&second.ident) => {
                     let qself = syn::QSelf {
                         lt_token,
                         ty,

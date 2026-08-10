@@ -138,16 +138,16 @@ impl Macro {
 
         let function_type = function_type(&item);
 
-        if is_specifiable {
-            match function_type {
-                FunctionType::Constant | FunctionType::RequiresInterning => {
-                    return Err(syn::Error::new_spanned(
-                        self.args.specify.as_ref().unwrap(),
-                        "only functions with a single salsa struct as their input can be specified",
-                    ));
-                }
-                FunctionType::SalsaStruct => {}
-            }
+        if let Some(specify) = &self.args.specify
+            && matches!(
+                function_type,
+                FunctionType::Constant | FunctionType::RequiresInterning
+            )
+        {
+            return Err(syn::Error::new_spanned(
+                specify,
+                "only functions with a single salsa struct as their input can be specified",
+            ));
         }
 
         if let (Some(_), Some(token)) = (&self.args.lru, &self.args.specify) {

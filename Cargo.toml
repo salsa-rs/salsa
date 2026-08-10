@@ -77,7 +77,7 @@ salsa_unstable = []
 # preventing scenarios where they could diverge in a given project
 # which may ultimately result in odd issues due to the proc-macro
 # output mismatching with the declarative macro inputs
-[target.'cfg(any())'.dependencies]
+[target.'cfg(false)'.dependencies]
 salsa-macros = { version = "=0.28.2", path = "components/salsa-macros" }
 
 [dev-dependencies]
