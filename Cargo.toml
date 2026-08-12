@@ -57,6 +57,7 @@ ordermap = { version = "1", optional = true }
 [features]
 default = ["salsa_unstable", "rayon", "macros", "inventory", "accumulator"]
 inventory = ["dep:inventory"]
+events-introspection = []
 
 # Enables Salsa's `DEBUG` and `TRACE` tracing events and spans. Disabled by default.
 detailed-trace = []
@@ -96,6 +97,9 @@ rustversion = "=1.0.23"
 test-log = { version = "=0.2.21", features = ["trace"] }
 trybuild = "=1.0.118"
 serde_json = "=1.0.151"
+
+# Enable the events-introspection feature for tests
+salsa = { path = ".", features = ["events-introspection"] }
 
 [[bench]]
 name = "creation"
