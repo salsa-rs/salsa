@@ -886,11 +886,7 @@ impl<'a> QueryOriginRef<'a> {
 
     /// Indices for queries *written* by this query (if any)
     pub(crate) fn outputs(self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + use<'a> {
-        let opt_edges = match self {
-            QueryOriginRef::Derived(edges) | QueryOriginRef::DerivedUntracked(edges) => Some(edges),
-            QueryOriginRef::Assigned(_) => None,
-        };
-        opt_edges.into_iter().flat_map(output_edges)
+        output_edges(self.edges())
     }
 
     #[inline]
@@ -1620,6 +1616,44 @@ impl<H, T: Copy> Drop for SliceWithHeaderBuilder<H, T> {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+struct TaggedIngredientIndex(u32);
+
+impl TaggedIngredientIndex {
+    #[inline]
+    const fn new(ingredient: IngredientIndex, tag: bool) -> TaggedIngredientIndex {
+        TaggedIngredientIndex((ingredient.as_u32() << 1) | (tag as u32))
+    }
+
+    #[inline]
+    #[cfg(feature = "persistence")]
+    fn from_u32(v: u32) -> TaggedIngredientIndex {
+        IngredientIndex::new(v >> 1); // Assert it is a valid `IngredientIndex`.
+        TaggedIngredientIndex(v)
+    }
+
+    #[inline]
+    const unsafe fn from_u32_unchecked(v: u32) -> TaggedIngredientIndex {
+        TaggedIngredientIndex(v)
+    }
+
+    #[inline]
+    const fn ingredient_index(self) -> IngredientIndex {
+        // SAFETY: We only assign to `self.0` in `new()` from an `IngredientIndex`.
+        unsafe { IngredientIndex::new_unchecked(self.0 >> 1) }
+    }
+
+    #[inline]
+    const fn tag(self) -> bool {
+        (self.0 & 0b1) != 0
+    }
+
+    #[inline]
+    const fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
 /// An input or output query edge.
 ///
 /// This type stores the [`QueryEdgeKind`] as a tag on the `IngredientIndex` without
@@ -1633,7 +1667,7 @@ pub struct QueryEdge {
     // `kind`, `Hash`, and `Eq` operate on the decoded words directly.
     index: u32,
     generation: u32,
-    ingredient: IngredientIndex,
+    ingredient: TaggedIngredientIndex,
 }
 
 const _: [(); std::mem::size_of::<QueryEdge>()] = [(); 12];
@@ -1646,7 +1680,7 @@ impl QueryEdge {
         QueryEdge {
             index: id.index(),
             generation: id.generation(),
-            ingredient: key.ingredient_index(),
+            ingredient: TaggedIngredientIndex::new(key.ingredient_index(), false),
         }
     }
 
@@ -1657,14 +1691,14 @@ impl QueryEdge {
         QueryEdge {
             index: id.index(),
             generation: id.generation(),
-            ingredient: key.ingredient_index().with_tag(true),
+            ingredient: TaggedIngredientIndex::new(key.ingredient_index(), true),
         }
     }
 
     /// Return the key of this query edge.
     pub const fn key(self) -> DatabaseKeyIndex {
         // Clear the tag to restore the original index.
-        DatabaseKeyIndex::new(self.ingredient.with_tag(false), self.id())
+        DatabaseKeyIndex::new(self.ingredient.ingredient_index(), self.id())
     }
 
     /// Returns the kind of this query edge.
@@ -1755,7 +1789,7 @@ impl PackedQueryEdge {
             generation: self.metadata & Self::GENERATION_MASK,
             // SAFETY: `metadata` was built from an `IngredientIndex` in `PackedQueryEdge::new`.
             ingredient: unsafe {
-                IngredientIndex::new_unchecked(self.metadata >> Self::INGREDIENT_SHIFT)
+                TaggedIngredientIndex::from_u32_unchecked(self.metadata >> Self::INGREDIENT_SHIFT)
             },
         }
     }
@@ -1812,14 +1846,7 @@ impl<'a> QueryEdges<'a> {
     }
 
     pub(crate) fn iter_outputs(self) -> impl DoubleEndedIterator<Item = QueryEdge> + use<'a> {
-        let wide_edges = match self.data {
-            QueryEdgesData::Packed(_) => &[][..],
-            QueryEdgesData::Wide(edges) => edges,
-        };
-
-        wide_edges
-            .iter()
-            .copied()
+        self.iter()
             .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Output))
     }
 
@@ -2092,18 +2119,12 @@ pub(crate) mod persistence {
         }
     }
 
-    impl QueryEdge {
-        const fn raw_key(self) -> DatabaseKeyIndex {
-            DatabaseKeyIndex::new(self.ingredient, self.id())
-        }
-    }
-
     impl serde::Serialize for QueryEdge {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
-            serde::Serialize::serialize(&self.raw_key(), serializer)
+            serde::Serialize::serialize(&(self.ingredient.as_u32(), self.id()), serializer)
         }
     }
 
@@ -2112,13 +2133,12 @@ pub(crate) mod persistence {
         where
             D: serde::Deserializer<'de>,
         {
-            let key: DatabaseKeyIndex = serde::Deserialize::deserialize(deserializer)?;
-            let id = key.key_index();
+            let (ingredient, id): (u32, crate::Id) = serde::Deserialize::deserialize(deserializer)?;
 
             Ok(QueryEdge {
                 index: id.index(),
                 generation: id.generation(),
-                ingredient: key.ingredient_index(),
+                ingredient: super::TaggedIngredientIndex::from_u32(ingredient),
             })
         }
     }
@@ -2298,7 +2318,7 @@ mod tests {
     }
 
     #[test]
-    fn query_origin_spills_all_edges_if_it_contains_an_output() {
+    fn query_origin_does_not_spill_all_edges_if_it_contains_an_output() {
         let input = QueryEdge::input(key(231, 10_842_122, 41));
         let output = QueryEdge::output(key(232, 10_842_123, 42));
         let origin = OriginAndExtra::derived([input, output].into_iter(), Default::default());
@@ -2306,8 +2326,8 @@ mod tests {
             panic!("expected derived origin");
         };
 
-        assert!(!edges.is_packed());
-        assert_eq!(edges.allocation_size(), 2 * size_of::<QueryEdge>());
+        assert!(edges.is_packed());
+        assert_eq!(edges.allocation_size(), 2 * size_of::<PackedQueryEdge>());
         assert_eq!(edges.iter().collect::<Vec<_>>(), vec![input, output]);
         assert_eq!(
             origin.origin().inputs().collect::<Vec<_>>(),

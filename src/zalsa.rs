@@ -91,6 +91,7 @@ impl IngredientIndex {
     ///
     /// The index must be less than or equal to `IngredientIndex::MAX_INDEX`.
     pub(crate) const unsafe fn new_unchecked(v: u32) -> Self {
+        debug_assert!(v <= Self::MAX_INDEX);
         Self(v)
     }
 
@@ -106,18 +107,6 @@ impl IngredientIndex {
     #[inline(always)]
     pub(crate) fn at_offset(self, offset: usize) -> Self {
         IngredientIndex(self.0 + offset as u32)
-    }
-
-    /// Returns a new `IngredientIndex` with the tag bit set to the provided value.
-    pub(crate) const fn with_tag(mut self, tag: bool) -> IngredientIndex {
-        self.0 &= Self::MAX_INDEX;
-        self.0 |= (tag as u32) << 31;
-        self
-    }
-
-    /// Returns the value of the tag bit.
-    pub(crate) const fn tag(self) -> bool {
-        self.0 & !Self::MAX_INDEX != 0
     }
 }
 

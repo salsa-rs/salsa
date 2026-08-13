@@ -219,12 +219,12 @@ fn everything() {
                   "origin": {
                     "Derived": [
                       [
-                        3,
-                        1
+                        2,
+                        3
                       ],
                       [
-                        4,
-                        1
+                        2,
+                        4
                       ]
                     ]
                   },
@@ -243,8 +243,8 @@ fn everything() {
                   "origin": {
                     "Derived": [
                       [
-                        3,
-                        1
+                        2,
+                        3
                       ]
                     ]
                   },
@@ -365,7 +365,7 @@ fn partial_query() {
                   "origin": {
                     "Derived": [
                       [
-                        1,
+                        2,
                         1
                       ]
                     ]
@@ -495,12 +495,12 @@ fn partial_query_interned() {
                   "origin": {
                     "Derived": [
                       [
-                        1,
+                        2,
                         1
                       ],
                       [
-                        385,
-                        4
+                        8,
+                        385
                       ]
                     ]
                   },
