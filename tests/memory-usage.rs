@@ -47,13 +47,13 @@ fn input_to_string_get_size(_db: &dyn salsa::Database) -> String {
 }
 
 #[salsa::tracked(returns(copy))]
-fn input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
-    input.field(db).len()
+fn input_to_length(db: &dyn salsa::Database, input: MyInput, input2: MyInput) -> usize {
+    input.field(db).len() + input2.field(db).len()
 }
 
 #[salsa::tracked(returns(copy), cycle_fn = cycle_recover_length, cycle_initial = cycle_initial_length)]
-fn cycle_input_to_length(db: &dyn salsa::Database, input: MyInput) -> usize {
-    cycle_input_to_length(db, input).max(input.field(db).len())
+fn cycle_input_to_length(db: &dyn salsa::Database, input: MyInput, input2: MyInput) -> usize {
+    cycle_input_to_length(db, input, input2).max(input.field(db).len() + input2.field(db).len())
 }
 
 fn cycle_recover_length(
@@ -62,11 +62,17 @@ fn cycle_recover_length(
     _last_provisional_value: &usize,
     value: usize,
     _input: MyInput,
+    _input2: MyInput,
 ) -> usize {
     value
 }
 
-fn cycle_initial_length(_db: &dyn salsa::Database, _id: salsa::Id, _input: MyInput) -> usize {
+fn cycle_initial_length(
+    _db: &dyn salsa::Database,
+    _id: salsa::Id,
+    _input: MyInput,
+    _input2: MyInput,
+) -> usize {
     0
 }
 
@@ -201,6 +207,44 @@ fn test() {
                 ),
             },
             IngredientInfo {
+                debug_name: "cycle_input_to_length::interned_arguments",
+                count: 0,
+                size_of_metadata: 0,
+                size_of_fields: 0,
+                heap_size_of_fields: None,
+                page_info: Some(
+                    PageInfo {
+                        page_count: 0,
+                        page_capacity: 128,
+                        excess_capacity: 0,
+                        p25_fill: 0,
+                        p50_fill: 0,
+                        p75_fill: 0,
+                        p90_fill: 0,
+                        p99_fill: 0,
+                    },
+                ),
+            },
+            IngredientInfo {
+                debug_name: "input_to_length::interned_arguments",
+                count: 0,
+                size_of_metadata: 0,
+                size_of_fields: 0,
+                heap_size_of_fields: None,
+                page_info: Some(
+                    PageInfo {
+                        page_count: 0,
+                        page_capacity: 128,
+                        excess_capacity: 0,
+                        p25_fill: 0,
+                        p50_fill: 0,
+                        p75_fill: 0,
+                        p90_fill: 0,
+                        p99_fill: 0,
+                    },
+                ),
+            },
+            IngredientInfo {
                 debug_name: "input_to_string::interned_arguments",
                 count: 1,
                 size_of_metadata: 56,
@@ -314,15 +358,16 @@ fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
     let mut db = salsa::DatabaseImpl::new();
     let input1 = MyInput::new(&db, "a".repeat(50));
     let input2 = MyInput::new(&db, "a".repeat(150));
+    let input3 = MyInput::new(&db, "a".repeat(150));
 
-    assert_eq!(input_to_length(&db, input1), 50);
+    assert_eq!(input_to_length(&db, input1, input3), 200);
     let before = <dyn salsa::Database>::memory_usage(&db);
     let before = &before.queries["input_to_length"];
     assert_eq!(before.count(), 1);
 
     db.trigger_lru_eviction();
 
-    assert_eq!(input_to_length(&db, input2), 150);
+    assert_eq!(input_to_length(&db, input2, input3), 300);
     let after = <dyn salsa::Database>::memory_usage(&db);
     let after = &after.queries["input_to_length"];
     assert_eq!(after.count(), 2);
@@ -336,14 +381,18 @@ fn never_change_query_discards_edges() {
     let never_change = MyInput::builder("a".repeat(50))
         .durability(salsa::Durability::NEVER_CHANGE)
         .new(&db);
+    let never_change2 = MyInput::builder("a".repeat(50))
+        .durability(salsa::Durability::NEVER_CHANGE)
+        .new(&db);
     let mutable = MyInput::new(&db, "a".repeat(150));
+    let mutable2 = MyInput::new(&db, "a".repeat(150));
 
-    assert_eq!(input_to_length(&db, never_change), 50);
+    assert_eq!(input_to_length(&db, never_change, never_change2), 100);
     let before = <dyn salsa::Database>::memory_usage(&db);
     let before = &before.queries["input_to_length"];
     assert_eq!(before.count(), 1);
 
-    assert_eq!(input_to_length(&db, mutable), 150);
+    assert_eq!(input_to_length(&db, mutable, mutable2), 300);
     let after = <dyn salsa::Database>::memory_usage(&db);
     let after = &after.queries["input_to_length"];
     assert_eq!(after.count(), 2);
@@ -357,14 +406,18 @@ fn never_change_cycle_query_discards_edges_after_converging() {
     let never_change = MyInput::builder("a".repeat(50))
         .durability(salsa::Durability::NEVER_CHANGE)
         .new(&db);
+    let never_change2 = MyInput::builder("a".repeat(50))
+        .durability(salsa::Durability::NEVER_CHANGE)
+        .new(&db);
     let mutable = MyInput::new(&db, "a".repeat(150));
+    let mutable2 = MyInput::new(&db, "a".repeat(150));
 
-    assert_eq!(cycle_input_to_length(&db, never_change), 50);
+    assert_eq!(cycle_input_to_length(&db, never_change, never_change2), 100);
     let before = <dyn salsa::Database>::memory_usage(&db);
     let before = &before.queries["cycle_input_to_length"];
     assert_eq!(before.count(), 1);
 
-    assert_eq!(cycle_input_to_length(&db, mutable), 150);
+    assert_eq!(cycle_input_to_length(&db, mutable, mutable2), 300);
     let after = <dyn salsa::Database>::memory_usage(&db);
     let after = &after.queries["cycle_input_to_length"];
     assert_eq!(after.count(), 2);
