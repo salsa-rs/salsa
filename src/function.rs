@@ -8,6 +8,7 @@ use std::ptr::NonNull;
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
+use self::cycle_strategy::CycleStrategy as _;
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp, ProvisionalStatus};
 use crate::database::RawDatabase;
 use crate::function::delete::DeletedEntries;
@@ -27,6 +28,8 @@ use crate::{Cycle, Id, Revision};
 #[cfg(feature = "accumulator")]
 mod accumulated;
 mod backdate;
+#[doc(hidden)]
+pub mod cycle_strategy;
 mod delete;
 mod diff_outputs;
 mod eviction;
@@ -49,7 +52,7 @@ pub type Memo<C> = memo::Memo<C>;
 /// after erasing `'db` and to use after rebranding it with a later database
 /// lifetime. This is guaranteed when the output implements [`crate::SalsaValue`]
 /// or when it is the same `'static` type for every `'db`.
-pub unsafe trait Configuration: Any {
+pub unsafe trait Configuration: Any + Sized {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
     const PERSIST: bool;
@@ -73,7 +76,9 @@ pub unsafe trait Configuration: Any {
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
-    const CYCLE_STRATEGY: CycleRecoveryStrategy;
+    type CycleStrategy: cycle_strategy::CycleStrategy<Self>;
+
+    const CYCLE_RECOVERY_STRATEGY: CycleRecoveryStrategy = Self::CycleStrategy::RECOVERY_STRATEGY;
 
     /// Invokes after a new result `new_value` has been computed for which an older memoized value
     /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
@@ -179,38 +184,12 @@ impl<'db> FunctionIngredientRef<'db> {
     pub(crate) fn sync_table(&self) -> &'db SyncTable {
         self.ingredient.sync_table()
     }
-
-    /// Returns information about the current provisional status of `input`.
-    ///
-    /// Is it a provisional value, a poisoned provisional memo, or has it been finalized and in
-    /// which iteration.
-    ///
-    /// Returns `None` if `input` doesn't exist.
-    pub(crate) fn provisional_status(
-        &self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        self.ingredient.provisional_status(zalsa, input)
-    }
 }
 
 pub(crate) trait FunctionIngredient: Send + Sync {
     fn memo<'db>(&'db self, zalsa: &'db Zalsa, input: Id) -> Option<ErasedMemo<'db>>;
 
     fn sync_table(&self) -> &SyncTable;
-
-    /// Returns information about the current provisional status of `input`.
-    ///
-    /// Is it a provisional value, a poisoned provisional memo, or has it been finalized and in
-    /// which iteration.
-    ///
-    /// Returns `None` if `input` doesn't exist.
-    fn provisional_status<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -387,29 +366,6 @@ where
     fn sync_table(&self) -> &SyncTable {
         &self.sync_table
     }
-
-    /// Returns `final` if the memo has the `verified_final` flag set.
-    ///
-    /// Otherwise, the value is still provisional or the provisional memo has been poisoned. It
-    /// also returns the iteration in which this memo was created (always 0 except for cycle
-    /// heads).
-    fn provisional_status<'db>(
-        &'db self,
-        zalsa: &'db Zalsa,
-        input: Id,
-    ) -> Option<ProvisionalStatus<'db>> {
-        let memo =
-            self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
-
-        if memo.value.is_none() && memo.header.may_be_provisional() {
-            return Some(ProvisionalStatus::Poisoned {
-                iteration: memo.header.revisions.iteration(),
-                verified_at: memo.header.verified_at.load(),
-            });
-        }
-
-        Some(memo.header.provisional_status())
-    }
 }
 
 impl<C> Ingredient for IngredientImpl<C>
@@ -461,7 +417,7 @@ where
             self,
             zalsa,
             self.database_key_index(id),
-            C::CYCLE_STRATEGY,
+            C::CYCLE_RECOVERY_STRATEGY,
             flattened_input_outputs,
             seen,
         );
