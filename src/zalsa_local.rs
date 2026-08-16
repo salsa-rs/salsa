@@ -1282,23 +1282,22 @@ impl OriginAndExtra {
                 // SAFETY: Derived origins initialize `payload.allocation`, and the tag records the
                 // header and edge layout used to create that allocation.
                 let edges = unsafe {
-                    let allocation = self.payload.allocation;
                     match (self.tag.layout(), tag.layout()) {
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Packed) => {
                             QueryEdges::packed(
-                                SliceWithHeader::<(), PackedQueryEdge>::slice(allocation, length)
+                                SliceWithHeader::<(), PackedQueryEdge>::slice(self.payload.allocation, length)
                                     .as_ref(),
                             )
                         }
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Wide) => {
                             QueryEdges::wide(
-                                SliceWithHeader::<(), QueryEdge>::slice(allocation, length).as_ref(),
+                                SliceWithHeader::<(), QueryEdge>::slice(self.payload.allocation, length).as_ref(),
                             )
                         }
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Packed) => {
                             QueryEdges::packed(
                                 SliceWithHeader::<QueryRevisionsExtraInner, PackedQueryEdge>::slice(
-                                    allocation, length,
+                                    self.payload.allocation, length,
                                 )
                                 .as_ref(),
                             )
@@ -1306,7 +1305,7 @@ impl OriginAndExtra {
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Wide) => {
                             QueryEdges::wide(
                                 SliceWithHeader::<QueryRevisionsExtraInner, QueryEdge>::slice(
-                                    allocation, length,
+                                    self.payload.allocation, length,
                                 )
                                 .as_ref(),
                             )
@@ -1376,24 +1375,23 @@ impl Drop for OriginAndExtra {
                 // SAFETY: Derived origins initialize `payload.allocation`, and the tag records the
                 // header and edge layout used to create that allocation.
                 unsafe {
-                    let allocation = self.payload.allocation;
                     match (layout, edge_layout) {
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Packed) => drop(
                             SliceWithHeader::<(), PackedQueryEdge>::from_raw_parts(
-                                allocation, length,
+                                self.payload.allocation, length,
                             ),
                         ),
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Wide) => drop(
-                            SliceWithHeader::<(), QueryEdge>::from_raw_parts(allocation, length),
+                            SliceWithHeader::<(), QueryEdge>::from_raw_parts(self.payload.allocation, length),
                         ),
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Packed) => drop(
                             SliceWithHeader::<QueryRevisionsExtraInner, PackedQueryEdge>::from_raw_parts(
-                                allocation, length,
+                                self.payload.allocation, length,
                             ),
                         ),
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Wide) => drop(
                             SliceWithHeader::<QueryRevisionsExtraInner, QueryEdge>::from_raw_parts(
-                                allocation, length,
+                                self.payload.allocation, length,
                             ),
                         ),
                         (_, QueryEdgeLayout::PackedInline) => {}
@@ -1459,6 +1457,8 @@ impl OriginAndExtraTag {
 /// The payload of [`OriginAndExtra`].
 union OriginAndExtraPayload {
     /// The allocation storing derived edges and, for origins with extra data, that data.
+    ///
+    /// **Note:** avoid reading this if it is not the active field, as reading it triggers a UB if a zero value is stored.
     allocation: NonNull<()>,
 
     /// The identity of the assigning query for a directly stored assigned origin.
@@ -2522,5 +2522,24 @@ mod tests {
         let id = unsafe { Id::from_index(index) }.with_generation(generation);
 
         DatabaseKeyIndex::new(IngredientIndex::new(ingredient), id)
+    }
+
+    #[test]
+    fn query_origin_inlines_an_all_zero_packed_edge() {
+        let input = QueryEdge::input(key(0, 0, 0));
+        let origin = OriginAndExtra::derived([input].into_iter(), Default::default());
+
+        assert_eq!(
+            origin.origin().edges().iter().collect::<Vec<_>>(),
+            vec![input],
+        );
+    }
+
+    #[test]
+    fn query_origin_drops_an_all_zero_packed_edge() {
+        let input = QueryEdge::input(key(0, 0, 0));
+        let origin = OriginAndExtra::derived([input].into_iter(), Default::default());
+
+        drop(origin);
     }
 }
