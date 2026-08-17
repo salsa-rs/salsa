@@ -86,23 +86,24 @@ where
         // specification can replace it while we decide whether to keep or overwrite it.
         let old_memo = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index);
 
-        if let Some(old_memo) = old_memo {
-            if old_memo.header.verified_at.load() == revision && old_memo.value.is_some() {
-                // A value produced by another query wins this revision.
-                let QueryOriginRef::Assigned(owner) = old_memo.header.origin() else {
-                    return;
-                };
-                debug_assert_eq!(owner, active_query_key);
+        if let Some(old_memo) = old_memo
+            && old_memo.header.verified_at.load() == revision
+            && old_memo.value.is_some()
+        {
+            // A value produced by another query wins this revision.
+            let QueryOriginRef::Assigned(owner) = old_memo.header.origin() else {
+                return;
+            };
+            debug_assert_eq!(owner, active_query_key);
 
-                let first_assignment_in_execution = zalsa_local.add_output(database_key_index);
-                // Outputs from a prior provisional iteration are seeded into the active query,
-                // so they don't count as duplicate calls in this execution.
-                if cycle_heads.is_empty()
-                    && !old_memo.header.was_cycle_participant()
-                    && !first_assignment_in_execution
-                {
-                    panic!("cannot call `specify` twice for the same key in one query execution");
-                }
+            let first_assignment_in_execution = zalsa_local.add_output(database_key_index);
+            // Outputs from a prior provisional iteration are seeded into the active query,
+            // so they don't count as duplicate calls in this execution.
+            if cycle_heads.is_empty()
+                && !old_memo.header.was_cycle_participant()
+                && !first_assignment_in_execution
+            {
+                panic!("cannot call `specify` twice for the same key in one query execution");
             }
         }
 

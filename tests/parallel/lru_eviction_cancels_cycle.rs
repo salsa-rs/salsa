@@ -86,8 +86,7 @@ fn lru_eviction_recomputes_cycle_query() {
     let err = r1.unwrap_err();
     assert!(
         err.downcast_ref::<Cancelled>().is_some(),
-        "Thread 1 should have been cancelled, got: {:?}",
-        err
+        "Thread 1 should have been cancelled, got: {err:?}"
     );
 
     // Thread 2 should complete successfully

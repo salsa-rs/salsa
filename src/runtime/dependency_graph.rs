@@ -421,8 +421,7 @@ impl DependencyGraph {
                     edge.blocked_on_id = new_owner_thread;
                     debug_assert!(
                         !edges.depends_on(new_owner_thread, *dependent),
-                        "Circular reference between blocked edges: {:#?}",
-                        edges
+                        "Circular reference between blocked edges: {edges:#?}"
                     );
                 }
             };

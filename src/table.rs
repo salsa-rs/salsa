@@ -419,21 +419,21 @@ impl Iterator for ErasedSlots<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some((page_index, page, slots)) = &mut self.current_page {
-                if let Some(slot_index) = slots.next() {
-                    let slot_index = SlotIndex::new(slot_index);
-                    let id = make_id(*page_index, slot_index);
+            if let Some((page_index, page, slots)) = &mut self.current_page
+                && let Some(slot_index) = slots.next()
+            {
+                let slot_index = SlotIndex::new(slot_index);
+                let id = make_id(*page_index, slot_index);
 
-                    // SAFETY: `slot_index` is below the initialized length captured when the page
-                    // became current, so the resulting pointer is within the page allocation.
-                    let slot = unsafe {
-                        page.data
-                            .as_ptr()
-                            .byte_add(slot_index.0 * page.slot_vtable.layout.size())
-                    };
+                // SAFETY: `slot_index` is below the initialized length captured when the page
+                // became current, so the resulting pointer is within the page allocation.
+                let slot = unsafe {
+                    page.data
+                        .as_ptr()
+                        .byte_add(slot_index.0 * page.slot_vtable.layout.size())
+                };
 
-                    return Some((id, slot));
-                }
+                return Some((id, slot));
             }
 
             self.current_page = self.pages.find_map(|(page_index, page)| {

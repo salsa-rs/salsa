@@ -151,7 +151,9 @@ fn scan_resistance(bencher: divan::Bencher, policy: Policy) {
                 let mut accesses = Vec::with_capacity(HOT_ITEMS + ITEMS_PER_ROUND);
 
                 // Mix three reusable entries with every two one-shot entries.
-                for (hot_chunk, cold_chunk) in hot.chunks_exact(3).zip(cold.chunks_exact(2)) {
+                for (hot_chunk, cold_chunk) in
+                    hot.as_chunks::<3>().0.iter().zip(cold.as_chunks::<2>().0)
+                {
                     accesses.extend_from_slice(hot_chunk);
                     accesses.extend_from_slice(cold_chunk);
                 }
