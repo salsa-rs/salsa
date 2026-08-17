@@ -124,6 +124,7 @@ impl Macro {
         });
 
         let mut inner_fn = fn_item.clone();
+        inner_fn.attrs.retain_mut(crate::fn_util::retain_body_attr);
         inner_fn.vis = syn::Visibility::Inherited;
         inner_fn.sig.ident = inner_fn_name.clone();
         self.normalize_signature_lifetimes(

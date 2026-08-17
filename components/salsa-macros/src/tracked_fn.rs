@@ -126,6 +126,7 @@ impl Macro {
         };
 
         let mut inner_fn = item.clone();
+        inner_fn.attrs.retain_mut(fn_util::retain_body_attr);
         inner_fn.vis = syn::Visibility::Inherited;
         inner_fn.sig.ident = self.hygiene.ident("inner");
 
