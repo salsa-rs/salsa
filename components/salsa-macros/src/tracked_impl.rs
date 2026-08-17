@@ -74,7 +74,10 @@ impl Macro {
 
         let self_ty = &*impl_item.self_ty;
 
-        let Some(tracked_attr_index) = fn_item.attrs.iter().position(|a| self.is_tracked_attr(a))
+        let Some(mut salsa_tracked_attr) = fn_item
+            .attrs
+            .extract_if(.., |attr| self.is_tracked_attr(attr))
+            .next()
         else {
             return Ok(());
         };
@@ -88,7 +91,6 @@ impl Macro {
         let mut change = ChangeSelfPath::new(self_ty, trait_);
         change.visit_impl_item_fn_mut(fn_item);
 
-        let mut salsa_tracked_attr = fn_item.attrs.remove(tracked_attr_index);
         let mut args: FnArgs = match &salsa_tracked_attr.meta {
             syn::Meta::Path(..) => Default::default(),
             _ => salsa_tracked_attr.parse_args()?,

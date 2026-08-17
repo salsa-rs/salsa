@@ -110,12 +110,10 @@ impl<'db> Parser<'_, 'db> {
 
     /// Skips whitespace and returns the new position.
     fn skip_whitespace(&mut self) -> usize {
-        while let Some(ch) = self.peek() {
-            if ch.is_whitespace() {
-                self.consume(ch);
-            } else {
-                break;
-            }
+        while let Some(ch) = self.peek()
+            && ch.is_whitespace()
+        {
+            self.consume(ch);
         }
         self.position
     }
@@ -298,13 +296,10 @@ impl<'db> Parser<'_, 'db> {
         // return `Some`.
         let mut s = String::new();
         let _position = self.position;
-        while let Some(ch) = self.peek() {
-            if ch.is_alphabetic() || ch == '_' || (!s.is_empty() && ch.is_numeric()) {
-                s.push(ch);
-            } else {
-                break;
-            }
-
+        while let Some(ch) = self.peek()
+            && (ch.is_alphabetic() || ch == '_' || (!s.is_empty() && ch.is_numeric()))
+        {
+            s.push(ch);
             self.consume(ch);
         }
 
@@ -322,13 +317,10 @@ impl<'db> Parser<'_, 'db> {
             //    some characters like `3.1.2.3`, invoke `str::parse`, and then
             //    still return `None`.
             let mut s = String::new();
-            while let Some(ch) = this.peek() {
-                if ch.is_numeric() || ch == '.' {
-                    s.push(ch);
-                } else {
-                    break;
-                }
-
+            while let Some(ch) = this.peek()
+                && (ch.is_numeric() || ch == '.')
+            {
+                s.push(ch);
                 this.consume(ch);
             }
 

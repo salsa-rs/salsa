@@ -152,7 +152,7 @@ impl Diagnostic {
             file.path(db)
                 .file_name()
                 .unwrap_or_else(|| "<unknown>".as_ref())
-                .to_string_lossy(),
+                .display(),
             error,
         ))
         .accumulate(db);
