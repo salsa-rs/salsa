@@ -9,10 +9,6 @@
 
 <img alt="Salsa Logo" src="https://raw.githubusercontent.com/salsa-rs/logo/main/FerrisSalsa4-01.svg" width="200" />
 
-## Obligatory warning
-
-Very much a WORK IN PROGRESS at this point.
-
 ## Credits
 
 This system is heavily inspired by [adapton](http://adapton.org/), [glimmer](https://github.com/glimmerjs/glimmer-vm), and rustc's query
