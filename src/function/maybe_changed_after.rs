@@ -726,14 +726,11 @@ fn validate_same_iteration(
         .next()
         .is_none()
     {
-        let on_stack = zalsa_local.with_query_stack(|stack| {
-            stack
-                .iter()
-                .rev()
-                .any(|query| query.database_key_index == memo_database_key_index)
-        });
-
-        return on_stack;
+        return zalsa_local
+            .query_stack()
+            .iter()
+            .rev()
+            .any(|query| query.database_key_index == memo_database_key_index);
     }
 
     let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, cycle_heads);

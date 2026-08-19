@@ -573,15 +573,15 @@ fn outer_cycle(
     // First, look for the outer most cycle head on the same thread.
     // Using the outer most over the inner most should reduce the need
     // for transitive transfers.
-    if let Some(same_thread) = zalsa_local.with_query_stack(|stack| {
-        stack
-            .iter()
-            .find(|active_query| {
-                active_query.database_key_index != current_key
-                    && cycle_heads.contains(&active_query.database_key_index)
-            })
-            .map(|active_query| active_query.database_key_index)
-    }) {
+    let same_thread = zalsa_local
+        .query_stack()
+        .iter()
+        .find(|active_query| {
+            active_query.database_key_index != current_key
+                && cycle_heads.contains(&active_query.database_key_index)
+        })
+        .map(|active_query| active_query.database_key_index);
+    if let Some(same_thread) = same_thread {
         return Some(same_thread);
     }
 

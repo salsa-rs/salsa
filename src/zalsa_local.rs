@@ -1,10 +1,9 @@
 use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::{Ref, RefCell, UnsafeCell};
 use std::fmt;
 use std::fmt::Formatter;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
-use std::panic::UnwindSafe;
 use std::ptr::{self, NonNull};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -180,68 +179,50 @@ impl ZalsaLocal {
 
     #[inline]
     pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
-        self.with_query_stack_mut(|stack| {
-            stack.push_new_query(database_key_index);
+        let mut stack = self.query_stack.borrow_mut();
+        stack.push_new_query(database_key_index);
 
-            ActiveQueryGuard {
-                local_state: self,
-                database_key_index,
-                #[cfg(debug_assertions)]
-                push_len: stack.len(),
-            }
-        })
+        ActiveQueryGuard {
+            local_state: self,
+            database_key_index,
+            #[cfg(debug_assertions)]
+            push_len: stack.len(),
+        }
     }
 
-    /// Mutably borrows the active query stack for the closure.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the stack is already borrowed. Callers should release the borrow before
-    /// invoking user code, including destructors and panic hooks.
-    #[inline(always)]
-    pub(crate) fn with_query_stack_mut<R>(
-        &self,
-        f: impl UnwindSafe + FnOnce(&mut QueryStack) -> R,
-    ) -> R {
-        f(&mut self.query_stack.borrow_mut())
-    }
-
-    /// Borrows the active query stack for the closure.
+    /// Borrows the active query stack. Release the guard before invoking user code, including
+    /// diagnostic formatting and panic hooks.
     ///
     /// # Panics
     ///
     /// Panics if the stack is already mutably borrowed.
     #[inline(always)]
-    pub(crate) fn with_query_stack<R>(&self, f: impl UnwindSafe + FnOnce(&QueryStack) -> R) -> R {
-        f(&self.query_stack.borrow())
+    pub(crate) fn query_stack(&self) -> Ref<'_, QueryStack> {
+        self.query_stack.borrow()
     }
 
     #[inline(always)]
-    pub(crate) fn try_with_query_stack<R>(
-        &self,
-        f: impl UnwindSafe + FnOnce(&QueryStack) -> R,
-    ) -> Option<R> {
-        self.query_stack
-            .try_borrow()
-            .ok()
-            .as_ref()
-            .map(|stack| f(stack))
+    pub(crate) fn try_query_stack(&self) -> Option<Ref<'_, QueryStack>> {
+        self.query_stack.try_borrow().ok()
     }
 
     /// Captures query keys so diagnostic formatting and panic hooks can run without borrowing
     /// the query stack.
     pub(crate) fn query_stack_keys(&self) -> Vec<DatabaseKeyIndex> {
-        self.with_query_stack(|stack| stack.iter().map(|query| query.database_key_index).collect())
+        self.query_stack
+            .borrow()
+            .iter()
+            .map(|query| query.database_key_index)
+            .collect()
     }
 
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
     pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, Stamp)> {
-        self.with_query_stack(|stack| {
-            stack
-                .last()
-                .map(|active_query| (active_query.database_key_index, active_query.stamp()))
-        })
+        self.query_stack
+            .borrow()
+            .last()
+            .map(|active_query| (active_query.database_key_index, active_query.stamp()))
     }
 
     /// Returns the active query, its current dependencies, and any provisional cycle results it
@@ -249,14 +230,12 @@ impl ZalsaLocal {
     pub(crate) fn active_query_with_cycle_heads(
         &self,
     ) -> Option<(DatabaseKeyIndex, Stamp, CycleHeads)> {
-        self.with_query_stack(|stack| {
-            stack.last().map(|active_query| {
-                (
-                    active_query.database_key_index,
-                    active_query.stamp(),
-                    active_query.cycle_heads().clone(),
-                )
-            })
+        self.query_stack.borrow().last().map(|active_query| {
+            (
+                active_query.database_key_index,
+                active_query.stamp(),
+                active_query.cycle_heads().clone(),
+            )
         })
     }
 
@@ -269,34 +248,33 @@ impl ZalsaLocal {
         index: IngredientIndex,
         value: A,
     ) -> Result<(), ()> {
-        let result = self.with_query_stack_mut(|stack| {
+        let result = {
+            let mut stack = self.query_stack.borrow_mut();
             if let Some(top_query) = stack.last_mut() {
                 top_query.accumulate(index, value);
                 Ok(())
             } else {
                 Err(value)
             }
-        });
+        };
         // A rejected value's destructor may reenter the database.
         result.map_err(drop)
     }
 
     /// Add an output to the current query's list of dependencies, returning whether it was new.
     pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) -> bool {
-        self.with_query_stack_mut(|stack| {
-            stack
-                .last_mut()
-                .is_some_and(|top_query| top_query.add_output(entity))
-        })
+        self.query_stack
+            .borrow_mut()
+            .last_mut()
+            .is_some_and(|top_query| top_query.add_output(entity))
     }
 
     /// Check whether `entity` is a tracked struct that was created by the currently active query (if any)
     pub(crate) fn is_tracked_struct_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
-        self.with_query_stack_mut(|stack| {
-            stack
-                .last_mut()
-                .is_some_and(|top_query| top_query.tracked_struct_ids().is_active(entity))
-        })
+        self.query_stack
+            .borrow_mut()
+            .last_mut()
+            .is_some_and(|top_query| top_query.tracked_struct_ids().is_active(entity))
     }
 
     /// Register that currently active query reads the given input
@@ -317,20 +295,18 @@ impl ZalsaLocal {
             changed_at
         );
 
-        self.with_query_stack_mut(|stack| {
-            if let Some(top_query) = stack.last_mut() {
-                top_query.add_read(
-                    input,
-                    durability,
-                    changed_at,
-                    cycle_heads,
-                    #[cfg(feature = "accumulator")]
-                    has_accumulated,
-                    #[cfg(feature = "accumulator")]
-                    accumulated_inputs,
-                );
-            }
-        })
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_read(
+                input,
+                durability,
+                changed_at,
+                cycle_heads,
+                #[cfg(feature = "accumulator")]
+                has_accumulated,
+                #[cfg(feature = "accumulator")]
+                accumulated_inputs,
+            );
+        }
     }
 
     /// Register that currently active query reads the given input
@@ -348,21 +324,17 @@ impl ZalsaLocal {
             changed_at
         );
 
-        self.with_query_stack_mut(|stack| {
-            if let Some(top_query) = stack.last_mut() {
-                top_query.add_read_simple(input, durability, changed_at);
-            }
-        })
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_read_simple(input, durability, changed_at);
+        }
     }
 
     /// Update the active query's changed revision without recording a dependency edge.
     #[inline(always)]
     pub(crate) fn report_tracked_read_revision(&self, changed_at: Revision) {
-        self.with_query_stack_mut(|stack| {
-            if let Some(top_query) = stack.last_mut() {
-                top_query.add_changed_at(changed_at);
-            }
-        })
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_changed_at(changed_at);
+        }
     }
 
     /// Register that the current query read an untracked value
@@ -372,11 +344,9 @@ impl ZalsaLocal {
     /// * `current_revision`, the current revision
     #[inline(always)]
     pub(crate) fn report_untracked_read(&self, current_revision: Revision) {
-        self.with_query_stack_mut(|stack| {
-            if let Some(top_query) = stack.last_mut() {
-                top_query.add_untracked_read(current_revision);
-            }
-        })
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_untracked_read(current_revision);
+        }
     }
 
     /// Called when the active queries creates an index from the
@@ -391,33 +361,30 @@ impl ZalsaLocal {
     ///   * the disambiguator index
     #[track_caller]
     pub(crate) fn disambiguate(&self, key: IdentityHash) -> (Stamp, Disambiguator) {
-        self.with_query_stack_mut(|stack| {
-            let top_query = stack.last_mut().expect(
-                "cannot create a tracked struct disambiguator outside of a tracked function",
-            );
-            let disambiguator = top_query.disambiguate(key);
-            (top_query.stamp(), disambiguator)
-        })
+        let mut stack = self.query_stack.borrow_mut();
+        let top_query = stack
+            .last_mut()
+            .expect("cannot create a tracked struct disambiguator outside of a tracked function");
+        let disambiguator = top_query.disambiguate(key);
+        (top_query.stamp(), disambiguator)
     }
 
     #[track_caller]
     pub(crate) fn tracked_struct_id(&self, identity: &Identity) -> Option<Id> {
-        self.with_query_stack_mut(|stack| {
-            let top_query = stack
-                .last_mut()
-                .expect("cannot create a tracked struct ID outside of a tracked function");
-            top_query.tracked_struct_ids_mut().reuse(identity)
-        })
+        let mut stack = self.query_stack.borrow_mut();
+        let top_query = stack
+            .last_mut()
+            .expect("cannot create a tracked struct ID outside of a tracked function");
+        top_query.tracked_struct_ids_mut().reuse(identity)
     }
 
     #[track_caller]
     pub(crate) fn store_tracked_struct_id(&self, identity: Identity, id: Id) {
-        self.with_query_stack_mut(|stack| {
-            let top_query = stack
-                .last_mut()
-                .expect("cannot store a tracked struct ID outside of a tracked function");
-            top_query.tracked_struct_ids_mut().insert(identity, id);
-        })
+        let mut stack = self.query_stack.borrow_mut();
+        let top_query = stack
+            .last_mut()
+            .expect("cannot store a tracked struct ID outside of a tracked function");
+        top_query.tracked_struct_ids_mut().insert(identity, id);
     }
 
     #[inline]
@@ -451,10 +418,11 @@ impl ZalsaLocal {
     }
 }
 
-// Okay to implement as `ZalsaLocal`` is !Sync
+// Okay to implement as `ZalsaLocal` is !Sync:
 // - `most_recent_pages` can't observe broken states as we cannot panic such that we enter an
 //   inconsistent state
-// - neither can `query_stack` as we require the closures accessing it to be `UnwindSafe`
+// - query-stack borrows are checked and released during unwinding; `ActiveQueryGuard` removes
+//   abandoned frames before dropping their accumulated user values.
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used" and "all the outputs it has written to".
@@ -1881,12 +1849,11 @@ pub(crate) struct ActiveQueryGuard<'me> {
 impl<'me> ActiveQueryGuard<'me> {
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &[(Identity, Id)]) {
-        self.local_state.with_query_stack_mut(|stack| {
-            #[cfg(debug_assertions)]
-            assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
-            let frame = stack.last_mut().unwrap();
-            frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
-        })
+        let mut stack = self.local_state.query_stack.borrow_mut();
+        #[cfg(debug_assertions)]
+        assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
+        let frame = stack.last_mut().unwrap();
+        frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
     }
 
     /// Append the given `outputs` to the query's output list.
@@ -1898,29 +1865,28 @@ impl<'me> ActiveQueryGuard<'me> {
 
         let tracked_ids = previous.tracked_struct_ids();
 
-        self.local_state.with_query_stack_mut(|stack| {
-            #[cfg(debug_assertions)]
-            assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
-            let frame = stack.last_mut().unwrap();
-            frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
-        })
+        let mut stack = self.local_state.query_stack.borrow_mut();
+        #[cfg(debug_assertions)]
+        assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
+        let frame = stack.last_mut().unwrap();
+        frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
     }
 
     pub(crate) fn take_cycle_heads(&mut self) -> CycleHeads {
-        self.local_state.with_query_stack_mut(|stack| {
-            #[cfg(debug_assertions)]
-            assert_eq!(stack.len(), self.push_len);
-            let frame = stack.last_mut().unwrap();
-            frame.take_cycle_heads()
-        })
+        let mut stack = self.local_state.query_stack.borrow_mut();
+        #[cfg(debug_assertions)]
+        assert_eq!(stack.len(), self.push_len);
+        let frame = stack.last_mut().unwrap();
+        frame.take_cycle_heads()
     }
 
     pub(crate) fn detach(self) -> DetachedQuery<'me> {
-        let input_outputs = self.local_state.with_query_stack_mut(|stack| {
+        let input_outputs = {
+            let mut stack = self.local_state.query_stack.borrow_mut();
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             stack.last_mut().unwrap().detach_input_outputs()
-        });
+        };
         DetachedQuery {
             guard: self,
             input_outputs,
@@ -1929,14 +1895,16 @@ impl<'me> ActiveQueryGuard<'me> {
 
     /// Invoked when the query has successfully completed execution.
     fn complete(self, iteration: IterationStamp) -> CompletedQuery {
-        let query = self.local_state.with_query_stack_mut(|stack| {
-            stack.pop_into_revisions(
+        let query = self
+            .local_state
+            .query_stack
+            .borrow_mut()
+            .pop_into_revisions(
                 self.database_key_index,
                 iteration,
                 #[cfg(debug_assertions)]
                 self.push_len,
-            )
-        });
+            );
         std::mem::forget(self);
         query
     }
@@ -1955,16 +1923,18 @@ impl<'me> ActiveQueryGuard<'me> {
         detached_input_outputs: DetachedInputOutputs,
         force_extra: bool,
     ) -> QueryCompletion {
-        let completion = self.local_state.with_query_stack_mut(move |stack| {
-            stack.pop_detached_completion(
+        let completion = self
+            .local_state
+            .query_stack
+            .borrow_mut()
+            .pop_detached_completion(
                 self.database_key_index,
                 iteration,
                 detached_input_outputs,
                 force_extra,
                 #[cfg(debug_assertions)]
                 self.push_len,
-            )
-        });
+            );
         std::mem::forget(self);
         completion
     }
@@ -1997,26 +1967,20 @@ impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
         // Keep user values alive until the frame is popped and the stack borrow is released.
         #[cfg(feature = "accumulator")]
-        let mut accumulated = None;
-        // Only ownership is transferred through this reference. If popping panics, the outer
-        // local is still dropped after the query-stack borrow has unwound.
-        #[cfg(feature = "accumulator")]
-        let mut accumulated_out = std::panic::AssertUnwindSafe(&mut accumulated);
-        let database_key_index = self.database_key_index;
-        #[cfg(debug_assertions)]
-        let push_len = self.push_len;
+        let accumulated;
 
-        self.local_state.with_query_stack_mut(move |stack| {
+        {
+            let mut stack = self.local_state.query_stack.borrow_mut();
             #[cfg(feature = "accumulator")]
             {
-                **accumulated_out = Some(stack.last_mut().unwrap().take_accumulated());
+                accumulated = stack.last_mut().unwrap().take_accumulated();
             }
             stack.pop(
-                database_key_index,
+                self.database_key_index,
                 #[cfg(debug_assertions)]
-                push_len,
+                self.push_len,
             );
-        });
+        }
 
         #[cfg(feature = "accumulator")]
         drop(accumulated);
@@ -2230,25 +2194,6 @@ mod tests {
     };
     use super::{OriginAndExtra, PackedQueryEdge, QueryEdge, QueryOriginRef};
     use crate::{DatabaseKeyIndex, Id, IngredientIndex};
-
-    #[test]
-    fn reentrant_query_stack_borrows_panic() {
-        let local = super::ZalsaLocal::new();
-
-        assert!(
-            std::panic::catch_unwind(|| {
-                local.with_query_stack_mut(|_| local.with_query_stack(|_| ()));
-            })
-            .is_err()
-        );
-        assert!(
-            std::panic::catch_unwind(|| {
-                local.with_query_stack(|_| local.with_query_stack_mut(|_| ()));
-            })
-            .is_err()
-        );
-        local.with_query_stack_mut(|stack| assert!(stack.is_empty()));
-    }
 
     #[test]
     fn query_origin_packs_edges_that_fit() {
