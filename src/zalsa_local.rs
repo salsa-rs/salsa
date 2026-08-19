@@ -1997,15 +1997,24 @@ impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
         // Keep user values alive until the frame is popped and the stack borrow is released.
         #[cfg(feature = "accumulator")]
-        let accumulated = self
-            .local_state
-            .with_query_stack_mut(|stack| stack.last_mut().unwrap().take_accumulated());
+        let mut accumulated = None;
+        // Only ownership is transferred through this reference. If popping panics, the outer
+        // local is still dropped after the query-stack borrow has unwound.
+        #[cfg(feature = "accumulator")]
+        let mut accumulated_out = std::panic::AssertUnwindSafe(&mut accumulated);
+        let database_key_index = self.database_key_index;
+        #[cfg(debug_assertions)]
+        let push_len = self.push_len;
 
-        self.local_state.with_query_stack_mut(|stack| {
+        self.local_state.with_query_stack_mut(move |stack| {
+            #[cfg(feature = "accumulator")]
+            {
+                **accumulated_out = Some(stack.last_mut().unwrap().take_accumulated());
+            }
             stack.pop(
-                self.database_key_index,
+                database_key_index,
                 #[cfg(debug_assertions)]
-                self.push_len,
+                push_len,
             );
         });
 
