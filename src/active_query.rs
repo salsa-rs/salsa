@@ -170,6 +170,11 @@ impl ActiveQuery {
         self.accumulated.accumulate(index, value);
     }
 
+    #[cfg(feature = "accumulator")]
+    pub(super) fn take_accumulated(&mut self) -> AccumulatedMap {
+        mem::take(&mut self.accumulated)
+    }
+
     /// Adds a key to our list of outputs, returning whether it was newly inserted.
     pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) -> bool {
         self.input_outputs.insert(QueryEdge::output(key))

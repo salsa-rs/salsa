@@ -552,16 +552,14 @@ fn maybe_changed_after_cold_cycle(
     cycle_recovery_strategy: CycleRecoveryStrategy,
 ) -> VerifyResult {
     match cycle_recovery_strategy {
-        // SAFETY: We do not access the query stack reentrantly.
-        CycleRecoveryStrategy::Panic => unsafe {
-            zalsa_local.with_query_stack_unchecked(|stack| {
-                panic!(
-                    "dependency graph cycle when validating {database_key_index:#?}, \
-                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                    Query stack:\n{stack:#?}",
-                );
-            })
-        },
+        CycleRecoveryStrategy::Panic => {
+            let stack = zalsa_local.query_stack_keys();
+            panic!(
+                "dependency graph cycle when validating {database_key_index:#?}, \
+                set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                Query stack:\n{stack:#?}",
+            );
+        }
         // We flatten the dependencies of queries with cycle handling that participate in a query.
         // Verifying those queries should never result in a cycle because all function dependencies were removed.
         // That means, if we hit this path, then some query introduced a new cycle that didn't exist
@@ -728,15 +726,12 @@ fn validate_same_iteration(
         .next()
         .is_none()
     {
-        // SAFETY: We do not access the query stack reentrantly.
-        let on_stack = unsafe {
-            zalsa_local.with_query_stack_unchecked(|stack| {
-                stack
-                    .iter()
-                    .rev()
-                    .any(|query| query.database_key_index == memo_database_key_index)
-            })
-        };
+        let on_stack = zalsa_local.with_query_stack(|stack| {
+            stack
+                .iter()
+                .rev()
+                .any(|query| query.database_key_index == memo_database_key_index)
+        });
 
         return on_stack;
     }
