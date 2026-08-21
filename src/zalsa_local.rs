@@ -935,13 +935,16 @@ enum QueryEdgeLayout {
     ///
     /// The origin stores one inline slice of `PackedQueryEdge`, reducing each retained edge from
     /// 12 bytes to 8 bytes.
-    Packed = 0b000,
+    Packed = 0b0000,
+
+    /// There is one packed edge stored inline.
+    PackedInline = 0b0100,
 
     /// At least one edge in the origin does not fit in [`PackedQueryEdge`].
     ///
     /// The origin stores one inline slice of `QueryEdge`. Spilling the entire origin avoids
     /// allocating a separate overflow object for each wide edge.
-    Wide = 0b100,
+    Wide = 0b1000,
 }
 
 /// Encodes the semantic origin kind and retained edge layout in a single byte.
@@ -950,8 +953,8 @@ enum QueryEdgeLayout {
 struct QueryOriginTag(u8);
 
 impl QueryOriginTag {
-    const KIND_MASK: u8 = 0b011;
-    const LAYOUT_MASK: u8 = 0b100;
+    const KIND_MASK: u8 = 0b0011;
+    const LAYOUT_MASK: u8 = 0b1100;
 
     const fn assigned() -> Self {
         QueryOriginTag(QueryOriginKind::Assigned as u8)
@@ -962,20 +965,13 @@ impl QueryOriginTag {
     }
 
     const fn kind(self) -> QueryOriginKind {
-        match self.0 & Self::KIND_MASK {
-            0b01 => QueryOriginKind::Assigned,
-            0b11 => QueryOriginKind::Derived,
-            0b10 => QueryOriginKind::DerivedUntracked,
-            _ => panic!("invalid query origin kind"),
-        }
+        // SAFETY: We only create `QueryOriginTag` via the constructors and they follow the scheme.
+        unsafe { std::mem::transmute::<u8, QueryOriginKind>(self.0 & Self::KIND_MASK) }
     }
 
     const fn layout(self) -> QueryEdgeLayout {
-        if self.0 & Self::LAYOUT_MASK == 0 {
-            QueryEdgeLayout::Packed
-        } else {
-            QueryEdgeLayout::Wide
-        }
+        // SAFETY: We only create `QueryOriginTag` via the constructors and they follow the scheme.
+        unsafe { std::mem::transmute::<u8, QueryEdgeLayout>(self.0 & Self::LAYOUT_MASK) }
     }
 }
 
@@ -987,13 +983,15 @@ impl QueryOriginTag {
 /// |----------|-------|-------------------------------------------------|---------------------|
 /// | Assigned | No    | Assigning query's [`Id`]                        | [`IngredientIndex`] |
 /// | Assigned | Yes   | `Box<AssignedOriginAndExtra>`                   | [`IngredientIndex`] |
-/// | Derived  | No    | `SliceWithHeader<(), E>`                       | Edge count          |
-/// | Derived  | Yes   | `SliceWithHeader<QueryRevisionsExtraInner, E>` | Edge count          |
+/// | Derived  | No    | `SliceWithHeader<(), E>`                        | Edge count          |
+/// | Derived  | Yes   | `SliceWithHeader<QueryRevisionsExtraInner, E>`  | Edge count          |
+/// | Derived  | No    | `PackedQueryEdge`                               | Edge count (1)      |
 ///
 /// `E` is [`PackedQueryEdge`] or [`QueryEdge`], as recorded by [`QueryOriginTag`]. Assigned origins
 /// without extra data require no allocation. Assigned origins with extra data use a regular box.
-/// Derived origins always allocate their edge slice, placing the extra data in the same allocation
-/// as the edges when it exists.
+/// Derived origins without extra data and with len<=1 do not allocate, storing a danging pointer for
+/// len==0 or an inline `PackedQueryEdge` for len==1. Larger lengths or origins with extra data do allocate,
+/// placing the extra data in the same allocation as the edges when it exists.
 ///
 /// These combinations are invariants of the type: all accesses to the payload, allocation header,
 /// and edge slice rely on the tag accurately describing the initialized representation.
@@ -1086,13 +1084,33 @@ impl OriginAndExtra {
 
     #[inline]
     fn new_derived_without_extra(
-        input_outputs: impl ExactSizeIterator<Item = QueryEdge>,
+        mut input_outputs: impl ExactSizeIterator<Item = QueryEdge>,
         kind: DerivedOriginKind,
     ) -> Self {
-        // SAFETY: The returned allocation uses `()` as its header. The tag records that there is no
-        // extra header and records the returned edge layout.
-        let (edge_layout, allocation, metadata) =
-            unsafe { Self::allocate_derived_with_header(input_outputs, ()) };
+        let (edge_layout, allocation, metadata) = if input_outputs.len() == 1 {
+            let edge = input_outputs.next().unwrap();
+            match PackedQueryEdge::new(edge) {
+                Some(edge) => {
+                    return Self {
+                        tag: OriginAndExtraTag::without_extra(QueryOriginTag::derived(
+                            kind,
+                            QueryEdgeLayout::PackedInline,
+                        )),
+                        payload: OriginAndExtraPayload { packed_one: edge },
+                        metadata: 1,
+                    };
+                }
+                None => {
+                    // SAFETY: The returned allocation uses `()` as its header. The tag records that there is no
+                    // extra header and records the returned edge layout.
+                    unsafe { Self::allocate_derived_with_header([edge].into_iter(), ()) }
+                }
+            }
+        } else {
+            // SAFETY: The returned allocation uses `()` as its header. The tag records that there is no
+            // extra header and records the returned edge layout.
+            unsafe { Self::allocate_derived_with_header(input_outputs, ()) }
+        };
         Self {
             tag: OriginAndExtraTag::without_extra(QueryOriginTag::derived(kind, edge_layout)),
             payload: OriginAndExtraPayload { allocation },
@@ -1264,23 +1282,22 @@ impl OriginAndExtra {
                 // SAFETY: Derived origins initialize `payload.allocation`, and the tag records the
                 // header and edge layout used to create that allocation.
                 let edges = unsafe {
-                    let allocation = self.payload.allocation;
                     match (self.tag.layout(), tag.layout()) {
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Packed) => {
                             QueryEdges::packed(
-                                SliceWithHeader::<(), PackedQueryEdge>::slice(allocation, length)
+                                SliceWithHeader::<(), PackedQueryEdge>::slice(self.payload.allocation, length)
                                     .as_ref(),
                             )
                         }
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Wide) => {
                             QueryEdges::wide(
-                                SliceWithHeader::<(), QueryEdge>::slice(allocation, length).as_ref(),
+                                SliceWithHeader::<(), QueryEdge>::slice(self.payload.allocation, length).as_ref(),
                             )
                         }
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Packed) => {
                             QueryEdges::packed(
                                 SliceWithHeader::<QueryRevisionsExtraInner, PackedQueryEdge>::slice(
-                                    allocation, length,
+                                    self.payload.allocation, length,
                                 )
                                 .as_ref(),
                             )
@@ -1288,11 +1305,12 @@ impl OriginAndExtra {
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Wide) => {
                             QueryEdges::wide(
                                 SliceWithHeader::<QueryRevisionsExtraInner, QueryEdge>::slice(
-                                    allocation, length,
+                                    self.payload.allocation, length,
                                 )
                                 .as_ref(),
                             )
                         }
+                        (_ , QueryEdgeLayout::PackedInline) => QueryEdges::packed(std::slice::from_ref(&self.payload.packed_one))
                     }
                 };
                 match tag.kind() {
@@ -1314,6 +1332,7 @@ impl OriginAndExtra {
             }
             (_, _, QueryEdgeLayout::Packed) => self.derived_allocation_size::<PackedQueryEdge>(),
             (_, _, QueryEdgeLayout::Wide) => self.derived_allocation_size::<QueryEdge>(),
+            (_, _, QueryEdgeLayout::PackedInline) => 0,
         };
 
         #[cfg(feature = "salsa_unstable")]
@@ -1356,26 +1375,26 @@ impl Drop for OriginAndExtra {
                 // SAFETY: Derived origins initialize `payload.allocation`, and the tag records the
                 // header and edge layout used to create that allocation.
                 unsafe {
-                    let allocation = self.payload.allocation;
                     match (layout, edge_layout) {
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Packed) => drop(
                             SliceWithHeader::<(), PackedQueryEdge>::from_raw_parts(
-                                allocation, length,
+                                self.payload.allocation, length,
                             ),
                         ),
                         (OriginAndExtraLayout::WithoutExtra, QueryEdgeLayout::Wide) => drop(
-                            SliceWithHeader::<(), QueryEdge>::from_raw_parts(allocation, length),
+                            SliceWithHeader::<(), QueryEdge>::from_raw_parts(self.payload.allocation, length),
                         ),
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Packed) => drop(
                             SliceWithHeader::<QueryRevisionsExtraInner, PackedQueryEdge>::from_raw_parts(
-                                allocation, length,
+                                self.payload.allocation, length,
                             ),
                         ),
                         (OriginAndExtraLayout::WithExtra, QueryEdgeLayout::Wide) => drop(
                             SliceWithHeader::<QueryRevisionsExtraInner, QueryEdge>::from_raw_parts(
-                                allocation, length,
+                                self.payload.allocation, length,
                             ),
                         ),
+                        (_, QueryEdgeLayout::PackedInline) => {}
                     }
                 }
             }
@@ -1400,10 +1419,10 @@ impl std::fmt::Debug for OriginAndExtra {
 #[repr(u8)]
 enum OriginAndExtraLayout {
     /// The origin has no extra revision data.
-    WithoutExtra = 0b0000,
+    WithoutExtra = 0b00000,
 
     /// The origin's allocation begins with extra revision data.
-    WithExtra = 0b1000,
+    WithExtra = 0b10000,
 }
 
 /// Encodes whether the origin has extra revision data.
@@ -1438,10 +1457,15 @@ impl OriginAndExtraTag {
 /// The payload of [`OriginAndExtra`].
 union OriginAndExtraPayload {
     /// The allocation storing derived edges and, for origins with extra data, that data.
+    ///
+    /// **Note:** avoid reading this if it is not the active field, as reading it triggers a UB if a zero value is stored.
     allocation: NonNull<()>,
 
     /// The identity of the assigning query for a directly stored assigned origin.
     index: Id,
+
+    /// In case of one packed input and no extra data, we store it inline.
+    packed_one: PackedQueryEdge,
 }
 
 #[repr(C)]
@@ -1724,6 +1748,7 @@ impl std::fmt::Debug for QueryEdge {
 /// this representation. Output edges, ingredient indices, and generations that do
 /// not fit use the wide [`QueryEdge`] layout.
 #[derive(Copy, Clone)]
+#[repr(Rust, packed)]
 struct PackedQueryEdge {
     index: u32,
     metadata: u32,
@@ -2497,5 +2522,24 @@ mod tests {
         let id = unsafe { Id::from_index(index) }.with_generation(generation);
 
         DatabaseKeyIndex::new(IngredientIndex::new(ingredient), id)
+    }
+
+    #[test]
+    fn query_origin_inlines_an_all_zero_packed_edge() {
+        let input = QueryEdge::input(key(0, 0, 0));
+        let origin = OriginAndExtra::derived([input].into_iter(), Default::default());
+
+        assert_eq!(
+            origin.origin().edges().iter().collect::<Vec<_>>(),
+            vec![input],
+        );
+    }
+
+    #[test]
+    fn query_origin_drops_an_all_zero_packed_edge() {
+        let input = QueryEdge::input(key(0, 0, 0));
+        let origin = OriginAndExtra::derived([input].into_iter(), Default::default());
+
+        drop(origin);
     }
 }
