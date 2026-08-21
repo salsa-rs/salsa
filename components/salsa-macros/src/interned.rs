@@ -84,6 +84,8 @@ impl SalsaStructAllowedOptions for InternedStruct {
     const ALLOW_DEFAULT: bool = false;
 
     const ALLOW_MANUAL_RETENTION_PROOF: bool = true;
+
+    const ALLOW_SELF_REF: bool = true;
 }
 
 struct Macro {
@@ -103,16 +105,7 @@ impl Macro {
         let struct_data_ident = format_ident!("{}Data", struct_ident);
         let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
-        let field_ids = salsa_struct.field_ids();
-        let field_indices = salsa_struct.field_indices();
         let num_fields = salsa_struct.num_fields();
-        let field_vis = salsa_struct.field_vis();
-        let field_getter_ids = salsa_struct.field_getter_ids();
-        let field_options = salsa_struct.field_options();
-        let field_tys = salsa_struct.field_tys();
-        let field_manual_retention_proofs = salsa_struct.field_manual_retention_proofs();
-        let field_indexed_tys = salsa_struct.field_indexed_tys();
-        let field_unused_attrs = salsa_struct.field_attrs();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
         let has_lifetime = salsa_struct.generate_lifetime();
         let id = salsa_struct.id();
@@ -145,16 +138,118 @@ impl Macro {
         let Configuration = self.hygiene.ident("Configuration");
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
+        let assembled_id = self.hygiene.ident("assembled_id");
+        let assembled_data = self.hygiene.ident("assembled_data");
+        let default_debug_fmt = self.hygiene.ident("default_debug_fmt");
+
+        let mut identity_index = 0;
+        let mut self_ref_index = 0;
+        let fields = salsa_struct
+            .fields_iter()
+            .map(|(field_index, field)| {
+                let partition_index = if field.has_self_ref_attr {
+                    let index = self_ref_index;
+                    self_ref_index += 1;
+                    index
+                } else {
+                    let index = identity_index;
+                    identity_index += 1;
+                    index
+                };
+                (field_index, partition_index, field)
+            })
+            .collect::<Vec<_>>();
+
+        let field_descriptors = fields.iter().map(|(field_index, partition_index, field)| {
+            let field_id = field.field.ident.as_ref().unwrap();
+            let field_ty = &field.field.ty;
+            let field_vis = &field.field.vis;
+            let field_getter_id = field.getter_name();
+            let field_option = field.options();
+            let field_self_ref = field.has_self_ref_attr;
+            let indexed_ty = format_ident!("T{field_index}");
+            let field_index = proc_macro2::Literal::usize_unsuffixed(*field_index);
+            let partition_index = proc_macro2::Literal::usize_unsuffixed(*partition_index);
+            let field_attrs = field.attrs();
+
+            let (constructor_arg_ty, field_value) = if field_self_ref {
+                (
+                    quote!(::std::option::Option<#field_ty>),
+                    quote!(#assembled_data.1.#partition_index.unwrap_or_else(|| {
+                        let this: Self = #zalsa::FromId::from_id(#assembled_id);
+                        this
+                    })),
+                )
+            } else {
+                (
+                    quote!(#indexed_ty),
+                    quote!(#zalsa::Lookup::into_owned(
+                        #assembled_data.0.#partition_index
+                    )),
+                )
+            };
+
+            quote! {
+                {
+                    option: #field_option,
+                    self_ref: #field_self_ref,
+                    id: #field_id,
+                    getter: #field_vis #field_getter_id,
+                    ty: #field_ty,
+                    index: #field_index,
+                    constructor_arg: (#field_id: #constructor_arg_ty),
+                    value: #field_value,
+                    attrs: [#(#field_attrs),*]
+                }
+            }
+        });
+
+        let identity_field_descriptors = salsa_struct.non_self_ref_fields_iter().enumerate().map(
+            |(key_index, (field_index, field))| {
+                let field_id = field.field.ident.as_ref().unwrap();
+                let field_ty = &field.field.ty;
+                let indexed_ty = format_ident!("T{field_index}");
+                let field_index = proc_macro2::Literal::usize_unsuffixed(field_index);
+                let key_index = proc_macro2::Literal::usize_unsuffixed(key_index);
+                quote! {
+                    {
+                        id: #field_id,
+                        ty: #field_ty,
+                        indexed_ty: #indexed_ty,
+                        field_index: #field_index,
+                        key_index: #key_index
+                    }
+                }
+            },
+        );
+
+        let self_ref_field_descriptors = salsa_struct.self_ref_fields_iter().enumerate().map(
+            |(key_index, (field_index, field))| {
+                let field_id = field.field.ident.as_ref().unwrap();
+                let field_ty = &field.field.ty;
+                let field_index = proc_macro2::Literal::usize_unsuffixed(field_index);
+                let key_index = proc_macro2::Literal::usize_unsuffixed(key_index);
+                quote! {
+                    {
+                        id: #field_id,
+                        ty: #field_ty,
+                        field_index: #field_index,
+                        key_index: #key_index
+                    }
+                }
+            },
+        );
 
         let self_type = if has_lifetime {
             syn::parse_quote!(#struct_ident<#db_lt>)
         } else {
             syn::parse_quote!(#struct_ident)
         };
-        let assert_fields_are_salsa_values: TokenStream = field_tys
-            .iter()
-            .zip(field_manual_retention_proofs)
-            .map(|(field_ty, proof)| {
+        let assert_fields_are_salsa_values: TokenStream = salsa_struct
+            .fields_iter()
+            .map(|(_, field)| {
+                let field_ty = &field.field.ty;
+                let proof = field.manual_retention_proof.as_ref();
                 if self.args.non_salsa_values.is_some() && proof.is_none() {
                     quote! {}
                 } else {
@@ -180,13 +275,9 @@ impl Macro {
                     revisions: #(#revisions)*,
                     interior_lt: #interior_lt,
                     new_fn: #new_fn,
-                    field_options: [#(#field_options),*],
-                    field_ids: [#(#field_ids),*],
-                    field_getters: [#(#field_vis #field_getter_ids),*],
-                    field_tys: [#(#field_tys),*],
-                    field_indices: [#(#field_indices),*],
-                    field_indexed_tys: [#(#field_indexed_tys),*],
-                    field_attrs: [#([#(#field_unused_attrs),*]),*],
+                    fields: [#(#field_descriptors),*],
+                    identity_fields: [#(#identity_field_descriptors),*],
+                    self_ref_fields: [#(#self_ref_field_descriptors),*],
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,
                     heap_size_fn: #(#heap_size_fn)*,
@@ -200,6 +291,9 @@ impl Macro {
                         #Configuration,
                         #CACHE,
                         #Db,
+                        #assembled_id,
+                        #assembled_data,
+                        #default_debug_fmt,
                     ]
                 );
             },

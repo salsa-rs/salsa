@@ -46,9 +46,3 @@ error: `#[tracked]` cannot be used with `#[salsa::input]`
 24 | /     #[tracked]
 25 | |     field: u32,
    | |______________^
-
-error: cannot find attribute `tracked` in this scope
-  --> tests/compile-fail/input_struct_incompatibles.rs:24:7
-   |
-24 |     #[tracked]
-   |       ^^^^^^^

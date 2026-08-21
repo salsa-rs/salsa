@@ -48,11 +48,7 @@ impl Lookup<BadHash> for PanickingLookup {
 }
 
 impl HashEqLike<PanickingLookup> for BadHash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_i16(0);
-    }
-
-    fn eq(&self, data: &PanickingLookup) -> bool {
+    fn eq(&self, _id: salsa::Id, data: &PanickingLookup) -> bool {
         self.0 == data.0
     }
 }
@@ -62,9 +58,53 @@ struct PanickingInterned<'db> {
     value: BadHash,
 }
 
+#[salsa::interned(revisions = 1)]
+struct SelfRefInterned<'db> {
+    key: BadHash,
+    #[self_ref]
+    other: SelfRefInterned<'db>,
+}
+
 #[salsa::tracked(returns(copy))]
 fn intern_panicking(db: &dyn Database, input: Input) -> PanickingInterned<'_> {
     PanickingInterned::new(db, PanickingLookup(input.field1(db)))
+}
+
+#[test]
+fn self_references_participate_in_identity_across_reuse() {
+    use salsa::plumbing::AsId;
+
+    #[salsa::tracked(returns(copy))]
+    fn intern(db: &dyn Database, activity: Input, key: usize) -> SelfRefInterned<'_> {
+        let _ = activity.field1(db);
+        SelfRefInterned::new(db, BadHash(key), None)
+    }
+
+    #[salsa::tracked(returns(copy))]
+    fn intern_wrapper<'db>(
+        db: &'db dyn Database,
+        activity: Input,
+        other: SelfRefInterned<'db>,
+    ) -> SelfRefInterned<'db> {
+        let _ = activity.field1(db);
+        SelfRefInterned::new(db, BadHash(usize::MAX), Some(other))
+    }
+
+    let mut db = common::LoggerDatabase::default();
+    let activity = Input::new(&db, 0);
+    let target = intern(&db, activity, 0);
+    let target_id = target.as_id();
+    let wrapper = intern_wrapper(&db, activity, target);
+
+    assert_eq!(wrapper.other(&db).key(&db).0, 0);
+
+    activity.set_field1(&mut db).to(1);
+    let replacement = intern(&db, activity, 1);
+    let wrapper = intern_wrapper(&db, activity, replacement);
+
+    assert_eq!(replacement.as_id(), target_id.next_generation().unwrap());
+    assert!(*replacement.other(&db) == replacement);
+    assert_eq!(wrapper.other(&db).key(&db).0, 1);
 }
 
 #[test]

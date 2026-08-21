@@ -141,6 +141,11 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 /// [`Clone`] + [`Eq`] + [`Hash`] + [`Send`] + [`Sync`]. A field whose type is unconditionally
 /// `'static` is accepted directly; any other field must implement [`salsa::SalsaValue`].
 ///
+/// A field marked `#[self_ref]` becomes an [`Option<T>`] constructor parameter. [`Some<T>`] stores
+/// the supplied value, while [`None`] stores the interned value being constructed. The resolved
+/// field value contributes to the struct's identity, although Salsa omits self-referential fields
+/// from the identity hash.
+///
 /// See [interned structs in the `salsa` crate documentation] for their identity and lifecycle.
 ///
 /// # Options
@@ -584,6 +589,21 @@ pub fn salsa_value(input: TokenStream) -> TokenStream {
 }
 
 pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error) -> TokenStream {
+    if let Ok(mut struct_item) = syn::parse::<syn::ItemStruct>(tokens.clone()) {
+        let mut removed_salsa_attribute = false;
+        for field in &mut struct_item.fields {
+            field.attrs.retain(|attr| {
+                let is_salsa_attribute = salsa_struct::FIELD_OPTION_ATTRIBUTES
+                    .iter()
+                    .any(|attribute| attr.path().is_ident(attribute.0));
+                removed_salsa_attribute |= is_salsa_attribute;
+                !is_salsa_attribute
+            });
+        }
+        if removed_salsa_attribute {
+            tokens = quote!(#struct_item).into();
+        }
+    }
     tokens.extend(TokenStream::from(error.into_compile_error()));
     tokens
 }

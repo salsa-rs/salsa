@@ -1,0 +1,19 @@
+error: `#[self_ref]` cannot be used with `#[salsa::input]`
+ --> tests/compile-fail/self_ref_attribute_restrictions.rs:3:5
+  |
+3 | /     #[self_ref]
+4 | |     field: u32,
+  | |______________^
+
+error: `#[self_ref]` cannot be used with `#[salsa::tracked]`
+  --> tests/compile-fail/self_ref_attribute_restrictions.rs:9:5
+   |
+ 9 | /     #[self_ref]
+10 | |     field: u32,
+   | |______________^
+
+error: `#[self_ref]` does not accept arguments
+  --> tests/compile-fail/self_ref_attribute_restrictions.rs:15:5
+   |
+15 |     #[self_ref(other)]
+   |     ^^^^^^^^^^^^^^^^^^
