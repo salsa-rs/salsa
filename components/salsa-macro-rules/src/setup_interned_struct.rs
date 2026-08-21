@@ -303,10 +303,8 @@ macro_rules! setup_interned_struct {
             unsafe impl< $($db_lt_arg)? > $zalsa::SalsaValue for $Struct< $($db_lt_arg)? > {}
 
             impl<$db_lt> $Struct< $($db_lt_arg)? >  {
-                pub fn $new_fn<$Db, $($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
+                pub fn $new_fn<$($indexed_ty: $zalsa::Lookup<$field_ty> + ::std::hash::Hash,)*>(db: &$db_lt dyn $zalsa::Database,  $($field_id: $indexed_ty),*) -> Self
                 where
-                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + ::salsa::Database,
                     $(
                         $field_ty: $zalsa::HashEqLike<$indexed_ty>,
                     )*
@@ -318,11 +316,7 @@ macro_rules! setup_interned_struct {
 
                 $(
                     $(#[$field_attr])*
-                    $field_getter_vis fn $field_getter_id<$Db>(self, db: &'db $Db) -> $zalsa::return_mode_ty!($field_option, 'db, $field_ty)
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + $zalsa::Database,
-                    {
+                    $field_getter_vis fn $field_getter_id(self, db: &'db dyn $zalsa::Database) -> $zalsa::return_mode_ty!($field_option, 'db, $field_ty) {
                         let zalsa = db.zalsa();
                         let fields = $Configuration::ingredient(zalsa).fields(zalsa, self);
                         $zalsa::return_mode_expression!(
