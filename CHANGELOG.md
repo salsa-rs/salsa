@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.2...salsa-v0.28.3) - 2026-08-21
+
+### Changed
+
+- adopt newer Rust language and library features ([#1285](https://github.com/salsa-rs/salsa/pull/1285))
+
+### Fixed
+
+- preserve public attributes on tracked queries ([#1295](https://github.com/salsa-rs/salsa/pull/1295))
+
+### Other
+
+- remove work-in-progress warning ([#1296](https://github.com/salsa-rs/salsa/pull/1296))
+- bump MSRV to 1.88 ([#1283](https://github.com/salsa-rs/salsa/pull/1283))
+- shard tracked query synchronization by key ([#1273](https://github.com/salsa-rs/salsa/pull/1273))
+- Fix SalsaValue unused lifetime warning ([#1274](https://github.com/salsa-rs/salsa/pull/1274))
+
 ## [0.28.2](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.1...salsa-v0.28.2) - 2026-08-01
 
 ### Added
