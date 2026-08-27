@@ -506,6 +506,22 @@ where
         self.deleted_entries.clear();
     }
 
+    fn set_lru_capacity(&mut self, capacity: usize) -> bool {
+        // Ask the policy first: `set_capacity` is a no-op on `NoopEviction`, so
+        // calling it unconditionally would be harmless but would also report
+        // success for every non-LRU query in the registry, which is exactly the
+        // distinction the caller needs.
+        if !self.eviction.has_tunable_capacity() {
+            return false;
+        }
+        self.eviction.set_capacity(capacity);
+        true
+    }
+
+    fn has_tunable_lru_capacity(&self) -> bool {
+        self.eviction.has_tunable_capacity()
+    }
+
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }

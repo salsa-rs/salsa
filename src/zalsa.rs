@@ -475,6 +475,46 @@ impl Zalsa {
         }
     }
 
+    /// Retune the LRU capacity of every ingredient whose `debug_name` matches.
+    ///
+    /// Returns how many ingredients were retuned. Zero means the name matched
+    /// nothing, or matched only queries that have no LRU — both are "the caller
+    /// asked for something that does not exist", and neither is silently a
+    /// success. Names are not guaranteed unique across crates, hence a count
+    /// rather than a bool.
+    ///
+    /// A capacity of `0` turns eviction OFF for the matched queries rather than
+    /// evicting everything; `1` is the smallest cache that still evicts.
+    ///
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    pub fn set_lru_capacity_by_name(&mut self, name: &str, capacity: usize) -> usize {
+        let mut retuned = 0;
+        for ingredient in self.ingredients_vec.iter_mut() {
+            if ingredient.debug_name() == name && ingredient.set_lru_capacity(capacity) {
+                retuned += 1;
+            }
+        }
+        retuned
+    }
+
+    /// `debug_name` of every ingredient that actually has a tunable LRU.
+    ///
+    /// This is the discovery half of [`Self::set_lru_capacity_by_name`]: without
+    /// it a caller has to hardcode query names and cannot tell a typo from a
+    /// query that upstream stopped capping. Duplicates are possible — the same
+    /// name may be declared in more than one crate.
+    ///
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    pub fn lru_ingredient_names(&self) -> Vec<&'static str> {
+        self.ingredients_vec
+            .iter()
+            .filter(|ingredient| ingredient.has_tunable_lru_capacity())
+            .map(|ingredient| ingredient.debug_name())
+            .collect()
+    }
+
     #[inline]
     pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
         self.table().ingredient_index(id)

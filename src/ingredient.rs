@@ -117,6 +117,32 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         );
     }
 
+    /// Change this ingredient's LRU capacity, returning whether it had one.
+    ///
+    /// The macro-generated `set_lru_capacity` on a tracked function is private to
+    /// the module that declares the function, and for an *associated* tracked
+    /// function it is generated inside the body of the outer function, where
+    /// nothing can reach it at all. That leaves no way to retune a real query
+    /// (`parse`, `body_with_source_map`, inference) at runtime, which is what
+    /// this method is for: ingredients are reachable through the registry, and
+    /// `debug_name` gives them addresses.
+    ///
+    /// `false` means "this query has no LRU", not "the call failed" — see
+    /// [`crate::function::EvictionPolicy::has_tunable_capacity`]. A capacity of
+    /// `0` disables eviction rather than shrinking the cache to nothing.
+    fn set_lru_capacity(&mut self, capacity: usize) -> bool {
+        _ = capacity;
+        false
+    }
+
+    /// Whether [`Self::set_lru_capacity`] would do anything for this ingredient.
+    ///
+    /// Read-only counterpart, so that enumerating the tunable queries does not
+    /// need `&mut` access to the whole registry.
+    fn has_tunable_lru_capacity(&self) -> bool {
+        false
+    }
+
     fn memo_table_types(&self) -> &Arc<MemoTableTypes>;
 
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes>;
