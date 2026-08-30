@@ -585,6 +585,10 @@ where
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
+
+    fn memo_counts(&self, _zalsa: &Zalsa) -> (u32, Vec<(IngredientIndex, u32)>) {
+        (0, Vec::new())
+    }
 }
 
 fn collect_minimum_serialized_edges(
@@ -928,6 +932,7 @@ mod persistence {
                     memo_ingredient_index,
                     // FIXME: Use `Box::into_non_null` once stable.
                     NonNull::from(Box::leak(Box::new(memo))),
+                    zalsa,
                 );
             }
 

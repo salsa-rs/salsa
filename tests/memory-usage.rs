@@ -140,7 +140,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "MyInput",
                 count: 3,
-                size_of_metadata: 96,
+                size_of_metadata: 72,
                 size_of_fields: 72,
                 heap_size_of_fields: Some(
                     450,
@@ -161,7 +161,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "MyInterned",
                 count: 3,
-                size_of_metadata: 168,
+                size_of_metadata: 144,
                 size_of_fields: 72,
                 heap_size_of_fields: Some(
                     450,
@@ -182,7 +182,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "MyTracked",
                 count: 4,
-                size_of_metadata: 128,
+                size_of_metadata: 96,
                 size_of_fields: 96,
                 heap_size_of_fields: Some(
                     300,
@@ -203,7 +203,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "input_to_string::interned_arguments",
                 count: 1,
-                size_of_metadata: 56,
+                size_of_metadata: 48,
                 size_of_fields: 0,
                 heap_size_of_fields: None,
                 page_info: Some(
@@ -222,7 +222,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "input_to_string_get_size::interned_arguments",
                 count: 1,
-                size_of_metadata: 56,
+                size_of_metadata: 48,
                 size_of_fields: 0,
                 heap_size_of_fields: None,
                 page_info: Some(

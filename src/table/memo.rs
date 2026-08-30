@@ -1,41 +1,271 @@
+use std::alloc::Layout;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::mem;
 use std::ptr::{self, NonNull};
+use std::sync::Arc;
 
-use crate::DatabaseKeyIndex;
+use rustc_hash::FxHashMap;
+
 use crate::function::ErasedMemo;
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
+use crate::{DatabaseKeyIndex, IngredientIndex};
 
 /// Adds the registered concrete memo type's vtable without dereferencing the pointer.
 ///
 /// Dereferencing the result requires a live, aligned allocation of the same concrete type.
 pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
 
+#[repr(C, align(16))]
+struct MemoEntriesHeader {
+    len: usize,
+    entries: [MemoEntry; 0],
+}
+
+static EMPTY_MEMO_ENTRIES: MemoEntriesHeader = MemoEntriesHeader {
+    len: 0,
+    entries: [],
+};
+
+impl MemoEntriesHeader {
+    /// # Safety
+    ///
+    /// The pointer point to a real value.
+    #[inline]
+    unsafe fn entries(ptr: *mut Self) -> *mut MemoEntry {
+        // SAFETY: Our precondition.
+        unsafe { (&raw mut (*ptr).entries).cast::<MemoEntry>() }
+    }
+}
+
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
 pub struct MemoTable {
-    memos: LazyMemoEntries,
+    /// # Invariant
+    ///
+    /// The last 4 bits (free due to the `repr(align(16))`) represent the generation, that is used
+    /// to notice inserts when growing. We have 16 generations; if we need more, we allocate a new list (with generation 0).
+    ///
+    /// After clearing the last 4 LSBs, this is a pointer to a [`MemoEntriesHeader`]. [`MemoEntriesHeader::len`] holds
+    /// the number of memos we have space to store: uninitialized memos have NULL. in [`MemoEntriesHeader::entries`]
+    /// (and *not* necessarily at the end of the [`MemoEntriesHeader`] because of padding, we use the padding as well)
+    /// there is space for `len` memos, then padding to be a multiple of the alignment.
+    ///
+    /// To avoid allocation for empty lists, they point at [`EMPTY_MEMO_ENTRIES`]. The generation is zero because no insertions
+    /// are permitted. You can read the length and it'll be 0 as expected, but you're not allowed to deallocate this list.
+    memos: AtomicPtr<MemoEntriesHeader>,
 }
 
 #[cfg(not(feature = "shuttle"))]
-const _: [(); mem::size_of::<MemoTable>()] = [(); 2 * mem::size_of::<usize>()];
+const _: [(); mem::size_of::<MemoTable>()] = [(); mem::size_of::<usize>()];
 
 impl MemoTable {
-    /// Create a `MemoTable` that allocates slots on the first memo insertion.
+    const GENERATION_MASK: usize = 16 - 1;
+    const PTR_MASK: usize = !Self::GENERATION_MASK;
+
+    /// Returns the layout for a list containing at least `len` memos, as well as the `len` of this list (which might
+    /// be greater than the requested length if there is padding we can exploit).
+    fn layout(len: usize) -> (usize, Layout) {
+        let size = len
+            .checked_mul(size_of::<MemoEntry>())
+            .unwrap()
+            .checked_add(mem::offset_of!(MemoEntriesHeader, entries))
+            .unwrap();
+        let align = std::cmp::max(align_of::<MemoEntriesHeader>(), align_of::<MemoEntry>());
+        let layout = Layout::from_size_align(size, align).unwrap().pad_to_align();
+        let len =
+            (layout.size() - mem::offset_of!(MemoEntriesHeader, entries)) / size_of::<MemoEntry>();
+        (len, layout)
+    }
+
+    /// Create a `MemoTable` with slots for memos from the provided `MemoTableTypes`.
     ///
     /// # Safety
     ///
     /// The created memo table must only be accessed with the same `MemoTableTypes`.
-    pub unsafe fn new(types: &MemoTableTypes) -> Self {
+    pub unsafe fn new(_types: &MemoTableTypes) -> Self {
         // Note that the safety invariant guarantees that any indices in-bounds for
         // this table are also in-bounds for its `MemoTableTypes`, as `MemoTableTypes`
         // is append-only.
         Self {
-            memos: LazyMemoEntries::new(types.len()),
+            memos: AtomicPtr::new(ptr::from_ref(&EMPTY_MEMO_ENTRIES).cast_mut()),
+        }
+    }
+
+    #[inline]
+    fn get_mut(&mut self) -> &mut [MemoEntry] {
+        let memos = self.memos.get_mut().map_addr(|addr| addr & Self::PTR_MASK);
+        // SAFETY: The invariant of `self.memos`.
+        unsafe { std::slice::from_raw_parts_mut(MemoEntriesHeader::entries(memos), (*memos).len) }
+    }
+
+    #[inline]
+    fn get(&self) -> &[MemoEntry] {
+        let memos = self
+            .memos
+            .load(Ordering::Acquire)
+            .map_addr(|addr| addr & Self::PTR_MASK);
+        // SAFETY: The invariant of `self.memos`.
+        unsafe { std::slice::from_raw_parts(MemoEntriesHeader::entries(memos), (*memos).len) }
+    }
+
+    #[inline]
+    fn insert(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        new_memo: *mut DummyMemo,
+        zalsa: &Zalsa,
+        optimal_init_len: usize,
+    ) -> *mut DummyMemo {
+        let expected_len = memo_ingredient_index.as_usize() + 1;
+        let mut current = self.memos.load(Ordering::Acquire);
+        // SAFETY: `self.memos`'s invariant.
+        let memo_to_write = |memos| unsafe {
+            &(*MemoEntriesHeader::entries(memos).add(memo_ingredient_index.as_usize())).atomic_memo
+        };
+
+        let mut memos = current.map_addr(|addr| addr & Self::PTR_MASK);
+        let mut generation = current.addr() & Self::GENERATION_MASK;
+        // SAFETY: `self.memos`'s invariant.
+        let mut current_len = unsafe { (*memos).len };
+        let old_memo = if expected_len > current_len {
+            ptr::null_mut()
+        } else {
+            // We rely on the synchronization between queries, so we only need to load the previous memo once.
+            // Even if the synchronization breaks, we might have memory leaks but not UB.
+            memo_to_write(memos).swap(new_memo, Ordering::AcqRel)
+        };
+
+        loop {
+            if expected_len > current_len || generation >= Self::GENERATION_MASK {
+                // We have no space for the new memo or no space to increase the generation.
+                self.refresh_allocation(
+                    memo_ingredient_index,
+                    new_memo,
+                    current,
+                    zalsa,
+                    optimal_init_len,
+                );
+                return old_memo;
+            }
+
+            // We can just increment the pointer because we know the generation won't overflow.
+            match self.memos.compare_exchange_weak(
+                current,
+                current.map_addr(|addr| addr + 1),
+                Ordering::Release,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    // We successfully updated the pointer; it could not have been replaced by another `refresh_allocation()`
+                    // between the write and the `compare_exchange_weak()` because we loaded it before the write, and there is
+                    // a `refresh_allocation()` in progress it'll fail because the pointer has changed.
+                    return old_memo;
+                }
+                Err(cur) => current = cur,
+            }
+
+            memos = current.map_addr(|addr| addr & Self::PTR_MASK);
+            generation = current.addr() & Self::GENERATION_MASK;
+            // SAFETY: `self.memos`'s invariant.
+            current_len = unsafe { (*memos).len };
+
+            memo_to_write(memos).store(new_memo, Ordering::Release);
+        }
+    }
+
+    #[cold]
+    fn refresh_allocation(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        new_memo: *mut DummyMemo,
+        mut current: *mut MemoEntriesHeader,
+        zalsa: &Zalsa,
+        optimal_init_len: usize,
+    ) {
+        let expected_len = std::cmp::max(memo_ingredient_index.as_usize() + 1, optimal_init_len);
+        let mut memos = current.map_addr(|addr| addr & Self::PTR_MASK);
+        // SAFETY: `self.memos`'s invariant.
+        let mut current_len = unsafe { (*memos).len };
+        let expected_len = std::cmp::max(current_len, expected_len);
+
+        let (expected_len, layout) = Self::layout(expected_len);
+        // SAFETY: `layout` is not zero-sized because it contains at least the header.
+        let new = unsafe { std::alloc::alloc(layout).cast::<MemoEntriesHeader>() };
+        if new.is_null() {
+            std::alloc::handle_alloc_error(layout);
+        }
+        // SAFETY: Those are in bounds for the new allocation.
+        unsafe {
+            ptr::write(&raw mut (*new).len, expected_len);
+            // Null-initialize excess memos. This might be overridden partially later if `self.memos` is replaced with a list
+            // that is not big enough for us but is bigger than the current (if it's big enough for us, we'll just discard
+            // this allocation).
+            ptr::write_bytes::<MemoEntry>(
+                MemoEntriesHeader::entries(new).add(current_len),
+                0,
+                expected_len - current_len,
+            );
+        }
+
+        loop {
+            // SAFETY: `self.memos`'s invariant.
+            let current_memos = unsafe {
+                std::slice::from_raw_parts(MemoEntriesHeader::entries(memos), current_len)
+            };
+            // SAFETY: Those are in bounds for the new allocation.
+            unsafe {
+                for (index, memo) in current_memos.iter().enumerate() {
+                    // Note: we must use an atomic load here (but not store, since `new` is unique to us).
+                    ptr::write::<MemoEntry>(
+                        MemoEntriesHeader::entries(new).add(index),
+                        MemoEntry {
+                            atomic_memo: AtomicPtr::new(memo.atomic_memo.load(Ordering::Acquire)),
+                        },
+                    );
+                }
+                ptr::write::<MemoEntry>(
+                    MemoEntriesHeader::entries(new).add(memo_ingredient_index.as_usize()),
+                    MemoEntry {
+                        atomic_memo: AtomicPtr::new(new_memo),
+                    },
+                );
+            }
+
+            match self
+                .memos
+                .compare_exchange(current, new, Ordering::Release, Ordering::Acquire)
+            {
+                Ok(_) => break,
+                Err(cur) => {
+                    current = cur;
+                    memos = current.map_addr(|addr| addr & Self::PTR_MASK);
+                    // SAFETY: `self.memos`'s invariant.
+                    current_len = unsafe { (*memos).len };
+
+                    if current_len >= expected_len {
+                        // Someone has raced with us and already allocated enough space. Call `insert()` so it'll handle incrementing
+                        // the generation etc.
+
+                        // SAFETY: We allocated this just above.
+                        unsafe {
+                            std::alloc::dealloc(new.cast::<u8>(), layout);
+                        }
+
+                        self.insert(memo_ingredient_index, new_memo, zalsa, optimal_init_len);
+                        return;
+                    }
+                }
+            }
+        }
+
+        if memos.cast_const() != &EMPTY_MEMO_ENTRIES {
+            zalsa.push_deleted_memo_table(MemoTable {
+                memos: AtomicPtr::new(memos),
+            });
         }
     }
 
@@ -43,7 +273,42 @@ impl MemoTable {
     ///
     /// Note that the memo entries should be freed manually before calling this function.
     pub fn reset(&mut self) {
-        self.memos.clear();
+        for memo in self.get_mut() {
+            *memo = MemoEntry::default();
+        }
+    }
+
+    pub(crate) fn update_frequency_stats(
+        &self,
+        memo_ingredient_indices: &[IngredientIndex],
+        freq_stats: &mut FxHashMap<IngredientIndex, u32>,
+        total_count: &mut u32,
+    ) {
+        let memos = self.get();
+        if !memos.is_empty() {
+            *total_count += 1;
+        }
+        for (&memo_index, entry) in std::iter::zip(memo_ingredient_indices, memos) {
+            if !entry.atomic_memo.load(Ordering::Relaxed).is_null() {
+                *freq_stats.entry(memo_index).or_insert(0) += 1;
+            }
+        }
+    }
+}
+
+impl Drop for MemoTable {
+    fn drop(&mut self) {
+        let memos = *self.memos.get_mut();
+        if memos.cast_const() != &EMPTY_MEMO_ENTRIES {
+            // SAFETY: We compute the layout backwards from the length. The allocation is ours it's not empty.
+            unsafe {
+                let memos = memos.map_addr(|addr| addr & Self::PTR_MASK);
+                let len = (*memos).len;
+                let (layout_len, layout) = Self::layout(len);
+                debug_assert_eq!(len, layout_len);
+                std::alloc::dealloc(memos.cast::<u8>(), layout);
+            }
+        }
     }
 }
 
@@ -80,120 +345,6 @@ pub trait Memo: Any + Send + Sync {
 struct MemoEntry {
     /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
     atomic_memo: AtomicPtr<DummyMemo>,
-}
-
-/// Lazily allocated, fixed-length memo entries.
-///
-/// The pointer and length have the same inline layout as an eager `Box<[MemoEntry]>`, but a null
-/// pointer represents an allocation that has not been created yet.
-struct LazyMemoEntries {
-    ptr: AtomicPtr<MemoEntry>,
-    len: usize,
-}
-
-impl LazyMemoEntries {
-    fn new(len: usize) -> Self {
-        Self {
-            ptr: AtomicPtr::new(ptr::null_mut()),
-            len,
-        }
-    }
-
-    #[inline]
-    fn get(&self, index: usize) -> Option<&MemoEntry> {
-        self.as_slice()?.get(index)
-    }
-
-    #[inline]
-    fn get_or_init(&self, index: usize) -> Option<&MemoEntry> {
-        if index >= self.len {
-            return None;
-        }
-
-        let memos = self.as_slice().unwrap_or_else(|| self.initialize());
-        Some(&memos[index])
-    }
-
-    #[inline]
-    fn get_mut(&mut self, index: usize) -> Option<&mut MemoEntry> {
-        self.as_mut_slice()?.get_mut(index)
-    }
-
-    #[cfg(feature = "salsa_unstable")]
-    fn iter(&self) -> std::slice::Iter<'_, MemoEntry> {
-        self.as_slice().unwrap_or_default().iter()
-    }
-
-    fn iter_mut(&mut self) -> std::slice::IterMut<'_, MemoEntry> {
-        self.as_mut_slice().unwrap_or_default().iter_mut()
-    }
-
-    #[inline]
-    fn as_slice(&self) -> Option<&[MemoEntry]> {
-        let ptr = NonNull::new(self.ptr.load(Ordering::Acquire))?;
-
-        // The acquire load synchronizes with the release operation that published the pointer,
-        // ensuring that the memo entries are initialized before we create references to them.
-        //
-        // SAFETY: A non-null pointer comes from a boxed slice of length `self.len`. The allocation
-        // cannot be freed while `self` is shared.
-        Some(unsafe { std::slice::from_raw_parts(ptr.as_ptr(), self.len) })
-    }
-
-    #[inline]
-    fn as_mut_slice(&mut self) -> Option<&mut [MemoEntry]> {
-        let ptr = NonNull::new(*self.ptr.get_mut())?;
-
-        // SAFETY: A non-null pointer comes from a boxed slice of length `self.len`, and exclusive
-        // access guarantees that no other references exist.
-        Some(unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), self.len) })
-    }
-
-    #[cold]
-    fn initialize(&self) -> &[MemoEntry] {
-        let new_memos: Box<[MemoEntry]> = (0..self.len).map(|_| MemoEntry::default()).collect();
-        let new_memos = Box::into_raw(new_memos);
-        let new_memos_ptr = new_memos.cast::<MemoEntry>();
-
-        // Release publishes the initialized memo entries. If another thread won the race, acquire
-        // synchronizes with its release operation before we create references to its allocation.
-        let ptr = match self.ptr.compare_exchange(
-            ptr::null_mut(),
-            new_memos_ptr,
-            Ordering::Release,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => new_memos_ptr,
-            Err(ptr) => {
-                // SAFETY: The compare-exchange failed, so `new_memos` was not published and this
-                // thread retains ownership of the allocation.
-                unsafe { drop(Box::from_raw(new_memos)) };
-                ptr
-            }
-        };
-
-        // SAFETY: `ptr` is either the boxed slice allocated above or the boxed slice published by
-        // another thread. Both allocations have length `self.len` and cannot be freed while `self`
-        // is shared.
-        unsafe { std::slice::from_raw_parts(ptr, self.len) }
-    }
-
-    fn clear(&mut self) {
-        let ptr = mem::replace(self.ptr.get_mut(), ptr::null_mut());
-        if ptr.is_null() {
-            return;
-        }
-
-        // SAFETY: `ptr` came from a boxed slice of length `self.len`, and exclusive access
-        // guarantees that no references to the allocation remain.
-        unsafe { drop(Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.len))) };
-    }
-}
-
-impl Drop for LazyMemoEntries {
-    fn drop(&mut self) {
-        self.clear();
-    }
 }
 
 /// Type metadata for one memo-table slot.
@@ -266,19 +417,39 @@ impl Memo for DummyMemo {
     }
 }
 
-#[derive(Default)]
 pub struct MemoTableTypes {
     types: Vec<MemoEntryType>,
+    optimal_table_init_len: usize,
 }
 
 impl MemoTableTypes {
+    pub(crate) fn new(zalsa: &Zalsa, ingredient_debug_name: &str) -> Arc<Self> {
+        Arc::new(Self {
+            types: Vec::new(),
+            optimal_table_init_len: zalsa.optimal_memo_table_init_len(ingredient_debug_name),
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn empty() -> Self {
+        Self {
+            types: Vec::new(),
+            optimal_table_init_len: 0,
+        }
+    }
+
     pub(crate) fn set(
         &mut self,
         memo_ingredient_index: MemoIngredientIndex,
         memo_type: MemoEntryType,
     ) {
-        self.types
-            .insert(memo_ingredient_index.as_usize(), memo_type);
+        if self.types.len() <= memo_ingredient_index.as_usize() {
+            self.types
+                .resize_with(memo_ingredient_index.as_usize() + 1, || {
+                    MemoEntryType::of::<DummyMemo>()
+                });
+        }
+        self.types[memo_ingredient_index.as_usize()] = memo_type;
     }
 
     pub fn len(&self) -> usize {
@@ -350,26 +521,21 @@ impl<'a> MemoTableWithTypes<'a> {
         self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
+        zalsa: &Zalsa,
     ) -> Option<NonNull<M>> {
-        let MemoEntry { atomic_memo } = self
-            .memos
-            .memos
-            .get_or_init(memo_ingredient_index.as_usize())?;
-
-        // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
-        // corresponding `MemoTableTypes`, by construction.
-        let type_ = unsafe {
-            self.types
-                .types
-                .get_unchecked(memo_ingredient_index.as_usize())
-        };
+        let type_ = &self.types.types[memo_ingredient_index.as_usize()];
 
         // Verify that the we are casting to the correct type.
         if type_.type_id != TypeId::of::<M>() {
             type_assert_failed(memo_ingredient_index);
         }
 
-        let old_memo = atomic_memo.swap(MemoEntryType::to_dummy(memo).as_ptr(), Ordering::AcqRel);
+        let old_memo = self.memos.insert(
+            memo_ingredient_index,
+            MemoEntryType::to_dummy(memo).as_ptr(),
+            zalsa,
+            self.types.optimal_table_init_len,
+        );
 
         // SAFETY: We asserted that the type is correct above.
         NonNull::new(old_memo).map(|old_memo| unsafe { MemoEntryType::from_dummy(old_memo) })
@@ -381,7 +547,7 @@ impl<'a> MemoTableWithTypes<'a> {
         self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<M>> {
-        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+        let MemoEntry { atomic_memo } = self.memos.get().get(memo_ingredient_index.as_usize())?;
 
         // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
         // corresponding `MemoTableTypes`, by construction.
@@ -412,7 +578,7 @@ impl<'a> MemoTableWithTypes<'a> {
         &self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ErasedMemo<'a>> {
-        let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;
+        let MemoEntry { atomic_memo } = self.memos.get().get(memo_ingredient_index.as_usize())?;
 
         // SAFETY: Any indices that are in-bounds for the `MemoTable` are also in-bounds for its
         // corresponding `MemoTableTypes`, by construction.
@@ -434,7 +600,7 @@ impl<'a> MemoTableWithTypes<'a> {
     #[cfg(feature = "salsa_unstable")]
     pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
         let mut memory_usage = Vec::new();
-        for (index, memo) in self.memos.memos.iter().enumerate() {
+        for (index, memo) in self.memos.get().iter().enumerate() {
             let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
                 continue;
             };
@@ -466,8 +632,10 @@ impl MemoTableWithTypesMut<'_> {
         memo_ingredient_index: MemoIngredientIndex,
         f: impl FnOnce(&mut M),
     ) {
-        let Some(MemoEntry { atomic_memo }) =
-            self.memos.memos.get_mut(memo_ingredient_index.as_usize())
+        let Some(MemoEntry { atomic_memo }) = self
+            .memos
+            .get_mut()
+            .get_mut(memo_ingredient_index.as_usize())
         else {
             return;
         };
@@ -504,7 +672,7 @@ impl MemoTableWithTypesMut<'_> {
     #[inline]
     pub unsafe fn drop(&mut self) {
         let types = self.types.types.iter();
-        for (type_, memo) in std::iter::zip(types, self.memos.memos.iter_mut()) {
+        for (type_, memo) in std::iter::zip(types, self.memos.get_mut()) {
             // SAFETY: The types match as per our constructor invariant.
             unsafe { memo.take(type_) };
         }
@@ -519,7 +687,7 @@ impl MemoTableWithTypesMut<'_> {
         mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>),
     ) {
         self.memos
-            .memos
+            .get_mut()
             .iter_mut()
             .zip(self.types.types.iter())
             .enumerate()

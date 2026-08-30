@@ -97,10 +97,10 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        _zalsa: &mut Zalsa,
+        zalsa: &mut Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
-        let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
+        let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index, zalsa);
 
         std::iter::once(Box::new(struct_ingredient) as _)
             .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
@@ -122,11 +122,11 @@ pub struct IngredientImpl<C: Configuration> {
 }
 
 impl<C: Configuration> IngredientImpl<C> {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, zalsa: &Zalsa) -> Self {
         Self {
             ingredient_index: index,
             singleton: Default::default(),
-            memo_table_types: Arc::new(MemoTableTypes::default()),
+            memo_table_types: MemoTableTypes::new(zalsa, C::DEBUG_NAME),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -399,6 +399,13 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         };
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
+    }
+
+    fn memo_counts(&self, zalsa: &Zalsa) -> (u32, Vec<(IngredientIndex, u32)>) {
+        zalsa.memo_counts(
+            self.ingredient_index,
+            self.entries(zalsa).map(|entry| &entry.value.memos),
+        )
     }
 }
 

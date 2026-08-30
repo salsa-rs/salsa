@@ -344,10 +344,10 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        _zalsa: &mut Zalsa,
+        zalsa: &mut Zalsa,
         first_index: IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
-        vec![Box::new(IngredientImpl::<C>::new(first_index)) as _]
+        vec![Box::new(IngredientImpl::<C>::new(first_index, zalsa)) as _]
     }
 
     fn id_struct_type_id() -> TypeId {
@@ -359,14 +359,14 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(ingredient_index: IngredientIndex) -> Self {
+    pub fn new(ingredient_index: IngredientIndex, zalsa: &Zalsa) -> Self {
         let shards = new_shards();
         let shift = usize::BITS - shards.len().trailing_zeros();
 
         Self {
             ingredient_index,
             hasher: FxBuildHasher,
-            memo_table_types: Arc::new(MemoTableTypes::default()),
+            memo_table_types: MemoTableTypes::new(zalsa, C::DEBUG_NAME),
             revision_queue: RevisionQueue::new(C::REVISIONS),
             shift,
             shards,
@@ -1285,6 +1285,38 @@ where
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
     }
+
+    fn memo_counts(&self, zalsa: &Zalsa) -> (u32, Vec<(IngredientIndex, u32)>) {
+        #[cfg(not(feature = "shuttle"))]
+        use parking_lot::lock_api::RawMutex;
+
+        #[cfg(not(feature = "shuttle"))]
+        for shard in self.shards.iter() {
+            // SAFETY: We do not hold any active mutex guards.
+            unsafe { shard.raw().lock() };
+        }
+        #[cfg(feature = "shuttle")]
+        let guards = self
+            .shards
+            .iter()
+            .map(|shard| shard.lock())
+            .collect::<Vec<_>>();
+
+        let memos = self.entries(zalsa);
+        // SAFETY: We're holding the lock for all shards.
+        let memos = memos.map(|entry| unsafe { &*entry.value.memos.get() });
+        let result = zalsa.memo_counts(self.ingredient_index, memos);
+
+        #[cfg(not(feature = "shuttle"))]
+        for shard in self.shards.iter() {
+            // SAFETY: We acquired the locks for all shards.
+            unsafe { shard.raw().unlock() };
+        }
+        #[cfg(feature = "shuttle")]
+        drop(guards);
+
+        result
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -1990,7 +2022,7 @@ mod _static_assertions {
 
     const _: [(); mem::size_of::<LruEntry>()] = [(); mem::size_of::<[usize; 4]>()];
 
-    const _: [(); mem::size_of::<Value<DummyConfiguration>>()] = [(); mem::size_of::<[usize; 7]>()];
+    const _: [(); mem::size_of::<Value<DummyConfiguration>>()] = [(); mem::size_of::<[usize; 6]>()];
 
     struct DummyConfiguration;
 

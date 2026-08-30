@@ -26,7 +26,7 @@ impl<C: Configuration> IngredientImpl<C> {
     ) -> Option<NonNull<Memo<C>>> {
         zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .insert(memo_ingredient_index, memo)
+            .insert(memo_ingredient_index, memo, zalsa)
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of

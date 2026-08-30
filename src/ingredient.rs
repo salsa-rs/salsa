@@ -215,6 +215,8 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
             "called `deserialize` on ingredient where `should_serialize` returns `false`"
         )
     }
+
+    fn memo_counts(&self, zalsa: &Zalsa) -> (u32, Vec<(IngredientIndex, u32)>);
 }
 
 impl dyn Ingredient {

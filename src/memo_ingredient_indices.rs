@@ -58,6 +58,8 @@ pub trait NewMemoIngredientIndices {
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
         intern_ingredient_memo_types: Option<&mut Arc<MemoTableTypes>>,
+        struct_ingredient_debug_name: Option<&str>,
+        ingredient_debug_name: &str,
     ) -> Self;
 }
 
@@ -71,6 +73,8 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
         _intern_ingredient_memo_types: Option<&mut Arc<MemoTableTypes>>,
+        struct_ingredient_debug_name: Option<&str>,
+        ingredient_debug_name: &str,
     ) -> Self {
         debug_assert!(
             _intern_ingredient_memo_types.is_none(),
@@ -88,8 +92,12 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
         );
 
         for &struct_ingredient in &struct_indices.indices {
-            let memo_ingredient_index =
-                zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
+            let memo_ingredient_index = zalsa.next_memo_ingredient_index(
+                struct_ingredient,
+                ingredient,
+                struct_ingredient_debug_name,
+                ingredient_debug_name,
+            );
             indices[struct_ingredient.as_u32() as usize] = memo_ingredient_index;
 
             let (struct_ingredient, _) = zalsa.lookup_ingredient_mut(struct_ingredient);
@@ -160,12 +168,19 @@ impl NewMemoIngredientIndices for MemoIngredientSingletonIndex {
         ingredient: IngredientIndex,
         memo_type: MemoEntryType,
         intern_ingredient_memo_types: Option<&mut Arc<MemoTableTypes>>,
+        struct_ingredient_debug_name: Option<&str>,
+        ingredient_debug_name: &str,
     ) -> Self {
         let &[struct_ingredient] = &*indices.indices else {
             unreachable!("Attempting to construct struct memo mapping from enum?")
         };
 
-        let memo_ingredient_index = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
+        let memo_ingredient_index = zalsa.next_memo_ingredient_index(
+            struct_ingredient,
+            ingredient,
+            struct_ingredient_debug_name,
+            ingredient_debug_name,
+        );
         let memo_types = intern_ingredient_memo_types.unwrap_or_else(|| {
             let (struct_ingredient, _) = zalsa.lookup_ingredient_mut(struct_ingredient);
             struct_ingredient.memo_table_types_mut()

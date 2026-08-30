@@ -128,6 +128,10 @@ where
         // However, they are never serialized directly.
         false
     }
+
+    fn memo_counts(&self, _zalsa: &Zalsa) -> (u32, Vec<(IngredientIndex, u32)>) {
+        (0, Vec::new())
+    }
 }
 
 impl<C> std::fmt::Debug for FieldIngredientImpl<C>

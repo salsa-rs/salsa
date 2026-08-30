@@ -146,6 +146,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     ) {
         panic!("nothing should ever depend on an accumulator directly")
     }
+
+    fn memo_counts(&self, _zalsa: &Zalsa) -> (u32, Vec<(IngredientIndex, u32)>) {
+        (0, Vec::new())
+    }
 }
 
 impl<A> std::fmt::Debug for IngredientImpl<A>

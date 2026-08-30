@@ -197,14 +197,7 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
         .filter_map(|path| {
             let relative_path = match path.parse::<PathBuf>() {
                 Ok(path) => path,
-                Err(err) => {
-                    Diagnostic::push_error(
-                        db,
-                        input,
-                        Report::new(err).wrap_err(format!("Failed to parse path: {path}")),
-                    );
-                    return None;
-                }
+                Err(err) => match err {},
             };
             let link_path = input.path(db).parent().unwrap().join(relative_path);
             match db.input(link_path) {

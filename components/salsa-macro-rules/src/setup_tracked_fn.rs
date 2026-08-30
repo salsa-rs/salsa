@@ -417,7 +417,8 @@ macro_rules! setup_tracked_fn {
 
                     $zalsa::macro_if! { $needs_interner =>
                         let mut intern_ingredient = <$zalsa::interned::IngredientImpl<$Configuration>>::new(
-                            first_index.successor(0)
+                            first_index.successor(0),
+                            zalsa,
                         );
                     }
 
@@ -436,6 +437,14 @@ macro_rules! setup_tracked_fn {
                             first_index,
                             $zalsa::function::MemoEntryType::of::<$zalsa::function::Memo<$Configuration>>(),
                             intern_ingredient_memo_types,
+                            $zalsa::macro_if! {
+                                if $needs_interner {
+                                    Some(<$Configuration as $zalsa::interned::Configuration>::DEBUG_NAME)
+                                } else {
+                                    None
+                                }
+                            },
+                            <$Configuration as $zalsa::function::Configuration>::DEBUG_NAME,
                         )
                     };
 
