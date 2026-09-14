@@ -118,9 +118,10 @@ pub mod shim {
 
 #[cfg(not(feature = "shuttle"))]
 pub mod shim {
-    pub use parking_lot::{Mutex, MutexGuard};
     pub use std::sync::*;
     pub use std::{thread, thread_local};
+
+    pub use parking_lot::{Mutex, MutexGuard};
 
     pub mod atomic {
         pub use portable_atomic::AtomicU64;

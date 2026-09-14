@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::fmt;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -399,44 +399,29 @@ where
 
     /// Intern data to a unique reference.
     ///
-    /// If `key` is already interned, returns the existing [`Id`] for the interned data without
-    /// invoking `assemble`.
-    ///
-    /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
-    /// interned value. The resulting [`C::Data`] will then be interned.
-    ///
-    /// Note: Using the database within the `assemble` function may result in a deadlock if
-    /// the database ends up trying to intern or allocate a new value.
+    /// If `key` is already interned, returns the existing [`Id`] for the interned data.
     pub fn intern<'db, Key>(
         &'db self,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         key: Key,
-        assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
     ) -> C::Struct<'db>
     where
         Key: Hash,
         C::Fields<'db>: HashEqLike<Key>,
+        Key: Lookup<C::Fields<'db>>,
     {
-        FromId::from_id(self.intern_id(zalsa, zalsa_local, key, assemble))
+        FromId::from_id(self.intern_id(zalsa, zalsa_local, key))
     }
 
     /// Intern data to a unique reference.
     ///
-    /// If `key` is already interned, returns the existing [`Id`] for the interned data without
-    /// invoking `assemble`.
-    ///
-    /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
-    /// interned value. The resulting [`C::Data`] will then be interned.
-    ///
-    /// Note: Using the database within the `assemble` function may result in a deadlock if
-    /// the database ends up trying to intern or allocate a new value.
+    /// If `key` is already interned, returns the existing [`Id`] for the interned data.
     pub fn intern_id<'db, Key>(
         &'db self,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         key: Key,
-        assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
     ) -> crate::Id
     where
         Key: Hash,
@@ -445,6 +430,7 @@ where
         // for<'db> C::Data<'db>: HashEqLike<Key>,
         // so instead we go with this and transmute the lifetime in the `eq` closure
         C::Fields<'db>: HashEqLike<Key>,
+        Key: Lookup<C::Fields<'db>>,
     {
         // Record the current revision as active.
         let current_revision = zalsa.current_revision();
@@ -528,15 +514,7 @@ where
 
         // Fill up the table for the first few revisions without attempting garbage collection.
         if !self.revision_queue.is_primed() {
-            return self.intern_id_cold(
-                key,
-                zalsa,
-                zalsa_local,
-                assemble,
-                shard,
-                shard_index,
-                hash,
-            );
+            return self.intern_id_cold(key, zalsa, zalsa_local, shard, shard_index, hash);
         }
 
         // Otherwise, try to reuse a stale slot.
@@ -545,15 +523,7 @@ where
         let Some((slot, value)) = (unsafe { self.find_reusable_slot(current_revision, shard) })
         else {
             // If we could not find a stale slot, we are forced to allocate a new one.
-            return self.intern_id_cold(
-                key,
-                zalsa,
-                zalsa_local,
-                assemble,
-                shard,
-                shard_index,
-                hash,
-            );
+            return self.intern_id_cold(key, zalsa, zalsa_local, shard, shard_index, hash);
         };
 
         // Record the durability of the current query on the interned value.
@@ -567,7 +537,7 @@ where
         // Assemble and hash the replacement before mutating the existing slot. Both operations
         // can invoke user code and panic.
         // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
-        let new_fields = unsafe { self.to_internal_data(assemble(slot.new_id, key)) };
+        let new_fields = unsafe { self.to_internal_data(key.into_owned()) };
 
         // SAFETY: We hold the lock for the shard containing the value.
         let old_hash = self.hasher.hash_one(unsafe { &*value.fields.get() });
@@ -663,7 +633,6 @@ where
         key: Key,
         zalsa: &Zalsa,
         zalsa_local: &ZalsaLocal,
-        assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
         shard: &mut IngredientShard,
         shard_index: usize,
         hash: u64,
@@ -671,6 +640,7 @@ where
     where
         Key: Hash,
         C::Fields<'db>: HashEqLike<Key>,
+        Key: Lookup<C::Fields<'db>>,
     {
         let current_revision = zalsa.current_revision();
 
@@ -693,7 +663,7 @@ where
                 }),
             },
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
-            fields: UnsafeCell::new(unsafe { self.to_internal_data(assemble(id, key)) }),
+            fields: UnsafeCell::new(unsafe { self.to_internal_data(key.into_owned()) }),
             // SAFETY: We only ever access the memos of a value that we allocated through
             // our `MemoTableTypes`.
             memos: UnsafeCell::new(unsafe { MemoTable::new(self.memo_table_types()) }),
@@ -1413,7 +1383,6 @@ impl RevisionQueue {
 
 /// A trait for types that hash and compare like `O`.
 pub trait HashEqLike<O> {
-    fn hash<H: Hasher>(&self, h: &mut H);
     fn eq(&self, data: &O) -> bool;
 }
 
@@ -1445,10 +1414,6 @@ impl<T> HashEqLike<T> for T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h);
-    }
-
     fn eq(&self, data: &T) -> bool {
         self == data
     }
@@ -1458,10 +1423,6 @@ impl<T> HashEqLike<T> for &T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(*self, &mut *h);
-    }
-
     fn eq(&self, data: &T) -> bool {
         **self == *data
     }
@@ -1471,10 +1432,6 @@ impl<T> HashEqLike<&T> for T
 where
     T: Hash + Eq,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h);
-    }
-
     fn eq(&self, data: &&T) -> bool {
         *self == **data
     }
@@ -1494,9 +1451,6 @@ where
     T: ?Sized + Hash + Eq,
     Box<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
     fn eq(&self, data: &&T) -> bool {
         **self == **data
     }
@@ -1517,9 +1471,6 @@ where
     T: ?Sized + Hash + Eq,
     Arc<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(&**self, &mut *h)
-    }
     fn eq(&self, data: &&T) -> bool {
         **self == **data
     }
@@ -1603,20 +1554,12 @@ impl Lookup<compact_str::CompactString> for Cow<'_, str> {
 }
 
 impl HashEqLike<&str> for String {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
-
     fn eq(&self, data: &&str) -> bool {
         self == *data
     }
 }
 
 impl<A, T: Hash + Eq + PartialEq<A>> HashEqLike<&[A]> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &&[A]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
@@ -1629,10 +1572,6 @@ impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A]
 }
 
 impl<const N: usize, A, T: Hash + Eq + PartialEq<A>> HashEqLike<[A; N]> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &[A; N]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
@@ -1647,10 +1586,6 @@ impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<
 }
 
 impl HashEqLike<&Path> for PathBuf {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &&Path) -> bool {
         self == data
     }
@@ -1663,10 +1598,6 @@ impl Lookup<PathBuf> for &Path {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, T>> for T {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, h);
-    }
-
     fn eq(&self, data: &Cow<'_, T>) -> bool {
         self == data.as_ref()
     }
@@ -1679,10 +1610,6 @@ impl<T: Clone> Lookup<T> for Cow<'_, T> {
 }
 
 impl HashEqLike<Cow<'_, str>> for String {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_str().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, str>) -> bool {
         self.as_str() == data.as_ref()
     }
@@ -1695,10 +1622,6 @@ impl Lookup<String> for Cow<'_, str> {
 }
 
 impl HashEqLike<Cow<'_, Path>> for PathBuf {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_path().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, Path>) -> bool {
         self.as_path() == data.as_ref()
     }
@@ -1711,10 +1634,6 @@ impl Lookup<PathBuf> for Cow<'_, Path> {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Box<[T]> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_ref().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, [T]>) -> bool {
         self.as_ref() == data.as_ref()
     }
@@ -1727,10 +1646,6 @@ impl<T: Clone> Lookup<Box<[T]>> for Cow<'_, [T]> {
 }
 
 impl<T: Hash + Eq + Clone> HashEqLike<Cow<'_, [T]>> for Vec<T> {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_slice().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, [T]>) -> bool {
         self.as_slice() == data.as_ref()
     }

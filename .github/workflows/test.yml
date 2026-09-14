@@ -79,8 +79,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Miri
-        uses: dtolnay/rust-toolchain@miri
+        uses: dtolnay/rust-toolchain@master
         id: rust-toolchain
+        with:
+          toolchain: nightly-2026-09-09
+          components: miri, rust-src
       - name: Select Miri toolchain
         run: rustup override set "${{ steps.rust-toolchain.outputs.name }}"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

@@ -48,10 +48,6 @@ impl Lookup<BadHash> for PanickingLookup {
 }
 
 impl HashEqLike<PanickingLookup> for BadHash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_i16(0);
-    }
-
     fn eq(&self, data: &PanickingLookup) -> bool {
         self.0 == data.0
     }
