@@ -25,6 +25,17 @@ pub trait EvictionPolicy: Send + Sync {
     /// Set the maximum capacity.
     fn set_capacity(&mut self, capacity: usize);
 
+    /// Whether [`Self::set_capacity`] does anything for this policy.
+    ///
+    /// [`HasCapacity`] answers the same question, but only at compile time, which
+    /// is useless once the ingredient is behind `dyn Ingredient`. Callers that
+    /// reach an ingredient dynamically (by name, or by walking the whole
+    /// registry) need to tell "capacity applied" from "this query has no LRU at
+    /// all", and a no-op `set_capacity` cannot report that difference.
+    fn has_tunable_capacity(&self) -> bool {
+        false
+    }
+
     /// Iterate over items that should be evicted.
     ///
     /// Called once per revision during `reset_for_new_revision`.

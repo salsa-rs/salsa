@@ -47,6 +47,35 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
         zalsa_mut.evict_lru();
     }
 
+    /// Retune the LRU capacity of every tracked function named `name`, returning
+    /// how many were retuned.
+    ///
+    /// This is the runtime counterpart of the `lru = N` attribute. The generated
+    /// `set_lru_capacity` is unreachable for associated tracked functions, so
+    /// addressing queries by `debug_name` is the only route that works for them.
+    /// Zero means the name matched no tunable query — treat it as an error in the
+    /// caller's configuration, not as a successful no-op.
+    ///
+    /// Note that `capacity == 0` DISABLES eviction for the matched queries; the
+    /// smallest cache that still evicts is `1`.
+    ///
+    /// **WARNING:** Just like an ordinary write, this method triggers
+    /// cancellation. If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    fn set_lru_capacity_by_name(&mut self, name: &str, capacity: usize) -> usize {
+        let zalsa_mut = self.zalsa_mut();
+        zalsa_mut.set_lru_capacity_by_name(name, capacity)
+    }
+
+    /// `debug_name` of every tracked function that has a tunable LRU capacity.
+    ///
+    /// Lets a caller discover the tunable set instead of hardcoding query names
+    /// that upstream may rename or stop capping.
+    fn lru_capacity_names(&self) -> Vec<&'static str> {
+        self.zalsa().lru_ingredient_names()
+    }
+
     /// A "synthetic write" causes the system to act *as though* some
     /// input of durability `durability` has changed, triggering a new revision.
     /// This is mostly useful for profiling scenarios.

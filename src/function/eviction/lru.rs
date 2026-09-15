@@ -43,11 +43,19 @@ impl EvictionPolicy for Lru {
         }
     }
 
+    /// Note the asymmetry: `capacity == 0` turns eviction OFF (the cache becomes
+    /// unbounded and the tracking set is dropped), it does NOT mean "keep
+    /// nothing". The smallest cache that still evicts is `1`. Anything driving
+    /// this from a config value or a positive control has to know that.
     fn set_capacity(&mut self, capacity: usize) {
         self.capacity = NonZeroUsize::new(capacity);
         if self.capacity.is_none() {
             self.set.get_mut().clear();
         }
+    }
+
+    fn has_tunable_capacity(&self) -> bool {
+        true
     }
 
     fn for_each_evicted(&mut self, mut cb: impl FnMut(Id)) {
