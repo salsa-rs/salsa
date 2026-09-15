@@ -169,16 +169,14 @@ where
     ) -> &'db Memo<C> {
         // no provisional value; create/insert/return initial provisional value
         match C::CYCLE_STRATEGY {
-            // SAFETY: We do not access the query stack reentrantly.
-            CycleRecoveryStrategy::Panic => unsafe {
-                zalsa_local.with_query_stack_unchecked(|stack| {
-                    panic!(
-                        "dependency graph cycle when querying {database_key_index:#?}, \
-                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                    Query stack:\n{stack:#?}",
-                    );
-                })
-            },
+            CycleRecoveryStrategy::Panic => {
+                let stack = zalsa_local.query_stack_keys();
+                panic!(
+                    "dependency graph cycle when querying {database_key_index:#?}, \
+                set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                Query stack:\n{stack:#?}",
+                );
+            }
             CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
                 let cancellation_count = zalsa.runtime().cancellation_count();
                 // check if there's a provisional value for this query
