@@ -5,7 +5,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::panic::UnwindSafe;
 
-use accumulated::{Accumulated, AnyAccumulated};
+use accumulated::Accumulated;
 
 use crate::function::VerifyResult;
 use crate::hash::{FxHashSet, FxIndexSet};
@@ -26,9 +26,7 @@ pub trait Accumulator: Send + Sync + Any + Sized + UnwindSafe {
     const DEBUG_NAME: &'static str;
 
     /// Accumulate an instance of this in the database for later retrieval.
-    fn accumulate<Db>(self, db: &Db)
-    where
-        Db: ?Sized + Database;
+    fn accumulate(self, db: &dyn Database);
 }
 
 pub struct JarImpl<A: Accumulator> {
