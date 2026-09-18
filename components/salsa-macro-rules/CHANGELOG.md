@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.28.2...salsa-macro-rules-v0.28.3) - 2026-09-18
+
+### Other
+
+- Remove assemble support from interneds ([#1314](https://github.com/salsa-rs/salsa/pull/1314))
+
 ## [0.28.2](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.28.1...salsa-macro-rules-v0.28.2) - 2026-08-01
 
 ### Other
