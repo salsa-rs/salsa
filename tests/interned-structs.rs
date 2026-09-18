@@ -372,3 +372,23 @@ fn interning_compact_string_with_cow() {
     let s4 = InternedCompactString::new(&db, different);
     assert_ne!(s1, s4);
 }
+
+#[cfg(feature = "triomphe")]
+#[salsa::interned(debug)]
+struct InternedTriompheArc<'db> {
+    data: triomphe::Arc<str>,
+}
+
+#[cfg(feature = "triomphe")]
+#[test]
+fn interning_triomphe_arc_with_str() {
+    let db = salsa::DatabaseImpl::new();
+
+    let borrowed = InternedTriompheArc::new(&db, "Hello");
+    let owned = InternedTriompheArc::new(&db, triomphe::Arc::<str>::from("Hello"));
+    let different = InternedTriompheArc::new(&db, "World");
+
+    assert_eq!(&**borrowed.data(&db), "Hello");
+    assert_eq!(borrowed, owned);
+    assert_ne!(borrowed, different);
+}
