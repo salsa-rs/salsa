@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.4](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.3...salsa-v0.28.4) - 2026-09-18
+
+### Fixed
+
+- restore builds with optional interning features ([#1322](https://github.com/salsa-rs/salsa/pull/1322))
+
 ## [0.28.3](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.2...salsa-v0.28.3) - 2026-09-18
 
 ### Changed
