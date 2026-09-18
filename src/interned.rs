@@ -1492,9 +1492,6 @@ where
     T: ?Sized + Hash + Eq,
     triomphe::Arc<T>: From<&'a T>,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(&**self, &mut *h)
-    }
     fn eq(&self, data: &&T) -> bool {
         **self == **data
     }
@@ -1526,10 +1523,6 @@ impl Lookup<compact_str::CompactString> for &str {
 
 #[cfg(feature = "compact_str")]
 impl HashEqLike<&str> for compact_str::CompactString {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
-
     fn eq(&self, data: &&str) -> bool {
         self == *data
     }
@@ -1537,10 +1530,6 @@ impl HashEqLike<&str> for compact_str::CompactString {
 
 #[cfg(feature = "compact_str")]
 impl HashEqLike<Cow<'_, str>> for compact_str::CompactString {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        self.as_str().hash(h);
-    }
-
     fn eq(&self, data: &Cow<'_, str>) -> bool {
         self.as_str() == data.as_ref()
     }
