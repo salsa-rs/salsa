@@ -82,7 +82,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         id: rust-toolchain
         with:
-          toolchain: nightly-2026-09-09
+          toolchain: nightly-2026-09-12
           components: miri, rust-src
       - name: Select Miri toolchain
         run: rustup override set "${{ steps.rust-toolchain.outputs.name }}"
