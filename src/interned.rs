@@ -296,7 +296,7 @@ where
         assert!(
             C::REVISIONS == IMMORTAL
                 || self.lru.last_interned_at.load() >= current_revision
-                || !is_reusable::<C>(self.durability.load()),
+                || !self.durability.is_low(),
             "Data for reusable `{}` was not interned in the latest revision for its durability.",
             C::DEBUG_NAME,
         );
