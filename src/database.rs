@@ -411,7 +411,17 @@ mod memory_usage {
 
     impl dyn Database {
         /// Returns memory usage information about ingredients in the database.
-        pub fn memory_usage(&self) -> DatabaseInfo {
+        ///
+        /// **WARNING:** Just like an ordinary write, this method triggers
+        /// cancellation. It blocks until all other database handles are dropped,
+        /// which can deadlock if the current thread owns another handle.
+        pub fn memory_usage(&mut self) -> DatabaseInfo {
+            // Measuring fields and memos requires exclusive access to their storage.
+            // `Database::trigger_cancellation` can be overridden by safe downstream code,
+            // so it cannot provide this safety guarantee. Call `zalsa_mut` directly, relying
+            // on the unsafe `ZalsaDatabase` contract to cancel and drain other handles.
+            let _ = self.zalsa_mut();
+
             let mut queries = HashMap::new();
             let mut structs = Vec::new();
             let mut page_infos = self.zalsa().table().page_infos();
