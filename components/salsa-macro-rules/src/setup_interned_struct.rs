@@ -271,8 +271,6 @@ macro_rules! setup_interned_struct {
                     id: $zalsa::Id,
                     current_revision: $zalsa::Revision,
                 ) -> $zalsa::MemoTableWithTypes<'_> {
-                    // The slot must remain live while references to its memos exist.
-                    <$Configuration>::ingredient(zalsa).assert_validated(zalsa, id);
                     // SAFETY: Guaranteed by caller.
                     unsafe { zalsa.table().memos::<$zalsa_struct::Value<$Configuration>>(id, current_revision) }
                 }
