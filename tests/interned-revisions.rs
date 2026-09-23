@@ -485,6 +485,34 @@ fn reuse_discards_memos_for_old_generation() {
 }
 
 #[test]
+fn enumerated_entries_remain_live_during_interning() {
+    use salsa::plumbing::{AsId, ZalsaDatabase};
+
+    #[salsa::tracked(returns(copy))]
+    fn intern(db: &dyn Database, input: Input) -> Interned<'_> {
+        Interned::new(db, BadHash(input.field1(db)))
+    }
+
+    let mut db = common::LoggerDatabase::default();
+    let first_id = intern(&db, Input::new(&db, 0)).as_id();
+
+    // Age the first value without collecting it. Re-interning the same other value
+    // records active revisions without needing to reuse a slot.
+    for _ in 0..3 {
+        db.synthetic_write(Durability::LOW);
+        Interned::new(&db, BadHash(999));
+    }
+
+    let entry = Interned::ingredient(db.zalsa())
+        .entries(db.zalsa())
+        .find(|entry| entry.key().key_index() == first_id)
+        .unwrap();
+
+    let replacement = intern(&db, Input::new(&db, 1));
+    assert_ne!(entry.key().key_index().index(), replacement.as_id().index());
+}
+
+#[test]
 fn test_reuse_indirect() {
     #[salsa::tracked(returns(copy))]
     fn intern(db: &dyn Database, input: Input, value: usize) -> Interned<'_> {

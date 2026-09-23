@@ -190,6 +190,8 @@ macro_rules! setup_tracked_fn {
                             id: $zalsa::Id,
                             current_revision: $zalsa::Revision,
                         ) -> $zalsa::MemoTableWithTypes<'_> {
+                            // The slot must remain live while references to its memos exist.
+                            $Configuration::intern_ingredient_(zalsa).data(zalsa, id);
                             // SAFETY: Guaranteed by caller.
                             unsafe { zalsa.table().memos::<$zalsa::interned::Value<$Configuration>>(id, current_revision) }
                         }

@@ -941,7 +941,7 @@ where
     pub fn data<'db>(&'db self, zalsa: &'db Zalsa, id: Id) -> &'db C::Fields<'db> {
         let value = zalsa.table().get::<Value<C>>(id);
 
-        debug_assert!(
+        assert!(
             {
                 let _shard = self.shards[value.shard as usize].lock();
 
@@ -1010,7 +1010,12 @@ where
                     unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
 
                 // SAFETY: We hold the lock for the shard containing the value.
-                unsafe { (*value.lru.metadata.get()).id }
+                let metadata = unsafe { &mut *value.lru.metadata.get() };
+
+                // Entries expose borrowed fields and memos, so keep the slot alive for this
+                // revision. Preserve the maximum revision used by values interned outside queries.
+                metadata.last_interned_at = metadata.last_interned_at.max(zalsa.current_revision());
+                metadata.id
             } else {
                 // SAFETY: The caller guarantees the shard is locked or the database's
                 // storage is exclusively accessible, so the metadata cannot be modified.
