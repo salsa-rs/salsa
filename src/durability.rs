@@ -140,11 +140,6 @@ impl AtomicDurability {
         Durability(DurabilityVal::from(self.0.load(Ordering::Acquire)))
     }
 
-    #[inline]
-    pub(crate) fn is_low(&self) -> bool {
-        self.0.load(Ordering::Acquire) == DurabilityVal::Low as u8
-    }
-
     pub(crate) fn store(&self, durability: Durability) {
         self.0.store(durability.0 as u8, Ordering::Release);
     }
