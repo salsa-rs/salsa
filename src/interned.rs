@@ -287,21 +287,6 @@ impl<C> Value<C>
 where
     C: Configuration,
 {
-    /// Assert that this slot cannot be reused while its fields or memos are borrowed.
-    #[inline]
-    fn assert_validated(&self, current_revision: Revision) {
-        // Either acquire load independently establishes that initialization and memo cleanup
-        // finished: a current revision prevents reuse until the next revision, and a
-        // non-reusable durability prevents reuse permanently. No atomic snapshot is needed.
-        assert!(
-            C::REVISIONS == IMMORTAL
-                || self.lru.last_interned_at.load() >= current_revision
-                || !is_reusable::<C>(self.durability.load()),
-            "Data for reusable `{}` was not interned in the latest revision for its durability.",
-            C::DEBUG_NAME,
-        );
-    }
-
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
     pub fn fields<'db>(&'db self) -> &'db C::Fields<'db> {
@@ -796,7 +781,7 @@ where
                 }
 
                 // We should never reuse a value that was accessed in the current revision.
-                debug_assert!(last_interned_at < current_revision);
+                assert!(last_interned_at < current_revision);
 
                 // SAFETY: We hold the shard lock, which protects the ID.
                 let old_id = unsafe { *entry_ref.id.get() };
@@ -986,8 +971,10 @@ where
                     // SAFETY: `value.shard` is guaranteed to be in-bounds for `self.shards`.
                     unsafe { self.shards.get_unchecked(value.shard as usize) }.lock();
 
-                // Entries expose borrowed fields and memos, so keep the slot alive for this
-                // revision. Preserve the maximum revision used by values interned outside queries.
+                // Entries expose borrowed fields, so keep the slot alive for this revision.
+                // Preserve the maximum revision used by values interned outside queries.
+                // TODO: Ideally, enumeration would keep entries alive without marking them as
+                // interned in this revision, which can hide missing dependency validation.
                 let last_interned_at = value.lru.last_interned_at.load();
                 value
                     .lru
@@ -1265,6 +1252,26 @@ where
     #[inline(always)]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         self.memos.get_mut()
+    }
+}
+
+impl<C> Value<C>
+where
+    C: Configuration,
+{
+    /// Assert that this slot cannot be reused while its fields or memos are borrowed.
+    #[inline]
+    fn assert_validated(&self, current_revision: Revision) {
+        // Either acquire load independently establishes that initialization and memo cleanup
+        // finished: a current revision prevents reuse until the next revision, and a
+        // non-reusable durability prevents reuse permanently. No atomic snapshot is needed.
+        assert!(
+            C::REVISIONS == IMMORTAL
+                || self.lru.last_interned_at.load() >= current_revision
+                || !is_reusable::<C>(self.durability.load()),
+            "Data for reusable `{}` was not interned in the latest revision for its durability.",
+            C::DEBUG_NAME,
+        );
     }
 }
 
