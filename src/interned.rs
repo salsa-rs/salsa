@@ -920,6 +920,7 @@ where
     }
 
     /// Lookup the data for an interned value based on its ID.
+    #[inline]
     pub fn data<'db>(&'db self, zalsa: &'db Zalsa, id: Id) -> &'db C::Fields<'db> {
         let value = zalsa.table().get::<Value<C>>(id);
         value.assert_validated(zalsa.current_revision());
@@ -933,6 +934,7 @@ where
     /// Lookup the fields from an interned struct.
     ///
     /// Note that this is not "leaking" since no dependency edge is required.
+    #[inline]
     pub fn fields<'db>(&'db self, zalsa: &'db Zalsa, s: C::Struct<'db>) -> &'db C::Fields<'db> {
         self.data(zalsa, AsId::as_id(&s))
     }
