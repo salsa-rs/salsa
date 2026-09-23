@@ -940,7 +940,20 @@ where
     /// Lookup the data for an interned value based on its ID.
     pub fn data<'db>(&'db self, zalsa: &'db Zalsa, id: Id) -> &'db C::Fields<'db> {
         let value = zalsa.table().get::<Value<C>>(id);
+        self.assert_validated_value(zalsa, id, value);
 
+        // SAFETY: Reusable interned values are only exposed if they have been validated
+        // in the current revision, as checked by the assertion above, which ensures that
+        // they are not reused while being accessed. Non-reusable values are never reused.
+        unsafe { Self::from_internal_data(&*value.fields.get()) }
+    }
+
+    /// Assert that the interned slot can be read without being reused in this revision.
+    pub fn assert_validated(&self, zalsa: &Zalsa, id: Id) {
+        self.assert_validated_value(zalsa, id, zalsa.table().get::<Value<C>>(id));
+    }
+
+    fn assert_validated_value(&self, zalsa: &Zalsa, id: Id, value: &Value<C>) {
         assert!(
             {
                 let _shard = self.shards[value.shard as usize].lock();
@@ -961,11 +974,6 @@ where
             "Data for reusable `{database_key:?}` was not interned in the latest revision for its durability.",
             database_key = self.database_key_index(id),
         );
-
-        // SAFETY: Reusable interned values are only exposed if they have been validated
-        // in the current revision, as checked by the assertion above, which ensures that
-        // they are not reused while being accessed. Non-reusable values are never reused.
-        unsafe { Self::from_internal_data(&*value.fields.get()) }
     }
 
     /// Lookup the fields from an interned struct.
