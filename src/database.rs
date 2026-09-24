@@ -428,7 +428,9 @@ mod memory_usage {
             let page_capacity = self.zalsa().table().page_capacity();
 
             for input_ingredient in self.zalsa().ingredients() {
-                let Some(input_info) = input_ingredient.memory_usage(self) else {
+                // SAFETY: The ingredient belongs to this database. Calling `zalsa_mut`
+                // drained all other handles, and we retain exclusive access while measuring.
+                let Some(input_info) = (unsafe { input_ingredient.memory_usage(self) }) else {
                     continue;
                 };
 
