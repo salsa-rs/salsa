@@ -61,7 +61,8 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
-    /// Loads a memo without validating or locking its input slot.
+    /// Returns the cached memo for `input`, relying on the caller to prevent
+    /// its storage from being reused or freed.
     ///
     /// # Safety
     ///
