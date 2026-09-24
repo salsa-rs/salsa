@@ -139,9 +139,7 @@ macro_rules! setup_interned_struct {
                 $($field_ty: $zalsa::HashEqLike<$indexed_ty>),*
                 {
 
-                fn hash<H: ::std::hash::Hasher>(&self, h: &mut H) {
-                    $($zalsa::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
-                }
+
 
                 fn eq(&self, data: &StructKey<$db_lt, $($indexed_ty),*>) -> bool {
                     ($($zalsa::HashEqLike::<$indexed_ty>::eq(&self.$field_index, &data.$field_index) && )* true)
@@ -313,7 +311,7 @@ macro_rules! setup_interned_struct {
                 {
                     let (zalsa, zalsa_local) = db.zalsas();
                     $Configuration::ingredient(zalsa).intern(zalsa, zalsa_local,
-                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()), |_, data| $zalsa::Lookup::into_owned(data))
+                        StructKey::<$db_lt>($($field_id,)* ::std::marker::PhantomData::default()))
                 }
 
                 $(

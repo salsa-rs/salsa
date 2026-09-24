@@ -111,7 +111,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         panic!("nothing should ever depend on an accumulator directly")
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         _edge: QueryEdge,

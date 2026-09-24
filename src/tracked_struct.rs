@@ -995,7 +995,7 @@ where
         panic!("nothing should ever depend on a tracked struct directly")
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         _edge: QueryEdge,
@@ -1053,11 +1053,14 @@ where
 
     /// Returns memory usage information about any tracked structs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+    unsafe fn memory_usage(
+        &self,
+        db: &dyn crate::Database,
+    ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
-            // has the correct type.
+            // has the correct type. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -1162,7 +1165,8 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type.
+    /// The `MemoTable` must belong to a `Value` of the correct type. The caller must
+    /// ensure exclusive access to the database's storage for the duration of this call.
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees this is the correct types table.
@@ -1173,7 +1177,8 @@ where
             size_of_metadata: mem::size_of::<Self>() - mem::size_of::<C::Fields<'static>>(),
             size_of_fields: mem::size_of::<C::Fields<'static>>(),
             heap_size_of_fields: heap_size,
-            memos: memos.memory_usage(),
+            // SAFETY: The caller guarantees exclusive access to the database's storage.
+            memos: unsafe { memos.memory_usage() },
         }
     }
 }
@@ -1192,8 +1197,13 @@ where
         // is no danger of a race when deleting a tracked struct.
         // SAFETY: `this` is a valid pointer given the caller obligation
         unsafe { acquire_read_lock(&(*this).updated_at, current_revision) };
-        // SAFETY: `this` is a valid pointer given the caller obligation and we have acquired a read
-        // lock, so `values` is not aliased
+        // SAFETY: `this` is valid, and the read lock prevents slot reuse and deletion.
+        unsafe { Self::memos_unchecked(this) }
+    }
+
+    #[inline(always)]
+    unsafe fn memos_unchecked(this: *const Self) -> *const crate::table::memo::MemoTable {
+        // SAFETY: The caller provides an initialized slot and prevents reuse and deletion.
         unsafe { &raw const (*this).memos }
     }
 

@@ -431,8 +431,14 @@ impl<'a> MemoTableWithTypes<'a> {
         Some(unsafe { ErasedMemo::from_raw_parts(memo, type_.to_dyn_fn, type_.type_id) })
     }
 
+    /// Returns memory usage information about the memos in this table.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure exclusive access to the database's storage for the
+    /// duration of this call, so memos cannot be replaced or freed during traversal.
     #[cfg(feature = "salsa_unstable")]
-    pub(crate) fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
+    pub(crate) unsafe fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
         let mut memory_usage = Vec::new();
         for (index, memo) in self.memos.memos.iter().enumerate() {
             let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
@@ -443,7 +449,8 @@ impl<'a> MemoTableWithTypes<'a> {
                 continue;
             };
 
-            // SAFETY: The `TypeId` is asserted in `insert()`.
+            // SAFETY: The `TypeId` is asserted in `insert()`. The caller guarantees
+            // exclusive database access, so the memo remains valid while we measure it.
             let dyn_memo: &dyn Memo = unsafe { (type_.to_dyn_fn)(memo).as_ref() };
             memory_usage.push(dyn_memo.memory_usage());
         }

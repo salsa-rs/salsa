@@ -58,7 +58,12 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     /// tree, as most other fine-grained dependencies are covered by the inputs.
     ///
     /// Note that any ingredients returned by this function must be persistable.
-    fn collect_minimum_serialized_edges(
+    ///
+    /// # Safety
+    ///
+    /// The caller must prevent database writes throughout the traversal, including query
+    /// execution that can reuse slots or modify memos. Concurrent read-only access is allowed.
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         zalsa: &Zalsa,
         edge: QueryEdge,
@@ -167,8 +172,17 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
 
     /// Returns memory usage information about any instances of the ingredient,
     /// if applicable.
+    ///
+    /// # Safety
+    ///
+    /// The database must be the one that owns this ingredient. The caller must ensure
+    /// exclusive access to its storage for the duration of this call: no query
+    /// execution or mutation may overlap the traversal.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, _db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+    unsafe fn memory_usage(
+        &self,
+        _db: &dyn crate::Database,
+    ) -> Option<Vec<crate::database::SlotInfo>> {
         None
     }
 
@@ -191,8 +205,8 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
     ///
     /// # Safety
     ///
-    /// While this method takes an immutable reference to the database, it can only be called when a
-    /// the serializer has exclusive access to the database.
+    /// While this method takes an immutable reference to the database, the serializer must hold
+    /// exclusive access to its storage until the callback returns.
     // See <https://github.com/dtolnay/erased-serde/issues/113> for why this callback signature is necessary, instead
     // of providing an `erased_serde::Serializer` directly.
     #[cfg(feature = "persistence")]

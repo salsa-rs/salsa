@@ -177,11 +177,10 @@ mod persistence {
     impl dyn Database {
         /// Returns a type implementing [`serde::Serialize`], that can be used to serialize the
         /// current state of the database.
+        ///
+        /// Cancels other workers and waits for their database handles to be dropped.
         pub fn as_serialize(&mut self) -> impl serde::Serialize + '_ {
-            SerializeDatabase {
-                runtime: self.zalsa().runtime(),
-                ingredients: SerializeIngredients(self.zalsa()),
-            }
+            SerializeDatabase::new(self)
         }
 
         /// Deserialize the database using a [`serde::Deserializer`].
@@ -198,11 +197,22 @@ mod persistence {
     #[derive(serde::Serialize)]
     #[serde(rename = "Database")]
     pub struct SerializeDatabase<'db> {
-        pub runtime: &'db Runtime,
-        pub ingredients: SerializeIngredients<'db>,
+        runtime: &'db Runtime,
+        ingredients: SerializeIngredients<'db>,
     }
 
-    pub struct SerializeIngredients<'db>(pub &'db Zalsa);
+    impl<'db> SerializeDatabase<'db> {
+        /// Acquires exclusive storage access for the lifetime of the serializer.
+        fn new(db: &'db mut dyn Database) -> Self {
+            let zalsa = db.zalsa_mut();
+            Self {
+                runtime: zalsa.runtime(),
+                ingredients: SerializeIngredients(zalsa),
+            }
+        }
+    }
+
+    struct SerializeIngredients<'db>(&'db Zalsa);
 
     impl serde::Serialize for SerializeIngredients<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -242,7 +252,8 @@ mod persistence {
             let mut result = None;
             let mut serializer = Some(serializer);
 
-            // SAFETY: `<dyn Database>::as_serialize` take `&mut self`.
+            // SAFETY: `SerializeDatabase::new` obtains exclusive storage access through `zalsa_mut`
+            // and retains that borrow throughout serialization.
             unsafe {
                 self.0.serialize(self.1, &mut |serialize| {
                     let serializer = serializer.take().expect(
@@ -411,14 +422,26 @@ mod memory_usage {
 
     impl dyn Database {
         /// Returns memory usage information about ingredients in the database.
-        pub fn memory_usage(&self) -> DatabaseInfo {
+        ///
+        /// **WARNING:** Just like an ordinary write, this method triggers
+        /// cancellation. It blocks until all other database handles are dropped,
+        /// which can deadlock if the current thread owns another handle.
+        pub fn memory_usage(&mut self) -> DatabaseInfo {
+            // Measuring fields and memos requires exclusive access to their storage.
+            // `Database::trigger_cancellation` can be overridden by safe downstream code,
+            // so it cannot provide this safety guarantee. Call `zalsa_mut` directly, relying
+            // on the unsafe `ZalsaDatabase` contract to cancel and drain other handles.
+            let _ = self.zalsa_mut();
+
             let mut queries = HashMap::new();
             let mut structs = Vec::new();
             let mut page_infos = self.zalsa().table().page_infos();
             let page_capacity = self.zalsa().table().page_capacity();
 
             for input_ingredient in self.zalsa().ingredients() {
-                let Some(input_info) = input_ingredient.memory_usage(self) else {
+                // SAFETY: The ingredient belongs to this database. Calling `zalsa_mut`
+                // drained all other handles, and we retain exclusive access while measuring.
+                let Some(input_info) = (unsafe { input_ingredient.memory_usage(self) }) else {
                     continue;
                 };
 

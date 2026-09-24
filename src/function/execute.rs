@@ -143,22 +143,22 @@ where
         // fixpoint queries: a memo from an abandoned cancellation epoch in this revision doesn't
         // seed the retry, while a memo from an older revision remains useful for backdating and
         // output bookkeeping. Cancellation counts are only comparable within a revision.
-        if let Some(old_memo) = opt_old_memo {
-            if old_memo.header.verified_at.load() == current_revision {
-                match old_memo.header.previous_iteration(
-                    database_key_index,
-                    cancellation_count,
-                    old_memo.value.is_some(),
-                ) {
-                    Some(previous_iteration) => {
-                        if previous_iteration.reuse_as_provisional {
-                            last_provisional_memo_opt = Some(old_memo);
-                        }
-
-                        iteration = previous_iteration.iteration;
+        if let Some(old_memo) = opt_old_memo
+            && old_memo.header.verified_at.load() == current_revision
+        {
+            match old_memo.header.previous_iteration(
+                database_key_index,
+                cancellation_count,
+                old_memo.value.is_some(),
+            ) {
+                Some(previous_iteration) => {
+                    if previous_iteration.reuse_as_provisional {
+                        last_provisional_memo_opt = Some(old_memo);
                     }
-                    None => opt_old_memo = None,
+
+                    iteration = previous_iteration.iteration;
                 }
+                None => opt_old_memo = None,
             }
         }
 

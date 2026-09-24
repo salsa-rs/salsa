@@ -126,6 +126,7 @@ impl Macro {
         };
 
         let mut inner_fn = item.clone();
+        inner_fn.attrs.retain_mut(fn_util::retain_body_attr);
         inner_fn.vis = syn::Visibility::Inherited;
         inner_fn.sig.ident = self.hygiene.ident("inner");
 
@@ -138,16 +139,16 @@ impl Macro {
 
         let function_type = function_type(&item);
 
-        if is_specifiable {
-            match function_type {
-                FunctionType::Constant | FunctionType::RequiresInterning => {
-                    return Err(syn::Error::new_spanned(
-                        self.args.specify.as_ref().unwrap(),
-                        "only functions with a single salsa struct as their input can be specified",
-                    ));
-                }
-                FunctionType::SalsaStruct => {}
-            }
+        if let Some(specify) = &self.args.specify
+            && matches!(
+                function_type,
+                FunctionType::Constant | FunctionType::RequiresInterning
+            )
+        {
+            return Err(syn::Error::new_spanned(
+                specify,
+                "only functions with a single salsa struct as their input can be specified",
+            ));
         }
 
         if let (Some(_), Some(token)) = (&self.args.lru, &self.args.specify) {
@@ -400,13 +401,13 @@ pub fn check_db_argument<'arg>(
                 return Err(syn::Error::new(typed.ty.span(), tykind_error_msg));
             };
 
-            if let Some(lt) = explicit_lt {
-                if ref_type.lifetime.is_none() {
-                    return Err(syn::Error::new_spanned(
-                        ref_type.and_token,
-                        format!("must have a `{}` lifetime", lt.lifetime.to_token_stream()),
-                    ));
-                }
+            if let Some(lt) = explicit_lt
+                && ref_type.lifetime.is_none()
+            {
+                return Err(syn::Error::new_spanned(
+                    ref_type.and_token,
+                    format!("must have a `{}` lifetime", lt.lifetime.to_token_stream()),
+                ));
             }
 
             let extract_db_path = || -> Result<&'arg syn::Path, Span> {

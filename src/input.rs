@@ -318,7 +318,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("nothing should ever depend on an input struct directly")
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         _edge: QueryEdge,
@@ -356,11 +356,14 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     /// Returns memory usage information about any inputs.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+    unsafe fn memory_usage(
+        &self,
+        db: &dyn crate::Database,
+    ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
             // SAFETY: The memo table belongs to a value that we allocated, so it
-            // has the correct type.
+            // has the correct type. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -448,7 +451,8 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type.
+    /// The `MemoTable` must belong to a `Value` of the correct type. The caller must
+    /// ensure exclusive access to the database's storage for the duration of this call.
     #[cfg(feature = "salsa_unstable")]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(&self.fields);
@@ -460,7 +464,8 @@ where
             size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields>(),
             size_of_fields: std::mem::size_of::<C::Fields>(),
             heap_size_of_fields: heap_size,
-            memos: memos.memory_usage(),
+            // SAFETY: The caller guarantees exclusive access to the database's storage.
+            memos: unsafe { memos.memory_usage() },
         }
     }
 }
@@ -479,7 +484,13 @@ where
         this: *const Self,
         _current_revision: Revision,
     ) -> *const crate::table::memo::MemoTable {
-        // SAFETY: Caller obligation demands this pointer to be valid.
+        // SAFETY: The caller provides a valid slot pointer; input slots are not reused or deleted.
+        unsafe { Self::memos_unchecked(this) }
+    }
+
+    #[inline(always)]
+    unsafe fn memos_unchecked(this: *const Self) -> *const crate::table::memo::MemoTable {
+        // SAFETY: The caller provides an initialized slot and prevents reuse and deletion.
         unsafe { &raw const (*this).memos }
     }
 

@@ -1,3 +1,5 @@
+use crate::sync::atomic::{AtomicU8, Ordering};
+
 /// Describes how likely a value is to change—how "durable" it is.
 ///
 /// By default, inputs have [`Durability::LOW`] and interned values have
@@ -122,5 +124,23 @@ impl Durability {
 impl Default for Durability {
     fn default() -> Self {
         Durability::LOW
+    }
+}
+
+/// Durability published to readers without taking the interned shard lock.
+pub(crate) struct AtomicDurability(AtomicU8);
+
+impl AtomicDurability {
+    pub(crate) fn new(durability: Durability) -> Self {
+        Self(AtomicU8::new(durability.0 as u8))
+    }
+
+    #[inline]
+    pub(crate) fn load(&self) -> Durability {
+        Durability(DurabilityVal::from(self.0.load(Ordering::Acquire)))
+    }
+
+    pub(crate) fn store(&self, durability: Durability) {
+        self.0.store(durability.0 as u8, Ordering::Release);
     }
 }

@@ -114,14 +114,12 @@ where
     if let Some(message) = err.downcast_ref::<&str>() {
         assert!(
             message.contains("set cycle_fn/cycle_initial to fixpoint iterate"),
-            "Expected error message to contain 'set cycle_fn/cycle_initial to fixpoint iterate', but got: {}",
-            message
+            "Expected error message to contain 'set cycle_fn/cycle_initial to fixpoint iterate', but got: {message}"
         );
     } else if let Some(message) = err.downcast_ref::<String>() {
         assert!(
             message.contains("set cycle_fn/cycle_initial to fixpoint iterate"),
-            "Expected error message to contain 'set cycle_fn/cycle_initial to fixpoint iterate', but got: {}",
-            message
+            "Expected error message to contain 'set cycle_fn/cycle_initial to fixpoint iterate', but got: {message}"
         );
     } else if err.downcast_ref::<salsa::Cancelled>().is_some() {
         // This is okay, because Salsa throws a Cancelled::PropagatedPanic when a panic occurs in a query

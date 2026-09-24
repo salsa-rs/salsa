@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - 1.85.0
+          - 1.88.0
           - stable
           - beta
         experimental:
@@ -44,10 +44,10 @@ jobs:
             rustup override set "${{ matrix.rust }}"
           fi
           rustup show active-toolchain
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
-      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
+      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
         with:
           tool: cargo-nextest
       - name: Format
@@ -55,14 +55,31 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       # TODO: Use something like cargo-hack for more robust feature configuration testing.
-      - name: Clippy / all-features
-        run: cargo clippy --workspace --all-targets --features persistence -- -D warnings
+      - name: Clippy / optional features
+        run: cargo clippy --workspace --all-targets --features persistence,compact_str,triomphe,ordermap -- -D warnings
       - name: Test
-        run: cargo nextest run --workspace --tests --examples --features persistence --no-fail-fast
+        run: cargo nextest run --workspace --tests --examples --features persistence,compact_str,triomphe,ordermap --no-fail-fast
       - name: Test Manual Registration / no-default-features
         run: cargo nextest run --workspace --tests --no-fail-fast --no-default-features --features macros
       - name: Test docs
         run: cargo test --workspace --doc
+
+  test_release:
+    name: Test / release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
+        with:
+          tool: cargo-nextest
+      - name: Test
+        run: cargo nextest run --release --workspace --tests --examples --features persistence,compact_str,triomphe,ordermap --no-fail-fast
 
   miri_shards:
     name: Miri (${{ matrix.partition }})
@@ -79,15 +96,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Miri
-        uses: dtolnay/rust-toolchain@miri
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         id: rust-toolchain
+        with:
+          toolchain: nightly-2026-09-09
+          components: miri, rust-src
       - name: Select Miri toolchain
         run: rustup override set "${{ steps.rust-toolchain.outputs.name }}"
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Matrix shards share a cache key, so only one can reserve it for saving.
           save-if: ${{ github.ref == 'refs/heads/master' && matrix.partition == 'slice:1/4' }}
-      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
+      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
         with:
           tool: cargo-nextest
       - name: Setup Miri
@@ -117,10 +137,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Rust toolchain
         run: rustup show
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
-      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
+      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
         with:
           tool: cargo-nextest
       - name: Test with Shuttle
@@ -139,12 +159,12 @@ jobs:
       - name: Setup Rust toolchain
         run: rustup show
 
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: "Setup codspeed"
-        uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2.85.0
+        uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
         with:
           tool: cargo-codspeed
 
@@ -160,7 +180,7 @@ jobs:
           cargo codspeed build -m walltime --bench eviction_walltime
 
       - name: "Run benchmarks"
-        uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
           mode: "simulation,memory,walltime"
           run: cargo codspeed run

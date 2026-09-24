@@ -138,20 +138,19 @@ where
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
-        if let Some(old_memo) = opt_old_memo {
-            if old_memo.value.is_some()
-                && old_memo.header.verify_memo(
-                    db.into(),
-                    &claim_guard,
-                    C::CYCLE_STRATEGY,
-                    #[cfg(feature = "detailed-trace")]
-                    true,
-                )
-            {
-                // SAFETY: memo is present in memo_map and we have verified that it is
-                // still valid for the current revision.
-                return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
-            }
+        if let Some(old_memo) = opt_old_memo
+            && old_memo.value.is_some()
+            && old_memo.header.verify_memo(
+                db.into(),
+                &claim_guard,
+                C::CYCLE_STRATEGY,
+                #[cfg(feature = "detailed-trace")]
+                true,
+            )
+        {
+            // SAFETY: memo is present in memo_map and we have verified that it is
+            // still valid for the current revision.
+            return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
         }
 
         self.execute(db, claim_guard, opt_old_memo)

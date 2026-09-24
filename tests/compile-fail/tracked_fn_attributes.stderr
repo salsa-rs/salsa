@@ -1,0 +1,64 @@
+error: use of deprecated function `query`: old query
+  --> tests/compile-fail/tracked_fn_attributes.rs:36:5
+   |
+36 |     query(&db);
+   |     ^^^^^
+   |
+note: the lint level is defined here
+  --> tests/compile-fail/tracked_fn_attributes.rs:1:9
+   |
+ 1 | #![deny(deprecated, unused_must_use)]
+   |         ^^^^^^^^^^
+
+error: use of deprecated method `Input::method`: old method
+  --> tests/compile-fail/tracked_fn_attributes.rs:37:11
+   |
+37 |     input.method(&db);
+   |           ^^^^^^
+
+error: use of deprecated associated function `Input::associated`: old associated function
+  --> tests/compile-fail/tracked_fn_attributes.rs:38:12
+   |
+38 |     Input::associated(&db);
+   |            ^^^^^^^^^^
+
+error: unused return value of `query` that must be used
+  --> tests/compile-fail/tracked_fn_attributes.rs:36:5
+   |
+36 |     query(&db);
+   |     ^^^^^^^^^^
+   |
+   = note: use the query result
+note: the lint level is defined here
+  --> tests/compile-fail/tracked_fn_attributes.rs:1:21
+   |
+ 1 | #![deny(deprecated, unused_must_use)]
+   |                     ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+   |
+36 |     let _ = query(&db);
+   |     +++++++
+
+error: unused return value of `Input::method` that must be used
+  --> tests/compile-fail/tracked_fn_attributes.rs:37:5
+   |
+37 |     input.method(&db);
+   |     ^^^^^^^^^^^^^^^^^
+   |
+   = note: use the method result
+help: use `let _ = ...` to ignore the resulting value
+   |
+37 |     let _ = input.method(&db);
+   |     +++++++
+
+error: unused return value of `Input::associated` that must be used
+  --> tests/compile-fail/tracked_fn_attributes.rs:38:5
+   |
+38 |     Input::associated(&db);
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: use the associated function result
+help: use `let _ = ...` to ignore the resulting value
+   |
+38 |     let _ = Input::associated(&db);
+   |     +++++++
