@@ -925,6 +925,14 @@ where
         let value = zalsa.table().get::<Value<C>>(id);
         value.assert_validated(zalsa.current_revision());
 
+        debug_assert_eq!(
+            id,
+            // SAFETY: Validation prevents reuse, so the slot's ID cannot change while it is read.
+            unsafe { *value.lru.id.get() },
+            "Interned ID for `{}` refers to a reused slot",
+            C::DEBUG_NAME,
+        );
+
         // SAFETY: Reusable interned values are only exposed if they have been validated
         // in the current revision, as checked by the assertion above, which ensures that
         // they are not reused while being accessed. Non-reusable values are never reused.
