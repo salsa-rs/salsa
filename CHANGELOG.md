@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.28.5](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.4...salsa-v0.28.5) - 2026-09-24
 
+This release addresses GHSA-xc3w-55vh-cw3w, a use-after-free vulnerability in interned values and cached function results. Depending on the consuming application, attacker-controlled input may expose process memory or permit arbitrary code execution. Dependent applications should update Salsa and rebuild.
+
 ### Fixed
 
 - guard unvalidated interned data and memo access ([#1329](https://github.com/salsa-rs/salsa/pull/1329))
