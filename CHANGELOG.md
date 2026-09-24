@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.5](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.4...salsa-v0.28.5) - 2026-09-24
+
+### Fixed
+
+- guard unvalidated interned data and memo access ([#1329](https://github.com/salsa-rs/salsa/pull/1329))
+- require exclusive access for memory usage ([#1328](https://github.com/salsa-rs/salsa/pull/1328))
+
 ## [0.28.4](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.3...salsa-v0.28.4) - 2026-09-18
 
 ### Fixed
