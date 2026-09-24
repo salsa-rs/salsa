@@ -5,9 +5,9 @@
 use std::hash::{Hash, Hasher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Barrier, mpsc};
 use std::time::Duration;
 
+use crossbeam_channel::bounded;
 use salsa::plumbing::{AsId, FromId};
 use salsa::{Database, Setter};
 
@@ -74,15 +74,12 @@ fn panic_during_memo_cleanup_leaves_slot_reusable() {
 }
 
 fn assert_unpublished_during_cleanup(non_reusable: bool) {
-    let entered = Arc::new(Barrier::new(2));
-    let resume = Arc::new(Barrier::new(2));
-    let mut db = database({
-        let entered = entered.clone();
-        let resume = resume.clone();
-        move || {
-            entered.wait();
-            resume.wait();
-        }
+    let (entered_send, entered_receive) = bounded(1);
+    let (resume_send, resume_receive) = bounded::<()>(0);
+    let mut db = database(move || {
+        let _ = entered_send.send(());
+        // Dropping the sender also releases a writer that arrives after the test times out.
+        let _ = resume_receive.recv();
     });
     let input = Input::new(&db, 0);
     let old = intern(&db, input);
@@ -102,9 +99,11 @@ fn assert_unpublished_during_cleanup(non_reusable: bool) {
         replacement.as_id()
     });
 
-    entered.wait();
+    entered_receive
+        .recv_timeout(Duration::from_secs(5))
+        .expect("writer did not reach memo cleanup");
     let reader_db = db.clone();
-    let (send, receive) = mpsc::channel();
+    let (send, receive) = bounded(1);
     let reader = std::thread::spawn(move || {
         // Simulate a stale ID returned by a cached query without validating its producer.
         let stale = Value::from_id(old_id);
@@ -115,7 +114,7 @@ fn assert_unpublished_during_cleanup(non_reusable: bool) {
     // The reader must reject the slot even while the writer holds its shard lock. Release
     // the writer on timeout too, so a regression to locking fails instead of deadlocking.
     let rejected = receive.recv_timeout(Duration::from_secs(5));
-    resume.wait();
+    drop(resume_send);
     reader.join().unwrap();
     let new_id = writer.join().unwrap();
 
