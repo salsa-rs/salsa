@@ -1134,7 +1134,7 @@ where
         VerifyResult::unchanged()
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         edge: QueryEdge,
@@ -1202,7 +1202,7 @@ where
     }
 
     fn should_serialize(&self, zalsa: &Zalsa) -> bool {
-        C::PERSIST && self.entries(zalsa).next().is_some()
+        C::PERSIST && zalsa.table().slots_of::<Value<C>>().next().is_some()
     }
 
     #[cfg(feature = "persistence")]
@@ -1213,7 +1213,7 @@ where
     ) {
         f(&persistence::SerializeIngredient {
             zalsa,
-            ingredient: self,
+            _ingredient: self,
         })
     }
 
@@ -1256,6 +1256,12 @@ where
         // SAFETY: The caller provides a valid slot pointer and its database's current revision.
         unsafe { (*this).assert_validated(current_revision) };
         // SAFETY: The assertion ensures the slot cannot be reused while its memos are borrowed.
+        unsafe { Self::memos_unchecked(this) }
+    }
+
+    #[inline(always)]
+    unsafe fn memos_unchecked(this: *const Self) -> *const crate::table::memo::MemoTable {
+        // SAFETY: The caller provides an initialized slot and prevents reuse.
         unsafe { (*this).memos.get() }
     }
 
@@ -1662,7 +1668,7 @@ mod persistence {
         C: Configuration,
     {
         pub zalsa: &'db Zalsa,
-        pub ingredient: &'db IngredientImpl<C>,
+        pub _ingredient: &'db IngredientImpl<C>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>
@@ -1673,14 +1679,11 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            let Self { zalsa, ingredient } = *self;
+            let Self { zalsa, .. } = *self;
 
-            let count = ingredient
-                .shards
-                .iter()
-                .map(|shard| shard.lock().key_map.len())
-                .sum();
-
+            // Counting slots does not access shard metadata or interned fields. The exclusive
+            // storage access acquired by `SerializeDatabase::new` keeps the count stable.
+            let count = zalsa.table().slots_of::<Value<C>>().count();
             let mut map = serializer.serialize_map(Some(count))?;
 
             for (_, value) in zalsa.table().slots_of::<Value<C>>() {

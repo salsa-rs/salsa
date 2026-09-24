@@ -42,6 +42,14 @@ pub unsafe trait Slot: Any + Send + Sync {
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn memos(slot: *const Self, current_revision: Revision) -> *const MemoTable;
 
+    /// Access the memo table without validating or locking the slot.
+    ///
+    /// # Safety
+    ///
+    /// `slot` must be initialized and remain alive without reuse or destruction of its memo
+    /// storage for the entire lifetime of any references obtained through the returned pointer.
+    unsafe fn memos_unchecked(slot: *const Self) -> *const MemoTable;
+
     /// Mutably access the [`MemoTable`] for this slot.
     fn memos_mut(&mut self) -> &mut MemoTable;
 }
@@ -50,6 +58,10 @@ pub unsafe trait Slot: Any + Send + Sync {
 type SlotMemosFnErased = unsafe fn(*const (), current_revision: Revision) -> *const MemoTable;
 /// [Slot::memos]
 type SlotMemosFn<T> = unsafe fn(*const T, current_revision: Revision) -> *const MemoTable;
+/// [Slot::memos_unchecked]
+type SlotMemosUncheckedFnErased = unsafe fn(*const ()) -> *const MemoTable;
+/// [Slot::memos_unchecked]
+type SlotMemosUncheckedFn<T> = unsafe fn(*const T) -> *const MemoTable;
 /// [Slot::memos_mut]
 type SlotMemosMutFnErased = unsafe fn(*mut ()) -> *mut MemoTable;
 /// [Slot::memos_mut]
@@ -59,6 +71,7 @@ struct SlotVTable {
     layout: Layout,
     /// [`Slot`] methods
     memos: SlotMemosFnErased,
+    memos_unchecked: SlotMemosUncheckedFnErased,
     memos_mut: SlotMemosMutFnErased,
     /// The type name of what is stored as entries in data.
     type_name: fn() -> &'static str,
@@ -88,6 +101,12 @@ impl SlotVTable {
                 type_name: std::any::type_name::<T>,
                 // SAFETY: The signatures are ABI-compatible.
                 memos: unsafe { mem::transmute::<SlotMemosFn<T>, SlotMemosFnErased>(T::memos) },
+                // SAFETY: The signatures are ABI-compatible.
+                memos_unchecked: unsafe {
+                    mem::transmute::<SlotMemosUncheckedFn<T>, SlotMemosUncheckedFnErased>(
+                        T::memos_unchecked,
+                    )
+                },
                 // SAFETY: The signatures are ABI-compatible.
                 memos_mut: unsafe {
                     mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnErased>(T::memos_mut)
@@ -351,6 +370,21 @@ impl Table {
         unsafe { page.memo_types.attach_memos(memos) }
     }
 
+    /// Get the memo table without validating or locking its slot.
+    ///
+    /// # Safety
+    ///
+    /// The slot must remain alive without reuse or destruction of its memo storage for the
+    /// entire lifetime of the returned table and any references obtained from it.
+    pub(crate) unsafe fn dyn_memos_unchecked(&self, id: Id) -> MemoTableWithTypes<'_> {
+        let (page, slot) = split_id(id);
+        let page = &self.pages[page.0];
+        // SAFETY: `Page::get` checks initialization, and the caller prevents reuse and destruction.
+        let memos = unsafe { &*(page.slot_vtable.memos_unchecked)(page.get(slot)) };
+        // SAFETY: The `Page` keeps the correct memo types.
+        unsafe { page.memo_types.attach_memos(memos) }
+    }
+
     /// Get the memo table associated with `id`
     pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypesMut<'_> {
         let (page, slot) = split_id(id);
@@ -587,6 +621,10 @@ struct DummySlot;
 // SAFETY: The `DummySlot type is private.
 unsafe impl Slot for DummySlot {
     unsafe fn memos(_: *const Self, _: Revision) -> *const MemoTable {
+        unreachable!()
+    }
+
+    unsafe fn memos_unchecked(_: *const Self) -> *const MemoTable {
         unreachable!()
     }
 

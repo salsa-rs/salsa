@@ -177,11 +177,10 @@ mod persistence {
     impl dyn Database {
         /// Returns a type implementing [`serde::Serialize`], that can be used to serialize the
         /// current state of the database.
+        ///
+        /// Cancels other workers and waits for their database handles to be dropped.
         pub fn as_serialize(&mut self) -> impl serde::Serialize + '_ {
-            SerializeDatabase {
-                runtime: self.zalsa().runtime(),
-                ingredients: SerializeIngredients(self.zalsa()),
-            }
+            SerializeDatabase::new(self)
         }
 
         /// Deserialize the database using a [`serde::Deserializer`].
@@ -198,11 +197,22 @@ mod persistence {
     #[derive(serde::Serialize)]
     #[serde(rename = "Database")]
     pub struct SerializeDatabase<'db> {
-        pub runtime: &'db Runtime,
-        pub ingredients: SerializeIngredients<'db>,
+        runtime: &'db Runtime,
+        ingredients: SerializeIngredients<'db>,
     }
 
-    pub struct SerializeIngredients<'db>(pub &'db Zalsa);
+    impl<'db> SerializeDatabase<'db> {
+        /// Acquires exclusive storage access for the lifetime of the serializer.
+        fn new(db: &'db mut dyn Database) -> Self {
+            let zalsa = db.zalsa_mut();
+            Self {
+                runtime: zalsa.runtime(),
+                ingredients: SerializeIngredients(zalsa),
+            }
+        }
+    }
+
+    struct SerializeIngredients<'db>(&'db Zalsa);
 
     impl serde::Serialize for SerializeIngredients<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -242,7 +252,8 @@ mod persistence {
             let mut result = None;
             let mut serializer = Some(serializer);
 
-            // SAFETY: `<dyn Database>::as_serialize` take `&mut self`.
+            // SAFETY: `SerializeDatabase::new` obtains exclusive storage access through `zalsa_mut`
+            // and retains that borrow throughout serialization.
             unsafe {
                 self.0.serialize(self.1, &mut |serialize| {
                     let serializer = serializer.take().expect(
