@@ -94,7 +94,7 @@ fn input_to_tracked_tuple(
 fn test() {
     use expect_test::expect;
 
-    let db = salsa::DatabaseImpl::new();
+    let mut db = salsa::DatabaseImpl::new();
 
     let input1 = MyInput::new(&db, "a".repeat(50));
     let input2 = MyInput::new(&db, "a".repeat(150));
@@ -112,7 +112,7 @@ fn test() {
     let _string1 = input_to_string(&db);
     let _string2 = input_to_string_get_size(&db);
 
-    let memory_usage = <dyn salsa::Database>::memory_usage(&db);
+    let memory_usage = <dyn salsa::Database>::memory_usage(&mut db);
 
     let input_info = memory_usage
         .structs
@@ -316,14 +316,14 @@ fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
     let input2 = MyInput::new(&db, "a".repeat(150));
 
     assert_eq!(input_to_length(&db, input1), 50);
-    let before = <dyn salsa::Database>::memory_usage(&db);
+    let before = <dyn salsa::Database>::memory_usage(&mut db);
     let before = &before.queries["input_to_length"];
     assert_eq!(before.count(), 1);
 
     db.trigger_lru_eviction();
 
     assert_eq!(input_to_length(&db, input2), 150);
-    let after = <dyn salsa::Database>::memory_usage(&db);
+    let after = <dyn salsa::Database>::memory_usage(&mut db);
     let after = &after.queries["input_to_length"];
     assert_eq!(after.count(), 2);
     assert_eq!(after.size_of_metadata(), before.size_of_metadata() * 2);
@@ -332,19 +332,19 @@ fn cancellation_does_not_allocate_extra_for_ordinary_memos() {
 #[test]
 #[cfg(not(feature = "persistence"))]
 fn never_change_query_discards_edges() {
-    let db = salsa::DatabaseImpl::new();
+    let mut db = salsa::DatabaseImpl::new();
     let never_change = MyInput::builder("a".repeat(50))
         .durability(salsa::Durability::NEVER_CHANGE)
         .new(&db);
     let mutable = MyInput::new(&db, "a".repeat(150));
 
     assert_eq!(input_to_length(&db, never_change), 50);
-    let before = <dyn salsa::Database>::memory_usage(&db);
+    let before = <dyn salsa::Database>::memory_usage(&mut db);
     let before = &before.queries["input_to_length"];
     assert_eq!(before.count(), 1);
 
     assert_eq!(input_to_length(&db, mutable), 150);
-    let after = <dyn salsa::Database>::memory_usage(&db);
+    let after = <dyn salsa::Database>::memory_usage(&mut db);
     let after = &after.queries["input_to_length"];
     assert_eq!(after.count(), 2);
     assert!(after.size_of_metadata() > before.size_of_metadata() * 2);
@@ -353,19 +353,19 @@ fn never_change_query_discards_edges() {
 #[test]
 #[cfg(not(feature = "persistence"))]
 fn never_change_cycle_query_discards_edges_after_converging() {
-    let db = salsa::DatabaseImpl::new();
+    let mut db = salsa::DatabaseImpl::new();
     let never_change = MyInput::builder("a".repeat(50))
         .durability(salsa::Durability::NEVER_CHANGE)
         .new(&db);
     let mutable = MyInput::new(&db, "a".repeat(150));
 
     assert_eq!(cycle_input_to_length(&db, never_change), 50);
-    let before = <dyn salsa::Database>::memory_usage(&db);
+    let before = <dyn salsa::Database>::memory_usage(&mut db);
     let before = &before.queries["cycle_input_to_length"];
     assert_eq!(before.count(), 1);
 
     assert_eq!(cycle_input_to_length(&db, mutable), 150);
-    let after = <dyn salsa::Database>::memory_usage(&db);
+    let after = <dyn salsa::Database>::memory_usage(&mut db);
     let after = &after.queries["cycle_input_to_length"];
     assert_eq!(after.count(), 2);
     assert!(after.size_of_metadata() > before.size_of_metadata() * 2);
@@ -380,7 +380,7 @@ fn page_info_tracks_allocated_slots_after_tracked_struct_deletion() {
     input.set_field(&mut db).to(String::new());
     assert!(maybe_input_to_tracked(&db, input).is_none());
 
-    let memory_usage = <dyn salsa::Database>::memory_usage(&db);
+    let memory_usage = <dyn salsa::Database>::memory_usage(&mut db);
     let tracked = memory_usage
         .structs
         .iter()
@@ -397,4 +397,57 @@ fn page_info_tracks_allocated_slots_after_tracked_struct_deletion() {
     assert_eq!(pages.p75_fill(), 1);
     assert_eq!(pages.p90_fill(), 1);
     assert_eq!(pages.p99_fill(), 1);
+}
+
+#[cfg(not(feature = "shuttle"))]
+mod cancellation {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    use super::{MyInput, input_to_length};
+
+    #[salsa::db]
+    #[derive(Clone)]
+    struct TestDatabase {
+        storage: salsa::Storage<Self>,
+    }
+
+    #[salsa::db]
+    impl salsa::Database for TestDatabase {
+        fn trigger_cancellation(&mut self) {
+            panic!("memory usage must use the storage cancellation barrier directly");
+        }
+    }
+
+    #[test]
+    fn memory_usage_waits_for_snapshots() {
+        let (cancelled_tx, cancelled_rx) = mpsc::channel();
+        let mut db = TestDatabase {
+            storage: salsa::Storage::new(Some(Box::new(move |event| {
+                if matches!(event.kind, salsa::EventKind::DidSetCancellationFlag) {
+                    cancelled_tx.send(()).unwrap();
+                }
+            }))),
+        };
+        let input = MyInput::new(&db, "value".to_owned());
+        assert_eq!(input_to_length(&db, input), 5);
+
+        let snapshot = db.clone();
+        let worker = thread::spawn(move || {
+            let memory_usage = <dyn salsa::Database>::memory_usage(&mut db);
+            (db, memory_usage)
+        });
+
+        let cancelled = cancelled_rx.recv_timeout(Duration::from_secs(5));
+        let finished_with_snapshot = worker.is_finished();
+        // Release the snapshot before asserting, so failures don't strand the worker.
+        drop(snapshot);
+        let (db, memory_usage) = worker.join().unwrap();
+
+        cancelled.expect("memory usage should cancel other database handles");
+        assert!(!finished_with_snapshot);
+        assert_eq!(memory_usage.queries["input_to_length"].count(), 1);
+        assert_eq!(input_to_length(&db, input), 5);
+    }
 }

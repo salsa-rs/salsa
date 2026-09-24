@@ -312,13 +312,13 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type. Additionally, the
-    /// lock must be held for the shard containing the value.
+    /// The `MemoTable` must belong to a `Value` of the correct type. The caller must
+    /// ensure exclusive access to the database's storage for the duration of this call.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
-        // SAFETY: The caller guarantees we hold the lock for the shard containing the value, so we
-        // have at-least read-only access to the value's memos.
+        // SAFETY: The caller guarantees exclusive access to the database's storage,
+        // so the value's memos cannot be modified while we read them.
         let memos = unsafe { &*self.memos.get() };
         // SAFETY: The caller guarantees this is the correct types table.
         let memos = unsafe { memo_table_types.attach_memos(memos) };
@@ -329,7 +329,8 @@ where
                 - std::mem::size_of::<C::Fields<'static>>(),
             size_of_fields: std::mem::size_of::<C::Fields<'static>>(),
             heap_size_of_fields: heap_size,
-            memos: memos.memory_usage(),
+            // SAFETY: The caller guarantees exclusive access to the database's storage.
+            memos: unsafe { memos.memory_usage() },
         }
     }
 }
@@ -993,8 +994,9 @@ where
     ///
     /// # Safety
     ///
-    /// If `should_lock` is `false`, the caller *must* hold the locks for all shards
-    /// of the key map.
+    /// If `should_lock` is `false`, the caller must hold the locks for all shards
+    /// of the key map or ensure exclusive access to the database's storage while
+    /// consuming the iterator.
     unsafe fn entries_inner<'db>(
         &'db self,
         should_lock: bool,
@@ -1010,7 +1012,8 @@ where
                 // SAFETY: We hold the lock for the shard containing the value.
                 unsafe { (*value.lru.metadata.get()).id }
             } else {
-                // SAFETY: The caller guarantees we hold the lock for the shard containing the value.
+                // SAFETY: The caller guarantees the shard is locked or the database's
+                // storage is exclusively accessible, so the metadata cannot be modified.
                 unsafe { (*value.lru.metadata.get()).id }
             };
 
@@ -1197,27 +1200,18 @@ where
 
     /// Returns memory usage information about any interned values.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
-    fn memory_usage(&self, db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
-        use parking_lot::lock_api::RawMutex;
-
-        for shard in self.shards.iter() {
-            // SAFETY: We do not hold any active mutex guards.
-            unsafe { shard.raw().lock() };
-        }
-
-        // SAFETY: We hold the locks for all shards.
+    unsafe fn memory_usage(
+        &self,
+        db: &dyn crate::Database,
+    ) -> Option<Vec<crate::database::SlotInfo>> {
+        // SAFETY: The caller guarantees exclusive access to the database's storage.
         let entries = unsafe { self.entries_inner(false, db.zalsa()) };
 
         let memory_usage = entries
             // SAFETY: The memo table belongs to a value that we allocated, so it
-            // has the correct type. Additionally, we are holding the locks for all shards.
+            // has the correct type. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
-
-        for shard in self.shards.iter() {
-            // SAFETY: We acquired the locks for all shards.
-            unsafe { shard.raw().unlock() };
-        }
 
         Some(memory_usage)
     }

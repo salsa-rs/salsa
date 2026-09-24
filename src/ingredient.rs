@@ -167,8 +167,17 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
 
     /// Returns memory usage information about any instances of the ingredient,
     /// if applicable.
+    ///
+    /// # Safety
+    ///
+    /// The database must be the one that owns this ingredient. The caller must ensure
+    /// exclusive access to its storage for the duration of this call: no query
+    /// execution or mutation may overlap the traversal.
     #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self, _db: &dyn crate::Database) -> Option<Vec<crate::database::SlotInfo>> {
+    unsafe fn memory_usage(
+        &self,
+        _db: &dyn crate::Database,
+    ) -> Option<Vec<crate::database::SlotInfo>> {
         None
     }
 

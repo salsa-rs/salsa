@@ -97,7 +97,7 @@ fn skip_dependency_edge_to_never_change_query() {
 #[test]
 #[cfg(all(not(feature = "persistence"), feature = "salsa_unstable"))]
 fn skip_dependency_edge_to_never_change_input() {
-    let db = salsa::DatabaseImpl::default();
+    let mut db = salsa::DatabaseImpl::default();
     let immutable_input = MyInput::builder(10)
         .durability(Durability::NEVER_CHANGE)
         .new(&db);
@@ -106,7 +106,7 @@ fn skip_dependency_edge_to_never_change_input() {
     assert_eq!(mixed_value(&db, immutable_input, mutable_input), 30);
     assert_eq!(mixed_input_value(&db, immutable_input, mutable_input), 30);
 
-    let memory_usage = <dyn Database>::memory_usage(&db);
+    let memory_usage = <dyn Database>::memory_usage(&mut db);
     assert_eq!(
         memory_usage.queries["mixed_input_value"].size_of_metadata(),
         memory_usage.queries["mixed_value"].size_of_metadata()
