@@ -35,7 +35,7 @@ impl<'db, Db: Database + ?Sized> From<&'db mut Db> for RawDatabase<'db> {
 
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]`(`crate::db`) procedural macro.
-pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
+pub trait Database: Send + ZalsaDatabase {
     /// Enforces current LRU limits, evicting entries if necessary.
     ///
     /// **WARNING:** Just like an ordinary write, this method triggers
@@ -145,21 +145,7 @@ pub trait Database: Send + ZalsaDatabase + AsDynDatabase {
     }
 }
 
-/// Upcast to a `dyn Database`.
-///
-/// Only required because upcasting does not work for unsized generic parameters.
-pub trait AsDynDatabase {
-    fn as_dyn_database(&self) -> &dyn Database;
-}
-
-impl<T: Database> AsDynDatabase for T {
-    #[inline(always)]
-    fn as_dyn_database(&self) -> &dyn Database {
-        self
-    }
-}
-
-pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
+pub fn current_revision(db: &dyn Database) -> Revision {
     db.zalsa().current_revision()
 }
 

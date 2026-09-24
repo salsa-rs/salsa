@@ -20,7 +20,8 @@ fn input_create_many(bencher: divan::Bencher, inputs: usize) {
         })
         .bench_local_refs(|db| {
             for value in 0..inputs {
-                let input = InputValue::new(black_box(&*db), black_box(value));
+                let db: &salsa::DatabaseImpl = black_box(&*db);
+                let input = InputValue::new(db, black_box(value));
                 black_box(input);
             }
         });

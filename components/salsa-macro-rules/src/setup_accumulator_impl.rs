@@ -42,10 +42,7 @@ macro_rules! setup_accumulator_impl {
             impl $zalsa::Accumulator for $Struct {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
 
-                fn accumulate<Db>(self, db: &Db)
-                where
-                    Db: ?Sized + $zalsa::Database,
-                {
+                fn accumulate(self, db: &dyn $zalsa::Database) {
                     let (zalsa, zalsa_local) = db.zalsas();
                     $ingredient(zalsa).push(zalsa_local, self);
                 }

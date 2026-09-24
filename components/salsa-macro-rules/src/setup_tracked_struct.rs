@@ -341,11 +341,7 @@ macro_rules! setup_tracked_struct {
             unsafe impl $zalsa::SalsaValue for $Struct<'_> {}
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
-                where
-                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + $zalsa::Database,
-                {
+                pub fn $new_fn(db: &$db_lt dyn $zalsa::Database, $($field_id: $field_ty),*) -> Self {
                     let (zalsa, zalsa_local) = db.zalsas();
                     $Configuration::ingredient_(zalsa).new_struct(
                         zalsa,zalsa_local,
@@ -355,11 +351,7 @@ macro_rules! setup_tracked_struct {
 
                 $(
                     $(#[$tracked_field_attr])*
-                    $tracked_getter_vis fn $tracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty)
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + $zalsa::Database,
-                    {
+                    $tracked_getter_vis fn $tracked_getter_id(self, db: &$db_lt dyn $zalsa::Database) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty) {
                         let (zalsa, zalsa_local) = db.zalsas();
                         let fields = $Configuration::ingredient_(zalsa).tracked_field(zalsa, zalsa_local, self, $relative_tracked_index);
                         $crate::return_mode_expression!(
@@ -372,11 +364,7 @@ macro_rules! setup_tracked_struct {
 
                 $(
                     $(#[$untracked_field_attr])*
-                    $untracked_getter_vis fn $untracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($untracked_option, $db_lt, $untracked_ty)
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + $zalsa::Database,
-                    {
+                    $untracked_getter_vis fn $untracked_getter_id(self, db: &$db_lt dyn $zalsa::Database) -> $crate::return_mode_ty!($untracked_option, $db_lt, $untracked_ty) {
                         let zalsa = db.zalsa();
                         let fields = $Configuration::ingredient_(zalsa).untracked_field(zalsa, self);
                         $crate::return_mode_expression!(
