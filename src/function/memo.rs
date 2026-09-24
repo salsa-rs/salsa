@@ -61,6 +61,29 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
+    /// Returns the cached memo for `input`, relying on the caller to prevent
+    /// its storage from being reused or freed.
+    ///
+    /// # Safety
+    ///
+    /// The caller must prevent database writes for `'db`, including query execution that can
+    /// reuse slots or modify memos. Concurrent read-only access is allowed.
+    pub(super) unsafe fn memo_unchecked<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        input: Id,
+    ) -> Option<ErasedMemo<'db>> {
+        // SAFETY: The caller prevents database writes, keeping the slot and memo alive for `'db`.
+        let memo_slot = unsafe {
+            MemoSlot::new(
+                zalsa.table().dyn_memos_unchecked(input),
+                self.memo_ingredient_index(zalsa, input),
+            )
+        };
+
+        memo_slot.get_erased()
+    }
+
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked
     /// or has values assigned as output of another query, this has no effect.

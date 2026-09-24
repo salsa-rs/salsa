@@ -72,7 +72,7 @@ where
         VerifyResult::changed_if(field_changed_at > revision)
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         _edge: QueryEdge,

@@ -436,14 +436,22 @@ where
         self.maybe_changed_after(db, input, revision)
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         zalsa: &Zalsa,
         edge: QueryEdge,
         serialized_edges: &mut FxIndexSet<QueryEdge>,
         visited_edges: &mut FxHashSet<QueryEdge>,
     ) {
-        collect_minimum_serialized_edges(self, zalsa, edge, serialized_edges, visited_edges);
+        // SAFETY: The caller prevents database writes throughout the traversal.
+        let Some(memo) = (unsafe { self.memo_unchecked(zalsa, edge.key().key_index()) }) else {
+            return;
+        };
+
+        // SAFETY: The caller prevents database writes throughout the traversal.
+        unsafe {
+            collect_minimum_serialized_edges(memo, zalsa, edge, serialized_edges, visited_edges);
+        }
     }
 
     fn as_function(&self) -> Option<FunctionIngredientRef<'_>> {
@@ -587,17 +595,17 @@ where
     }
 }
 
-fn collect_minimum_serialized_edges(
-    ingredient: &dyn FunctionIngredient,
+/// # Safety
+///
+/// The caller must prevent database writes throughout the traversal, including query
+/// execution that can reuse slots or modify memos. Concurrent read-only access is allowed.
+unsafe fn collect_minimum_serialized_edges(
+    memo: ErasedMemo<'_>,
     zalsa: &Zalsa,
     edge: QueryEdge,
     serialized_edges: &mut FxIndexSet<QueryEdge>,
     visited_edges: &mut FxHashSet<QueryEdge>,
 ) {
-    let Some(memo) = ingredient.memo(zalsa, edge.key().key_index()) else {
-        return;
-    };
-
     visited_edges.insert(edge);
 
     // Collect the minimum dependency tree.
@@ -613,7 +621,15 @@ fn collect_minimum_serialized_edges(
         }
 
         let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
-        dependency.collect_minimum_serialized_edges(zalsa, edge, serialized_edges, visited_edges);
+        // SAFETY: The caller prevents database writes throughout recursive traversal.
+        unsafe {
+            dependency.collect_minimum_serialized_edges(
+                zalsa,
+                edge,
+                serialized_edges,
+                visited_edges,
+            );
+        }
     }
 }
 
@@ -794,22 +810,28 @@ mod persistence {
                     // Flatten the dependencies of this query down to the base inputs.
                     let flattened_origin = match memo.header.origin() {
                         QueryOriginRef::Derived(edges) => {
-                            collect_minimum_serialized_edges(
-                                zalsa,
-                                edges,
-                                &mut visited_edges,
-                                &mut flattened_edges,
-                            );
+                            // SAFETY: Serialization's exclusive storage access prevents database writes.
+                            unsafe {
+                                collect_minimum_serialized_edges(
+                                    zalsa,
+                                    edges,
+                                    &mut visited_edges,
+                                    &mut flattened_edges,
+                                );
+                            }
 
                             PersistentQueryOrigin::derived(flattened_edges.drain(..))
                         }
                         QueryOriginRef::DerivedUntracked(edges) => {
-                            collect_minimum_serialized_edges(
-                                zalsa,
-                                edges,
-                                &mut visited_edges,
-                                &mut flattened_edges,
-                            );
+                            // SAFETY: Serialization's exclusive storage access prevents database writes.
+                            unsafe {
+                                collect_minimum_serialized_edges(
+                                    zalsa,
+                                    edges,
+                                    &mut visited_edges,
+                                    &mut flattened_edges,
+                                );
+                            }
 
                             PersistentQueryOrigin::derived_untracked(flattened_edges.drain(..))
                         }
@@ -844,8 +866,13 @@ mod persistence {
         }
     }
 
-    // Flatten the dependency edges before serialization.
-    fn collect_minimum_serialized_edges(
+    /// Flatten the dependency edges before serialization.
+    ///
+    /// # Safety
+    ///
+    /// The caller must prevent database writes throughout the traversal, including query
+    /// execution that can reuse slots or modify memos. Concurrent read-only access is allowed.
+    unsafe fn collect_minimum_serialized_edges(
         zalsa: &Zalsa,
         edges: crate::zalsa_local::QueryEdges<'_>,
         visited_edges: &mut FxHashSet<QueryEdge>,
@@ -859,12 +886,15 @@ mod persistence {
                 flattened_edges.insert(edge);
             } else {
                 // Otherwise, serialize the minimum edges necessary to cover the dependency.
-                dependency.collect_minimum_serialized_edges(
-                    zalsa,
-                    edge,
-                    flattened_edges,
-                    visited_edges,
-                );
+                // SAFETY: The caller prevents database writes throughout the traversal.
+                unsafe {
+                    dependency.collect_minimum_serialized_edges(
+                        zalsa,
+                        edge,
+                        flattened_edges,
+                        visited_edges,
+                    );
+                }
             }
         }
     }
@@ -873,7 +903,7 @@ mod persistence {
     where
         C: Configuration,
     {
-        pub zalsa: &'db Zalsa,
+        pub zalsa: &'db mut Zalsa,
         pub ingredient: &'db mut IngredientImpl<C>,
     }
 
@@ -921,8 +951,9 @@ mod persistence {
                 let memo_ingredient_index =
                     ingredient.memo_ingredient_indices.get(ingredient_index);
 
-                // SAFETY: We provide the current revision.
-                let memo_table = unsafe { zalsa.table().dyn_memos(id, zalsa.current_revision()) };
+                // SAFETY: Deserialization holds exclusive database access. The slot was restored
+                // before its memos, but its saved revision may differ from the current runtime.
+                let memo_table = unsafe { zalsa.table().dyn_memos_unchecked(id) };
 
                 memo_table.insert(
                     memo_ingredient_index,

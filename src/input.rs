@@ -318,7 +318,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("nothing should ever depend on an input struct directly")
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         _edge: QueryEdge,
@@ -484,7 +484,13 @@ where
         this: *const Self,
         _current_revision: Revision,
     ) -> *const crate::table::memo::MemoTable {
-        // SAFETY: Caller obligation demands this pointer to be valid.
+        // SAFETY: The caller provides a valid slot pointer; input slots are not reused or deleted.
+        unsafe { Self::memos_unchecked(this) }
+    }
+
+    #[inline(always)]
+    unsafe fn memos_unchecked(this: *const Self) -> *const crate::table::memo::MemoTable {
+        // SAFETY: The caller provides an initialized slot and prevents reuse and deletion.
         unsafe { &raw const (*this).memos }
     }
 

@@ -995,7 +995,7 @@ where
         panic!("nothing should ever depend on a tracked struct directly")
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         _edge: QueryEdge,
@@ -1197,8 +1197,13 @@ where
         // is no danger of a race when deleting a tracked struct.
         // SAFETY: `this` is a valid pointer given the caller obligation
         unsafe { acquire_read_lock(&(*this).updated_at, current_revision) };
-        // SAFETY: `this` is a valid pointer given the caller obligation and we have acquired a read
-        // lock, so `values` is not aliased
+        // SAFETY: `this` is valid, and the read lock prevents slot reuse and deletion.
+        unsafe { Self::memos_unchecked(this) }
+    }
+
+    #[inline(always)]
+    unsafe fn memos_unchecked(this: *const Self) -> *const crate::table::memo::MemoTable {
+        // SAFETY: The caller provides an initialized slot and prevents reuse and deletion.
         unsafe { &raw const (*this).memos }
     }
 

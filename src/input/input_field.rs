@@ -66,7 +66,7 @@ where
         VerifyResult::changed_if(value.revisions[self.field_index] > revision)
     }
 
-    fn collect_minimum_serialized_edges(
+    unsafe fn collect_minimum_serialized_edges(
         &self,
         _zalsa: &Zalsa,
         edge: QueryEdge,

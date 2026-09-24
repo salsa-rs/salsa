@@ -64,6 +64,23 @@ jobs:
       - name: Test docs
         run: cargo test --workspace --doc
 
+  test_release:
+    name: Test / release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
+        with:
+          tool: cargo-nextest
+      - name: Test
+        run: cargo nextest run --release --workspace --tests --examples --features persistence,compact_str,triomphe,ordermap --no-fail-fast
+
   miri_shards:
     name: Miri (${{ matrix.partition }})
     strategy:
