@@ -1,10 +1,11 @@
 use crate::cycle::{CycleRecoveryStrategy, IterationStamp};
 use crate::function::eviction::EvictionPolicy;
+use crate::function::execute::complete_cycle_query;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::{QueryRevisions, ZalsaLocal};
+use crate::zalsa_local::ZalsaLocal;
 use crate::{Cancelled, DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
@@ -237,9 +238,19 @@ where
                         }
                     })
                     .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
-                let revisions = QueryRevisions::fixpoint_initial(database_key_index, iteration);
-
+                // Record reads on the initial memo so every query using the provisional value
+                // inherits them when flattening its dependencies.
+                let active_query = zalsa_local.push_query(database_key_index);
                 let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+
+                let revisions = complete_cycle_query(zalsa, active_query, iteration)
+                    .revisions
+                    .into_fixpoint_initial(database_key_index, iteration);
+                // The initial memo is replaced without transferring ownership of tracked structs.
+                assert!(
+                    revisions.tracked_struct_ids().is_empty(),
+                    "cycle initializers cannot directly create tracked structs; call another tracked query instead"
+                );
                 self.insert_memo(
                     zalsa,
                     id,
