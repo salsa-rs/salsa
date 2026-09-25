@@ -445,14 +445,16 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `lru = INTEGER` bounds the number of memoized values retained by the function and sets the
 ///   initial capacity used by `FUNCTION::set_lru_capacity`.
 /// - `cycle_initial = EXPR` enables fixed-point cycle recovery and computes the initial value. The
-///   expression is called as `(db, cycle_head_id, query_arguments...)`.
+///   expression is called as `(db, cycle_head_id, query_arguments...)`. It cannot create tracked
+///   structs directly, but may call another tracked query that creates them.
 /// - `cycle_fn = EXPR` combines successive fixed-point values. It must be accompanied by
 ///   `cycle_initial` and is called as
 ///   `(db, cycle, previous_value, new_value, query_arguments...)`. See [fixed-point cycle recovery
 ///   in the Salsa book] for the convergence requirements and a complete example.
 /// - `cycle_result = EXPR` supplies an immediate fallback for cycles instead of fixed-point
 ///   iteration. It is called with the same arguments as `cycle_initial` and cannot be combined
-///   with `cycle_initial` or `cycle_fn`.
+///   with `cycle_initial` or `cycle_fn`. When producing the initial provisional value, it has the
+///   same restriction on creating tracked structs as `cycle_initial`.
 /// - `heap_size = PATH` records heap use for Salsa's unstable memory-usage reporting. `PATH` must
 ///   accept a reference to the output and return its heap allocation size in bytes.
 /// - `persist` enables persistent caching when Salsa's `persistence` feature is enabled. The query

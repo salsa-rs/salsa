@@ -549,7 +549,7 @@ impl<'a, C: Configuration> PoisonProvisionalIfPanicking<'a, C> {
 impl<C: Configuration> Drop for PoisonProvisionalIfPanicking<'_, C> {
     fn drop(&mut self) {
         if thread::panicking() {
-            let revisions = QueryRevisions::fixpoint_initial(
+            let revisions = QueryRevisions::empty().into_fixpoint_initial(
                 self.ingredient.database_key_index(self.id),
                 IterationStamp::initial(self.zalsa.runtime().cancellation_count()),
             );
@@ -926,7 +926,7 @@ thread_local! {
     static FLATTEN_MAPS: std::cell::Cell<Option<(FxIndexSet<QueryEdge>, FxHashSet<DatabaseKeyIndex>)>> = const { std::cell::Cell::new(None) };
 }
 
-fn complete_cycle_query(
+pub(super) fn complete_cycle_query(
     zalsa: &Zalsa,
     active_query: ActiveQueryGuard<'_>,
     iteration: IterationStamp,

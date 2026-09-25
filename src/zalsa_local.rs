@@ -751,25 +751,33 @@ const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
     [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, iteration: IterationStamp) -> Self {
+    /// Revisions for a computation that has read no inputs or created any outputs.
+    pub(crate) fn empty() -> Self {
         Self {
             changed_at: Revision::start(),
             durability: Durability::MAX,
             origin_and_extra: OriginAndExtra::derived(
                 std::iter::empty(),
-                QueryRevisionsExtra::new(
-                    #[cfg(feature = "accumulator")]
-                    AccumulatedMap::default(),
-                    ThinVec::default(),
-                    CycleHeads::initial(query, iteration),
-                    iteration,
-                    false,
-                ),
+                QueryRevisionsExtra::default(),
             ),
             #[cfg(feature = "accumulator")]
             accumulated_inputs: Default::default(),
-            verified_final: AtomicBool::new(false),
+            verified_final: AtomicBool::new(true),
         }
+    }
+
+    /// Make these revisions provisional while preserving the initializer's dependencies.
+    pub(crate) fn into_fixpoint_initial(
+        mut self,
+        query: DatabaseKeyIndex,
+        iteration: IterationStamp,
+    ) -> Self {
+        let extra = self.origin_and_extra.get_or_insert_extra();
+        extra.cycle_heads.insert(query, iteration);
+        extra.iteration = iteration.into();
+        extra.cycle_converged = false;
+        *self.verified_final.get_mut() = false;
+        self
     }
 
     /// Returns a reference to the `AccumulatedMap` for this query, or `None` if the map is empty.
