@@ -46,12 +46,21 @@ where
         // Do a depth-first search across the dependencies of `key`, reading the values accumulated by
         // each dependency.
         while let Some(k) = stack.pop() {
+            let ingredient = zalsa.lookup_ingredient(k.ingredient_index());
+
+            // Only function ingredients can accumulate values or have inputs that do.
+            // Filtering them out before the `visited` lookup keeps all the other ingredients
+            // (interned, input and tracked structs) out of the set, which is the hottest
+            // part of this traversal.
+            let Some(function) = ingredient.as_function() else {
+                continue;
+            };
+
             // Already visited `k`?
             if !visited.insert(k) {
                 continue;
             }
 
-            let ingredient = zalsa.lookup_ingredient(k.ingredient_index());
             // Extend `output` with any values accumulated by `k`.
             // SAFETY: `db` owns the `ingredient`
             let (accumulated_map, input) =
@@ -70,9 +79,8 @@ where
             // output vector, we want to push in execution order, so reverse order to
             // ensure the first child that was executed will be the first child popped
             // from the stack.
-            let Some(origin) = ingredient
-                .as_function()
-                .and_then(|function| function.memo(zalsa, k.key_index()))
+            let Some(origin) = function
+                .memo(zalsa, k.key_index())
                 .map(|memo| memo.header().origin())
             else {
                 continue;
@@ -83,7 +91,14 @@ where
                 stack.reserve(edges.len());
             }
 
-            stack.extend(origin.inputs().rev());
+            // Only push the inputs that can contribute accumulated values (see above), so that
+            // the stack stays small and non-function ingredients are never popped and looked up.
+            stack.extend(origin.inputs().rev().filter(|input| {
+                zalsa
+                    .lookup_ingredient(input.ingredient_index())
+                    .as_function()
+                    .is_some()
+            }));
 
             visited.reserve(stack.len());
         }
