@@ -1,4 +1,4 @@
-use std::{fmt, mem, ops};
+use std::{fmt, ops};
 
 use crate::Revision;
 #[cfg(feature = "accumulator")]
@@ -243,9 +243,9 @@ impl ActiveQuery {
 
         let extra = QueryRevisionsExtra::new(
             #[cfg(feature = "accumulator")]
-            mem::take(accumulated),
+            accumulated,
             active_tracked_structs,
-            mem::take(cycle_heads),
+            cycle_heads,
             iteration,
             force_extra,
         );
@@ -402,7 +402,13 @@ impl QueryStack {
             push_len,
         );
         let completion = active_query.prepare_completion(iteration, false);
-        completion.finish(active_query.input_outputs.drain(..))
+        // `QueryEdge` is `Copy`, so copy the edges out of the set and reset it afterwards instead
+        // of draining it. `IndexSet::drain(..)` has to run the index-erasure heuristics of
+        // `indexmap` (which rebuilds the remaining indices) and iterating a `Drain` is more
+        // expensive than iterating the entry slice, while `clear` just resets the table.
+        let completed = completion.finish(active_query.input_outputs.iter().copied());
+        active_query.input_outputs.clear();
+        completed
     }
 
     pub(crate) fn pop_detached_completion(

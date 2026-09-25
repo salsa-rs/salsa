@@ -586,10 +586,16 @@ impl QueryRevisions {
 pub(crate) struct QueryRevisionsExtra(Option<QueryRevisionsExtraInner>);
 
 impl QueryRevisionsExtra {
+    /// Builds the extra data for a completing query.
+    ///
+    /// `accumulated` and `cycle_heads` are taken by reference because most queries neither
+    /// accumulate nor participate in a cycle. Moving them out unconditionally would drop (and
+    /// free) the empty containers owned by the reusable query stack frame on every query
+    /// completion, even though the result is discarded right away.
     pub fn new(
-        #[cfg(feature = "accumulator")] accumulated: AccumulatedMap,
+        #[cfg(feature = "accumulator")] accumulated: &mut AccumulatedMap,
         mut tracked_struct_ids: ThinVec<(Identity, Id)>,
-        cycle_heads: CycleHeads,
+        cycle_heads: &mut CycleHeads,
         iteration: IterationStamp,
         force_extra: bool,
     ) -> Self {
@@ -612,8 +618,8 @@ impl QueryRevisionsExtra {
 
             Some(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
-                accumulated,
-                cycle_heads,
+                accumulated: std::mem::take(accumulated),
+                cycle_heads: std::mem::take(cycle_heads),
                 tracked_struct_ids,
                 iteration: iteration.into(),
                 cycle_converged: false,
@@ -759,9 +765,9 @@ impl QueryRevisions {
                 std::iter::empty(),
                 QueryRevisionsExtra::new(
                     #[cfg(feature = "accumulator")]
-                    AccumulatedMap::default(),
+                    &mut AccumulatedMap::default(),
                     ThinVec::default(),
-                    CycleHeads::initial(query, iteration),
+                    &mut CycleHeads::initial(query, iteration),
                     iteration,
                     false,
                 ),
