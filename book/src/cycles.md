@@ -50,6 +50,8 @@ Also, in fixed-point iteration, it is advantageous to be able to identify which 
 
 It is permitted to call other Salsa queries from within the `cycle_fn` and `cycle_initial` functions. However, if these functions re-enter the same cycle, this can lead to unpredictable results. Take care which queries are called from within cycle-recovery functions, and avoid triggering further cycles.
 
+`cycle_initial` must not create tracked structs directly. It may read and return existing tracked structs, including those created by another tracked query. To construct a tracked initial value, call another tracked query that owns the struct.
+
 ## Fallback Values
 
 You can use `cycle_result` to specify a fallback value if Salsa detects a cycle. Queries with `cycle_result` always run to completion, but the resulting value will be replaced with the fallback value if a cycle is encountered.
@@ -67,3 +69,5 @@ fn cycle_result(_db: &dyn salsa::Database, _id: salsa::Id) -> u32 {
 
 Unlike fixpoint iteration, queries attributed with `cycle_result` also use their fallback value if 
 they participate in a cycle. This is to ensure the query result doesn't depend on the query execution order ([details](https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285)).
+
+When `cycle_result` provides the cycle's initial provisional value, the same restriction on creating tracked structs applies: call another tracked query to construct them.
