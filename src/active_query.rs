@@ -1,4 +1,4 @@
-use std::{fmt, mem, ops};
+use std::{fmt, ops};
 
 use crate::Revision;
 #[cfg(feature = "accumulator")]
@@ -243,9 +243,9 @@ impl ActiveQuery {
 
         let extra = QueryRevisionsExtra::new(
             #[cfg(feature = "accumulator")]
-            mem::take(accumulated),
+            accumulated,
             active_tracked_structs,
-            mem::take(cycle_heads),
+            cycle_heads,
             iteration,
             force_extra,
         );
@@ -402,7 +402,7 @@ impl QueryStack {
             push_len,
         );
         let completion = active_query.prepare_completion(iteration, false);
-        completion.finish(active_query.input_outputs.drain(..))
+        completion.finish(&mut active_query.input_outputs)
     }
 
     pub(crate) fn pop_detached_completion(
@@ -461,15 +461,20 @@ pub(crate) struct QueryCompletion {
 }
 
 impl QueryCompletion {
-    pub(crate) fn finish(
-        self,
-        input_outputs: impl ExactSizeIterator<Item = QueryEdge>,
-    ) -> CompletedQuery {
+    /// Builds the [`CompletedQuery`] from the given edges, leaving `input_outputs` empty
+    /// (but with its allocation intact) so that it can be reused.
+    pub(crate) fn finish(self, input_outputs: &mut FxIndexSet<QueryEdge>) -> CompletedQuery {
+        // `QueryEdge` is `Copy`, so copy the edges out of the set and reset it afterwards instead
+        // of draining it. `IndexSet::drain(..)` has to run the index-erasure heuristics of
+        // `indexmap` (which rebuilds the remaining indices) and iterating a `Drain` is more
+        // expensive than iterating the entry slice, while `clear` just resets the table.
+        let edges = input_outputs.iter().copied();
         let origin_and_extra = if self.untracked_read {
-            OriginAndExtra::derived_untracked(input_outputs, self.extra)
+            OriginAndExtra::derived_untracked(edges, self.extra)
         } else {
-            OriginAndExtra::derived(input_outputs, self.extra)
+            OriginAndExtra::derived(edges, self.extra)
         };
+        input_outputs.clear();
         CompletedQuery {
             revisions: QueryRevisions {
                 changed_at: self.changed_at,
