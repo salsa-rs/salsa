@@ -6,7 +6,6 @@ use crate::ir::{
     Statement, StatementData, VariableId,
 };
 
-// ANCHOR: parse_statements
 #[salsa::tracked(returns(copy))]
 pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_> {
     // Get the source text from the database
@@ -44,7 +43,6 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_
 
     Program::new(db, result)
 }
-// ANCHOR_END: parse_statements
 
 /// The parser tracks the current position in the input.
 ///
@@ -78,7 +76,6 @@ impl<'db> Parser<'_, 'db> {
         }
     }
 
-    // ANCHOR: report_error
     /// Report an error diagnostic at the current position.
     fn report_error(&self) {
         let next_position = match self.peek() {
@@ -92,7 +89,6 @@ impl<'db> Parser<'_, 'db> {
         }
         .accumulate(self.db);
     }
-    // ANCHOR_END: report_error
 
     fn peek(&self) -> Option<char> {
         self.source_text[self.position..].chars().next()
@@ -118,7 +114,6 @@ impl<'db> Parser<'_, 'db> {
         self.position
     }
 
-    // ANCHOR: parse_statement
     fn parse_statement(&mut self) -> Option<Statement<'db>> {
         let start_position = self.skip_whitespace();
         let word = self.word()?;
@@ -138,9 +133,7 @@ impl<'db> Parser<'_, 'db> {
             None
         }
     }
-    // ANCHOR_END: parse_statement
 
-    // ANCHOR: parse_function
     fn parse_function(&mut self) -> Option<Function<'db>> {
         let start_position = self.skip_whitespace();
         let name = self.word()?;
@@ -157,7 +150,6 @@ impl<'db> Parser<'_, 'db> {
         //   ^^^^^^^^^^^^^
         // Create a new entity struct.
     }
-    // ANCHOR_END: parse_function
 
     fn parse_expression(&mut self) -> Option<Expression<'db>> {
         self.parse_op_expression(Self::parse_expression1, Self::low_op)
@@ -333,7 +325,6 @@ impl<'db> Parser<'_, 'db> {
     }
 }
 
-// ANCHOR: parse_string
 /// Create a new database with the given source text and parse the result.
 /// Returns the statements and the diagnostics generated.
 #[cfg(test)]
@@ -356,9 +347,7 @@ fn parse_string(source_text: &str) -> String {
         format!("{:#?}", (statements, accumulated))
     })
 }
-// ANCHOR_END: parse_string
 
-// ANCHOR: parse_print
 #[test]
 fn parse_print() {
     let actual = parse_string("print 1 + 2");
@@ -412,7 +401,6 @@ fn parse_print() {
         )"#]];
     expected.assert_eq(&actual);
 }
-// ANCHOR_END: parse_print
 
 #[test]
 fn parse_example() {

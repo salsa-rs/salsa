@@ -149,7 +149,6 @@ impl<Db: Database> Storage<Db> {
         handle
     }
 
-    // ANCHOR: cancel_other_workers
     /// Sets cancellation flag and blocks until all other workers with access
     /// to this storage have completed.
     ///
@@ -188,7 +187,6 @@ impl<Db: Database> Storage<Db> {
         }
         zalsa
     }
-    // ANCHOR_END: cancel_other_workers
 }
 
 /// A builder for a [`Storage`] instance.

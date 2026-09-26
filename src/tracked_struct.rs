@@ -29,7 +29,6 @@ use crate::{Durability, Event, EventKind, Id, Revision};
 
 pub mod tracked_field;
 
-// ANCHOR: Configuration
 /// Trait that defines the key properties of a tracked struct.
 ///
 /// Implemented by the `#[salsa::tracked]` macro when applied
@@ -111,7 +110,6 @@ pub unsafe trait Configuration: Sized + 'static {
     where
         D: plumbing::serde::Deserializer<'de>;
 }
-// ANCHOR_END: Configuration
 
 /// Replaces a recreated field when `old_value` and `new_value` are not equal.
 #[doc(hidden)]
@@ -381,7 +379,6 @@ struct TrackedEntry {
     active: bool,
 }
 
-// ANCHOR: ValueStruct
 pub struct Value<C>
 where
     C: Configuration,
@@ -430,8 +427,6 @@ where
     /*unsafe */
     memos: MemoTable,
 }
-
-// ANCHOR_END: ValueStruct
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]

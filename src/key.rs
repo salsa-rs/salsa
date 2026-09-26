@@ -4,7 +4,6 @@ use crate::Id;
 use crate::function::VerifyResult;
 use crate::zalsa::{IngredientIndex, Zalsa};
 
-// ANCHOR: DatabaseKeyIndex
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track input and output dependencies between queries. Fully
 /// ordered and equatable but those orderings are arbitrary, and meant to be used
@@ -14,7 +13,6 @@ pub struct DatabaseKeyIndex {
     key_index: Id,
     ingredient_index: IngredientIndex,
 }
-// ANCHOR_END: DatabaseKeyIndex
 
 impl DatabaseKeyIndex {
     #[inline]
