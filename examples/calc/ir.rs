@@ -2,15 +2,12 @@
 
 use ordered_float::OrderedFloat;
 
-// ANCHOR: input
 #[salsa::input(debug)]
 pub struct SourceProgram {
     #[returns(deref)]
     pub text: String,
 }
-// ANCHOR_END: input
 
-// ANCHOR: interned_ids
 #[salsa::interned(debug)]
 pub struct VariableId<'db> {
     #[returns(deref)]
@@ -22,18 +19,14 @@ pub struct FunctionId<'db> {
     #[returns(deref)]
     pub text: String,
 }
-// ANCHOR_END: interned_ids
 
-// ANCHOR: program
 #[salsa::tracked(debug)]
 pub struct Program<'db> {
     #[tracked]
     #[returns(deref)]
     pub statements: Vec<Statement<'db>>,
 }
-// ANCHOR_END: program
 
-// ANCHOR: statements_and_expressions
 #[derive(Eq, PartialEq, Debug, Hash, salsa::SalsaValue)]
 pub struct Statement<'db> {
     pub span: Span<'db>,
@@ -83,9 +76,7 @@ pub enum Op {
     Multiply,
     Divide,
 }
-// ANCHOR_END: statements_and_expressions
 
-// ANCHOR: functions
 #[salsa::tracked(debug)]
 pub struct Function<'db> {
     #[returns(copy)]
@@ -101,7 +92,6 @@ pub struct Function<'db> {
     #[tracked]
     pub body: Expression<'db>,
 }
-// ANCHOR_END: functions
 
 #[salsa::tracked(debug)]
 pub struct Span<'db> {
@@ -113,7 +103,6 @@ pub struct Span<'db> {
     pub end: usize,
 }
 
-// ANCHOR: diagnostic
 #[salsa::accumulator]
 #[derive(Debug)]
 #[allow(dead_code)] // Debug impl uses them
@@ -122,7 +111,6 @@ pub struct Diagnostic {
     pub end: usize,
     pub message: String,
 }
-// ANCHOR_END: diagnostic
 
 impl Diagnostic {
     pub fn new(start: usize, end: usize, message: String) -> Self {
