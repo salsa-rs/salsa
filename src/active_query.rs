@@ -464,10 +464,10 @@ impl QueryCompletion {
     /// Builds the [`CompletedQuery`] from the given edges, leaving `input_outputs` empty
     /// (but with its allocation intact) so that it can be reused.
     pub(crate) fn finish(self, input_outputs: &mut FxIndexSet<QueryEdge>) -> CompletedQuery {
-        // `QueryEdge` is `Copy`, so copy the edges out of the set and reset it afterwards instead
-        // of draining it. `IndexSet::drain(..)` has to run the index-erasure heuristics of
-        // `indexmap` (which rebuilds the remaining indices) and iterating a `Drain` is more
-        // expensive than iterating the entry slice, while `clear` just resets the table.
+        // `QueryEdge` is `Copy`, so copy the edges in their existing order, then clear the set.
+        // This preserves the dependency order of `drain(..)` while using a plain slice iterator
+        // and bypassing `drain`'s generic index-removal bookkeeping. For a full drain, that
+        // bookkeeping clears the hash table; there are no remaining indices to rebuild.
         let edges = input_outputs.iter().copied();
         let origin_and_extra = if self.untracked_read {
             OriginAndExtra::derived_untracked(edges, self.extra)
