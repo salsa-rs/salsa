@@ -947,7 +947,7 @@ fn complete_cycle_query(
 
     seen.clear();
     let completion = detached_query.pop_completion(iteration, true);
-    let completed_query = completion.finish(flattened.drain(..));
+    let completed_query = completion.finish(&mut flattened);
     #[cfg(feature = "accumulator")]
     assert!(
         completed_query
