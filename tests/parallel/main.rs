@@ -20,6 +20,7 @@ mod cycle_nested_three_threads;
 mod cycle_nested_three_threads_changed;
 mod cycle_panic;
 mod cycle_provisional_depending_on_itself;
+mod cycle_transfer_self_wait;
 mod lru_eviction_cancels_cycle;
 mod memo_table_first_insert;
 

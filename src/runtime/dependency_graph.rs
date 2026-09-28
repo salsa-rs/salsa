@@ -358,9 +358,25 @@ impl DependencyGraph {
         false
     }
 
-    /// Finds the one query in the dependents of the `source_query` (the one that is transferred to a new owner)
-    /// on which the `new_owner_id` thread blocks on and unblocks it, to ensure progress.
+    /// Unblocks affected waiters until
+    /// redirecting the remaining waits to `new_owner_id` cannot create a cycle.
     fn unblock_transfer_target(&mut self, source_query: DatabaseKeyIndex, new_owner_id: ThreadId) {
+        // Unblocking one thread can leave another affected thread on the new owner's
+        // wait path. The dependency-graph mutex stays held through this loop and
+        // the subsequent redirection, so notified threads cannot register new waits.
+        while let Some((query, query_dependents_index)) =
+            find_blocked_thread(self, source_query, new_owner_id)
+        {
+            let blocked_threads = self.query_dependents.get_mut(&query).unwrap();
+
+            let thread_id = blocked_threads.swap_remove(query_dependents_index);
+            if blocked_threads.is_empty() {
+                self.query_dependents.remove(&query);
+            }
+
+            self.unblock_runtime(thread_id, WaitResult::Completed);
+        }
+
         /// Finds the thread that's currently blocking the `new_owner_id` thread.
         ///
         /// Returns `Some` if there's such a thread where the first element is the query
@@ -385,19 +401,6 @@ impl DependencyGraph {
                 .copied()
                 .flatten()
                 .find_map(|dependent| find_blocked_thread(me, *dependent, new_owner_id))
-        }
-
-        if let Some((query, query_dependents_index)) =
-            find_blocked_thread(self, source_query, new_owner_id)
-        {
-            let blocked_threads = self.query_dependents.get_mut(&query).unwrap();
-
-            let thread_id = blocked_threads.swap_remove(query_dependents_index);
-            if blocked_threads.is_empty() {
-                self.query_dependents.remove(&query);
-            }
-
-            self.unblock_runtime(thread_id, WaitResult::Completed);
         }
     }
 
@@ -594,5 +597,62 @@ mod edge {
         pub(super) fn notify(self) {
             self.condvar.condvar.notify_one();
         }
+    }
+}
+
+#[cfg(all(test, not(feature = "shuttle")))]
+mod tests {
+    use super::{DatabaseKeyIndex, DependencyGraph, EdgeCondvar};
+    use crate::sync::thread;
+    use crate::{Id, IngredientIndex};
+
+    #[test]
+    fn transfer_does_not_leave_new_owner_waiting_on_itself() {
+        let current = thread::current().id();
+        let reentrant_reader = thread::spawn(|| thread::current().id()).join().unwrap();
+        let new_owner = thread::spawn(|| thread::current().id()).join().unwrap();
+        let participant = DatabaseKeyIndex::new(IngredientIndex::new(0), Id::from_bits(1));
+        let head = DatabaseKeyIndex::new(IngredientIndex::new(0), Id::from_bits(2));
+
+        let claimant_condvar = std::pin::pin!(EdgeCondvar::default());
+        let owner_condvar = std::pin::pin!(EdgeCondvar::default());
+        // Declare the graph last so its edges are dropped before their condvars, including
+        // when the regression causes a panic. No actual threads wait on these condvars.
+        let mut graph = DependencyGraph::default();
+
+        // `participant` has transferred to `head`. A thread on the head's critical path
+        // reentrantly claims `participant`, and the future owner blocks on that claim.
+        // Releasing the reentrant claim restores transferred ownership but leaves this
+        // wait edge pointing at the reader's thread. That thread then waits on `head`.
+        //
+        // Query ownership: participant -> head (current)
+        // Thread waits:    new_owner -> reentrant_reader -> current
+        graph.transferred.insert(participant, (current, head));
+        graph
+            .transferred_dependents
+            .entry(head)
+            .or_default()
+            .push(participant);
+
+        // SAFETY: Both pinned condvars outlive the graph and all its edges.
+        unsafe {
+            graph.add_edge(
+                new_owner,
+                participant,
+                reentrant_reader,
+                owner_condvar.as_ref(),
+            );
+            graph.add_edge(reentrant_reader, head, current, claimant_condvar.as_ref());
+        }
+
+        // These are the two steps performed by `transfer_lock` before blocking the
+        // current thread on the new owner. Both waiters are in the transferred subtree.
+        // Unblocking only the intermediate claimant leaves `new_owner` in that subtree:
+        // redirecting its wait then creates new_owner -> new_owner.
+        graph.unblock_transfer_target(head, new_owner);
+        graph.update_transferred_edges(head, new_owner);
+
+        assert!(graph.wait_results.contains_key(&new_owner));
+        assert!(!graph.edges.contains_key(&new_owner));
     }
 }
