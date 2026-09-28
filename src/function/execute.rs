@@ -262,6 +262,11 @@ where
                     id,
                     iteration: cycle_iteration.iteration_as_u32(),
                 };
+
+                // Passing the previous result to recovery is an implicit read. Record its
+                // inputs here to preserve their order relative to body and recovery reads.
+                active_query.report_previous_result_read(&last_provisional_memo.header.revisions);
+
                 // We are in a cycle that hasn't converged; ask the user's
                 // cycle-recovery function what to do (it may return the same value or a different one):
                 new_value = C::recover_from_cycle(
@@ -400,11 +405,9 @@ impl MemoHeader {
         // previous execution as the starting point for the new one.
         active_query.seed_tracked_struct_ids(self.revisions.tracked_struct_ids());
 
-        // Copy over all inputs and outputs from a previous iteration.
-        // This is necessary to:
-        // * ensure that tracked struct created during the previous iteration
-        //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
-        // * ensure the final returned memo depends on all inputs from all iterations.
+        // Carry over outputs and revision metadata from a previous iteration so that
+        // tracked structs owned by the query remain alive even if this iteration no
+        // longer creates them. Inputs are recorded when the previous result is read.
         if self.may_be_provisional() && self.verified_at.load() == zalsa.current_revision() {
             active_query.seed_iteration(&self.revisions);
         }

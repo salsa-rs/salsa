@@ -1965,6 +1965,18 @@ impl<'me> ActiveQueryGuard<'me> {
         }
     }
 
+    /// Record the inputs of the previous result before passing it to cycle recovery.
+    pub(crate) fn report_previous_result_read(&self, previous: &QueryRevisions) {
+        // SAFETY: We do not access the query stack reentrantly.
+        unsafe {
+            self.local_state.with_query_stack_unchecked_mut(|stack| {
+                #[cfg(debug_assertions)]
+                assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
+                stack.last_mut().unwrap().add_previous_result_read(previous);
+            })
+        }
+    }
+
     pub(crate) fn take_cycle_heads(&mut self) -> CycleHeads {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {

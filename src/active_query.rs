@@ -78,8 +78,8 @@ impl ActiveQuery {
     ) {
         assert!(self.input_outputs.is_empty());
 
-        // Copy over outputs for `diff_outputs`, don't copy inputs because cycle heads
-        // flatten all input dependencies.
+        // Copy over outputs for `diff_outputs`. Inputs are recorded when the previous
+        // result is read, either through dependency flattening or cycle recovery.
         self.input_outputs.extend(edges.iter_outputs());
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
@@ -91,6 +91,14 @@ impl ActiveQuery {
             .mark_all_active(active_tracked_ids.iter().copied());
         self.disambiguator_map
             .seed(active_tracked_ids.iter().map(|(id, _)| id));
+    }
+
+    pub(super) fn add_previous_result_read(&mut self, previous: &QueryRevisions) {
+        self.input_outputs
+            .extend(previous.origin().inputs().map(QueryEdge::input));
+        self.durability = self.durability.min(previous.durability);
+        self.changed_at = self.changed_at.max(previous.changed_at);
+        self.untracked_read |= previous.is_derived_untracked();
     }
 
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
