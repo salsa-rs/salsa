@@ -252,18 +252,20 @@ impl DependencyGraph {
             "new owner {new_owner:?} ({new_owner_thread:?}) must be blocked on {query:?} ({current_thread:?})"
         );
 
-        let thread_changed = match dg.transferred.entry(query) {
+        let same_owner = dg.transferred.get(&query) == Some(&(new_owner_thread, new_owner));
+        let update_thread_dependencies = match dg.transferred.entry(query) {
+            std::collections::hash_map::Entry::Occupied(_) if same_owner => {
+                // Other threads may have blocked on this query during reentrant
+                // execution. Keep the ownership mapping, but still redirect thread
+                // dependencies and block on the owner if necessary.
+                true
+            }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 // Transfer `c -> b` and there's no existing entry for `c`.
                 entry.insert((new_owner_thread, new_owner));
                 current_thread != new_owner_thread
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                // If we transfer to the same owner as before, return immediately as this is a no-op.
-                if entry.get() == &(new_owner_thread, new_owner) {
-                    return false;
-                }
-
                 // `Transfer `c -> b` after a previous `c -> d` mapping.
                 // Update the owner and remove the query from the old owner's dependents.
                 let &(old_owner_thread, old_owner) = entry.get();
@@ -331,12 +333,14 @@ impl DependencyGraph {
             }
         };
 
-        // Register `c` as a dependent of `b`.
-        let all_dependents = dg.transferred_dependents.entry(new_owner).or_default();
-        debug_assert!(!all_dependents.contains(&new_owner));
-        all_dependents.push(query);
+        if !same_owner {
+            // Register `c` as a dependent of `b`.
+            let all_dependents = dg.transferred_dependents.entry(new_owner).or_default();
+            debug_assert!(!all_dependents.contains(&new_owner));
+            all_dependents.push(query);
+        }
 
-        if thread_changed {
+        if update_thread_dependencies {
             tracing::debug!("Unblocking new owner of transfer target {new_owner:?}");
             dg.retarget_waiters(query, new_owner_thread, WaiterScope::TransferredSubtree);
 

@@ -22,6 +22,7 @@ mod cycle_panic;
 mod cycle_provisional_depending_on_itself;
 mod cycle_reentrant_claim;
 mod cycle_reentrant_claim_keeps_owner;
+mod cycle_transfer_same_owner;
 mod cycle_transfer_self_wait;
 mod lru_eviction_cancels_cycle;
 mod memo_table_first_insert;
