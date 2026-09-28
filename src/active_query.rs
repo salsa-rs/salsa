@@ -93,16 +93,6 @@ impl ActiveQuery {
             .seed(active_tracked_ids.iter().map(|(id, _)| id));
     }
 
-    pub(super) fn add_previous_result_read(&mut self, previous: &QueryRevisions) {
-        // The memo table still holds the previous result. Cycle completion flattens
-        // this self-dependency before the new memo replaces it.
-        self.input_outputs
-            .insert(QueryEdge::input(self.database_key_index));
-        self.durability = self.durability.min(previous.durability);
-        self.changed_at = self.changed_at.max(previous.changed_at);
-        self.untracked_read |= previous.is_derived_untracked();
-    }
-
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
         std::mem::take(&mut self.cycle_heads)
     }
@@ -173,6 +163,16 @@ impl ActiveQuery {
         self.untracked_read = true;
         self.durability = Durability::MIN;
         self.changed_at = changed_at;
+    }
+
+    pub(super) fn add_previous_result_read(&mut self, previous: &QueryRevisions) {
+        // The memo table still holds the previous result. Cycle completion flattens
+        // this self-dependency before the new memo replaces it.
+        self.input_outputs
+            .insert(QueryEdge::input(self.database_key_index));
+        self.durability = self.durability.min(previous.durability);
+        self.changed_at = self.changed_at.max(previous.changed_at);
+        self.untracked_read |= previous.is_derived_untracked();
     }
 
     #[cfg(feature = "accumulator")]
