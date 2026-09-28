@@ -263,8 +263,8 @@ where
                     iteration: cycle_iteration.iteration_as_u32(),
                 };
 
-                // Passing the previous result to recovery is an implicit read. Record its
-                // inputs here to preserve their order relative to body and recovery reads.
+                // Passing the previous result to recovery is an implicit read. Record it
+                // here to preserve dependency order relative to body and recovery reads.
                 active_query.report_previous_result_read(&last_provisional_memo.header.revisions);
 
                 // We are in a cycle that hasn't converged; ask the user's

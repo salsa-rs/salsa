@@ -94,8 +94,10 @@ impl ActiveQuery {
     }
 
     pub(super) fn add_previous_result_read(&mut self, previous: &QueryRevisions) {
+        // The memo table still holds the previous result. Cycle completion flattens
+        // this self-dependency before the new memo replaces it.
         self.input_outputs
-            .extend(previous.origin().inputs().map(QueryEdge::input));
+            .insert(QueryEdge::input(self.database_key_index));
         self.durability = self.durability.min(previous.durability);
         self.changed_at = self.changed_at.max(previous.changed_at);
         self.untracked_read |= previous.is_derived_untracked();

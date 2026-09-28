@@ -1965,7 +1965,7 @@ impl<'me> ActiveQueryGuard<'me> {
         }
     }
 
-    /// Record the inputs of the previous result before passing it to cycle recovery.
+    /// Record a read of the previous result before passing it to cycle recovery.
     pub(crate) fn report_previous_result_read(&self, previous: &QueryRevisions) {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
