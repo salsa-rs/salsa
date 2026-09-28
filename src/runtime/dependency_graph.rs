@@ -338,8 +338,7 @@ impl DependencyGraph {
 
         if thread_changed {
             tracing::debug!("Unblocking new owner of transfer target {new_owner:?}");
-            dg.unblock_transfer_target(query, new_owner_thread);
-            dg.update_transferred_edges(query, new_owner_thread);
+            dg.retarget_waiters(query, new_owner_thread, WaiterScope::TransferredSubtree);
 
             // Block on the new owner, unless new owner is blocked on this query.
             // This is necessary to avoid a race between `fetch` completing and `provisional_retry` blocking on the
@@ -358,14 +357,48 @@ impl DependencyGraph {
         false
     }
 
+    /// Completes the release of a reentrant claim, preserving any ownership transfer.
+    /// Only threads fetching this query could have observed its reentrant
+    /// `SyncOwner::Thread` state. Update their dependencies on that thread.
+    pub(super) fn release_reentrant_claim(&mut self, query: DatabaseKeyIndex) {
+        if !self.query_dependents.contains_key(&query) {
+            return;
+        }
+
+        if let Some(owner) = self.thread_id_of_transferred_query(query, None) {
+            self.retarget_waiters(query, owner, WaiterScope::QueryOnly);
+        } else {
+            self.unblock_runtimes_blocked_on(query, WaitResult::Completed);
+        }
+    }
+
+    /// Unblocks threads whose redirected waits would become cyclic, then redirects
+    /// the remaining waits.
+    /// Both steps hold the dependency-graph mutex. Already-correct waits remain
+    /// registered because a pending ownership transfer may depend on them.
+    fn retarget_waiters(&mut self, query: DatabaseKeyIndex, owner: ThreadId, scope: WaiterScope) {
+        // Avoid traversing the transferred subtree when no threads are waiting.
+        if self.query_dependents.is_empty() {
+            return;
+        }
+
+        self.unblock_transfer_target(query, owner, scope);
+        self.update_transferred_edges(query, owner, scope);
+    }
+
     /// Unblocks affected waiters until
     /// redirecting the remaining waits to `new_owner_id` cannot create a cycle.
-    fn unblock_transfer_target(&mut self, source_query: DatabaseKeyIndex, new_owner_id: ThreadId) {
+    fn unblock_transfer_target(
+        &mut self,
+        source_query: DatabaseKeyIndex,
+        new_owner_id: ThreadId,
+        scope: WaiterScope,
+    ) {
         // Unblocking one thread can leave another affected thread on the new owner's
         // wait path. The dependency-graph mutex stays held through this loop and
         // the subsequent redirection, so notified threads cannot register new waits.
         while let Some((query, query_dependents_index)) =
-            find_blocked_thread(self, source_query, new_owner_id)
+            find_blocked_thread(self, source_query, new_owner_id, scope)
         {
             let blocked_threads = self.query_dependents.get_mut(&query).unwrap();
 
@@ -386,6 +419,7 @@ impl DependencyGraph {
             me: &DependencyGraph,
             query: DatabaseKeyIndex,
             new_owner_id: ThreadId,
+            scope: WaiterScope,
         ) -> Option<(DatabaseKeyIndex, usize)> {
             if let Some(blocked_threads) = me.query_dependents.get(&query) {
                 for (i, id) in blocked_threads.iter().copied().enumerate() {
@@ -395,22 +429,41 @@ impl DependencyGraph {
                 }
             }
 
+            if matches!(scope, WaiterScope::QueryOnly) {
+                return None;
+            }
+
             me.transferred_dependents
                 .get(&query)
                 .iter()
                 .copied()
                 .flatten()
-                .find_map(|dependent| find_blocked_thread(me, *dependent, new_owner_id))
+                .find_map(|dependent| find_blocked_thread(me, *dependent, new_owner_id, scope))
         }
     }
 
-    fn update_transferred_edges(&mut self, query: DatabaseKeyIndex, new_owner_thread: ThreadId) {
+    fn update_transferred_edges(
+        &mut self,
+        query: DatabaseKeyIndex,
+        new_owner_thread: ThreadId,
+        scope: WaiterScope,
+    ) {
+        update_transferred_edges(
+            &mut self.edges,
+            &self.query_dependents,
+            &self.transferred_dependents,
+            query,
+            new_owner_thread,
+            scope,
+        );
+
         fn update_transferred_edges(
             edges: &mut Edges,
             query_dependents: &QueryDependents,
             transferred_dependents: &TransferredDependents,
             query: DatabaseKeyIndex,
             new_owner_thread: ThreadId,
+            scope: WaiterScope,
         ) {
             tracing::trace!("update_transferred_edges({query:?}");
             if let Some(dependents) = query_dependents.get(&query) {
@@ -429,7 +482,9 @@ impl DependencyGraph {
                 }
             };
 
-            if let Some(dependents) = transferred_dependents.get(&query) {
+            if matches!(scope, WaiterScope::TransferredSubtree)
+                && let Some(dependents) = transferred_dependents.get(&query)
+            {
                 for dependent in dependents {
                     update_transferred_edges(
                         edges,
@@ -437,19 +492,18 @@ impl DependencyGraph {
                         transferred_dependents,
                         *dependent,
                         new_owner_thread,
+                        scope,
                     )
                 }
             }
         }
-
-        update_transferred_edges(
-            &mut self.edges,
-            &self.query_dependents,
-            &self.transferred_dependents,
-            query,
-            new_owner_thread,
-        )
     }
+}
+
+#[derive(Clone, Copy)]
+enum WaiterScope {
+    QueryOnly,
+    TransferredSubtree,
 }
 
 #[derive(Debug, Default)]
@@ -602,7 +656,7 @@ mod edge {
 
 #[cfg(all(test, not(feature = "shuttle")))]
 mod tests {
-    use super::{DatabaseKeyIndex, DependencyGraph, EdgeCondvar};
+    use super::{DatabaseKeyIndex, DependencyGraph, EdgeCondvar, WaiterScope};
     use crate::sync::thread;
     use crate::{Id, IngredientIndex};
 
@@ -649,8 +703,7 @@ mod tests {
         // current thread on the new owner. Both waiters are in the transferred subtree.
         // Unblocking only the intermediate claimant leaves `new_owner` in that subtree:
         // redirecting its wait then creates new_owner -> new_owner.
-        graph.unblock_transfer_target(head, new_owner);
-        graph.update_transferred_edges(head, new_owner);
+        graph.retarget_waiters(head, new_owner, WaiterScope::TransferredSubtree);
 
         assert!(graph.wait_results.contains_key(&new_owner));
         assert!(!graph.edges.contains_key(&new_owner));

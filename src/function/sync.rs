@@ -441,6 +441,18 @@ impl<'me> ClaimGuard<'me> {
         if state.get().claimed_twice {
             state.get_mut().claimed_twice = false;
             state.get_mut().id = SyncOwner::Transferred;
+
+            // The reentrant claim set `id` to `SyncOwner::Thread`, then released
+            // the sync-table mutex before validating the memo. Another thread
+            // fetching this query could therefore block on this thread through
+            // `try_claim`, even though the ownership transfer still exists.
+            // Restoring `Transferred` must also update those thread dependencies.
+            // Keep the sync-table mutex held until both updates are complete.
+            if state.get().anyone_waiting {
+                self.zalsa
+                    .runtime()
+                    .release_reentrant_claim(self.database_key_index());
+            }
         } else {
             self.release(state.remove().0, WaitResult::Completed);
         }

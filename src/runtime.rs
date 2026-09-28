@@ -389,6 +389,22 @@ impl Runtime {
             .unblock_runtimes_blocked_on(database_key, wait_result);
     }
 
+    /// Completes the release of a reentrant claim on a transferred query.
+    ///
+    /// Other threads may have blocked on the thread holding the reentrant claim.
+    /// Redirect their dependencies to the thread that owns the query through the
+    /// transfer. Unblock any thread whose dependency would create a cycle, or all
+    /// blocked threads if the owner has released the lock.
+    ///
+    /// The caller must keep the query's sync-table lock held throughout this call.
+    /// Looking up the owning thread, unblocking threads, and redirecting thread
+    /// dependencies all happen while holding the same dependency-graph lock.
+    pub(crate) fn release_reentrant_claim(&self, database_key: DatabaseKeyIndex) {
+        self.dependency_graph
+            .lock()
+            .release_reentrant_claim(database_key);
+    }
+
     /// Unblocks all transferred queries that are owned by `database_key` recursively.
     ///
     /// Invoked when a query completes that has been marked as transfer target (it has
