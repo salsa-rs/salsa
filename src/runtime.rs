@@ -418,6 +418,10 @@ impl Runtime {
 
     /// Transfers ownership of the lock for `query` to `new_owner_key`.
     ///
+    /// The transfer may block waiting for `new_owner_key` on another thread.
+    /// If it blocks, returns `Some` containing the [`WaitResult`]; otherwise, returns `None`.
+    /// After waiting, previously computed memos may need to be refetched.
+    ///
     /// For this operation to be reasonable, the caller must ensure that the sync table lock on `query` is not released
     /// and that `new_owner_key` is currently blocked on `query`. Otherwise, `new_owner_key` might
     /// complete before the lock is transferred, leaving `query` locked forever.
@@ -427,7 +431,7 @@ impl Runtime {
         new_owner_key: DatabaseKeyIndex,
         new_owner_id: SyncOwner,
         guard: SyncGuard,
-    ) -> bool {
+    ) -> Option<WaitResult> {
         let dg = self.dependency_graph.lock();
         DependencyGraph::transfer_lock(
             dg,
