@@ -1,6 +1,7 @@
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
+// ANCHOR: db_struct
 #[salsa::db]
 #[derive(Clone)]
 #[cfg_attr(not(test), derive(Default))]
@@ -34,6 +35,7 @@ impl Default for CalcDatabaseImpl {
         }
     }
 }
+// ANCHOR_END: db_struct
 
 impl CalcDatabaseImpl {
     /// Enable logging of each salsa event.
@@ -57,5 +59,7 @@ impl CalcDatabaseImpl {
     }
 }
 
+// ANCHOR: db_impl
 #[salsa::db]
 impl salsa::Database for CalcDatabaseImpl {}
+// ANCHOR_END: db_impl

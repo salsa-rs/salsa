@@ -12,6 +12,7 @@ use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 use salsa::{Accumulator, Setter, Storage};
 
+// ANCHOR: main
 fn main() -> Result<()> {
     // Create the channel to receive file change events.
     let (tx, rx) = unbounded();
@@ -60,7 +61,9 @@ fn main() -> Result<()> {
         }
     }
 }
+// ANCHOR_END: main
 
+// ANCHOR: db
 #[salsa::input]
 struct File {
     #[returns(deref)]
@@ -137,6 +140,7 @@ impl Db for LazyInputDatabase {
         })
     }
 }
+// ANCHOR_END: db
 
 #[salsa::accumulator]
 struct Diagnostic(String);
