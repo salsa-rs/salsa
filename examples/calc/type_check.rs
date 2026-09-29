@@ -8,6 +8,7 @@ use crate::ir::{
     Diagnostic, Expression, Function, FunctionId, Program, Span, StatementData, VariableId,
 };
 
+// ANCHOR: parse_statements
 #[salsa::tracked(returns(copy))]
 pub fn type_check_program<'db>(db: &'db dyn crate::Db, program: Program<'db>) {
     for statement in program.statements(db) {
