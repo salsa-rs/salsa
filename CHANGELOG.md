@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.6](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.5...salsa-v0.28.6) - 2026-09-30
+
+### Fixed
+
+- retain previous result inputs during cycle recovery ([#1346](https://github.com/salsa-rs/salsa/pull/1346))
+- propagate owner panics after lock transfers ([#1347](https://github.com/salsa-rs/salsa/pull/1347))
+- propagate cycle initial dependencies to other cycle heads ([#1331](https://github.com/salsa-rs/salsa/pull/1331))
+
+### Other
+
+- Revert "chore: Remove `ANCHOR` and `ANCHOR_END` comments. ([#1345](https://github.com/salsa-rs/salsa/pull/1345))" ([#1351](https://github.com/salsa-rs/salsa/pull/1351))
+- cut redundant work from query completion ([#1343](https://github.com/salsa-rs/salsa/pull/1343))
+- skip non-accumulating ingredients ([#1342](https://github.com/salsa-rs/salsa/pull/1342))
+- Add security advisory ([#1332](https://github.com/salsa-rs/salsa/pull/1332))
+
 ## [0.28.5](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.4...salsa-v0.28.5) - 2026-09-24
 
 This release addresses GHSA-xc3w-55vh-cw3w, a use-after-free vulnerability in interned values and cached function results. Depending on the consuming application, attacker-controlled input may expose process memory or permit arbitrary code execution. Dependent applications should update Salsa and rebuild.
