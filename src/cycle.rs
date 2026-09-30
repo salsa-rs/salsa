@@ -226,14 +226,6 @@ impl CycleHeads {
         self.0.is_empty()
     }
 
-    pub(crate) fn initial(database_key_index: DatabaseKeyIndex, iteration: IterationStamp) -> Self {
-        Self(thin_vec![CycleHead {
-            database_key_index,
-            iteration: iteration.into(),
-            removed: false.into()
-        }])
-    }
-
     pub(crate) fn iter(&self) -> CycleHeadsIterator<'_> {
         CycleHeadsIterator {
             inner: self.0.iter(),
