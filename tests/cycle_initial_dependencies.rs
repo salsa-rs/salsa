@@ -74,3 +74,13 @@ fn initial_value_is_validated_before_its_consumer() {
     input.set_revision(&mut db).to(1);
     assert_eq!(reader(&db, input), 0);
 }
+
+#[test]
+fn initial_value_changes_invalidate_other_cycle_heads() {
+    let mut db = salsa::DatabaseImpl::default();
+    let input = Input::new(&db, 0, 0);
+    head(&db, input);
+
+    input.set_value(&mut db).to(9);
+    assert_eq!(reader(&db, input), 9);
+}
