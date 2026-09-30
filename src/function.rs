@@ -99,12 +99,9 @@ pub unsafe trait Configuration: Any {
 
     /// Get the cycle recovery initial value.
     ///
-    /// `last_provisional_value` is `Some` when this query has a cached provisional value
-    /// from the current revision and cancellation epoch, but is becoming a cycle head
-    /// instead of reusing an existing cycle-head memo. In particular, it can be the result
-    /// of an earlier iteration as a participant in an enclosing cycle.
-    /// It is `None` when no such value exists. Values from earlier revisions or
-    /// cancelled computations are never passed to the callback.
+    /// `last_provisional_value` is `Some` when this query was a participant in a broader
+    /// cycle and becomes a new cycle head. It contains the query's previous provisional
+    /// result. Otherwise, it is `None`.
     fn cycle_initial<'db>(
         db: &'db Self::DbView,
         id: Id,
