@@ -22,9 +22,10 @@ where
         C::Input<'db>: TrackedStructInDb,
     {
         let (zalsa, zalsa_local) = db.zalsas();
+        let database_key_index = self.database_key_index(key);
 
         let (active_query_key, current_deps, cycle_heads) =
-            match zalsa_local.active_query_with_cycle_heads() {
+            match zalsa_local.active_query_with_cycle_heads(database_key_index) {
                 Some(v) => v,
                 None => panic!("can only use `specify` inside a tracked function"),
             };
@@ -66,7 +67,6 @@ where
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
 
         let revision = zalsa.current_revision();
-        let database_key_index = self.database_key_index(key);
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
         zalsa.unwind_if_revision_cancelled(zalsa_local);

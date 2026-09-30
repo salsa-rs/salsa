@@ -51,69 +51,6 @@ pub mod shim {
             self.0.notify_all();
         }
     }
-
-    use std::cell::UnsafeCell;
-    use std::mem::MaybeUninit;
-
-    /// A polyfill for `std::sync::OnceLock`.
-    pub struct OnceLock<T>(Mutex<bool>, UnsafeCell<MaybeUninit<T>>);
-
-    impl<T> Default for OnceLock<T> {
-        fn default() -> Self {
-            OnceLock::new()
-        }
-    }
-
-    impl<T> OnceLock<T> {
-        pub const fn new() -> OnceLock<T> {
-            OnceLock(Mutex::new(false), UnsafeCell::new(MaybeUninit::uninit()))
-        }
-
-        pub fn get(&self) -> Option<&T> {
-            let initialized = self.0.lock();
-            if *initialized {
-                // SAFETY: The value is initialized and write-once.
-                Some(unsafe { (*self.1.get()).assume_init_ref() })
-            } else {
-                None
-            }
-        }
-
-        pub fn get_or_init<F>(&self, f: F) -> &T
-        where
-            F: FnOnce() -> T,
-        {
-            let _ = self.set_with(f);
-            self.get().unwrap()
-        }
-
-        fn set_with<F>(&self, f: F) -> Result<(), F>
-        where
-            F: FnOnce() -> T,
-        {
-            let mut initialized = self.0.lock();
-            if *initialized {
-                return Err(f);
-            }
-
-            // SAFETY: We hold the lock.
-            unsafe { self.1.get().write(MaybeUninit::new(f())) }
-            *initialized = true;
-
-            Ok(())
-        }
-    }
-
-    impl<T> From<T> for OnceLock<T> {
-        fn from(value: T) -> OnceLock<T> {
-            OnceLock(Mutex::new(true), UnsafeCell::new(MaybeUninit::new(value)))
-        }
-    }
-
-    // SAFETY: Mirroring `std::sync::OnceLock`.
-    unsafe impl<T: Send> Send for OnceLock<T> {}
-    // SAFETY: Mirroring `std::sync::OnceLock`.
-    unsafe impl<T: Sync + Send> Sync for OnceLock<T> {}
 }
 
 #[cfg(not(feature = "shuttle"))]

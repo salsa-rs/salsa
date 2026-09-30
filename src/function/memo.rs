@@ -3,9 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-use crate::cycle::{
-    CycleHeads, CycleHeadsIterator, IterationStamp, ProvisionalStatus, empty_cycle_heads,
-};
+use crate::cycle::{CycleHead, CycleHeads, IterationStamp, ProvisionalStatus};
 use crate::function::{ClaimResult, Configuration, IngredientImpl, Reentrancy};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
@@ -215,7 +213,7 @@ pub(super) struct MemoHeader {
 impl MemoHeader {
     fn new(revision_now: Revision, revisions: QueryRevisions) -> Self {
         debug_assert!(
-            !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_empty(),
+            !revisions.verified_final.load(Ordering::Relaxed) || revisions.cycle_heads().is_none(),
             "Memo must be finalized if it has no cycle heads"
         );
         Self {
@@ -249,18 +247,18 @@ impl MemoHeader {
 
     /// Cycle heads that should be propagated to dependent queries.
     #[inline(always)]
-    pub(super) fn cycle_heads(&self) -> &CycleHeads {
+    pub(super) fn cycle_heads(&self) -> Option<&CycleHeads> {
         if self.may_be_provisional() {
             self.revisions.cycle_heads()
         } else {
-            empty_cycle_heads()
+            None
         }
     }
 
     /// Returns `true` if this memo was part of a cycle in it's last iteration.
     #[inline(always)]
     pub(super) fn was_cycle_participant(&self) -> bool {
-        !self.revisions.cycle_heads().is_empty()
+        self.revisions.cycle_heads().is_some()
     }
 
     /// Mark memo as having been verified in the `revision_now`, which should
@@ -533,7 +531,7 @@ pub(super) enum TryClaimHeadsResult {
 pub(super) struct TryClaimCycleHeadsIter<'a> {
     zalsa: &'a Zalsa,
 
-    cycle_heads: CycleHeadsIterator<'a>,
+    cycle_heads: std::slice::Iter<'a, CycleHead>,
 }
 
 impl<'a> TryClaimCycleHeadsIter<'a> {

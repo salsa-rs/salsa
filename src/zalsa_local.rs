@@ -18,7 +18,7 @@ use crate::accumulator::{
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
 };
 use crate::active_query::{CompletedQuery, DetachedInputOutputs, QueryCompletion, QueryStack};
-use crate::cycle::{AtomicIterationStamp, CycleHeads, IterationStamp, empty_cycle_heads};
+use crate::cycle::{AtomicIterationStamp, CycleHeads, IterationStamp};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -253,18 +253,21 @@ impl ZalsaLocal {
     }
 
     /// Returns the active query, its current dependencies, and any provisional cycle results it
-    /// depends on.
+    /// depends on, with the copied cycle heads owned by `query`.
     pub(crate) fn active_query_with_cycle_heads(
         &self,
+        query: DatabaseKeyIndex,
     ) -> Option<(DatabaseKeyIndex, Stamp, CycleHeads)> {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.with_query_stack_unchecked(|stack| {
                 stack.last().map(|active_query| {
+                    let mut cycle_heads = CycleHeads::empty(query);
+                    cycle_heads.extend(active_query.cycle_heads());
                     (
                         active_query.database_key_index,
                         active_query.stamp(),
-                        active_query.cycle_heads().clone(),
+                        cycle_heads,
                     )
                 })
             })
@@ -324,7 +327,7 @@ impl ZalsaLocal {
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        cycle_heads: &CycleHeads,
+        cycle_heads: Option<&CycleHeads>,
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
@@ -547,7 +550,7 @@ impl QueryRevisions {
     pub(crate) fn discard_edges_if_never_change(&mut self) {
         if self.durability != Durability::NEVER_CHANGE
             || !matches!(self.origin(), QueryOriginRef::Derived(_))
-            || !self.cycle_heads().is_empty()
+            || self.cycle_heads().is_some()
         {
             return;
         }
@@ -619,7 +622,8 @@ impl QueryRevisionsExtra {
             Some(QueryRevisionsExtraInner {
                 #[cfg(feature = "accumulator")]
                 accumulated: std::mem::take(accumulated),
-                cycle_heads: std::mem::take(cycle_heads),
+                cycle_heads: (!cycle_heads.is_empty())
+                    .then(|| Box::new(cycle_heads.take().with_iteration(iteration))),
                 tracked_struct_ids,
                 iteration: iteration.into(),
                 cycle_converged: false,
@@ -667,7 +671,8 @@ struct QueryRevisionsExtraInner {
     /// which must provide the initial provisional value and decide,
     /// after each iteration, whether the cycle has converged or must
     /// iterate again.
-    cycle_heads: CycleHeads,
+    /// Always non-empty when present.
+    cycle_heads: Option<Box<CycleHeads>>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
     iteration: AtomicIterationStamp,
@@ -684,7 +689,7 @@ impl QueryRevisionsExtraInner {
             #[cfg(feature = "accumulator")]
             accumulated: AccumulatedMap::default(),
             tracked_struct_ids: ThinVec::default(),
-            cycle_heads: empty_cycle_heads().clone(),
+            cycle_heads: None,
             iteration: IterationStamp::default().into(),
             cycle_converged: false,
         }
@@ -705,7 +710,9 @@ impl QueryRevisionsExtraInner {
         let b = accumulated.allocation_size();
         #[cfg(not(feature = "accumulator"))]
         let b = 0;
-        b + cycle_heads.allocation_size() + std::mem::size_of_val(tracked_struct_ids.as_slice())
+        b + cycle_heads.as_ref().map_or(0, |heads| {
+            std::mem::size_of::<CycleHeads>() + heads.allocation_size()
+        }) + std::mem::size_of_val(tracked_struct_ids.as_slice())
     }
 }
 
@@ -787,18 +794,16 @@ impl QueryRevisions {
             .filter(|map| !map.is_empty())
     }
 
-    /// Returns a reference to the `CycleHeads` for this query.
-    pub(crate) fn cycle_heads(&self) -> &CycleHeads {
-        match self.origin_and_extra.extra() {
-            Some(extra) => &extra.cycle_heads,
-            None => empty_cycle_heads(),
-        }
+    /// Returns this query's cycle heads, or `None` if it has none.
+    pub(crate) fn cycle_heads(&self) -> Option<&CycleHeads> {
+        self.origin_and_extra.extra()?.cycle_heads.as_deref()
     }
 
     /// Sets the `CycleHeads` for this query.
     pub(crate) fn set_cycle_heads(&mut self, cycle_heads: CycleHeads, iteration: IterationStamp) {
         let extra = self.origin_and_extra.get_or_insert_extra();
-        extra.cycle_heads = cycle_heads;
+        extra.cycle_heads =
+            (!cycle_heads.is_empty()).then(|| Box::new(cycle_heads.with_iteration(iteration)));
         extra.iteration = iteration.into();
     }
 
@@ -834,9 +839,9 @@ impl QueryRevisions {
 
         extra.iteration.store_iteration(iteration);
 
-        extra
-            .cycle_heads
-            .update_iteration_count(database_key_index, iteration);
+        if let Some(cycle_heads) = &extra.cycle_heads {
+            cycle_heads.update_iteration_count(database_key_index, iteration);
+        }
     }
 
     const fn extra(&self) -> Option<&QueryRevisionsExtraInner> {
@@ -2496,6 +2501,34 @@ mod tests {
             edges.iter().map(QueryEdge::kind).collect::<Vec<_>>(),
             vec![QueryEdgeKind::Input, QueryEdgeKind::Output]
         );
+    }
+
+    #[cfg(all(feature = "persistence", not(feature = "shuttle")))]
+    #[test]
+    fn cycle_heads_serde_round_trip_preserves_owner() {
+        let owner = key(231, 10_842_122, 41);
+        let dependency = key(232, 10_842_123, 42);
+        let mut heads = crate::cycle::CycleHeads::empty(owner);
+        heads.insert(dependency, Default::default());
+        let mut revisions = super::QueryRevisions::fixpoint_initial(owner, Default::default());
+        revisions.set_cycle_heads(heads, Default::default());
+
+        for cycle_initial in [false, true] {
+            if cycle_initial {
+                revisions.cycle_heads().unwrap().mark_cycle_initial();
+            }
+            let serialized =
+                serde_json::to_string(&revisions.with_origin(PersistentQueryOrigin::derived([])))
+                    .unwrap();
+            let restored: super::QueryRevisions = serde_json::from_str(&serialized).unwrap();
+            let heads = restored.cycle_heads().unwrap();
+            assert_eq!(heads.contains(&dependency), !cycle_initial);
+            assert_eq!(heads.contains(&owner), cycle_initial);
+
+            heads.mark_cycle_initial();
+            assert!(heads.contains(&owner));
+            assert!(!heads.contains(&dependency));
+        }
     }
 
     fn key(ingredient: u32, index: u32, generation: u32) -> DatabaseKeyIndex {

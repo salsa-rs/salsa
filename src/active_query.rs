@@ -94,7 +94,7 @@ impl ActiveQuery {
     }
 
     pub(super) fn take_cycle_heads(&mut self) -> CycleHeads {
-        std::mem::take(&mut self.cycle_heads)
+        self.cycle_heads.take()
     }
 
     pub(crate) fn cycle_heads(&self) -> &CycleHeads {
@@ -110,7 +110,7 @@ impl ActiveQuery {
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        cycle_heads: &CycleHeads,
+        cycle_heads: Option<&CycleHeads>,
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
@@ -126,7 +126,7 @@ impl ActiveQuery {
         #[cfg(feature = "persistence")]
         let record_input = true;
         #[cfg(not(feature = "persistence"))]
-        let record_input = durability != Durability::NEVER_CHANGE || !cycle_heads.is_empty();
+        let record_input = durability != Durability::NEVER_CHANGE || cycle_heads.is_some();
         #[cfg(feature = "accumulator")]
         let record_input = record_input || accumulated_inputs.is_any();
 
@@ -134,7 +134,9 @@ impl ActiveQuery {
             self.input_outputs.insert(QueryEdge::input(input));
         }
 
-        self.cycle_heads.extend(cycle_heads);
+        if let Some(cycle_heads) = cycle_heads {
+            self.cycle_heads.extend(cycle_heads);
+        }
         #[cfg(feature = "accumulator")]
         {
             self.accumulated_inputs |= accumulated_inputs;
@@ -206,7 +208,7 @@ impl ActiveQuery {
             untracked_read: false,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
-            cycle_heads: Default::default(),
+            cycle_heads: CycleHeads::empty(database_key_index),
             #[cfg(feature = "accumulator")]
             accumulated: Default::default(),
             #[cfg(feature = "accumulator")]
@@ -263,7 +265,7 @@ impl ActiveQuery {
 
     fn clear(&mut self) {
         let Self {
-            database_key_index: _,
+            database_key_index,
             durability: _,
             changed_at: _,
             input_outputs,
@@ -279,7 +281,7 @@ impl ActiveQuery {
         input_outputs.clear();
         disambiguator_map.clear();
         tracked_struct_ids.clear();
-        *cycle_heads = Default::default();
+        *cycle_heads = CycleHeads::empty(*database_key_index);
         #[cfg(feature = "accumulator")]
         accumulated.clear();
     }
@@ -319,6 +321,7 @@ impl ActiveQuery {
             cycle_heads.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
         );
+        *cycle_heads = CycleHeads::empty(new_database_key_index);
         #[cfg(feature = "accumulator")]
         {
             *accumulated_inputs = Default::default();

@@ -419,11 +419,9 @@ impl MemoHeader {
             return true;
         }
 
-        let cycle_heads = self.cycle_heads();
-
-        if cycle_heads.is_empty() {
+        let Some(cycle_heads) = self.cycle_heads() else {
             return true;
-        }
+        };
 
         // A pending write can cancel a fixpoint iteration without advancing the revision.
         // Provisional results from the abandoned execution must not be reused.

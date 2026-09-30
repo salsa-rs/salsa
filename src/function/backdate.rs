@@ -36,7 +36,7 @@ impl MemoHeader {
         // right now whether backdating could be made safe for queries participating in queries.
         // TODO: Write a test that demonstrates that backdating queries participating in a cycle isn't safe
         // OR write many tests showing that it is (and fixing the case where it didn't correctly account for today).
-        revisions.cycle_heads().is_empty()
+        revisions.cycle_heads().is_none()
             && !self.may_be_provisional()
             // Careful: if the value became less durable than it
             // used to be, that is a "breaking change" that our

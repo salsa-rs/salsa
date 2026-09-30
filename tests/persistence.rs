@@ -260,7 +260,7 @@ fn everything() {
                         513
                       ]
                     ],
-                    "cycle_heads": []
+                    "cycle_heads": null
                   }
                 }
               }

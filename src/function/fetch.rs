@@ -196,17 +196,14 @@ where
                         Cancelled::PropagatedPanic.throw();
                     }
 
-                    // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
-                    // but that would require inserting itself as a cycle head, which either requires clone
-                    // on the value OR a concurrent `Vec` for cycle heads.
+                    // Only reuse a memo that was already a cycle head in its previous execution.
                     if memo.header.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
                         && revisions.iteration().cancellation_count() == cancellation_count
-                        && revisions.cycle_heads().contains(&database_key_index)
+                        && let Some(cycle_heads) = revisions.cycle_heads()
+                        && cycle_heads.contains(&database_key_index)
                     {
-                        revisions
-                            .cycle_heads()
-                            .remove_all_except(database_key_index);
+                        cycle_heads.mark_cycle_initial();
 
                         crate::tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \

@@ -391,7 +391,9 @@ impl MemoHeader {
             iteration: self.revisions.iteration(),
             // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
             // force at least two executions.
-            reuse_as_provisional: self.cycle_heads().contains(&database_key_index),
+            reuse_as_provisional: self
+                .cycle_heads()
+                .is_some_and(|heads| heads.contains(&database_key_index)),
         })
     }
 
@@ -675,7 +677,7 @@ fn collect_all_cycle_heads(
         // but it wasn't executed in the last iteration of said cycle.
         assert!(provisional_status.is_provisional());
 
-        for head in provisional_status.cycle_heads() {
+        for head in provisional_status.cycle_heads().into_iter().flatten() {
             let iteration = head.iteration.load();
             max_iteration = max_iteration.max(iteration);
 
@@ -893,7 +895,7 @@ fn try_complete_cycle_head(
         }
     }
 
-    debug_assert!(completed_query.revisions.cycle_heads().is_empty());
+    debug_assert!(completed_query.revisions.cycle_heads().is_none());
 
     cycle_heads.update_iteration_count_mut(me, iteration);
     completed_query
@@ -909,7 +911,7 @@ fn assert_no_new_cycle_heads(
     new_cycle_heads: CycleHeads,
     me: DatabaseKeyIndex,
 ) {
-    for head in new_cycle_heads {
+    for head in &new_cycle_heads {
         if !cycle_heads.contains(&head.database_key_index) {
             panic!(
                 "Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.",
