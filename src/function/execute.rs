@@ -112,7 +112,11 @@ where
             memo_ingredient_index,
         );
 
-        if claim_guard.drop() { None } else { Some(memo) }
+        if claim_guard.complete() {
+            None
+        } else {
+            Some(memo)
+        }
     }
 
     fn execute_maybe_iterate<'db>(

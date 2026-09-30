@@ -448,7 +448,7 @@ impl<'me> ClaimGuard<'me> {
 
     #[cold]
     #[inline(never)]
-    pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) -> bool {
+    pub(crate) fn transfer(&self, new_owner: DatabaseKeyIndex) -> Option<WaitResult> {
         let hash = self.hash();
 
         // Get the owning thread of `new_owner`.
@@ -497,19 +497,26 @@ impl<'me> ClaimGuard<'me> {
             .transfer_lock(self_key, new_owner, new_owner_thread_id, syncs)
     }
 
-    /// Drops the claim on the memo.
+    /// Completes the claim on the memo, releasing or transferring its lock.
     ///
     /// Returns `true` if the lock was transferred to another query and
     /// this thread blocked waiting for the new owner's lock to be released.
     /// In that case, any computed memo need to be refetched because they may have
-    /// changed since `drop` was called.
-    pub(crate) fn drop(mut self) -> bool {
-        let refetch = self.drop_impl();
+    /// changed since `complete` was called.
+    ///
+    /// Panics if this thread waited on an owner that panicked.
+    pub(crate) fn complete(mut self) -> bool {
+        let wait_result = self.drop_impl();
+        // The claim has been released or transferred. Disarm this guard before
+        // propagating a panic so unwinding cannot release the claim again.
         std::mem::forget(self);
-        refetch
+        if matches!(wait_result, Some(WaitResult::Panicked)) {
+            crate::Cancelled::PropagatedPanic.throw();
+        }
+        wait_result.is_some()
     }
 
-    fn drop_impl(&mut self) -> bool {
+    fn drop_impl(&mut self) -> Option<WaitResult> {
         match self.mode {
             ReleaseMode::Default => {
                 let hash = self.hash();
@@ -521,11 +528,11 @@ impl<'me> ClaimGuard<'me> {
                     .0;
 
                 self.release(state, WaitResult::Completed);
-                false
+                None
             }
             ReleaseMode::SelfOnly => {
                 self.release_self();
-                false
+                None
             }
             ReleaseMode::TransferTo(new_owner) => self.transfer(new_owner),
         }

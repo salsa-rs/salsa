@@ -227,7 +227,8 @@ impl DependencyGraph {
     /// Note, this function will block if `new_owner` runs on a different thread, unless `new_owner` is blocked
     /// on current thread after transferring the query ownership.
     ///
-    /// Returns `true` if the transfer blocked on `new_owner` (in which case it might be necessary to refetch any previously computed memos).
+    /// Returns `Some` containing the [`WaitResult`] if the transfer blocked on `new_owner`,
+    /// or `None` otherwise.
     pub(super) fn transfer_lock(
         mut me: MutexGuard<Self>,
         query: DatabaseKeyIndex,
@@ -235,7 +236,7 @@ impl DependencyGraph {
         new_owner: DatabaseKeyIndex,
         new_owner_id: SyncOwner,
         guard: SyncGuard,
-    ) -> bool {
+    ) -> Option<WaitResult> {
         let dg = &mut *me;
         let new_owner_thread = match new_owner_id {
             SyncOwner::Thread(thread) => thread,
@@ -261,7 +262,7 @@ impl DependencyGraph {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 // If we transfer to the same owner as before, return immediately as this is a no-op.
                 if entry.get() == &(new_owner_thread, new_owner) {
-                    return false;
+                    return None;
                 }
 
                 // `Transfer `c -> b` after a previous `c -> d` mapping.
@@ -350,12 +351,17 @@ impl DependencyGraph {
                 crate::tracing::debug!(
                     "block_on: thread {current_thread:?} is blocking on {new_owner:?} in thread {new_owner_thread:?}",
                 );
-                Self::block_on(me, current_thread, new_owner, new_owner_thread, guard);
-                return true;
+                return Some(Self::block_on(
+                    me,
+                    current_thread,
+                    new_owner,
+                    new_owner_thread,
+                    guard,
+                ));
             }
         }
 
-        false
+        None
     }
 
     /// Finds the one query in the dependents of the `source_query` (the one that is transferred to a new owner)
