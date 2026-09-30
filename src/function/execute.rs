@@ -146,11 +146,10 @@ where
         if let Some(old_memo) = opt_old_memo
             && old_memo.header.verified_at.load() == current_revision
         {
-            match old_memo.header.previous_iteration(
-                database_key_index,
-                cancellation_count,
-                old_memo.value.is_some(),
-            ) {
+            match old_memo
+                .header
+                .previous_iteration(cancellation_count, old_memo.value.is_some())
+            {
                 Some(previous_iteration) => {
                     if previous_iteration.reuse_as_provisional {
                         last_provisional_memo_opt = Some(old_memo);
@@ -364,7 +363,6 @@ enum QueryExecutionOutcome<'db> {
 impl MemoHeader {
     fn previous_iteration(
         &self,
-        database_key_index: DatabaseKeyIndex,
         cancellation_count: u8,
         has_value: bool,
     ) -> Option<PreviousIteration> {
@@ -389,11 +387,9 @@ impl MemoHeader {
 
         Some(PreviousIteration {
             iteration: self.revisions.iteration(),
-            // Only use the last provisional memo if it was a cycle head in the last iteration. This is to
-            // force at least two executions.
-            reuse_as_provisional: self
-                .cycle_heads()
-                .is_some_and(|heads| heads.contains(&database_key_index)),
+            // A participant can become a head during this execution. Retain its computed
+            // value so convergence is checked against the previous iteration.
+            reuse_as_provisional: self.cycle_heads().is_some(),
         })
     }
 

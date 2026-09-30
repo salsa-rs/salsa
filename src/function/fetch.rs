@@ -196,12 +196,12 @@ where
                         Cancelled::PropagatedPanic.throw();
                     }
 
-                    // Only reuse a memo that was already a cycle head in its previous execution.
+                    // A participant can become a cycle head in a later iteration. Reuse its
+                    // computed value: resetting to the initial value can prevent convergence.
                     if memo.header.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
                         && revisions.iteration().cancellation_count() == cancellation_count
                         && let Some(cycle_heads) = revisions.cycle_heads()
-                        && cycle_heads.contains(&database_key_index)
                     {
                         cycle_heads.mark_cycle_initial();
 
