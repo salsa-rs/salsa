@@ -1,5 +1,15 @@
 #![cfg(feature = "inventory")]
 
+//! Regression test for losing dependencies when `cycle_initial` reuses a previous result.
+//!
+//! `value` first reads `payload` as a participant in `choose`'s cycle, then becomes a
+//! cycle head and keeps that result through `cycle_initial`. Passing the previous
+//! result must also preserve its dependencies.
+//!
+//! In the next revision, `choose` stops reading `value` but still returns `1`.
+//! Without the retained `payload` dependency, backdating `choose` lets `value` reuse
+//! the stale result `666` instead of recomputing to `0`, as a fresh database does.
+
 use salsa::Setter;
 
 #[salsa::input]
