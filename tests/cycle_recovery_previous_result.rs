@@ -24,6 +24,8 @@ struct Input {
     phase: u32,
     #[returns(copy)]
     payload: u32,
+    #[returns(copy)]
+    read_previous_in_recovery: bool,
 }
 
 #[salsa::interned]
@@ -85,19 +87,45 @@ fn choose(db: &dyn salsa::Database, input: Input) -> u32 {
 }
 
 fn recover<'db>(
-    _db: &'db dyn salsa::Database,
+    db: &'db dyn salsa::Database,
     _cycle: &salsa::Cycle,
     previous: &Option<Literal<'db>>,
     current: Option<Literal<'db>>,
-    _input: Input,
+    input: Input,
 ) -> Option<Literal<'db>> {
+    if input.read_previous_in_recovery(db)
+        && let Some(previous) = previous
+    {
+        read_previous_literal(db, input, *previous);
+    }
     current.or(*previous)
+}
+
+#[salsa::tracked(returns(copy))]
+fn read_previous_literal<'db>(
+    db: &'db dyn salsa::Database,
+    input: Input,
+    literal: Literal<'db>,
+) -> u32 {
+    // Changing the payload forces this query to execute during validation. The
+    // previous result's dependencies must be validated before it reads the literal.
+    input.payload(db);
+    literal.value(db)
 }
 
 #[test]
 fn recovery_retains_inputs_with_retroactive_cycle_heads() {
+    check_recovery_retains_inputs(false);
+}
+
+#[test]
+fn recovery_validates_previous_inputs_before_tracked_reads() {
+    check_recovery_retains_inputs(true);
+}
+
+fn check_recovery_retains_inputs(read_previous_in_recovery: bool) {
     let mut db = salsa::DatabaseImpl::default();
-    let input = Input::new(&db, 1, 666);
+    let input = Input::new(&db, 1, 666, read_previous_in_recovery);
 
     // Warm from u, then enter the old cycle from w through a.
     u(&db, input);
