@@ -31,8 +31,9 @@ fn query_x<'db>(db: &'db dyn Database, _i: Interned<'db>) {
 }
 
 fn cycle_initial(db: &dyn Database, _id: Id) -> Interned<'_> {
-    // Keep cycle-created values reusable so the test still covers validation ordering.
-    db.report_untracked_read();
+    // A low-durability input keeps cycle-created values reusable without forcing
+    // reexecution, so the test still covers validation ordering in the next revision.
+    StableInput::get(db).value(db);
     Interned::new(db, 0)
 }
 
@@ -52,7 +53,7 @@ struct StableInput {
 fn the_test() {
     let mut db = ExecuteValidateLoggerDatabase::default();
     let _ = StableInput::builder(())
-        .durability(Durability::HIGH)
+        .durability(Durability::LOW)
         .new(&db);
 
     let result = query_a(&db);

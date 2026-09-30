@@ -78,8 +78,8 @@ impl ActiveQuery {
     ) {
         assert!(self.input_outputs.is_empty());
 
-        // Copy over outputs for `diff_outputs`, don't copy inputs because cycle heads
-        // flatten all input dependencies.
+        // Copy over outputs for `diff_outputs`. Inputs are recorded when the previous
+        // result is read, either through dependency flattening or cycle recovery.
         self.input_outputs.extend(edges.iter_outputs());
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
@@ -163,6 +163,16 @@ impl ActiveQuery {
         self.untracked_read = true;
         self.durability = Durability::MIN;
         self.changed_at = changed_at;
+    }
+
+    pub(super) fn add_previous_result_read(&mut self, previous: &QueryRevisions) {
+        // The memo table still holds the previous result. Cycle completion flattens
+        // this self-dependency before the new memo replaces it.
+        self.input_outputs
+            .insert(QueryEdge::input(self.database_key_index));
+        self.durability = self.durability.min(previous.durability);
+        self.changed_at = self.changed_at.max(previous.changed_at);
+        self.untracked_read |= previous.is_derived_untracked();
     }
 
     #[cfg(feature = "accumulator")]
