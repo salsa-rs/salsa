@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.6](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.28.5...salsa-macros-v0.28.6) - 2026-09-30
+
+### Fixed
+
+- propagate cycle initial dependencies to other cycle heads ([#1331](https://github.com/salsa-rs/salsa/pull/1331))
+
 ## [0.28.3](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.28.2...salsa-macros-v0.28.3) - 2026-09-18
 
 ### Changed
