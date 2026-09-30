@@ -185,25 +185,24 @@ where
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists
-                let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+                let memo_guard = self
+                    .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                    .filter(|memo| {
+                        memo.header.verified_at.load() == zalsa.current_revision()
+                            && memo.header.revisions.iteration().cancellation_count()
+                                == cancellation_count
+                    });
                 if let Some(memo) = &memo_guard {
                     let revisions = &memo.header.revisions;
                     // Don't replace a poisoned memo from this execution with a new initial value.
-                    if memo.value.is_none()
-                        && memo.header.may_be_provisional()
-                        && memo.header.verified_at.load() == zalsa.current_revision()
-                        && revisions.iteration().cancellation_count() == cancellation_count
-                    {
+                    if memo.value.is_none() && memo.header.may_be_provisional() {
                         Cancelled::PropagatedPanic.throw();
                     }
 
                     // An existing cycle head can reuse its memo directly. Otherwise, call
                     // `cycle_initial` below so the callback can introduce a cycle marker or
                     // choose to preserve the previous participant value.
-                    if memo.header.verified_at.load() == zalsa.current_revision()
-                        && memo.value.is_some()
-                        && revisions.iteration().cancellation_count() == cancellation_count
-                        && revisions.cycle_heads().contains(&database_key_index)
+                    if memo.value.is_some() && revisions.cycle_heads().contains(&database_key_index)
                     {
                         revisions
                             .cycle_heads()
@@ -225,13 +224,8 @@ where
                     inserting and returning fixpoint initial value"
                 );
 
-                let last_provisional_memo = memo_guard.filter(|memo| {
-                    memo.header.verified_at.load() == zalsa.current_revision()
-                        && memo.header.may_be_provisional()
-                        && memo.value.is_some()
-                        && memo.header.revisions.iteration().cancellation_count()
-                            == cancellation_count
-                });
+                let last_provisional_memo =
+                    memo_guard.filter(|memo| memo.header.may_be_provisional());
                 let iteration = last_provisional_memo
                     .map(|memo| memo.header.revisions.iteration())
                     .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
