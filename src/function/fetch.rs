@@ -230,6 +230,9 @@ where
                 // Record reads on the initial memo so every query using the provisional value
                 // inherits them when flattening its dependencies.
                 let active_query = zalsa_local.push_query(database_key_index);
+                if let Some(previous) = last_provisional_memo {
+                    active_query.report_previous_result_read(&previous.header.revisions);
+                }
                 let initial_value = C::cycle_initial(
                     db,
                     id,
