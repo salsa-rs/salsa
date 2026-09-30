@@ -33,18 +33,6 @@ The cycle will iterate until it converges: that is, until the value returned by 
 
 If a cycle iterates more than 200 times, Salsa will panic rather than iterate forever.
 
-### Initializing a new cycle head
-
-The `cycle_initial` callback receives the database, the cycle head's `salsa::Id`,
-`last_provisional_value: Option<&Output>`, and then the query's arguments. It returns an owned `Output`.
-
-`last_provisional_value` is `Some` when the query previously participated in a broader cycle and later
-becomes a cycle head during the same computation. It contains the query's previous provisional result.
-Otherwise, it is `None`.
-
-The callback can reuse this value to preserve progress, or ignore it to produce a new initial value,
-such as a recursion marker.
-
 ### All potential cycle heads must set `cycle_initial`
 
 Consider a two-query cycle where `query_a` calls `query_b`, and `query_b` calls `query_a`. If `query_a` is called first, then it will become the "cycle head", but if `query_b` is called first, then `query_b` will be the cycle head. In order for a cycle to use fixed-point iteration instead of panicking, the cycle head must set `cycle_initial`. This means that in order to be robust against varying query execution order, both `query_a` and `query_b` must set `cycle_initial`.
