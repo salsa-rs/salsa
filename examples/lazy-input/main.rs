@@ -161,8 +161,10 @@ impl Diagnostic {
 
 #[salsa::tracked]
 struct ParsedFile<'db> {
+    #[tracked]
     #[returns(copy)]
     value: u32,
+    #[tracked]
     #[returns(deref)]
     links: Vec<ParsedFile<'db>>,
 }
