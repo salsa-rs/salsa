@@ -20,14 +20,14 @@ fn cycle_fn(_db: &dyn salsa::Database, _cycle: &salsa::Cycle, _last_provisional_
     value
 }
 
-fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id) -> u32 {
-    0
+fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id, last_provisional_value: Option<&u32>) -> u32 {
+    last_provisional_value.copied().unwrap_or(0)
 }
 ```
 
 The `cycle_fn` is optional. The default implementation always returns the computed `value`.
 
-If `query` becomes the head of a cycle (that is, `query` is executing and on the active query stack, it calls `query2`, `query2` calls `query3`, and `query3` calls `query` again -- there could be any number of queries involved in the cycle), the `cycle_initial` will be called to generate an "initial" value for `query` in the fixed-point computation. (The initial value should usually be the "bottom" value in the partial order.) All queries in the cycle will compute a provisional result based on this initial value for the cycle head. That is, `query3` will compute a provisional result using the initial value for `query`, `query2` will compute a provisional result using this provisional value for `query3`. When `cycle2` returns its provisional result back to `cycle`, `cycle` will observe that it has received a provisional result from its own cycle, and will call the `cycle_fn` (with a `salsa::Cycle` describing the current cycle, the last provisional value, and the newly computed value). The `cycle_fn` can return the `value` parameter to continue iterating with the computed value, or return a different value (a fallback value) to continue iteration with that value instead.
+If `query` becomes the head of a cycle (that is, `query` is executing and on the active query stack, it calls `query2`, `query2` calls `query3`, and `query3` calls `query` again -- there could be any number of queries involved in the cycle), the `cycle_initial` will be called to generate an "initial" value for `query` in the fixed-point computation. (Without a previous provisional value, the initial value should usually be the "bottom" value in the partial order.) All queries in the cycle will compute a provisional result based on this initial value for the cycle head. That is, `query3` will compute a provisional result using the initial value for `query`, `query2` will compute a provisional result using this provisional value for `query3`. When `cycle2` returns its provisional result back to `cycle`, `cycle` will observe that it has received a provisional result from its own cycle, and will call the `cycle_fn` (with a `salsa::Cycle` describing the current cycle, the last provisional value, and the newly computed value). The `cycle_fn` can return the `value` parameter to continue iterating with the computed value, or return a different value (a fallback value) to continue iteration with that value instead.
 
 The cycle will iterate until it converges: that is, until the value returned by `cycle_fn` equals the value from the previous iteration.
 

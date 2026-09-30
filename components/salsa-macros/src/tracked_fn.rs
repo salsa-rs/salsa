@@ -96,7 +96,7 @@ impl Macro {
             .collect::<Vec<_>>();
         let output_ty = with_db_lifetime(&self.output_ty(&db_lt, &item)?);
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
-            self.cycle_recovery()?;
+            self.cycle_recovery(&input_ids)?;
         let is_specifiable = self.args.specify.is_some();
         let requires_salsa_value = self.args.non_salsa_values.is_none();
         let heap_size_fn = self.args.heap_size_fn.iter();
@@ -267,7 +267,10 @@ impl Macro {
         Ok(ValidFn { db_ident, db_path })
     }
 
-    fn cycle_recovery(&self) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
+    fn cycle_recovery(
+        &self,
+        input_ids: &[Ident],
+    ) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
         // TODO should we ask the user to specify a struct that impls a trait with two methods,
         // rather than asking for two methods separately?
         match (
@@ -294,11 +297,15 @@ impl Macro {
                 quote!(((#cycle_initial))),
                 quote!(Fixpoint),
             )),
-            (None, None, Some(cycle_result)) => Ok((
-                quote!((salsa::plumbing::unexpected_cycle_recovery!)),
-                quote!(((#cycle_result))),
-                quote!(FallbackImmediate),
-            )),
+            (None, None, Some(cycle_result)) => {
+                let db = self.hygiene.ident("db");
+                let id = self.hygiene.ident("id");
+                Ok((
+                    quote!((salsa::plumbing::unexpected_cycle_recovery!)),
+                    quote!(((|#db, #id, _, #(#input_ids),*| (#cycle_result)(#db, #id, #(#input_ids),*)))),
+                    quote!(FallbackImmediate),
+                ))
+            }
             (_, _, Some(_)) => Err(syn::Error::new_spanned(
                 self.args.cycle_initial.as_ref().unwrap(),
                 "must provide either `cycle_result` or `cycle_fn` & `cycle_initial`, not both",

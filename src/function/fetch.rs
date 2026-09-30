@@ -185,26 +185,25 @@ where
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists
-                let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-                if let Some(memo) = &memo_guard {
+                let last_provisional_memo = self
+                    .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                    .filter(|memo| {
+                        memo.header.verified_at.load() == zalsa.current_revision()
+                            && memo.header.may_be_provisional()
+                            && memo.header.revisions.iteration().cancellation_count()
+                                == cancellation_count
+                    });
+                if let Some(memo) = last_provisional_memo {
                     let revisions = &memo.header.revisions;
                     // Don't replace a poisoned memo from this execution with a new initial value.
-                    if memo.value.is_none()
-                        && memo.header.may_be_provisional()
-                        && memo.header.verified_at.load() == zalsa.current_revision()
-                        && revisions.iteration().cancellation_count() == cancellation_count
-                    {
+                    if memo.value.is_none() {
                         Cancelled::PropagatedPanic.throw();
                     }
 
-                    // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
-                    // but that would require inserting itself as a cycle head, which either requires clone
-                    // on the value OR a concurrent `Vec` for cycle heads.
-                    if memo.header.verified_at.load() == zalsa.current_revision()
-                        && memo.value.is_some()
-                        && revisions.iteration().cancellation_count() == cancellation_count
-                        && revisions.cycle_heads().contains(&database_key_index)
-                    {
+                    // An existing cycle head can reuse its memo directly. Otherwise, call
+                    // `cycle_initial` below so the callback can introduce a cycle marker or
+                    // choose to preserve the previous participant value.
+                    if revisions.cycle_heads().contains(&database_key_index) {
                         revisions
                             .cycle_heads()
                             .remove_all_except(database_key_index);
@@ -225,23 +224,21 @@ where
                     inserting and returning fixpoint initial value"
                 );
 
-                let iteration = memo_guard
-                    .and_then(|old_memo| {
-                        let revisions = &old_memo.header.revisions;
-                        if old_memo.header.verified_at.load() == zalsa.current_revision()
-                            && old_memo.value.is_some()
-                            && revisions.iteration().cancellation_count() == cancellation_count
-                        {
-                            Some(revisions.iteration())
-                        } else {
-                            None
-                        }
-                    })
+                let iteration = last_provisional_memo
+                    .map(|memo| memo.header.revisions.iteration())
                     .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
                 // Record reads on the initial memo so every query using the provisional value
                 // inherits them when flattening its dependencies.
                 let active_query = zalsa_local.push_query(database_key_index);
-                let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+                if let Some(previous) = last_provisional_memo {
+                    active_query.report_previous_result_read(&previous.header.revisions);
+                }
+                let initial_value = C::cycle_initial(
+                    db,
+                    id,
+                    last_provisional_memo.and_then(Memo::value),
+                    C::id_to_input(zalsa, id),
+                );
 
                 let revisions = complete_cycle_query(zalsa, active_query, iteration)
                     .revisions

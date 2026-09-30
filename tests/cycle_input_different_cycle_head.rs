@@ -53,7 +53,7 @@ fn query_a(db: &dyn MyDb) -> u32 {
     db.input().value(db)
 }
 
-fn cycle_initial(_db: &dyn MyDb, _id: salsa::Id) -> u32 {
+fn cycle_initial(_db: &dyn MyDb, _id: salsa::Id, _last_provisional_value: Option<&u32>) -> u32 {
     0
 }
 

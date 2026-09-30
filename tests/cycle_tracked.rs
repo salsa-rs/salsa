@@ -113,7 +113,12 @@ fn cost_to_start<'db>(db: &'db dyn Database, node: Node<'db>) -> usize {
     min_cost
 }
 
-fn max_initial(_db: &dyn Database, _id: salsa::Id, _node: Node) -> usize {
+fn max_initial(
+    _db: &dyn Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&usize>,
+    _node: Node,
+) -> usize {
     usize::MAX
 }
 
@@ -247,11 +252,12 @@ fn create_tracked_in_cycle(db: &dyn Database, input: GraphInput) -> Vec<Iteratio
     }
 }
 
-fn initial_with_structs(
-    _db: &dyn Database,
+fn initial_with_structs<'db>(
+    _db: &'db dyn Database,
     _id: salsa::Id,
+    _last_provisional_value: Option<&Vec<IterationNode<'db>>>,
     _input: GraphInput,
-) -> Vec<IterationNode<'_>> {
+) -> Vec<IterationNode<'db>> {
     vec![]
 }
 
@@ -314,7 +320,7 @@ struct NameWithOffset<'db> {
 
 #[test]
 fn cycle_tracked_struct_with_tracked_field() {
-    #[salsa::tracked(returns(copy), cycle_initial=|_,_| 0)]
+    #[salsa::tracked(returns(copy), cycle_initial=|_, _, _| 0)]
     fn query_a(db: &dyn salsa::Database) -> u32 {
         let offset = query_b(db);
 

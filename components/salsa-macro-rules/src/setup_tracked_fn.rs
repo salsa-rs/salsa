@@ -350,8 +350,13 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
-                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, id: ::salsa::Id, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_initial)*(db, id, $($input_id),*)
+                fn cycle_initial<$db_lt>(
+                    db: &$db_lt Self::DbView,
+                    id: ::salsa::Id,
+                    last_provisional_value: Option<&Self::Output<$db_lt>>,
+                    ($($input_id),*): ($($interned_input_ty),*)
+                ) -> Self::Output<$db_lt> {
+                    $($cycle_recovery_initial)*(db, id, last_provisional_value, $($input_id),*)
                 }
 
                 fn recover_from_cycle<$db_lt>(

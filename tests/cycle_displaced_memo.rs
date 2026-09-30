@@ -62,12 +62,12 @@ fn consumer<'db>(db: &'db dyn Database, input: Input) -> Option<Value<'db>> {
     producer(db, input)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| true)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| true)]
 fn recursive_reader(db: &dyn Database, input: Input) -> bool {
     producer(db, input).is_some()
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| None)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| None)]
 fn producer<'db>(db: &'db dyn Database, input: Input) -> Option<Value<'db>> {
     condition(db, input);
     let present = recursive_reader(db, input);
@@ -76,12 +76,12 @@ fn producer<'db>(db: &'db dyn Database, input: Input) -> Option<Value<'db>> {
     present.then_some(value)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| false)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| false)]
 fn condition(db: &dyn Database, input: Input) -> bool {
     !outer(db, input)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| false)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| false)]
 fn outer(db: &dyn Database, input: Input) -> bool {
     if condition(db, input) {
         dependency(db, input);

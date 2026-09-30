@@ -76,8 +76,13 @@ fn infer_definition(db: &dyn Db, def: Definition) -> Type {
     }
 }
 
-fn def_cycle_initial(_db: &dyn Db, _id: salsa::Id, _def: Definition) -> Type {
-    Type::Bottom
+fn def_cycle_initial(
+    _db: &dyn Db,
+    _id: salsa::Id,
+    last_provisional_value: Option<&Type>,
+    _def: Definition,
+) -> Type {
+    last_provisional_value.cloned().unwrap_or(Type::Bottom)
 }
 
 fn def_cycle_recover(
@@ -90,8 +95,13 @@ fn def_cycle_recover(
     cycle_recover(value, cycle.iteration())
 }
 
-fn use_cycle_initial(_db: &dyn Db, _id: salsa::Id, _use: Use) -> Type {
-    Type::Bottom
+fn use_cycle_initial(
+    _db: &dyn Db,
+    _id: salsa::Id,
+    last_provisional_value: Option<&Type>,
+    _use: Use,
+) -> Type {
+    last_provisional_value.cloned().unwrap_or(Type::Bottom)
 }
 
 fn use_cycle_recover(

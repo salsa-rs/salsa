@@ -203,7 +203,7 @@ where
                         // for all cycle participants. This ensures that the results don't depend on the query call order, see
                         // https://github.com/salsa-rs/salsa/pull/798#issuecomment-2812855285.
                         if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
-                            new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+                            new_value = C::cycle_initial(db, id, None, C::id_to_input(zalsa, id));
                         }
 
                         let completed_query = complete_cycle_participant(
@@ -258,7 +258,7 @@ where
             // For Fixpoint, ask the recovery function what value to use and check convergence.
             let value_converged = if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                 // Use the fallback value instead of the computed value.
-                new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+                new_value = C::cycle_initial(db, id, None, C::id_to_input(zalsa, id));
                 true
             } else {
                 let cycle = Cycle {

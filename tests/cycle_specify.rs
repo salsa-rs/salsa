@@ -33,7 +33,11 @@ fn cycle(db: &dyn salsa::Database) -> Option<Item<'_>> {
     Some(item)
 }
 
-fn initial(_db: &dyn salsa::Database, _id: salsa::Id) -> Option<Item<'_>> {
+fn initial<'db>(
+    _db: &'db dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&Option<Item<'db>>>,
+) -> Option<Item<'db>> {
     None
 }
 
