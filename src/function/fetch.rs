@@ -197,9 +197,9 @@ where
                         Cancelled::PropagatedPanic.throw();
                     }
 
-                    // Ideally, we'd use the last provisional memo even if it wasn't a cycle head in the last iteration
-                    // but that would require inserting itself as a cycle head, which either requires clone
-                    // on the value OR a concurrent `Vec` for cycle heads.
+                    // An existing cycle head can reuse its memo directly. Otherwise, call
+                    // `cycle_initial` below so the callback can introduce a cycle marker or
+                    // choose to preserve the previous participant value.
                     if memo.header.verified_at.load() == zalsa.current_revision()
                         && memo.value.is_some()
                         && revisions.iteration().cancellation_count() == cancellation_count
@@ -225,23 +225,25 @@ where
                     inserting and returning fixpoint initial value"
                 );
 
-                let iteration = memo_guard
-                    .and_then(|old_memo| {
-                        let revisions = &old_memo.header.revisions;
-                        if old_memo.header.verified_at.load() == zalsa.current_revision()
-                            && old_memo.value.is_some()
-                            && revisions.iteration().cancellation_count() == cancellation_count
-                        {
-                            Some(revisions.iteration())
-                        } else {
-                            None
-                        }
-                    })
+                let last_provisional_memo = memo_guard.filter(|memo| {
+                    memo.header.verified_at.load() == zalsa.current_revision()
+                        && memo.header.may_be_provisional()
+                        && memo.value.is_some()
+                        && memo.header.revisions.iteration().cancellation_count()
+                            == cancellation_count
+                });
+                let iteration = last_provisional_memo
+                    .map(|memo| memo.header.revisions.iteration())
                     .unwrap_or_else(|| IterationStamp::initial(cancellation_count));
                 // Record reads on the initial memo so every query using the provisional value
                 // inherits them when flattening its dependencies.
                 let active_query = zalsa_local.push_query(database_key_index);
-                let initial_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
+                let initial_value = C::cycle_initial(
+                    db,
+                    id,
+                    last_provisional_memo.and_then(Memo::value),
+                    C::id_to_input(zalsa, id),
+                );
 
                 let revisions = complete_cycle_query(zalsa, active_query, iteration)
                     .revisions

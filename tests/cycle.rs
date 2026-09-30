@@ -174,7 +174,12 @@ fn min_iterate(db: &dyn Db, inputs: Inputs) -> Value {
     fold_values(inputs.values(db), u8::min)
 }
 
-fn min_initial(_db: &dyn Db, _id: salsa::Id, _inputs: Inputs) -> Value {
+fn min_initial(
+    _db: &dyn Db,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&Value>,
+    _inputs: Inputs,
+) -> Value {
     Value::N(255)
 }
 
@@ -184,7 +189,12 @@ fn max_iterate(db: &dyn Db, inputs: Inputs) -> Value {
     fold_values(inputs.values(db), u8::max)
 }
 
-fn max_initial(_db: &dyn Db, _id: salsa::Id, _inputs: Inputs) -> Value {
+fn max_initial(
+    _db: &dyn Db,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&Value>,
+    _inputs: Inputs,
+) -> Value {
     Value::N(0)
 }
 
@@ -1186,7 +1196,12 @@ fn repeat_query_participating_in_cycle() {
         a.min(2)
     }
 
-    fn initial(_db: &dyn Db, _id: salsa::Id, _input: Input) -> u32 {
+    fn initial(
+        _db: &dyn Db,
+        _id: salsa::Id,
+        _last_provisional_value: Option<&u32>,
+        _input: Input,
+    ) -> u32 {
         0
     }
 
@@ -1298,7 +1313,12 @@ fn repeat_query_participating_in_cycle2() {
         a.min(2)
     }
 
-    fn initial(_db: &dyn Db, _id: salsa::Id, _input: Input) -> u32 {
+    fn initial(
+        _db: &dyn Db,
+        _id: salsa::Id,
+        _last_provisional_value: Option<&u32>,
+        _input: Input,
+    ) -> u32 {
         0
     }
 

@@ -27,7 +27,7 @@ fn cycle_fn(
     panic!("cancel!")
 }
 
-fn initial(_db: &dyn KnobsDatabase, _id: salsa::Id) -> u32 {
+fn initial(_db: &dyn KnobsDatabase, _id: salsa::Id, _last_provisional_value: Option<&u32>) -> u32 {
     0
 }
 

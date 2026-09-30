@@ -7,7 +7,7 @@ fn fallback_value(_db: &dyn salsa::Database) -> u32 {
     10
 }
 
-#[salsa::tracked(returns(copy), cycle_fn = |db, _, _, _| fallback_value(db), cycle_initial = |_, _| 0)]
+#[salsa::tracked(returns(copy), cycle_fn = |db, _, _, _| fallback_value(db), cycle_initial = |_, _, _| 0)]
 fn query(db: &dyn salsa::Database) -> u32 {
     let val = query(db);
     if val < 5 { val + 1 } else { val }

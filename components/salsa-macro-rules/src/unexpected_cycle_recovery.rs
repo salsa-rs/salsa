@@ -12,8 +12,8 @@ macro_rules! unexpected_cycle_recovery {
 
 #[macro_export]
 macro_rules! unexpected_cycle_initial {
-    ($db:ident, $id:ident, $($other_inputs:ident),*) => {{
-        std::mem::drop($db);
+    ($db:ident, $id:ident, $last_provisional_value:ident, $($other_inputs:ident),*) => {{
+        let (_db, _id, _last_provisional_value) = ($db, $id, $last_provisional_value);
         std::mem::drop(($($other_inputs,)*));
         panic!("no cycle initial value")
     }};

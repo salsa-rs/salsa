@@ -66,7 +66,12 @@ fn cycle_recover_length(
     value
 }
 
-fn cycle_initial_length(_db: &dyn salsa::Database, _id: salsa::Id, _input: MyInput) -> usize {
+fn cycle_initial_length(
+    _db: &dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&usize>,
+    _input: MyInput,
+) -> usize {
     0
 }
 

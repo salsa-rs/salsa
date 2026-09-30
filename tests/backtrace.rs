@@ -53,7 +53,12 @@ fn query_cycle(db: &dyn Database, thing: Thing) -> String {
     }
 }
 
-fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id, _thing: Thing) -> String {
+fn cycle_initial(
+    _db: &dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&String>,
+    _thing: Thing,
+) -> String {
     String::new()
 }
 
