@@ -160,8 +160,8 @@ impl<Db: Database> Storage<Db> {
     fn cancel_others(&mut self) -> &mut Zalsa {
         debug_assert!(
             self.zalsa_local
-                .try_with_query_stack(|stack| stack.is_empty())
-                == Some(true),
+                .try_query_stack()
+                .is_some_and(|stack| stack.is_empty()),
             "attempted to cancel within query computation, this is a deadlock"
         );
         {
