@@ -1,15 +1,16 @@
+use std::any::Any;
 use std::ops;
 
 use rustc_hash::FxBuildHasher;
 
 use crate::IngredientIndex;
+use crate::accumulator::Accumulator;
 use crate::accumulator::accumulated::Accumulated;
-use crate::accumulator::{Accumulator, AnyAccumulated};
 use crate::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Default)]
 pub struct AccumulatedMap {
-    map: hashbrown::HashMap<IngredientIndex, Box<dyn AnyAccumulated>, FxBuildHasher>,
+    map: hashbrown::HashMap<IngredientIndex, Box<dyn Any + Send + Sync>, FxBuildHasher>,
 }
 
 impl std::fmt::Debug for AccumulatedMap {
@@ -25,7 +26,9 @@ impl AccumulatedMap {
         self.map
             .entry(index)
             .or_insert_with(|| <Box<Accumulated<A>>>::default())
-            .accumulate(value);
+            .downcast_mut::<Accumulated<A>>()
+            .unwrap()
+            .push(value);
     }
 
     pub fn extend_with_accumulated<'slf, A: Accumulator>(
@@ -37,8 +40,7 @@ impl AccumulatedMap {
             return;
         };
 
-        a.as_dyn_any()
-            .downcast_ref::<Accumulated<A>>()
+        a.downcast_ref::<Accumulated<A>>()
             .unwrap()
             .extend_with_accumulated(output);
     }

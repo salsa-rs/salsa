@@ -35,10 +35,7 @@ impl Attached {
     }
 
     #[inline]
-    fn attach<Db, R>(&self, db: &Db, op: impl FnOnce() -> R) -> R
-    where
-        Db: ?Sized + Database,
-    {
+    fn attach<R>(&self, db: &dyn Database, op: impl FnOnce() -> R) -> R {
         struct DbGuard<'s> {
             /// The database that *we* attached on scope entry.
             ///
@@ -84,15 +81,12 @@ impl Attached {
             }
         }
 
-        let _guard = DbGuard::new(self, db.as_dyn_database());
+        let _guard = DbGuard::new(self, db);
         op()
     }
 
     #[inline]
-    fn attach_allow_change<Db, R>(&self, db: &Db, op: impl FnOnce() -> R) -> R
-    where
-        Db: ?Sized + Database,
-    {
+    fn attach_allow_change<R>(&self, db: &dyn Database, op: impl FnOnce() -> R) -> R {
         struct DbGuard<'s> {
             /// The database that *we* attached on scope entry.
             ///
@@ -150,7 +144,7 @@ impl Attached {
             }
         }
 
-        let _guard = DbGuard::new(self, db.as_dyn_database());
+        let _guard = DbGuard::new(self, db);
         op()
     }
 
@@ -169,10 +163,7 @@ impl Attached {
 /// Attach the database to the current thread and execute `op`.
 /// Panics if a different database has already been attached.
 #[inline]
-pub fn attach<R, Db>(db: &Db, op: impl FnOnce() -> R) -> R
-where
-    Db: ?Sized + Database,
-{
+pub fn attach<R>(db: &dyn Database, op: impl FnOnce() -> R) -> R {
     ATTACHED.with(
         #[inline]
         |a| a.attach(db, op),
@@ -186,10 +177,7 @@ where
 /// **Note:** Switching databases can cause bugs. If you do not intend to switch
 /// databases, prefer [`attach`] which will panic if you accidentally do.
 #[inline]
-pub fn attach_allow_change<R, Db>(db: &Db, op: impl FnOnce() -> R) -> R
-where
-    Db: ?Sized + Database,
-{
+pub fn attach_allow_change<R>(db: &dyn Database, op: impl FnOnce() -> R) -> R {
     ATTACHED.with(
         #[inline]
         |a| a.attach_allow_change(db, op),
