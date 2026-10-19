@@ -41,6 +41,15 @@
       "minimumReleaseAge": "0 days"
     },
     {
+      "description": "Keep nightly Rust updates separate from stable Rust updates",
+      "matchDatasources": [
+        "rust-version"
+      ],
+      "matchCurrentValue": "/^nightly/",
+      "additionalBranchPrefix": "nightly-",
+      "commitMessageTopic": "Rust nightly"
+    },
+    {
       "description": "Only raise the minimum supported version when the existing Cargo constraint blocks an update",
       "matchManagers": [
         "cargo"
