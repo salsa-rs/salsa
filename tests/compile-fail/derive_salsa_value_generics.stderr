@@ -27,7 +27,8 @@ note: required for `Generic<NotSalsaValue<'db>>` to implement `SalsaValue`
    |          ----------------- type parameter would need to implement `SalsaValue`
  4 | struct Generic<T>(T);
    |        ^^^^^^^^^^
-   = help: consider manually implementing `SalsaValue` to avoid undesired bounds
+   = help: consider manually implementing `SalsaValue` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
 note: required by a bound in `assert_salsa_value`
   --> tests/compile-fail/derive_salsa_value_generics.rs:11:26
    |
