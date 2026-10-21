@@ -21,7 +21,7 @@ use crate::table::Table;
 use crate::table::memo::{MemoSlot, MemoTableTypes};
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
-use crate::zalsa_local::QueryEdge;
+use crate::zalsa_local::{QueryEdge, QueryEdgeKind};
 use crate::{Cycle, Id, Revision};
 
 #[cfg(feature = "accumulator")]
@@ -669,7 +669,14 @@ fn flatten_cycle_head_dependencies(
         // expected index.
         CycleRecoveryStrategy::FallbackImmediate | CycleRecoveryStrategy::Fixpoint => {
             let mut expected_index = 0;
-            for input in inputs.map(QueryEdge::input) {
+            // Iterate edges directly to avoid converting each one to a `DatabaseKeyIndex`
+            // and back to a `QueryEdge`. That round trip is costly in large cycles.
+            for input in memo_header
+                .origin()
+                .edges()
+                .iter()
+                .filter(|edge| matches!(edge.kind(), QueryEdgeKind::Input))
+            {
                 if flattened_input_outputs.get_index(expected_index) == Some(&input) {
                     expected_index += 1;
                 } else {
