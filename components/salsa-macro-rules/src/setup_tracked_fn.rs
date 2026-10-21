@@ -356,7 +356,11 @@ macro_rules! setup_tracked_fn {
                     last_provisional_value: Option<&Self::Output<$db_lt>>,
                     ($($input_id),*): ($($interned_input_ty),*)
                 ) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_initial)*(db, id, last_provisional_value, $($input_id),*)
+                    $crate::setup_tracked_fn! {
+                        @call_cycle_initial $cycle_recovery_strategy,
+                        ($($cycle_recovery_initial)*),
+                        (db, id, last_provisional_value $(, $input_id)*)
+                    }
                 }
 
                 fn recover_from_cycle<$db_lt>(
@@ -528,5 +532,24 @@ macro_rules! setup_tracked_fn {
                 }
             }
         };
+    };
+
+    // Immediate fallback callbacks don't accept the previous value.
+    (
+        @call_cycle_initial FallbackImmediate,
+        ($($callback:tt)*),
+        ($db:ident, $id:ident, $previous:ident $(, $input:ident)*)
+    ) => {{
+        let _ = $previous;
+        $($callback)*($db, $id $(, $input)*)
+    }};
+
+    // Fixpoint initializers and the unexpected-cycle handler do.
+    (
+        @call_cycle_initial $strategy:ident,
+        ($($callback:tt)*),
+        ($db:ident, $id:ident, $previous:ident $(, $input:ident)*)
+    ) => {
+        $($callback)*($db, $id, $previous, $($input),*)
     };
 }
