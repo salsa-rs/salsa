@@ -350,8 +350,17 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
-                fn cycle_initial<$db_lt>(db: &$db_lt Self::DbView, id: ::salsa::Id, ($($input_id),*): ($($interned_input_ty),*)) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_initial)*(db, id, $($input_id),*)
+                fn cycle_initial<$db_lt>(
+                    db: &$db_lt Self::DbView,
+                    id: ::salsa::Id,
+                    last_provisional_value: Option<&Self::Output<$db_lt>>,
+                    ($($input_id),*): ($($interned_input_ty),*)
+                ) -> Self::Output<$db_lt> {
+                    $crate::setup_cycle_initial_body! {
+                        $cycle_recovery_strategy,
+                        ($($cycle_recovery_initial)*),
+                        (db, id, last_provisional_value $(, $input_id)*)
+                    }
                 }
 
                 fn recover_from_cycle<$db_lt>(
@@ -523,5 +532,28 @@ macro_rules! setup_tracked_fn {
                 }
             }
         };
+    };
+}
+
+/// Generate the cycle initializer body for its recovery strategy.
+#[macro_export]
+macro_rules! setup_cycle_initial_body {
+    // Immediate fallback callbacks don't accept the previous value.
+    (
+        FallbackImmediate,
+        ($($callback:tt)*),
+        ($db:ident, $id:ident, $previous:ident $(, $input:ident)*)
+    ) => {{
+        let _ = $previous;
+        $($callback)*($db, $id $(, $input)*)
+    }};
+
+    // Fixpoint initializers and the unexpected-cycle handler do.
+    (
+        $strategy:ident,
+        ($($callback:tt)*),
+        ($db:ident, $id:ident, $previous:ident $(, $input:ident)*)
+    ) => {
+        $($callback)*($db, $id, $previous, $($input),*)
     };
 }

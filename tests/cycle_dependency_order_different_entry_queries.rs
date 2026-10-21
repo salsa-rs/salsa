@@ -12,7 +12,7 @@ fn query_a(db: &dyn Database) {
     query_d(db, b);
 }
 
-fn a_cycle_initial(_db: &dyn Database, _id: salsa::Id) {}
+fn a_cycle_initial(_db: &dyn Database, _id: salsa::Id, _last_provisional_value: Option<&()>) {}
 
 #[salsa::interned]
 struct Interned {
@@ -26,7 +26,7 @@ struct StableInput {
     value: (),
 }
 
-#[salsa::tracked(returns(copy), cycle_initial=|db, _| Interned::new(db, 0))]
+#[salsa::tracked(returns(copy), cycle_initial=|db, _, _| Interned::new(db, 0))]
 fn query_b(db: &dyn Database) -> Interned<'_> {
     query_c(db);
     // Keep this value reusable so the test still covers validation ordering.

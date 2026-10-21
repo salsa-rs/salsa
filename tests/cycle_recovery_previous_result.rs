@@ -34,7 +34,7 @@ struct Literal<'db> {
     value: u32,
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| 0)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| 0)]
 fn u(db: &dyn salsa::Database, input: Input) -> u32 {
     let w = w(db, input);
     if w == 1 {
@@ -43,12 +43,12 @@ fn u(db: &dyn salsa::Database, input: Input) -> u32 {
     input.phase(db)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| 0)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| 0)]
 fn w(db: &dyn salsa::Database, input: Input) -> u32 {
     u(db, input).max(1)
 }
 
-#[salsa::tracked(cycle_initial = |_, _, _| ())]
+#[salsa::tracked(cycle_initial = |_, _, _, _| ())]
 fn c(db: &dyn salsa::Database, input: Input) {
     if input.phase(db) == 3 {
         // b finishes before c discovers its dependency on the outer a.
@@ -57,12 +57,12 @@ fn c(db: &dyn salsa::Database, input: Input) {
     }
 }
 
-#[salsa::tracked(cycle_initial = |_, _, _| ())]
+#[salsa::tracked(cycle_initial = |_, _, _, _| ())]
 fn b(db: &dyn salsa::Database, input: Input) {
     c(db, input);
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| None, cycle_fn = recover)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| None, cycle_fn = recover)]
 fn a(db: &dyn salsa::Database, input: Input) -> Option<Literal<'_>> {
     if choose(db, input) == 0 {
         a(db, input);
@@ -76,7 +76,7 @@ fn a(db: &dyn salsa::Database, input: Input) -> Option<Literal<'_>> {
     }
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| 99)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| 99)]
 fn choose(db: &dyn salsa::Database, input: Input) -> u32 {
     if choose(db, input) == 99 {
         a(db, input);

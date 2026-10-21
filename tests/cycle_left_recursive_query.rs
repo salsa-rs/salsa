@@ -30,7 +30,11 @@ fn query_x<'db>(db: &'db dyn Database, _i: Interned<'db>) {
     StableInput::get(db).value(db);
 }
 
-fn cycle_initial(db: &dyn Database, _id: Id) -> Interned<'_> {
+fn cycle_initial<'db>(
+    db: &'db dyn Database,
+    _id: Id,
+    _last_provisional_value: Option<&Interned<'db>>,
+) -> Interned<'db> {
     // A low-durability input keeps cycle-created values reusable without forcing
     // reexecution, so the test still covers validation ordering in the next revision.
     StableInput::get(db).value(db);

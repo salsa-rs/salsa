@@ -20,7 +20,7 @@ fn initial(db: &dyn Database, _id: salsa::Id) -> Item<'_> {
     Item::new(db, 42)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = initial)]
+#[salsa::tracked(returns(copy), cycle_initial = |db, id, _| initial(db, id))]
 fn cycle(db: &dyn Database) -> Item<'_> {
     cycle(db)
 }
@@ -63,7 +63,7 @@ fn initial_item(db: &dyn Database, input: Input) -> Item<'_> {
     item
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |db, _, input| initial_item(db, input))]
+#[salsa::tracked(returns(copy), cycle_initial = |db, _, _, input| initial_item(db, input))]
 fn cycle_with_helper(db: &dyn Database, input: Input) -> Item<'_> {
     cycle_with_helper(db, input)
 }

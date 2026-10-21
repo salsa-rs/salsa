@@ -60,7 +60,11 @@ fn query_h(db: &dyn KnobsDatabase) {
     _ = db;
 }
 
-fn initial(db: &dyn KnobsDatabase, _id: salsa::Id) -> CycleValue {
+fn initial(
+    db: &dyn KnobsDatabase,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&CycleValue>,
+) -> CycleValue {
     db.signal(1);
     db.wait_for(6);
     MIN

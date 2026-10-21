@@ -29,7 +29,7 @@ struct Input {
     value: u32,
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |db, _, input: Input| input.value(db))]
+#[salsa::tracked(returns(copy), cycle_initial = |db, _, _, input: Input| input.value(db))]
 fn outer(db: &dyn LogDatabase, input: Input) -> u32 {
     db.push_log("outer".to_owned());
     // Establish a provisional value before entering the inner cycle.
@@ -37,7 +37,7 @@ fn outer(db: &dyn LogDatabase, input: Input) -> u32 {
     inner(db, input)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |db, _, input| outer(db, input))]
+#[salsa::tracked(returns(copy), cycle_initial = |db, _, _, input| outer(db, input))]
 fn inner(db: &dyn LogDatabase, input: Input) -> u32 {
     db.push_log("inner".to_owned());
     inner(db, input)

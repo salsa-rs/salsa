@@ -693,6 +693,7 @@ mod _memory_usage {
         fn cycle_initial<'db>(
             _: &'db Self::DbView,
             _: Id,
+            _: Option<&Self::Output<'db>>,
             _: Self::Input<'db>,
         ) -> Self::Output<'db> {
             unimplemented!()

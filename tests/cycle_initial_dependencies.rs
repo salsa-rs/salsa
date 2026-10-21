@@ -46,7 +46,7 @@ fn head(db: &dyn salsa::Database, input: Input) -> Interned<'_> {
     initial
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| 0)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| 0)]
 fn reader(db: &dyn salsa::Database, input: Input) -> u32 {
     // Start a subcycle before reading the head's initial value.
     reader(db, input);
@@ -60,7 +60,12 @@ fn consume<'db>(db: &'db dyn salsa::Database, input: Input, value: Interned<'db>
     value.value(db)
 }
 
-fn initial(db: &dyn salsa::Database, _id: salsa::Id, input: Input) -> Interned<'_> {
+fn initial<'db>(
+    db: &'db dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&Interned<'db>>,
+    input: Input,
+) -> Interned<'db> {
     Interned::new(db, input.value(db))
 }
 

@@ -98,9 +98,14 @@ pub unsafe trait Configuration: Any {
     fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
     /// Get the cycle recovery initial value.
+    ///
+    /// `last_provisional_value` is `Some` when this query was a participant in a broader
+    /// cycle and becomes a new cycle head. It contains the query's previous provisional
+    /// result. Otherwise, it is `None`.
     fn cycle_initial<'db>(
         db: &'db Self::DbView,
         id: Id,
+        last_provisional_value: Option<&Self::Output<'db>>,
         input: Self::Input<'db>,
     ) -> Self::Output<'db>;
 

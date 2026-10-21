@@ -39,14 +39,19 @@ fn owner(db: &dyn KnobsDatabase, input: Input) -> Value {
     }
 }
 
-fn initial_owner(db: &dyn KnobsDatabase, _: salsa::Id, input: Input) -> Value {
+fn initial_owner(
+    db: &dyn KnobsDatabase,
+    _: salsa::Id,
+    _last_provisional_value: Option<&Value>,
+    input: Input,
+) -> Value {
     Value {
         epoch: input.epoch(db),
         value: 0,
     }
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| 0)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| 0)]
 fn participant(db: &dyn KnobsDatabase, input: Input) -> u32 {
     if input.epoch(db) == 1 {
         db.signal(1);
@@ -59,7 +64,7 @@ fn participant(db: &dyn KnobsDatabase, input: Input) -> u32 {
     (value + 1).min(3)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| 0)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _, _| 0)]
 fn inner(db: &dyn KnobsDatabase, input: Input) -> u32 {
     participant(db, input)
 }

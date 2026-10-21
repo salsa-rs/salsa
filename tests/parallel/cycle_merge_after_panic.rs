@@ -39,7 +39,7 @@ impl<'db> StaticClassLiteral<'db> {
     #[salsa::tracked(
         returns(copy),
         cycle_fn = |_, _, previous: &u32, _, _, _, _| (previous + 1).min(FIXPOINT_LIMIT),
-        cycle_initial = |_, _, _, _, _| 0
+        cycle_initial = |_, _, _, _, _, _| 0
     )]
     fn implicit_attribute_inner(db: &'db dyn Database, scope: u32, index: u32, infer: bool) -> u32 {
         if infer {
@@ -64,7 +64,7 @@ impl<'db> StaticClassLiteral<'db> {
 #[salsa::tracked(
     returns(copy),
     cycle_fn = |_, _, _, _, _, _| panic!("range cycle"),
-    cycle_initial = |_, _, _, _| ()
+    cycle_initial = |_, _, _, _, _| ()
 )]
 fn analyze_non_terminal_call_range(db: &dyn Database, scope: u32, chunk: u32) {
     for expression in chunk * CHUNK_SIZE..(chunk + 1) * CHUNK_SIZE {

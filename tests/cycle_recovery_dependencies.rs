@@ -28,7 +28,12 @@ fn query(db: &dyn salsa::Database, input: Input) -> u32 {
     if val < 5 { val + 1 } else { val }
 }
 
-fn cycle_initial(_db: &dyn salsa::Database, _id: salsa::Id, _input: Input) -> u32 {
+fn cycle_initial(
+    _db: &dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&u32>,
+    _input: Input,
+) -> u32 {
     0
 }
 

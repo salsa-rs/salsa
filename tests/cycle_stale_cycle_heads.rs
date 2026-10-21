@@ -84,7 +84,12 @@ fn query_x(db: &dyn salsa::Database, input: Input) -> u32 {
     query_a(db, input)
 }
 
-fn initial_zero(_db: &dyn salsa::Database, _id: salsa::Id, _input: Input) -> u32 {
+fn initial_zero(
+    _db: &dyn salsa::Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&u32>,
+    _input: Input,
+) -> u32 {
     0
 }
 

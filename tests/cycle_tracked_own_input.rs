@@ -85,7 +85,12 @@ fn infer_type_param(db: &dyn salsa::Database, node: TypeParamNode) -> TypeParam<
     }
 }
 
-fn infer_class_initial(_db: &'_ dyn Database, _id: salsa::Id, _node: ClassNode) -> Type<'_> {
+fn infer_class_initial<'db>(
+    _db: &'db dyn Database,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&Type<'db>>,
+    _node: ClassNode,
+) -> Type<'db> {
     Type::Unknown
 }
 

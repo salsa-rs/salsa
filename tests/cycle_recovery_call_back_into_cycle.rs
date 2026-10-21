@@ -17,7 +17,11 @@ fn query(db: &dyn ValueDatabase) -> u32 {
     if val < 5 { val + 1 } else { val }
 }
 
-fn cycle_initial(_db: &dyn ValueDatabase, _id: salsa::Id) -> u32 {
+fn cycle_initial(
+    _db: &dyn ValueDatabase,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&u32>,
+) -> u32 {
     0
 }
 

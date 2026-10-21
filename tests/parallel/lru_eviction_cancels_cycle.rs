@@ -32,7 +32,12 @@ fn inner_query(db: &dyn KnobsDatabase, input: Input) -> u32 {
     input.value(db)
 }
 
-fn cycle_initial(_db: &dyn KnobsDatabase, _id: salsa::Id, _input: Input) -> u32 {
+fn cycle_initial(
+    _db: &dyn KnobsDatabase,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&u32>,
+    _input: Input,
+) -> u32 {
     0
 }
 

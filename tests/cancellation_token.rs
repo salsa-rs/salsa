@@ -31,7 +31,7 @@ fn b(db: &dyn Database, input: MyInput) -> u32 {
     input.field(db)
 }
 
-#[salsa::tracked(returns(copy), cycle_initial = |_, _| 0)]
+#[salsa::tracked(returns(copy), cycle_initial = |_, _, _| 0)]
 fn panicking_cycle_query(_db: &dyn Database) -> u32 {
     panic!("boom")
 }

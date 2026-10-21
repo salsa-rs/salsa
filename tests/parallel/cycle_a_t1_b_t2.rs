@@ -45,7 +45,11 @@ fn query_b(db: &dyn KnobsDatabase) -> CycleValue {
     CycleValue(a_value.0 + 1).min(MAX)
 }
 
-fn initial(_db: &dyn KnobsDatabase, _id: salsa::Id) -> CycleValue {
+fn initial(
+    _db: &dyn KnobsDatabase,
+    _id: salsa::Id,
+    _last_provisional_value: Option<&CycleValue>,
+) -> CycleValue {
     MIN
 }
 
