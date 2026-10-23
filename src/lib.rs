@@ -371,8 +371,7 @@ pub mod plumbing {
     pub use crate::tracked_struct::{TrackedStructInDb, update_field};
     pub use crate::views::DatabaseDownCaster;
     pub use crate::zalsa::{
-        ErasedJar, HasJar, IngredientIndex, JarKind, Zalsa, ZalsaDatabase, register_jar,
-        transmute_data_ptr, views,
+        ErasedJar, HasJar, IngredientIndex, JarKind, Zalsa, ZalsaDatabase, register_jar, views,
     };
     pub use crate::zalsa_local::ZalsaLocal;
 
