@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.6](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.28.5...salsa-macro-rules-v0.28.6) - 2026-10-23
+
+### Added
+
+- pass the previous provisional value to cycle_initial ([#1353](https://github.com/salsa-rs/salsa/pull/1353))
+
 ## [0.28.3](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.28.2...salsa-macro-rules-v0.28.3) - 2026-09-18
 
 ### Other
