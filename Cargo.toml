@@ -28,7 +28,7 @@ hashbrown = "0.17"
 hashlink = "0.12"
 indexmap = "2"
 intrusive-collections = "0.10.1"
-parking_lot = "0.12"
+parking_lot = "0.13"
 portable-atomic = "1"
 rustc-hash = "2"
 smallvec = { version = "1", features = ["const_new"] }
