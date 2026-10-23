@@ -180,6 +180,11 @@ impl ActiveQuery {
         self.accumulated.accumulate(index, value);
     }
 
+    #[cfg(feature = "accumulator")]
+    pub(super) fn take_accumulated(&mut self) -> AccumulatedMap {
+        mem::take(&mut self.accumulated)
+    }
+
     /// Adds a key to our list of outputs, returning whether it was newly inserted.
     pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) -> bool {
         self.input_outputs.insert(QueryEdge::output(key))
@@ -535,20 +540,19 @@ pub struct Backtrace(Box<[CapturedQuery]>);
 impl Backtrace {
     pub fn capture() -> Option<Self> {
         crate::with_attached_database(|db| {
-            db.zalsa_local().try_with_query_stack(|stack| {
-                Backtrace(
-                    stack
-                        .iter()
-                        .rev()
-                        .map(|query| CapturedQuery {
-                            database_key_index: query.database_key_index,
-                            durability: query.durability,
-                            changed_at: query.changed_at,
-                            cycle_heads: query.cycle_heads.clone(),
-                        })
-                        .collect(),
-                )
-            })
+            let stack = db.zalsa_local().try_query_stack()?;
+            Some(Backtrace(
+                stack
+                    .iter()
+                    .rev()
+                    .map(|query| CapturedQuery {
+                        database_key_index: query.database_key_index,
+                        durability: query.durability,
+                        changed_at: query.changed_at,
+                        cycle_heads: query.cycle_heads.clone(),
+                    })
+                    .collect(),
+            ))
         })?
     }
 }
