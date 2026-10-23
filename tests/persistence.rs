@@ -288,7 +288,7 @@ fn everything() {
     let mut db = common::EventLoggerDatabase::default();
     <dyn salsa::Database>::deserialize(
         &mut db,
-        &mut serde_json::Deserializer::from_str(&serialized),
+        &mut serde_json::Deserializer::from_reader(serialized.as_bytes()),
     )
     .unwrap();
 
