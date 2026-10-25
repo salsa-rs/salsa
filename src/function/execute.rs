@@ -598,7 +598,7 @@ fn outer_cycle(
     // Check for any outer cycle head running on a different thread.
     cycle_heads
         .iter_not_eq(current_key)
-        .rfind(|head| {
+        .find(|head| {
             let function = zalsa
                 .lookup_ingredient(head.database_key_index.ingredient_index())
                 .as_function()
@@ -682,11 +682,11 @@ fn collect_all_cycle_heads(
         // but it wasn't executed in the last iteration of said cycle.
         assert!(provisional_status.is_provisional());
 
-        for head in provisional_status.cycle_heads() {
+        for (head, known_head) in provisional_status.cycle_heads().left_join(query_heads) {
             let iteration = head.iteration.load();
             max_iteration = max_iteration.max(iteration);
 
-            if query_heads.contains(&head.database_key_index) {
+            if known_head.is_some() {
                 continue;
             }
 
@@ -746,7 +746,7 @@ fn complete_cycle_participant(
     iteration: IterationStamp,
 ) -> CompletedQuery {
     // For as long as this query participates in any cycle, don't release its lock, instead
-    // transfer it to the outermost cycle head. This prevents any other thread
+    // transfer it to an outer cycle head. This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
@@ -916,13 +916,11 @@ fn assert_no_new_cycle_heads(
     new_cycle_heads: CycleHeads,
     me: DatabaseKeyIndex,
 ) {
-    for head in new_cycle_heads {
-        if !cycle_heads.contains(&head.database_key_index) {
-            panic!(
-                "Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.",
-                head.database_key_index
-            );
-        }
+    if let Some(head) = new_cycle_heads.difference(cycle_heads).next() {
+        panic!(
+            "Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.",
+            head.database_key_index
+        );
     }
 }
 
