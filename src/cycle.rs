@@ -47,6 +47,7 @@
 use std::iter::FusedIterator;
 use thin_vec::{ThinVec, thin_vec};
 
+use crate::hash::FxIndexMap;
 use crate::key::DatabaseKeyIndex;
 use crate::sync::OnceLock;
 use crate::sync::atomic::{AtomicBool, AtomicU16, Ordering};
@@ -327,33 +328,41 @@ impl CycleHeads {
         if other.is_empty() {
             return;
         }
-
-        self.extend_nonempty(other);
+        self.extend_sorted(
+            other
+                .iter()
+                .map(|h| (h.database_key_index, h.iteration.load())),
+        );
     }
 
+    pub(crate) fn extend_missing(&mut self, missing: FxIndexMap<DatabaseKeyIndex, IterationStamp>) {
+        if missing.is_empty() {
+            return;
+        }
+        self.extend_sorted(
+            missing.sorted_unstable_by(|a, _, b, _| Self::sort_key(*a).cmp(&Self::sort_key(*b))),
+        );
+    }
+
+    /// Extends the set with heads in strictly increasing key order.
     #[cold]
-    fn extend_nonempty(&mut self, other: &Self) {
+    fn extend_sorted(&mut self, heads: impl Iterator<Item = (DatabaseKeyIndex, IterationStamp)>) {
         if self.is_empty() {
-            self.0.extend(
-                other
-                    .iter()
-                    .map(|h| CycleHead::new(h.database_key_index, h.iteration.load())),
-            );
+            self.0
+                .extend(heads.map(|(key, stamp)| CycleHead::new(key, stamp)));
             return;
         }
 
-        // Both inputs are sorted. No later incoming head can match an earlier slot.
         let mut i = 0;
-        for head in other {
-            let key = head.database_key_index;
+        for (key, stamp) in heads {
             let wanted = Self::sort_key(key);
-            let stamp = head.iteration.load();
             while i < self.0.len() && Self::sort_key(self.0[i].database_key_index) < wanted {
                 i += 1;
             }
-            if i < self.0.len() && self.0[i].database_key_index == key {
+            if i < self.0.len() && Self::sort_key(self.0[i].database_key_index) == wanted {
                 Self::merge_stamp(&mut self.0[i], stamp);
             } else {
+                // If repeated shifts become costly, append new heads and sort the affected suffix once.
                 self.0.insert(i, CycleHead::new(key, stamp));
             }
             i += 1;

@@ -1,11 +1,11 @@
-use smallvec::SmallVec;
+use indexmap::map::Entry;
 
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp, ProvisionalStatus};
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, ClaimResult, Configuration, IngredientImpl, Reentrancy};
-use crate::hash::{FxHashSet, FxIndexSet};
+use crate::hash::{FxHashSet, FxIndexMap, FxIndexSet};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
@@ -648,7 +648,7 @@ fn collect_all_cycle_heads(
         current_head: DatabaseKeyIndex,
         me: DatabaseKeyIndex,
         query_heads: &CycleHeads,
-        missing_heads: &mut SmallVec<[(DatabaseKeyIndex, IterationStamp); 4]>,
+        missing_heads: &mut FxIndexMap<DatabaseKeyIndex, IterationStamp>,
     ) -> (IterationStamp, bool) {
         if current_head == me {
             return (IterationStamp::default(), true);
@@ -690,21 +690,23 @@ fn collect_all_cycle_heads(
                 continue;
             }
 
-            let head_as_tuple = (head.database_key_index, iteration);
-
-            if missing_heads.contains(&head_as_tuple) {
-                continue;
+            let key = head.database_key_index;
+            match missing_heads.entry(key) {
+                Entry::Occupied(entry) => {
+                    assert_eq!(
+                        *entry.get(),
+                        iteration,
+                        "different iterations for cycle head {key:?}"
+                    );
+                    continue;
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(iteration);
+                }
             }
 
-            missing_heads.push((head.database_key_index, iteration));
-
-            let (nested_max_iteration, nested_depends_on_self) = collect_recursive(
-                zalsa,
-                head.database_key_index,
-                me,
-                query_heads,
-                missing_heads,
-            );
+            let (nested_max_iteration, nested_depends_on_self) =
+                collect_recursive(zalsa, key, me, query_heads, missing_heads);
 
             max_iteration = max_iteration.max(nested_max_iteration);
             depends_on_self |= nested_depends_on_self;
@@ -713,7 +715,7 @@ fn collect_all_cycle_heads(
         (max_iteration, depends_on_self)
     }
 
-    let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationStamp); 4]> = SmallVec::new();
+    let mut missing_heads = FxIndexMap::default();
     let mut max_iteration = iteration;
     let mut depends_on_self = false;
     for head in &*cycle_heads {
@@ -729,9 +731,7 @@ fn collect_all_cycle_heads(
         depends_on_self |= recursive_depends_on_self;
     }
 
-    for (head, iteration) in missing_heads {
-        cycle_heads.insert(head, iteration);
-    }
+    cycle_heads.extend_missing(missing_heads);
 
     (max_iteration, depends_on_self)
 }
