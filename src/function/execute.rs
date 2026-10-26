@@ -1,11 +1,11 @@
-use smallvec::SmallVec;
+use indexmap::map::Entry;
 
 use crate::active_query::CompletedQuery;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, IterationStamp, ProvisionalStatus};
 use crate::function::memo::{Memo, MemoHeader};
 use crate::function::sync::ReleaseMode;
 use crate::function::{ClaimGuard, ClaimResult, Configuration, IngredientImpl, Reentrancy};
-use crate::hash::{FxHashSet, FxIndexSet};
+use crate::hash::{FxHashSet, FxIndexMap, FxIndexSet};
 use crate::plumbing::ZalsaLocal;
 use crate::sync::thread;
 use crate::tracked_struct::Identity;
@@ -598,7 +598,7 @@ fn outer_cycle(
     // Check for any outer cycle head running on a different thread.
     cycle_heads
         .iter_not_eq(current_key)
-        .rfind(|head| {
+        .find(|head| {
             let function = zalsa
                 .lookup_ingredient(head.database_key_index.ingredient_index())
                 .as_function()
@@ -648,7 +648,7 @@ fn collect_all_cycle_heads(
         current_head: DatabaseKeyIndex,
         me: DatabaseKeyIndex,
         query_heads: &CycleHeads,
-        missing_heads: &mut SmallVec<[(DatabaseKeyIndex, IterationStamp); 4]>,
+        missing_heads: &mut FxIndexMap<DatabaseKeyIndex, IterationStamp>,
     ) -> (IterationStamp, bool) {
         if current_head == me {
             return (IterationStamp::default(), true);
@@ -682,29 +682,31 @@ fn collect_all_cycle_heads(
         // but it wasn't executed in the last iteration of said cycle.
         assert!(provisional_status.is_provisional());
 
-        for head in provisional_status.cycle_heads() {
+        for (head, known_head) in provisional_status.cycle_heads().left_join(query_heads) {
             let iteration = head.iteration.load();
             max_iteration = max_iteration.max(iteration);
 
-            if query_heads.contains(&head.database_key_index) {
+            if known_head.is_some() {
                 continue;
             }
 
-            let head_as_tuple = (head.database_key_index, iteration);
-
-            if missing_heads.contains(&head_as_tuple) {
-                continue;
+            let key = head.database_key_index;
+            match missing_heads.entry(key) {
+                Entry::Occupied(entry) => {
+                    assert_eq!(
+                        *entry.get(),
+                        iteration,
+                        "different iterations for cycle head {key:?}"
+                    );
+                    continue;
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(iteration);
+                }
             }
 
-            missing_heads.push((head.database_key_index, iteration));
-
-            let (nested_max_iteration, nested_depends_on_self) = collect_recursive(
-                zalsa,
-                head.database_key_index,
-                me,
-                query_heads,
-                missing_heads,
-            );
+            let (nested_max_iteration, nested_depends_on_self) =
+                collect_recursive(zalsa, key, me, query_heads, missing_heads);
 
             max_iteration = max_iteration.max(nested_max_iteration);
             depends_on_self |= nested_depends_on_self;
@@ -713,7 +715,7 @@ fn collect_all_cycle_heads(
         (max_iteration, depends_on_self)
     }
 
-    let mut missing_heads: SmallVec<[(DatabaseKeyIndex, IterationStamp); 4]> = SmallVec::new();
+    let mut missing_heads = FxIndexMap::default();
     let mut max_iteration = iteration;
     let mut depends_on_self = false;
     for head in &*cycle_heads {
@@ -729,9 +731,7 @@ fn collect_all_cycle_heads(
         depends_on_self |= recursive_depends_on_self;
     }
 
-    for (head, iteration) in missing_heads {
-        cycle_heads.insert(head, iteration);
-    }
+    cycle_heads.extend_missing(missing_heads);
 
     (max_iteration, depends_on_self)
 }
@@ -746,7 +746,7 @@ fn complete_cycle_participant(
     iteration: IterationStamp,
 ) -> CompletedQuery {
     // For as long as this query participates in any cycle, don't release its lock, instead
-    // transfer it to the outermost cycle head. This prevents any other thread
+    // transfer it to an outer cycle head. This prevents any other thread
     // from claiming this query (all cycle heads are potential entry points to the same cycle),
     // which would result in them competing for the same locks (we want the locks to converge to a single cycle head).
     claim_guard.set_release_mode(ReleaseMode::TransferTo(outer_cycle));
@@ -916,13 +916,11 @@ fn assert_no_new_cycle_heads(
     new_cycle_heads: CycleHeads,
     me: DatabaseKeyIndex,
 ) {
-    for head in new_cycle_heads {
-        if !cycle_heads.contains(&head.database_key_index) {
-            panic!(
-                "Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.",
-                head.database_key_index
-            );
-        }
+    if let Some(head) = new_cycle_heads.difference(cycle_heads).next() {
+        panic!(
+            "Cycle recovery function for {me:?} introduced a cycle, depending on {:?}. This is not allowed.",
+            head.database_key_index
+        );
     }
 }
 
