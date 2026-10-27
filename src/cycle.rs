@@ -49,7 +49,6 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::hash::FxIndexMap;
 use crate::key::DatabaseKeyIndex;
-use crate::sync::OnceLock;
 use crate::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use crate::{Id, Revision};
 
@@ -497,8 +496,8 @@ impl From<CycleHead> for CycleHeads {
 
 #[inline]
 pub(crate) fn empty_cycle_heads() -> &'static CycleHeads {
-    static EMPTY_CYCLE_HEADS: OnceLock<CycleHeads> = OnceLock::new();
-    EMPTY_CYCLE_HEADS.get_or_init(|| CycleHeads(ThinVec::new()))
+    static EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(ThinVec::new());
+    &EMPTY_CYCLE_HEADS
 }
 
 #[derive(Clone)]
