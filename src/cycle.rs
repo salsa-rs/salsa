@@ -45,11 +45,11 @@
 //! hangs (but not deadlocks).
 
 use std::iter::FusedIterator;
+use std::sync::OnceLock;
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::hash::FxIndexMap;
 use crate::key::DatabaseKeyIndex;
-use crate::sync::OnceLock;
 use crate::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use crate::{Id, Revision};
 
