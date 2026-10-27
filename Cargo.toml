@@ -89,7 +89,7 @@ notify-debouncer-mini = "=0.7.0"
 ordered-float = "=5.3.0"
 
 # tests/benches
-annotate-snippets = "=0.12.16"
+annotate-snippets = "=0.12.17"
 divan = { package = "codspeed-divan-compat", version = "=5.0.3" }
 expect-test = "=1.5.1"
 rustversion = "=1.0.23"
