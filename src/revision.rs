@@ -139,11 +139,6 @@ impl AtomicRevision {
     pub fn store(&self, r: Revision) {
         self.data.store(r.as_usize(), Ordering::Release);
     }
-
-    pub fn get_mut(&mut self) -> &mut Revision {
-        // SAFETY: `Revision` is repr(transparent) over `NonZeroUsize`, we only ever store `NonZeroUsize` values, thus making this cast valid.
-        unsafe { &mut *(self.data.get_mut() as *mut usize).cast::<Revision>() }
-    }
 }
 
 impl Clone for AtomicRevision {
