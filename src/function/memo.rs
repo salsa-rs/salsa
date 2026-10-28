@@ -33,7 +33,7 @@ impl<C: Configuration> IngredientImpl<C> {
     /// lock on the `memo_map` once it returns, so this memo could immediately
     /// become outdated if other threads store into the `memo_map`.
     pub(super) fn get_memo_from_table_for<'db>(
-        &self,
+        &'db self,
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
@@ -41,7 +41,8 @@ impl<C: Configuration> IngredientImpl<C> {
         let memo = zalsa
             .memo_table_for::<C::SalsaStruct<'_>>(id)
             .get(memo_ingredient_index)?;
-        // SAFETY: The memo table owns this allocation for at least `'db`.
+        // SAFETY: If another thread replaces the memo, `self.deleted_entries` keeps the
+        // allocation alive for the duration of this borrow.
         Some(unsafe { memo.as_ref() })
     }
 

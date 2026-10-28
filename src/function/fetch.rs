@@ -97,9 +97,7 @@ where
             memo.header
                 .update_shallow(zalsa, database_key_index, can_shallow_update);
 
-            // SAFETY: memo is present in memo_map and we have verified that it is
-            // still valid for the current revision.
-            unsafe { Some(self.extend_memo_lifetime(memo)) }
+            Some(memo)
         } else {
             None
         }
@@ -149,9 +147,7 @@ where
                 true,
             )
         {
-            // SAFETY: memo is present in memo_map and we have verified that it is
-            // still valid for the current revision.
-            return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
+            return Some(old_memo);
         }
 
         self.execute(db, claim_guard, opt_old_memo)
@@ -214,8 +210,7 @@ where
                             revisions
                         );
 
-                        // SAFETY: memo is present in memo_map.
-                        return unsafe { self.extend_memo_lifetime(memo) };
+                        return memo;
                     }
                 }
 

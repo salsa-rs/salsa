@@ -255,13 +255,10 @@ pub struct IngredientImpl<C: Configuration> {
 
     sync_table: SyncTable,
 
-    /// When `fetch` and friends executes, they return a reference to the
-    /// value stored in the memo that is extended to live as long as the `&self`
-    /// reference we start with. This means that whenever we remove something
-    /// from `memo_map` with an `&self` reference, there *could* be references to its
-    /// internals still in use. Therefore we push the memo into this queue and
-    /// only *actually* free up memory when a new revision starts (which means
-    /// we have an `&mut` reference to self).
+    /// A reference returned by `fetch` can outlive the memo's entry in the table.
+    /// Replacing a memo moves it here so existing readers can keep using it.
+    /// Clearing this queue for a new revision or explicit LRU eviction requires
+    /// exclusive access to the ingredient.
     ///
     /// You might think that we could do this only if the memo was verified in the
     /// current revision: you would be right, but we are being defensive, because
@@ -315,21 +312,6 @@ where
         self.eviction.set_capacity(capacity);
     }
 
-    /// Returns a reference to the memo value that lives as long as self.
-    /// This is UNSAFE: the caller is responsible for ensuring that the
-    /// memo will not be released so long as the `&self` is valid.
-    /// This is done by (a) ensuring the memo is present in the memo-map
-    /// when this function is called and (b) ensuring that any entries
-    /// removed from the memo-map are added to `deleted_entries`, which is
-    /// only cleared with `&mut self`.
-    unsafe fn extend_memo_lifetime<'this>(
-        &'this self,
-        memo: &memo::Memo<C>,
-    ) -> &'this memo::Memo<C> {
-        // SAFETY: the caller must guarantee that the memo will not be released before `&self`
-        unsafe { std::mem::transmute(memo) }
-    }
-
     fn insert_memo<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -356,8 +338,9 @@ where
             // memo contents, and so it will be safe to free.
             unsafe { self.deleted_entries.push(old_value) };
         }
-        // SAFETY: memo has been inserted into the table
-        unsafe { self.extend_memo_lifetime(memo.as_ref()) }
+        // SAFETY: The table owns the memo until it is replaced. Clearing the displaced
+        // memos in `self.deleted_entries` requires exclusive access to the ingredient.
+        unsafe { memo.as_ref() }
     }
 
     #[inline]
