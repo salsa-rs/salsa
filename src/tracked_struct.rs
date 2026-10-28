@@ -1380,20 +1380,20 @@ mod persistence {
                 durability,
                 updated_at,
                 revisions,
-                fields,
+                fields: _,
                 memos: _,
             } = self;
 
             value.serialize_field("durability", &durability)?;
             value.serialize_field("updated_at", &updated_at)?;
             value.serialize_field("revisions", &revisions)?;
-            value.serialize_field("fields", &SerializeFields::<C>(fields))?;
+            value.serialize_field("fields", &SerializeFields(self))?;
 
             value.end()
         }
     }
 
-    struct SerializeFields<'db, C: Configuration>(&'db C::Fields<'static>);
+    struct SerializeFields<'db, C: Configuration>(&'db Value<C>);
 
     impl<C> serde::Serialize for SerializeFields<'_, C>
     where
@@ -1403,12 +1403,7 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
-            // bounded by the borrow of the retained fields.
-            C::serialize(
-                unsafe { std::mem::transmute::<&C::Fields<'static>, &C::Fields<'_>>(self.0) },
-                serializer,
-            )
+            C::serialize(self.0.fields(), serializer)
         }
     }
 
