@@ -326,10 +326,6 @@ macro_rules! setup_tracked_struct {
             }
 
 
-            unsafe impl Send for $Struct<'_> {}
-
-            unsafe impl Sync for $Struct<'_> {}
-
             $zalsa::macro_if! { $generate_debug_impl =>
                 impl ::std::fmt::Debug for $Struct<'_> {
                     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
