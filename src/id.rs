@@ -76,10 +76,18 @@ impl Id {
     #[inline]
     #[doc(hidden)]
     pub const fn from_bits(bits: u64) -> Self {
-        let index = NonZeroU32::new(bits as u32).expect("attempted to create invalid `Id`");
+        Self::try_from_bits(bits).expect("attempted to create invalid `Id`")
+    }
+
+    /// Returns `None` if the encoded index is zero.
+    #[inline]
+    pub(crate) const fn try_from_bits(bits: u64) -> Option<Self> {
+        let Some(index) = NonZeroU32::new(bits as u32) else {
+            return None;
+        };
         let generation = (bits >> 32) as u32;
 
-        Id { index, generation }
+        Some(Id { index, generation })
     }
 
     /// Return a `u64` representation of this `Id`.

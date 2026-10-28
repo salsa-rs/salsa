@@ -31,12 +31,7 @@ impl SingletonChoice for Singleton {
     }
 
     fn index(&self) -> Option<Id> {
-        match self.index.load(Ordering::Acquire) {
-            0 => None,
-
-            // SAFETY: Our u64 is derived from an ID and thus safe to convert back.
-            id => Some(unsafe { Id::from_bits_unchecked(id) }),
-        }
+        Id::try_from_bits(self.index.load(Ordering::Acquire))
     }
 }
 
