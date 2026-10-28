@@ -15,7 +15,7 @@ pub trait SalsaStructInDb: Sized {
     ///
     /// For supertype enums, this is the concatenation of all variants' leaf type IDs,
     /// enabling transitive overlap detection.
-    const LEAF_TYPE_IDS: &'static [typeid::ConstTypeId];
+    const LEAF_TYPE_IDS: &'static [TypeId];
 
     /// Lookup or create ingredient indices.
     ///
@@ -93,7 +93,7 @@ pub trait SalsaStructInDb: Sized {
 /// salsa type. Called once at runtime from the generated `lookup_ingredient_index`.
 pub fn assert_supertype_no_overlap(
     enum_name: &str,
-    variant_leaves: &[&[typeid::ConstTypeId]],
+    variant_leaves: &[&[TypeId]],
     variant_names: &[&str],
 ) {
     for i in 0..variant_leaves.len() {

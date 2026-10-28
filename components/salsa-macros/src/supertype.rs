@@ -91,12 +91,12 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
         #where_clause {
             type MemoIngredientMap = zalsa::MemoIngredientIndices;
 
-            const LEAF_TYPE_IDS: &'static [zalsa::ConstTypeId] = {
+            const LEAF_TYPE_IDS: &'static [zalsa::TypeId] = {
                 // Get each variant's leaf type IDs as consts.
                 // We use the 'static version of variant types since consts
                 // cannot reference generic lifetime parameters.
                 #(
-                    const #variant_indices: &[zalsa::ConstTypeId] =
+                    const #variant_indices: &[zalsa::TypeId] =
                         <#variant_types_static as zalsa::SalsaStructInDb>::LEAF_TYPE_IDS;
                 )*
 
@@ -104,8 +104,8 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
                 const __N: usize = #( #variant_indices.len() + )* 0;
 
                 // Build concatenated array
-                const __IDS: [zalsa::ConstTypeId; __N] = {
-                    let mut __result = [zalsa::ConstTypeId::of::<()>(); __N];
+                const __IDS: [zalsa::TypeId; __N] = {
+                    let mut __result = [zalsa::TypeId::of::<()>(); __N];
                     let mut __dst: usize = 0;
                     #(
                         {
