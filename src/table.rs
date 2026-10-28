@@ -543,18 +543,13 @@ impl Page {
         let data: Box<PageData<T>> =
             Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]);
 
+        // Avoid stack overflows when using larger Shuttle types.
         #[cfg(feature = "shuttle")]
-        let data = {
-            // Avoid stack overflows when using larger shuttle types.
-            let data = (0..PAGE_LEN)
-                .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
-                .collect::<Box<[PageDataEntry<T>]>>();
-
-            let data: *mut [PageDataEntry<T>] = Box::into_raw(data);
-
-            // SAFETY: `*mut PageDataEntry<T>` and `*mut [PageDataEntry<T>; N]` have the same layout.
-            unsafe { Box::from_raw(data.cast::<PageDataEntry<T>>().cast::<PageData<T>>()) }
-        };
+        let data: Box<PageData<T>> = (0..PAGE_LEN)
+            .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
+            .collect::<Box<[_]>>()
+            .try_into()
+            .expect("collected exactly PAGE_LEN entries");
 
         Self {
             ingredient,
