@@ -232,20 +232,16 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
 }
 
 impl dyn Ingredient {
-    /// Equivalent to the `downcast` method on `Any`.
-    ///
-    /// Because we do not have dyn-downcasting support, we need this workaround.
+    /// Returns the ingredient as `T`, panicking on a type mismatch.
     pub fn assert_type<T: Any>(&self) -> &T {
-        assert_eq!(
-            self.type_id(),
-            TypeId::of::<T>(),
-            "ingredient `{self:?}` is not of type `{}`",
-            std::any::type_name::<T>()
-        );
-
-        // SAFETY: We know that the underlying data pointer
-        // refers to a value of type T because of the `TypeId` check above.
-        unsafe { transmute_data_ptr(self) }
+        (self as &dyn Any).downcast_ref().unwrap_or_else(|| {
+            panic!(
+                "ingredient `{self:?}` ({:?}) is not of type `{}` ({:?})",
+                self.type_id(),
+                std::any::type_name::<T>(),
+                TypeId::of::<T>()
+            )
+        })
     }
 
     /// Equivalent to the `downcast` methods on `Any`.
