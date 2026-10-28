@@ -69,17 +69,6 @@ impl<DbView: ?Sized + Any> DatabaseDownCaster<DbView> {
         // The returned pointer is live for `'db` due to construction of the downcaster functions.
         unsafe { (self.unerased_downcaster())(db).as_ref() }
     }
-    /// Downcast `db` to `DbView`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `db` is of the correct type.
-    #[inline]
-    pub unsafe fn downcast_mut_unchecked<'db>(&self, db: RawDatabase<'db>) -> &'db mut DbView {
-        // SAFETY: The caller must ensure that `db` is of the correct type.
-        // The returned pointer is live for `'db` due to construction of the downcaster functions.
-        unsafe { (self.unerased_downcaster())(db).as_mut() }
-    }
 
     #[inline]
     fn unerased_downcaster(&self) -> DatabaseDownCasterSig<DbView> {
