@@ -210,15 +210,12 @@ mod imp {
             // SAFETY: The lower bits of `cached_data` are initialized from a valid `IngredientIndex`.
             let index = unsafe { IngredientIndex::new_unchecked(cached_data as u32) };
 
-            // SAFETY: We've checked against `UNINITIALIZED` (0) above and so the upper bits must be non-zero.
-            let nonce = crate::nonce::Nonce::<StorageNonce>::from_u32(unsafe {
-                std::num::NonZeroU32::new_unchecked((cached_data >> u32::BITS) as u32)
-            });
+            let nonce = (cached_data >> u32::BITS) as u32;
 
             // The data was cached for a different database, we have to ensure the ingredient was
             // created in ours. Keep this call statically dispatched because this is the hot path
             // for programs that use multiple databases.
-            if zalsa.nonce() != nonce {
+            if zalsa.nonce().into_u32().get() != nonce {
                 return zalsa.lookup_jar_by_type::<J>().at_offset(OFFSET);
             }
 
