@@ -135,9 +135,7 @@ impl DbMacro {
             #[inline(never)]
             #[doc(hidden)]
             fn zalsa_register_downcaster(&self) -> &salsa::plumbing::DatabaseDownCaster<dyn #TraitPath> {
-                salsa::plumbing::views(self).add::<Self, dyn #TraitPath>(unsafe {
-                    ::std::mem::transmute(<Self as #TraitPath>::downcast as fn(_) -> _)
-                })
+                salsa::plumbing::views(self).add::<Self, dyn #TraitPath>(|db| db)
             }
         });
         input.items.push(parse_quote! {
