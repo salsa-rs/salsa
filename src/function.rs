@@ -255,10 +255,12 @@ pub struct IngredientImpl<C: Configuration> {
 
     sync_table: SyncTable,
 
-    /// A reference returned by `fetch` can outlive the memo's entry in the table.
-    /// Replacing a memo moves it here so existing readers can keep using it.
-    /// Clearing this queue for a new revision or explicit LRU eviction requires
-    /// exclusive access to the ingredient.
+    /// When `fetch` and friends execute, they return a reference to the
+    /// value stored in the memo. Its lifetime is tied to the `&self`
+    /// reference we start with. This means that whenever we remove something
+    /// from `memo_map` with an `&self` reference, there *could* be references to its
+    /// internals still in use. Therefore we push the memo into this queue and
+    /// only *actually* free up memory when we have `&mut self`.
     ///
     /// You might think that we could do this only if the memo was verified in the
     /// current revision: you would be right, but we are being defensive, because
