@@ -333,7 +333,6 @@ pub mod prelude {
 pub mod plumbing {
     pub use std::any::TypeId;
     pub use std::option::Option::{self, None, Some};
-    pub use typeid::ConstTypeId;
 
     #[cfg(feature = "accumulator")]
     pub use salsa_macro_rules::setup_accumulator_impl;
