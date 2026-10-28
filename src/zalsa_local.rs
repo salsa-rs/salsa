@@ -1767,10 +1767,7 @@ impl PackedQueryEdge {
         QueryEdge {
             index: self.index,
             generation: self.metadata & Self::GENERATION_MASK,
-            // SAFETY: `metadata` was built from an `IngredientIndex` in `PackedQueryEdge::new`.
-            ingredient: unsafe {
-                IngredientIndex::new_unchecked(self.metadata >> Self::INGREDIENT_SHIFT)
-            },
+            ingredient: IngredientIndex::new(self.metadata >> Self::INGREDIENT_SHIFT),
         }
     }
 }

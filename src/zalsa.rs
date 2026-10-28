@@ -79,7 +79,7 @@ impl IngredientIndex {
     const MAX_INDEX: u32 = 0x7FFF_FFFF;
 
     /// Create an ingredient index from a `u32`.
-    pub(crate) fn new(v: u32) -> Self {
+    pub(crate) const fn new(v: u32) -> Self {
         assert!(v <= Self::MAX_INDEX);
         Self(v)
     }
