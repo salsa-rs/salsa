@@ -621,7 +621,7 @@ mod _memory_usage {
     use crate::plumbing::{self, IngredientIndices, MemoIngredientSingletonIndex, SalsaStructInDb};
     use crate::table::memo::MemoTableWithTypes;
     use crate::zalsa::Zalsa;
-    use crate::{Database, Id, Revision};
+    use crate::{Database, Id};
 
     use std::any::TypeId;
     use std::num::NonZeroUsize;
@@ -655,7 +655,7 @@ mod _memory_usage {
             unimplemented!()
         }
 
-        unsafe fn memo_table(_: &Zalsa, _: Id, _: Revision) -> MemoTableWithTypes<'_> {
+        fn memo_table(_: &Zalsa, _: Id) -> MemoTableWithTypes<'_> {
             unimplemented!()
         }
 

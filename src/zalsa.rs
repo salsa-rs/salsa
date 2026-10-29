@@ -249,8 +249,7 @@ impl Zalsa {
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
     pub(crate) fn memo_table_for<T: SalsaStructInDb>(&self, id: Id) -> MemoTableWithTypes<'_> {
-        // SAFETY: We are supplying the correct current revision.
-        unsafe { T::memo_table(self, id, self.current_revision()) }
+        T::memo_table(self, id)
     }
 
     /// Returns the ingredient at the given index, or panics if it is out-of-bounds.

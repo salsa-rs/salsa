@@ -326,50 +326,6 @@ impl Table {
         )))
     }
 
-    /// Get the memo table associated with `id` for the concrete type `T`.
-    ///
-    /// # Safety
-    ///
-    /// The parameter `current_revision` must be the current revision of the database
-    /// owning this table.
-    ///
-    /// # Panics
-    ///
-    /// If `page` is out of bounds or the type `T` is incorrect.
-    pub unsafe fn memos<T: Slot>(
-        &self,
-        id: Id,
-        current_revision: Revision,
-    ) -> MemoTableWithTypes<'_> {
-        let (page, slot) = split_id(id);
-        let page = self.pages[page.0].assert_type::<T>();
-        let slot = &page.data()[slot.0];
-
-        // SAFETY: The caller is required to pass the `current_revision`.
-        let memos = unsafe { &*T::memos(slot, current_revision) };
-
-        // SAFETY: The `Page` keeps the correct memo types.
-        unsafe { page.0.memo_types.attach_memos(memos) }
-    }
-
-    /// Get the memo table associated with `id`.
-    ///
-    /// Unlike `Table::memos`, this does not require a concrete type, and instead uses dynamic
-    /// dispatch.
-    ///
-    /// # Safety
-    ///
-    /// The parameter `current_revision` must be the current revision of the owner of database
-    /// owning this table.
-    pub unsafe fn dyn_memos(&self, id: Id, current_revision: Revision) -> MemoTableWithTypes<'_> {
-        let (page, slot) = split_id(id);
-        let page = &self.pages[page.0];
-        // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
-        let memos = unsafe { &*(page.slot_vtable.memos)(page.get(slot), current_revision) };
-        // SAFETY: The `Page` keeps the correct memo types.
-        unsafe { page.memo_types.attach_memos(memos) }
-    }
-
     /// Get the memo table without validating or locking its slot.
     ///
     /// # Safety
@@ -481,6 +437,39 @@ impl Iterator for ErasedSlots<'_> {
             });
             self.current_page.as_ref()?;
         }
+    }
+}
+
+impl crate::zalsa::Zalsa {
+    /// Get the memo table associated with `id` for the concrete type `T`.
+    ///
+    /// # Panics
+    ///
+    /// If `page` is out of bounds or the type `T` is incorrect.
+    pub fn memos<T: Slot>(&self, id: Id) -> MemoTableWithTypes<'_> {
+        let (page, slot) = split_id(id);
+        let page = self.table().pages[page.0].assert_type::<T>();
+        // A tracked slot can be write-locked until `T::memos` takes its read lock.
+        let slot = page.page_data()[slot.0].get().cast::<T>();
+
+        // SAFETY: The slot is initialized, and the revision comes from its database.
+        let memos = unsafe { &*T::memos(slot, self.current_revision()) };
+
+        // SAFETY: The `Page` keeps the correct memo types.
+        unsafe { page.0.memo_types.attach_memos(memos) }
+    }
+
+    /// Get the memo table associated with `id`.
+    ///
+    /// Unlike `Self::memos`, this does not require a concrete type, and instead uses dynamic
+    /// dispatch.
+    pub fn dyn_memos(&self, id: Id) -> MemoTableWithTypes<'_> {
+        let (page, slot) = split_id(id);
+        let page = &self.table().pages[page.0];
+        // SAFETY: The slot and revision come from the same database.
+        let memos = unsafe { &*(page.slot_vtable.memos)(page.get(slot), self.current_revision()) };
+        // SAFETY: The `Page` keeps the correct memo types.
+        unsafe { page.memo_types.attach_memos(memos) }
     }
 }
 

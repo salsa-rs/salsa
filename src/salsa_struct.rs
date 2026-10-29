@@ -3,7 +3,7 @@ use std::any::TypeId;
 use crate::memo_ingredient_indices::{IngredientIndices, MemoIngredientMap};
 use crate::table::memo::MemoTableWithTypes;
 use crate::zalsa::Zalsa;
-use crate::{DatabaseKeyIndex, Id, Revision};
+use crate::{DatabaseKeyIndex, Id};
 
 pub trait SalsaStructInDb: Sized {
     type MemoIngredientMap: MemoIngredientMap;
@@ -77,16 +77,7 @@ pub trait SalsaStructInDb: Sized {
     fn cast(id: Id, type_id: TypeId) -> Option<Self>;
 
     /// Return the memo table associated with `id`.
-    ///
-    /// # Safety
-    ///
-    /// The parameter `current_revision` must be the current revision of the owner of database
-    /// owning this table.
-    unsafe fn memo_table(
-        zalsa: &Zalsa,
-        id: Id,
-        current_revision: Revision,
-    ) -> MemoTableWithTypes<'_>;
+    fn memo_table(zalsa: &Zalsa, id: Id) -> MemoTableWithTypes<'_>;
 }
 
 /// Asserts that no two variants of a supertype enum transitively contain the same concrete
