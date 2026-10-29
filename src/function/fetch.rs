@@ -22,33 +22,68 @@ where
     ) -> &'db C::Output<'db> {
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
-        let database_key_index = self.database_key_index(id);
-
         #[cfg(feature = "detailed-trace")]
-        let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
+        let _span =
+            crate::tracing::debug_span!("fetch", query = ?self.database_key_index(id)).entered();
 
-        let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        loop {
+            if let Some((memo, value)) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
+                self.record_memo_read(zalsa_local, id, memo, true);
+                return value;
+            }
+            if let Some(value) =
+                self.fetch_cold_value(zalsa, zalsa_local, db, id, memo_ingredient_index)
+            {
+                return value;
+            }
+        }
+    }
 
-        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
-        let memo_value = unsafe { memo.value().unwrap_unchecked() };
+    #[inline(always)]
+    fn fetch_cold_value<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        db: &'db C::DbView,
+        id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<&'db C::Output<'db>> {
+        let memo = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)?;
+        let value = memo.value().expect("refreshed memo should have a value");
+        self.record_memo_read(zalsa_local, id, memo, false);
+        Some(value)
+    }
 
+    #[inline(always)]
+    fn record_memo_read(
+        &self,
+        zalsa_local: &ZalsaLocal,
+        id: Id,
+        memo: &Memo<C>,
+        known_final: bool,
+    ) {
         self.eviction.record_use(id);
 
+        let database_key_index = self.database_key_index(id);
         let revisions = &memo.header.revisions;
         zalsa_local.report_tracked_read(
             database_key_index,
             revisions.durability,
             revisions.changed_at,
-            memo.header.cycle_heads(),
+            if known_final {
+                crate::cycle::empty_cycle_heads()
+            } else {
+                memo.header.cycle_heads()
+            },
             #[cfg(feature = "accumulator")]
             revisions.accumulated().is_some(),
             #[cfg(feature = "accumulator")]
             &revisions.accumulated_inputs,
         );
-
-        memo_value
     }
 
+    #[cfg(feature = "accumulator")]
     #[inline(always)]
     pub(super) fn refresh_memo<'db>(
         &'db self,
@@ -63,7 +98,7 @@ where
             // Keep the hot and cold probes in distinct control-flow blocks. Using `or_else`
             // here can outline both into one function, making hot hits pay for the cold path's
             // stack frame.
-            if let Some(memo) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
+            if let Some((memo, _)) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
                 return memo;
             }
 
@@ -79,10 +114,10 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<C>> {
+    ) -> Option<(&'db Memo<C>, &'db C::Output<'db>)> {
         let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
 
-        memo.value.as_ref()?;
+        let value = memo.value()?;
 
         let database_key_index = self.database_key_index(id);
 
@@ -97,7 +132,7 @@ where
             memo.header
                 .update_shallow(zalsa, database_key_index, can_shallow_update);
 
-            Some(memo)
+            Some((memo, value))
         } else {
             None
         }
