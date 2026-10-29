@@ -280,17 +280,13 @@ impl ZalsaLocal {
         index: IngredientIndex,
         value: A,
     ) -> Result<(), ()> {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.accumulate(index, value);
-                    Ok(())
-                } else {
-                    Err(())
-                }
-            })
-        }
+        let mut stack = self.query_stack.borrow_mut();
+        let Some(top_query) = stack.last_mut() else {
+            // The local guard drops before `value`, whose destructor may access the stack.
+            return Err(());
+        };
+        top_query.accumulate(index, value);
+        Ok(())
     }
 
     /// Add an output to the current query's list of dependencies, returning whether it was new.
