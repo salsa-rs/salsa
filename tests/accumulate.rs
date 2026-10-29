@@ -3,7 +3,7 @@
 mod common;
 use common::{LogDatabase, LoggerDatabase};
 use expect_test::expect;
-use salsa::{Accumulator, Setter};
+use salsa::{Accumulator, Database, Setter};
 use test_log::test;
 
 #[salsa::input(debug)]
@@ -245,4 +245,19 @@ fn get_a_logs_after_changing_b() {
     "#]]
     .assert_debug_eq(&logs);
     db.assert_logs(expect!["[]"]);
+}
+
+#[test]
+#[should_panic(expected = "cannot accumulate values outside of an active tracked function")]
+fn rejected_accumulator_can_access_query_stack_on_drop() {
+    salsa::DatabaseImpl::new().attach(|db| CaptureBacktraceOnDrop.accumulate(db));
+}
+
+#[salsa::accumulator]
+struct CaptureBacktraceOnDrop;
+
+impl Drop for CaptureBacktraceOnDrop {
+    fn drop(&mut self) {
+        salsa::Backtrace::capture().expect("query stack should be accessible during drop");
+    }
 }
