@@ -227,6 +227,14 @@ pub(crate) struct Identity {
 }
 
 impl Identity {
+    pub(crate) fn new(key: IdentityHash, disambiguator: Disambiguator) -> Self {
+        Self {
+            ingredient_index: key.ingredient_index,
+            hash: key.hash,
+            disambiguator,
+        }
+    }
+
     pub(crate) fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -512,15 +520,10 @@ where
             hash: crate::hash::hash(&C::untracked_fields(&fields)),
         };
 
-        let (current_deps, disambiguator) = zalsa_local.disambiguate(identity_hash);
+        let (current_deps, identity, existing_id) =
+            zalsa_local.identify_tracked_struct(identity_hash);
 
-        let identity = Identity {
-            hash: identity_hash.hash,
-            ingredient_index: identity_hash.ingredient_index,
-            disambiguator,
-        };
-
-        if let Some(id) = zalsa_local.tracked_struct_id(&identity) {
+        if let Some(id) = existing_id {
             // The struct already exists in the intern map.
             crate::tracing::trace!(
                 "Reuse tracked struct {id:?}",

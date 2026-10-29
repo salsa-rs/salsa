@@ -24,7 +24,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
 use crate::sync::atomic::AtomicBool;
 use crate::table::{PageIndex, Slot, Table};
-use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
+use crate::tracked_struct::{Identity, IdentityHash};
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Cancelled, Id, Revision};
 
@@ -414,41 +414,19 @@ impl ZalsaLocal {
         }
     }
 
-    /// Called when the active queries creates an index from the
-    /// entity table with the index `entity_index`. Has the following effects:
-    ///
-    /// * Add a query read on `DatabaseKeyIndex::for_table(entity_index)`
-    /// * Identify a unique disambiguator for the hash within the current query,
-    ///   adding the hash to the current query's disambiguator table.
-    /// * Returns a tuple of:
-    ///   * the id of the current query
-    ///   * the current dependencies (durability, changed_at) of current query
-    ///   * the disambiguator index
+    /// Assign the new tracked struct an identity and look for an ID from the previous execution.
     #[track_caller]
-    pub(crate) fn disambiguate(&self, key: IdentityHash) -> (Stamp, Disambiguator) {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                let top_query = stack.last_mut().expect(
-                    "cannot create a tracked struct disambiguator outside of a tracked function",
-                );
-                let disambiguator = top_query.disambiguate(key);
-                (top_query.stamp(), disambiguator)
-            })
+    pub(crate) fn identify_tracked_struct(
+        &self,
+        key: IdentityHash,
+    ) -> (Stamp, Identity, Option<Id>) {
+        if let Some(query) = self.query_stack.borrow_mut().last_mut() {
+            let identity = Identity::new(key, query.disambiguate(key));
+            let existing_id = query.tracked_struct_ids_mut().reuse(&identity);
+            return (query.stamp(), identity, existing_id);
         }
-    }
 
-    #[track_caller]
-    pub(crate) fn tracked_struct_id(&self, identity: &Identity) -> Option<Id> {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                let top_query = stack
-                    .last_mut()
-                    .expect("cannot create a tracked struct ID outside of a tracked function");
-                top_query.tracked_struct_ids_mut().reuse(identity)
-            })
-        }
+        panic!("cannot create a tracked struct disambiguator outside of a tracked function");
     }
 
     #[track_caller]
