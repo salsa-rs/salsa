@@ -239,6 +239,15 @@ impl ZalsaLocal {
             .map(|stack| f(stack))
     }
 
+    /// Copy the active keys so diagnostics can format the stack and panic after releasing its borrow.
+    pub(crate) fn query_stack_keys(&self) -> Vec<DatabaseKeyIndex> {
+        self.query_stack
+            .borrow()
+            .iter()
+            .map(|query| query.database_key_index)
+            .collect()
+    }
+
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
     pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, Stamp)> {
