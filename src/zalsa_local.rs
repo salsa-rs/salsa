@@ -2062,16 +2062,21 @@ impl DetachedQuery<'_> {
 
 impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.local_state.with_query_stack_unchecked_mut(|stack| {
-                stack.pop(
-                    self.database_key_index,
-                    #[cfg(debug_assertions)]
-                    self.push_len,
-                );
-            })
-        };
+        // Drop user values after releasing the stack borrow.
+        #[cfg(feature = "accumulator")]
+        let mut discarded = AccumulatedMap::default();
+        self.local_state
+            .query_stack
+            .borrow_mut()
+            .pop_active_query(
+                self.database_key_index,
+                #[cfg(debug_assertions)]
+                self.push_len,
+            )
+            .clear(
+                #[cfg(feature = "accumulator")]
+                &mut discarded,
+            );
     }
 }
 

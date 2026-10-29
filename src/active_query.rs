@@ -271,7 +271,7 @@ impl ActiveQuery {
         }
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self, #[cfg(feature = "accumulator")] discarded: &mut AccumulatedMap) {
         let Self {
             database_key_index: _,
             durability: _,
@@ -291,7 +291,7 @@ impl ActiveQuery {
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
         #[cfg(feature = "accumulator")]
-        accumulated.clear();
+        std::mem::swap(accumulated, discarded);
     }
 
     fn reset_for(&mut self, new_database_key_index: DatabaseKeyIndex) {
@@ -435,16 +435,7 @@ impl QueryStack {
         completion
     }
 
-    pub(crate) fn pop(&mut self, key: DatabaseKeyIndex, #[cfg(debug_assertions)] push_len: usize) {
-        self.pop_active_query(
-            key,
-            #[cfg(debug_assertions)]
-            push_len,
-        )
-        .clear()
-    }
-
-    fn pop_active_query(
+    pub(crate) fn pop_active_query(
         &mut self,
         key: DatabaseKeyIndex,
         #[cfg(debug_assertions)] push_len: usize,
