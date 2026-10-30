@@ -250,6 +250,7 @@ impl ZalsaLocal {
 
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
+    #[inline]
     pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, Stamp)> {
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
