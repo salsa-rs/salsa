@@ -261,23 +261,26 @@ impl ZalsaLocal {
         }
     }
 
-    /// Returns the active query, its current dependencies, and any provisional cycle results it
-    /// depends on.
-    pub(crate) fn active_query_with_cycle_heads(
+    /// Returns the active query's metadata after checking that it created the specified key.
+    pub(crate) fn specify_context(
         &self,
-    ) -> Option<(DatabaseKeyIndex, Stamp, CycleHeads)> {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked(|stack| {
-                stack.last().map(|active_query| {
-                    (
-                        active_query.database_key_index,
-                        active_query.stamp(),
-                        active_query.cycle_heads().clone(),
-                    )
-                })
-            })
+        input_key: DatabaseKeyIndex,
+    ) -> (DatabaseKeyIndex, Stamp, CycleHeads) {
+        let stack = self.query_stack.borrow();
+        let Some(query) = stack.last() else {
+            drop(stack);
+            panic!("can only use `specify` inside a tracked function");
+        };
+        if !query.tracked_struct_ids().is_active(input_key) {
+            drop(stack);
+            panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
+
+        (
+            query.database_key_index,
+            query.stamp(),
+            query.cycle_heads().clone(),
+        )
     }
 
     /// Add an output to the current query's list of dependencies
@@ -306,18 +309,6 @@ impl ZalsaLocal {
                 stack
                     .last_mut()
                     .is_some_and(|top_query| top_query.add_output(entity))
-            })
-        }
-    }
-
-    /// Check whether `entity` is a tracked struct that was created by the currently active query (if any)
-    pub(crate) fn is_tracked_struct_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                stack
-                    .last_mut()
-                    .is_some_and(|top_query| top_query.tracked_struct_ids().is_active(entity))
             })
         }
     }

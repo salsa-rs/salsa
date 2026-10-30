@@ -23,12 +23,6 @@ where
     {
         let (zalsa, zalsa_local) = db.zalsas();
 
-        let (active_query_key, current_deps, cycle_heads) =
-            match zalsa_local.active_query_with_cycle_heads() {
-                Some(v) => v,
-                None => panic!("can only use `specify` inside a tracked function"),
-            };
-
         // `specify` only works if the key is a tracked struct created in the current query.
         //
         // The reason is this. We want to ensure that the same result is reached regardless of
@@ -42,9 +36,7 @@ where
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
         let input_key = <C::Input<'db>>::database_key_index(zalsa, key);
-        if !zalsa_local.is_tracked_struct_of_active_query(input_key) {
-            panic!("can only use `specify` on salsa structs created during the current tracked fn");
-        }
+        let (active_query_key, current_deps, cycle_heads) = zalsa_local.specify_context(input_key);
 
         // Subtle: we treat the "input" to a set query as if it were
         // volatile.
