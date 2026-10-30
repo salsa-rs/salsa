@@ -405,15 +405,14 @@ impl MemoHeader {
     }
 
     fn seed_active_query(&self, zalsa: &Zalsa, active_query: &ActiveQueryGuard<'_>) {
-        // If we already executed this query once, then use the tracked-struct ids from the
-        // previous execution as the starting point for the new one.
-        active_query.seed_tracked_struct_ids(self.revisions.tracked_struct_ids());
-
-        // Carry over outputs and revision metadata from a previous iteration so that
-        // tracked structs owned by the query remain alive even if this iteration no
-        // longer creates them. Inputs are recorded when the previous result is read.
         if self.may_be_provisional() && self.verified_at.load() == zalsa.current_revision() {
+            // Carry over outputs and revision metadata from a previous iteration so that
+            // tracked structs owned by the query remain alive even if this iteration no
+            // longer creates them. Inputs are recorded when the previous result is read.
             active_query.seed_iteration(&self.revisions);
+        } else {
+            // Reuse tracked-struct IDs from the previous execution.
+            active_query.seed_tracked_struct_ids(self.revisions.tracked_struct_ids());
         }
     }
 }

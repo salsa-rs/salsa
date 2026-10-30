@@ -1911,22 +1911,23 @@ impl<'me> ActiveQueryGuard<'me> {
         }
     }
 
-    /// Append the given `outputs` to the query's output list.
+    /// Seed the active frame from a previous provisional iteration.
     pub(crate) fn seed_iteration(&self, previous: &QueryRevisions) {
-        let durability = previous.durability;
-        let changed_at = previous.changed_at;
-        let edges = previous.origin().edges();
-        let untracked_read = previous.is_derived_untracked();
-
-        let tracked_ids = previous.tracked_struct_ids();
-
         // SAFETY: We do not access the query stack reentrantly.
         unsafe {
             self.local_state.with_query_stack_unchecked_mut(|stack| {
                 #[cfg(debug_assertions)]
                 assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
                 let frame = stack.last_mut().unwrap();
-                frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
+                let tracked_ids = previous.tracked_struct_ids();
+                frame.tracked_struct_ids_mut().seed(tracked_ids);
+                frame.seed_iteration(
+                    previous.durability,
+                    previous.changed_at,
+                    previous.origin().edges(),
+                    previous.is_derived_untracked(),
+                    tracked_ids,
+                );
             })
         }
     }
