@@ -726,17 +726,7 @@ fn validate_same_iteration(
         .next()
         .is_none()
     {
-        // SAFETY: We do not access the query stack reentrantly.
-        let on_stack = unsafe {
-            zalsa_local.with_query_stack_unchecked(|stack| {
-                stack
-                    .iter()
-                    .rev()
-                    .any(|query| query.database_key_index == memo_database_key_index)
-            })
-        };
-
-        return on_stack;
+        return zalsa_local.query_stack_contains(memo_database_key_index);
     }
 
     let cycle_heads_iter = TryClaimCycleHeadsIter::new(zalsa, cycle_heads);

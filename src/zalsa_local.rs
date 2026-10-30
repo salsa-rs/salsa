@@ -239,6 +239,14 @@ impl ZalsaLocal {
             .map(|stack| f(stack))
     }
 
+    pub(crate) fn query_stack_contains(&self, key: DatabaseKeyIndex) -> bool {
+        self.query_stack
+            .borrow()
+            .iter()
+            .rev()
+            .any(|query| query.database_key_index == key)
+    }
+
     /// Copy the active keys so diagnostics can format the stack and panic after releasing its borrow.
     pub(crate) fn query_stack_keys(&self) -> Vec<DatabaseKeyIndex> {
         self.query_stack
