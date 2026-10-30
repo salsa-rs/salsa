@@ -415,14 +415,20 @@ impl ZalsaLocal {
     #[track_caller]
     pub(crate) fn store_tracked_struct_id(&self, identity: Identity, id: Id) {
         // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
+        let stored = unsafe {
             self.with_query_stack_unchecked_mut(|stack| {
-                let top_query = stack
-                    .last_mut()
-                    .expect("cannot store a tracked struct ID outside of a tracked function");
-                top_query.tracked_struct_ids_mut().insert(identity, id);
+                let Some(query) = stack.last_mut() else {
+                    return false;
+                };
+                query.tracked_struct_ids_mut().insert(identity, id);
+                true
             })
-        }
+        };
+        // A panic hook may inspect the query stack.
+        assert!(
+            stored,
+            "cannot store a tracked struct ID outside of a tracked function"
+        );
     }
 
     #[inline]
