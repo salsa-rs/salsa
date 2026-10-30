@@ -252,14 +252,10 @@ impl ZalsaLocal {
     /// information. As the query continues to execute, naturally, that information may change.
     #[inline]
     pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, Stamp)> {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked(|stack| {
-                stack
-                    .last()
-                    .map(|active_query| (active_query.database_key_index, active_query.stamp()))
-            })
-        }
+        self.query_stack
+            .borrow()
+            .last()
+            .map(|query| (query.database_key_index, query.stamp()))
     }
 
     /// Returns the active query's metadata after checking that it created the specified key.
