@@ -372,17 +372,12 @@ impl ZalsaLocal {
         }
     }
 
-    /// Update the active query's changed revision without recording a dependency edge.
-    #[inline(always)]
-    pub(crate) fn report_tracked_read_revision(&self, changed_at: Revision) {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.add_changed_at(changed_at);
-                }
-            })
-        }
+    /// Update the active query's changed revision and return its durability.
+    pub(crate) fn report_tracked_read_revision(&self, changed_at: Revision) -> Option<Durability> {
+        let mut stack = self.query_stack.borrow_mut();
+        let query = stack.last_mut()?;
+        query.add_changed_at(changed_at);
+        Some(query.stamp().durability)
     }
 
     /// Register that the current query read an untracked value
