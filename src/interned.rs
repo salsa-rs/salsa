@@ -477,14 +477,23 @@ where
                 }
             }
 
-            if let Some((_, stamp)) = zalsa_local.active_query() {
-                let was_reusable = is_reusable::<C>(durability);
+            // Non-reusable slots need only contribute their revision to the active query.
+            if !is_reusable::<C>(durability) {
+                if let Some(query_durability) =
+                    zalsa_local.report_tracked_read_revision(current_revision)
+                    && query_durability > durability
+                {
+                    value.durability.store(query_durability);
+                }
+                return id;
+            }
 
+            if let Some((_, stamp)) = zalsa_local.active_query() {
                 // Record the maximum durability across all queries that intern this value.
                 durability = std::cmp::max(durability, stamp.durability);
 
                 // Remove the value from the LRU before publishing a non-reusable durability.
-                if was_reusable && !is_reusable::<C>(durability) {
+                if !is_reusable::<C>(durability) {
                     // SAFETY: We hold the lock for the shard containing the value, and `value`
                     // was previously reusable, so is in the list.
                     unsafe { shard.lru.cursor_mut_from_ptr(&value.lru).remove() };
