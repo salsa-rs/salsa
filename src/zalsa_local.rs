@@ -289,12 +289,20 @@ impl ZalsaLocal {
         index: IngredientIndex,
         value: A,
     ) -> Result<(), ()> {
+        // A destructor or panic hook can itself call `accumulate`. Use a checked borrow
+        // because that caller may already be borrowing the stack.
         let mut stack = self.query_stack.borrow_mut();
         let Some(top_query) = stack.last_mut() else {
             // The local guard drops before `value`, whose destructor may access the stack.
             return Err(());
         };
-        top_query.accumulate(index, value);
+        let Some(values) = top_query.accumulated_mut().get_or_insert::<A>(index) else {
+            // The public plumbing can pair an index with the wrong accumulator type.
+            // Release the stack before the panic hook or the rejected value's destructor runs.
+            drop(stack);
+            panic!("accumulator type does not match its ingredient");
+        };
+        values.push(value);
         Ok(())
     }
 

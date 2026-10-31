@@ -43,12 +43,3 @@ where
         self
     }
 }
-
-impl dyn AnyAccumulated {
-    pub fn accumulate<A: Accumulator>(&mut self, value: A) {
-        self.as_dyn_any_mut()
-            .downcast_mut::<Accumulated<A>>()
-            .unwrap()
-            .push(value);
-    }
-}
