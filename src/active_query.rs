@@ -2,9 +2,8 @@ use std::{fmt, ops};
 
 use crate::Revision;
 #[cfg(feature = "accumulator")]
-use crate::accumulator::{
-    Accumulator,
-    accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
+use crate::accumulator::accumulated_map::{
+    AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
 use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
@@ -176,8 +175,8 @@ impl ActiveQuery {
     }
 
     #[cfg(feature = "accumulator")]
-    pub(super) fn accumulate(&mut self, index: crate::IngredientIndex, value: impl Accumulator) {
-        self.accumulated.accumulate(index, value);
+    pub(super) fn accumulated_mut(&mut self) -> &mut AccumulatedMap {
+        &mut self.accumulated
     }
 
     /// Adds a key to our list of outputs, returning whether it was newly inserted.
