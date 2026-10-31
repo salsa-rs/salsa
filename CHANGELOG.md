@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.6](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.5...salsa-v0.28.6) - 2026-10-31
+
+### Added
+
+- pass the previous provisional value to cycle_initial ([#1353](https://github.com/salsa-rs/salsa/pull/1353))
+
+### Fixed
+
+- convert interned keys before allocating a slot ([#1406](https://github.com/salsa-rs/salsa/pull/1406))
+- release the query stack before reporting a missing tracked ID frame ([#1404](https://github.com/salsa-rs/salsa/pull/1404))
+- release the query stack before dropping discarded accumulators ([#1394](https://github.com/salsa-rs/salsa/pull/1394))
+- borrow the query stack once to identify tracked structs ([#1393](https://github.com/salsa-rs/salsa/pull/1393))
+- release the query stack before reporting a cycle ([#1392](https://github.com/salsa-rs/salsa/pull/1392))
+- release the query stack before dropping a rejected accumulator ([#1390](https://github.com/salsa-rs/salsa/pull/1390))
+- retain previous result inputs during cycle recovery ([#1346](https://github.com/salsa-rs/salsa/pull/1346))
+- propagate owner panics after lock transfers ([#1347](https://github.com/salsa-rs/salsa/pull/1347))
+- propagate cycle initial dependencies to other cycle heads ([#1331](https://github.com/salsa-rs/salsa/pull/1331))
+
+### Other
+
+- use checked query stack borrows when interning ([#1400](https://github.com/salsa-rs/salsa/pull/1400))
+- inline the active query lookup ([#1401](https://github.com/salsa-rs/salsa/pull/1401))
+- borrow the query stack once in specify ([#1399](https://github.com/salsa-rs/salsa/pull/1399))
+- use standard type IDs for supertype leaves ([#1388](https://github.com/salsa-rs/salsa/pull/1388))
+- remove two unused mutable accessors ([#1387](https://github.com/salsa-rs/salsa/pull/1387))
+- reuse Value::fields when serializing tracked structs ([#1385](https://github.com/salsa-rs/salsa/pull/1385))
+- use a checked ID decoder for singleton lookups ([#1383](https://github.com/salsa-rs/salsa/pull/1383))
+- remove the memo lifetime transmute ([#1378](https://github.com/salsa-rs/salsa/pull/1378))
+- use a checked boxed array conversion for Shuttle pages ([#1382](https://github.com/salsa-rs/salsa/pull/1382))
+- use a pointer coercion for database views ([#1379](https://github.com/salsa-rs/salsa/pull/1379))
+- let Rust infer Send and Sync for tracked handles ([#1380](https://github.com/salsa-rs/salsa/pull/1380))
+- compare the cached storage nonce directly ([#1381](https://github.com/salsa-rs/salsa/pull/1381))
+- initialize empty cycle heads at compile time ([#1377](https://github.com/salsa-rs/salsa/pull/1377))
+- check the initial revision at compile time ([#1376](https://github.com/salsa-rs/salsa/pull/1376))
+- Speedup merging of cycle heads ([#1372](https://github.com/salsa-rs/salsa/pull/1372))
+- Revert "chore: Remove `ANCHOR` and `ANCHOR_END` comments. ([#1345](https://github.com/salsa-rs/salsa/pull/1345))" ([#1351](https://github.com/salsa-rs/salsa/pull/1351))
+- cut redundant work from query completion ([#1343](https://github.com/salsa-rs/salsa/pull/1343))
+- skip non-accumulating ingredients ([#1342](https://github.com/salsa-rs/salsa/pull/1342))
+- Add security advisory ([#1332](https://github.com/salsa-rs/salsa/pull/1332))
+
 ## [0.28.5](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.4...salsa-v0.28.5) - 2026-09-24
 
 This release addresses GHSA-xc3w-55vh-cw3w, a use-after-free vulnerability in interned values and cached function results. Depending on the consuming application, attacker-controlled input may expose process memory or permit arbitrary code execution. Dependent applications should update Salsa and rebuild.
