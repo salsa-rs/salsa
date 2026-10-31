@@ -646,7 +646,10 @@ where
             // `last_interned_at` needs to be `Revision::MAX`, see the `intern_access_in_different_revision` test.
             .unwrap_or((Durability::MAX, Revision::max()));
 
-        // Allocate the value slot.
+        // Converting a borrowed key can call user code. Finish before the page selects
+        // a slot so that a reentrant allocation cannot select the same slot.
+        let fields = key.into_owned();
+
         let (id, value) = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
             shard: shard_index as u16,
             lru: LruEntry {
@@ -655,7 +658,7 @@ where
                 last_interned_at: AtomicRevision::new(last_interned_at),
             },
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
-            fields: UnsafeCell::new(unsafe { self.to_internal_data(key.into_owned()) }),
+            fields: UnsafeCell::new(unsafe { self.to_internal_data(fields) }),
             // SAFETY: We only ever access the memos of a value that we allocated through
             // our `MemoTableTypes`.
             memos: UnsafeCell::new(unsafe { MemoTable::new(self.memo_table_types()) }),
