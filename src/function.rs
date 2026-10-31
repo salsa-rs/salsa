@@ -927,7 +927,9 @@ mod persistence {
         {
             let DeserializeIngredient { zalsa, ingredient } = self;
 
-            while let Some((key, memo)) = access.next_entry::<&str, Memo<C>>()? {
+            while let Some((key, memo)) =
+                access.next_entry::<std::borrow::Cow<'_, str>, Memo<C>>()?
+            {
                 let (ingredient_index, id) = key
                     .split_once(':')
                     .ok_or_else(|| de::Error::custom("invalid database key"))?;
