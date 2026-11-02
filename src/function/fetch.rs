@@ -85,8 +85,10 @@ where
                 return memo;
             }
 
+            // A successful cold fetch has a value. Only a persisted query can still
+            // need a fallible lazy decode before handing that value to the caller.
             if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)
-                && memo.value().is_some()
+                && (!C::PERSIST || memo.value().is_some())
             {
                 return memo;
             }
