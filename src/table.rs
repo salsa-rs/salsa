@@ -4,7 +4,6 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit};
 use std::ptr::{self, NonNull};
-use std::slice;
 
 use memo::MemoTable;
 use rustc_hash::FxHashMap;
@@ -28,6 +27,40 @@ pub struct Table {
     pages: boxcar::Vec<Page>,
     /// Map from ingredient to non-full pages that are up for grabs
     non_full_pages: Mutex<FxHashMap<IngredientIndex, Vec<PageIndex>>>,
+}
+
+/// Pages populated by one ingredient while the other ingredients restore independently.
+#[cfg(feature = "persistence")]
+#[derive(Default)]
+pub struct RestoredPages(FxHashMap<usize, Page>);
+
+#[cfg(feature = "persistence")]
+pub(crate) enum RestoreSlots<'a> {
+    Table(&'a mut Table),
+    Pages(&'a mut RestoredPages),
+}
+
+#[cfg(feature = "persistence")]
+impl RestoreSlots<'_> {
+    pub(crate) fn restore_slot<T: Slot>(
+        &mut self,
+        id: Id,
+        ingredient: IngredientIndex,
+        types: &Arc<MemoTableTypes>,
+        value: T,
+    ) -> Result<&T, &'static str> {
+        match self {
+            Self::Table(table) => table.restore_slot(id, ingredient, types, value),
+            Self::Pages(pages) => {
+                let (index, slot) = split_id(id);
+                let page = pages
+                    .0
+                    .entry(index.0)
+                    .or_insert_with(|| Page::new::<T>(ingredient, types.clone()));
+                page.restore_slot(slot, ingredient, value)
+            }
+        }
+    }
 }
 
 /// # Safety
@@ -75,24 +108,27 @@ struct SlotVTable {
     memos_mut: SlotMemosMutFnErased,
     /// The type name of what is stored as entries in data.
     type_name: fn() -> &'static str,
-    /// A drop impl to call when the own page drops
-    /// SAFETY: The caller is required to supply a valid pointer to a `Box<PageDataEntry<T>>`, and
-    /// the correct initialized length and memo types.
-    drop_impl: unsafe fn(data: *mut (), initialized: usize, memo_types: &MemoTableTypes),
+    /// Drops the initialized slots and frees the page's backing allocation.
+    /// The caller must supply the page for this vtable with exclusive ownership.
+    drop_impl: unsafe fn(&Page),
 }
 
 impl SlotVTable {
     const fn of<T: Slot>() -> &'static Self {
         const {
             &Self {
-                drop_impl: |data, initialized, memo_types| {
-                    // SAFETY: The caller is required to provide a valid data pointer.
-                    let data = unsafe { Box::from_raw(data.cast::<PageData<T>>()) };
-                    for i in 0..initialized {
-                        let item = data[i].get().cast::<T>();
-                        // SAFETY: The caller is required to provide a valid initialized length.
+                drop_impl: |page| {
+                    // SAFETY: The caller supplied the page allocated for T and owns its data.
+                    let data = unsafe { Box::from_raw(page.data.as_ptr().cast::<PageData<T>>()) };
+                    let end = page.allocated.load(Ordering::Relaxed);
+                    for (i, entry) in data[..end].iter().enumerate() {
+                        if page.is_hole(i) {
+                            continue;
+                        }
+                        let item = entry.get().cast::<T>();
+                        // SAFETY: Every slot below end except a restored hole is initialized.
                         unsafe {
-                            memo_types.attach_memos_mut((*item).memos_mut()).drop();
+                            page.memo_types.attach_memos_mut((*item).memos_mut()).drop();
                             ptr::drop_in_place(item);
                         }
                     }
@@ -123,8 +159,12 @@ struct Page {
     /// The ingredient for elements on this page.
     ingredient: IngredientIndex,
 
-    /// Number of elements of `data` that are initialized.
+    /// End of the allocated prefix, including holes left by a rooted snapshot.
     allocated: AtomicUsize,
+
+    /// Holes are only written while restoring a new, exclusively owned table.
+    #[cfg(feature = "persistence")]
+    holes: u128,
 
     /// The potentially uninitialized data of this page. As we initialize new entries, we increment `allocated`.
     /// This is a box allocated `PageData<SlotType>`
@@ -190,15 +230,22 @@ impl Table {
         self.pages[page_idx.0].ingredient
     }
 
+    #[cfg(feature = "persistence")]
+    pub(crate) fn allocated_ingredient(&self, id: Id) -> Option<IngredientIndex> {
+        let (page, slot) = split_id(id);
+        let page = self.pages.get(page.0)?;
+        (slot.0 < page.allocated.load(Ordering::Acquire) && !page.is_hole(slot.0))
+            .then_some(page.ingredient)
+    }
+
     /// Get a reference to the data for `id`, which must have been allocated from this table with type `T`.
     ///
     /// # Panics
     ///
     /// If `id` is out of bounds or the does not have the type `T`.
     pub(crate) fn get<T: Slot>(&self, id: Id) -> &T {
-        let (page, slot) = split_id(id);
-        let page_ref = self.page::<T>(page);
-        &page_ref.data()[slot.0]
+        // SAFETY: get_raw checks the slot type, bounds, and initialization.
+        unsafe { &*self.get_raw::<T>(id) }
     }
 
     /// Get a raw pointer to the data for `id`, which must have been allocated from this table.
@@ -213,7 +260,7 @@ impl Table {
     pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
-        page_ref.page_data()[slot.0].get().cast::<T>()
+        page_ref.0.get(slot).cast::<T>()
     }
 
     /// Returns the number of pages that have been allocated.
@@ -232,6 +279,8 @@ impl Table {
 
         for (_, page) in self.pages.iter() {
             let fill = page.allocated.load(Ordering::Acquire);
+            #[cfg(feature = "persistence")]
+            let fill = fill - page.holes.count_ones() as usize;
             if fill > 0 {
                 page_fills.entry(page.ingredient).or_default().push(fill);
             }
@@ -314,6 +363,42 @@ impl Table {
         PageIndex::new(self.pages.push(Page::new::<T>(ingredient, memo_types)))
     }
 
+    /// Adopt pages whose backing allocations already contain the restored slots.
+    /// Moving a page header preserves references from an ingredient to its interned values.
+    #[cfg(feature = "persistence")]
+    pub(crate) fn install_cache_pages(&mut self, pages: RestoredPages) -> Result<(), &'static str> {
+        for (index, page) in pages.0 {
+            if let Some(existing) = self.pages.get_mut(index) {
+                if existing.slot_type_id != TypeId::of::<DummySlot>() {
+                    return Err("different Salsa ingredients share a cache page");
+                }
+                *existing = page;
+            } else {
+                while self.page_count() < index {
+                    self.push_uninit_page();
+                }
+                self.pages.push(page);
+            }
+        }
+        Ok(())
+    }
+
+    /// Installs a restored value at its original address in the ID space. Slots between
+    /// retained values can remain uninitialized when their objects were unreachable.
+    #[cfg(feature = "persistence")]
+    pub(crate) fn restore_slot<T: Slot>(
+        &mut self,
+        id: Id,
+        ingredient: IngredientIndex,
+        types: &Arc<MemoTableTypes>,
+        value: T,
+    ) -> Result<&T, &'static str> {
+        let (page_idx, slot) = split_id(id);
+        self.force_page::<T>(page_idx, ingredient, types);
+        let page = self.pages.get_mut(page_idx.0).unwrap();
+        page.restore_slot(slot, ingredient, value)
+    }
+
     /// Allocate an uninitialized page.
     #[inline]
     #[allow(dead_code)]
@@ -343,7 +428,7 @@ impl Table {
     ) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
         let page = self.pages[page.0].assert_type::<T>();
-        let slot = &page.data()[slot.0];
+        let slot = page.0.get(slot).cast::<T>();
 
         // SAFETY: The caller is required to pass the `current_revision`.
         let memos = unsafe { &*T::memos(slot, current_revision) };
@@ -456,6 +541,9 @@ impl Iterator for ErasedSlots<'_> {
             if let Some((page_index, page, slots)) = &mut self.current_page
                 && let Some(slot_index) = slots.next()
             {
+                if page.is_hole(slot_index) {
+                    continue;
+                }
                 let slot_index = SlotIndex::new(slot_index);
                 let id = make_id(*page_index, slot_index);
 
@@ -485,20 +573,6 @@ impl Iterator for ErasedSlots<'_> {
 }
 
 impl<'db, T: Slot> PageView<'db, T> {
-    #[inline]
-    fn page_data(&self) -> &'db [PageDataEntry<T>] {
-        let len = self.0.allocated.load(Ordering::Acquire);
-        // SAFETY: `len` is the initialized length of the page
-        unsafe { slice::from_raw_parts(self.0.data.cast::<PageDataEntry<T>>().as_ptr(), len) }
-    }
-
-    #[inline]
-    fn data(&self) -> &'db [T] {
-        let len = self.0.allocated.load(Ordering::Acquire);
-        // SAFETY: `len` is the initialized length of the page
-        unsafe { slice::from_raw_parts(self.0.data.cast::<T>().as_ptr(), len) }
-    }
-
     /// Allocate a value in this page.
     ///
     /// # Safety
@@ -537,6 +611,47 @@ impl<'db, T: Slot> PageView<'db, T> {
 }
 
 impl Page {
+    #[cfg(feature = "persistence")]
+    fn restore_slot<T: Slot>(
+        &mut self,
+        slot: SlotIndex,
+        ingredient: IngredientIndex,
+        value: T,
+    ) -> Result<&T, &'static str> {
+        if self.slot_type_id != TypeId::of::<T>() || self.ingredient != ingredient {
+            return Err("different Salsa ingredients share a cache page");
+        }
+        let end = *self.allocated.get_mut();
+        if slot.0 < end && !self.is_hole(slot.0) {
+            return Err("duplicate slot in Salsa cache");
+        }
+        if slot.0 > end {
+            // end and slot are both strictly below PAGE_LEN in this branch.
+            self.holes |= ((1u128 << slot.0) - 1) & !((1u128 << end) - 1);
+        }
+        // SAFETY: The page type was checked above. The slot is in bounds and
+        // uninitialized, and we exclusively own the table while installing it.
+        let restored = unsafe { &mut *self.data.cast::<PageDataEntry<T>>().as_ptr().add(slot.0) };
+        let restored = restored.get_mut().write(value);
+        self.holes &= !(1u128 << slot.0);
+        *self.allocated.get_mut() = end.max(slot.0 + 1);
+        Ok(restored)
+    }
+
+    #[inline]
+    fn is_hole(&self, slot: usize) -> bool {
+        #[cfg(feature = "persistence")]
+        {
+            const { assert!(PAGE_LEN <= u128::BITS as usize) };
+            self.holes != 0 && self.holes & (1 << slot) != 0
+        }
+        #[cfg(not(feature = "persistence"))]
+        {
+            let _ = slot;
+            false
+        }
+    }
+
     #[inline]
     fn new<T: Slot>(ingredient: IngredientIndex, memo_types: Arc<MemoTableTypes>) -> Self {
         #[cfg(not(feature = "shuttle"))]
@@ -557,6 +672,8 @@ impl Page {
             slot_vtable: SlotVTable::of::<T>(),
             slot_type_id: TypeId::of::<T>(),
             allocated: AtomicUsize::new(0),
+            #[cfg(feature = "persistence")]
+            holes: 0,
             data: NonNull::from(Box::leak(data)).cast::<()>(),
         }
     }
@@ -569,7 +686,7 @@ impl Page {
     fn get(&self, slot: SlotIndex) -> *mut () {
         let len = self.allocated.load(Ordering::Acquire);
         assert!(
-            slot.0 < len,
+            slot.0 < len && !self.is_hole(slot.0),
             "out of bounds access `{slot:?}` (maximum slot `{len}`)"
         );
 
@@ -604,9 +721,8 @@ fn type_assert_failed<T: 'static>(page: &Page) -> ! {
 
 impl Drop for Page {
     fn drop(&mut self) {
-        let len = *self.allocated.get_mut();
-        // SAFETY: We supply the data pointer and the initialized length
-        unsafe { (self.slot_vtable.drop_impl)(self.data.as_ptr(), len, &self.memo_types) };
+        // SAFETY: We exclusively own this page and its matching vtable.
+        unsafe { (self.slot_vtable.drop_impl)(self) };
     }
 }
 

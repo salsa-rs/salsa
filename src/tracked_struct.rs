@@ -1085,6 +1085,35 @@ where
     }
 
     #[cfg(feature = "persistence")]
+    unsafe fn encode_cache(
+        &self,
+        zalsa: &Zalsa,
+        keys: &[crate::DatabaseKeyIndex],
+        _identities: &crate::persistence::IdentityRows,
+    ) -> std::io::Result<Vec<u8>> {
+        crate::persistence::encode(&persistence::SerializeIngredient {
+            zalsa,
+            _ingredient: self,
+            keys: Some(keys),
+        })
+    }
+
+    #[cfg(feature = "persistence")]
+    fn decode_cache(
+        &mut self,
+        pages: &mut crate::table::RestoredPages,
+        bytes: &bytes::Bytes,
+    ) -> std::io::Result<()> {
+        crate::persistence::decode_seed(
+            bytes,
+            persistence::DeserializeIngredient {
+                slots: crate::table::RestoreSlots::Pages(pages),
+                ingredient: self,
+            },
+        )
+    }
+
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -1093,6 +1122,7 @@ where
         f(&persistence::SerializeIngredient {
             zalsa,
             _ingredient: self,
+            keys: None,
         })
     }
 
@@ -1103,7 +1133,7 @@ where
         deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
         let deserialize = persistence::DeserializeIngredient {
-            zalsa,
+            slots: crate::table::RestoreSlots::Table(zalsa.table_mut()),
             ingredient: self,
         };
 
@@ -1337,6 +1367,7 @@ mod persistence {
     {
         pub zalsa: &'db Zalsa,
         pub _ingredient: &'db IngredientImpl<C>,
+        pub keys: Option<&'db [crate::DatabaseKeyIndex]>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>
@@ -1348,6 +1379,20 @@ mod persistence {
             S: serde::Serializer,
         {
             let Self { zalsa, .. } = self;
+            if let Some(keys) = self.keys {
+                let mut map = serializer.serialize_map(Some(keys.len()))?;
+                for key in keys {
+                    let id = key.key_index();
+                    let value = zalsa.table().get::<Value<C>>(id);
+                    if value.updated_at.load().is_none() {
+                        return Err(serde::ser::Error::custom(
+                            "reachable tracked struct was deleted",
+                        ));
+                    }
+                    map.serialize_entry(&id.as_bits(), value)?;
+                }
+                return map.end();
+            }
 
             let count = zalsa
                 .table()
@@ -1414,7 +1459,7 @@ mod persistence {
     where
         C: Configuration,
     {
-        pub zalsa: &'db mut Zalsa,
+        pub slots: crate::table::RestoreSlots<'db>,
         pub ingredient: &'db mut IngredientImpl<C>,
     }
 
@@ -1446,11 +1491,13 @@ mod persistence {
         where
             M: de::MapAccess<'de>,
         {
-            let DeserializeIngredient { zalsa, ingredient } = self;
+            let DeserializeIngredient {
+                mut slots,
+                ingredient,
+            } = self;
 
             while let Some((id, value)) = access.next_entry::<u64, DeserializeValue<C>>()? {
                 let id = Id::from_bits(id);
-                let (page_idx, _) = crate::table::split_id(id);
 
                 let value = Value::<C> {
                     updated_at: value.updated_at,
@@ -1462,28 +1509,14 @@ mod persistence {
                     memos: unsafe { MemoTable::new(ingredient.memo_table_types()) },
                 };
 
-                // Force initialize the relevant page.
-                zalsa.table_mut().force_page::<Value<C>>(
-                    page_idx,
-                    ingredient.ingredient_index(),
-                    ingredient.memo_table_types(),
-                );
-
-                // Initialize the slot.
-                //
-                // SAFETY: We have a mutable reference to the database.
-                let (allocated_id, _) = unsafe {
-                    zalsa
-                        .table()
-                        .page::<Value<C>>(page_idx)
-                        .allocate(page_idx, |_| value)
-                        .unwrap_or_else(|_| panic!("serialized an invalid `Id`: {id:?}"))
-                };
-
-                assert_eq!(
-                    allocated_id, id,
-                    "values are serialized in allocation order"
-                );
+                slots
+                    .restore_slot(
+                        id,
+                        ingredient.ingredient_index(),
+                        ingredient.memo_table_types(),
+                        value,
+                    )
+                    .map_err(de::Error::custom)?;
             }
 
             Ok(())

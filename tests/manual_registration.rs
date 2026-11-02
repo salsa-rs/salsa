@@ -39,6 +39,115 @@ pub struct DatabaseImpl {
 #[salsa::db]
 impl salsa::Database for DatabaseImpl {}
 
+#[cfg(feature = "persistence")]
+mod cache {
+    use super::DatabaseImpl;
+    use salsa::Setter;
+
+    #[salsa::input(persist)]
+    struct Source {
+        #[returns(copy)]
+        value: u32,
+    }
+
+    #[salsa::db]
+    trait InnerDb: salsa::Database {}
+    #[salsa::db]
+    impl InnerDb for DatabaseImpl {}
+    #[salsa::db]
+    trait OuterDb: InnerDb {}
+    #[salsa::db]
+    impl OuterDb for DatabaseImpl {}
+
+    #[salsa::tracked(persist, returns(copy))]
+    fn inner(db: &dyn InnerDb, source: Source) -> u32 {
+        source.value(db) * 2
+    }
+
+    #[salsa::tracked(persist, returns(copy))]
+    fn outer(db: &dyn OuterDb, source: Source) -> u32 {
+        inner(db, source) + 1
+    }
+
+    #[test]
+    fn cache_requires_the_same_registered_ingredients() {
+        let builder = || {
+            salsa::Storage::<DatabaseImpl>::builder()
+                .ingredient::<Source>()
+                .ingredient::<inner>()
+                .ingredient::<outer>()
+        };
+        let mut db = DatabaseImpl {
+            storage: builder().build(),
+        };
+        let source = Source::new(&db, 3);
+        assert_eq!(outer(&db, source), 7);
+        let root = outer::cache_key(&db, source);
+        let mut bytes = Vec::new();
+        <dyn salsa::Database>::write_cache(&mut db, &mut bytes, 7, &[root]).unwrap();
+
+        // The query jars require Source even for construction. Reject the cache before
+        // installing them, including when a different ingredient takes Source's place.
+        let missing_source = || {
+            salsa::Storage::<DatabaseImpl>::builder()
+                .ingredient::<outer>()
+                .ingredient::<inner>()
+        };
+        for (incompatible, name) in [
+            (missing_source(), "Source"),
+            (
+                missing_source().ingredient::<super::ingredients::MyInput>(),
+                "Source",
+            ),
+            (
+                builder().ingredient::<super::ingredients::MyInput>(),
+                "MyInput",
+            ),
+        ] {
+            let error = incompatible
+                .build_from_cache(bytes.clone(), 7)
+                .err()
+                .unwrap();
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+            let message = error.to_string();
+            assert!(message.contains(name), "{message}");
+        }
+
+        // Reordering and duplicate registration do not change the database layout.
+        let db = DatabaseImpl {
+            storage: missing_source()
+                .ingredient::<Source>()
+                .ingredient::<inner>()
+                .build_from_cache(bytes, 7)
+                .unwrap(),
+        };
+        assert_eq!(outer(&db, source), 7);
+    }
+
+    #[test]
+    fn revalidate_manually_registered_database_views() {
+        let builder = || {
+            salsa::Storage::<DatabaseImpl>::builder()
+                .ingredient::<Source>()
+                .ingredient::<inner>()
+                .ingredient::<outer>()
+        };
+        let mut db = DatabaseImpl {
+            storage: builder().build(),
+        };
+        let source = Source::new(&db, 3);
+        assert_eq!(outer(&db, source), 7);
+        let key = outer::cache_key(&db, source);
+        let mut bytes = Vec::new();
+        <dyn salsa::Database>::write_cache(&mut db, &mut bytes, 7, &[key]).unwrap();
+        let mut db = DatabaseImpl {
+            storage: builder().build_from_cache(bytes, 7).unwrap(),
+        };
+        source.set_value(&mut db).to(4);
+        assert_eq!(outer(&db, source), 9);
+    }
+}
+
 #[test]
 fn single_database() {
     let db = DatabaseImpl {

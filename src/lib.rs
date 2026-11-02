@@ -271,6 +271,8 @@ mod input;
 mod interned;
 mod key;
 mod memo_ingredient_indices;
+#[cfg(feature = "persistence")]
+mod persistence;
 mod return_mode;
 mod revision;
 mod runtime;
@@ -312,7 +314,7 @@ pub use self::return_mode::SalsaAsRef;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::salsa_value::SalsaValue;
-pub use self::storage::{Storage, StorageHandle};
+pub use self::storage::{Storage, StorageBuilder, StorageHandle};
 pub use self::zalsa::IngredientIndex;
 pub use self::zalsa_local::CancellationToken;
 pub use crate::attach::{attach, attach_allow_change, with_attached_database};
@@ -322,6 +324,13 @@ pub mod prelude {
     #[cfg(feature = "accumulator")]
     pub use crate::accumulator::Accumulator;
     pub use crate::{Database, Setter};
+}
+
+#[cfg(not(all(feature = "persistence", feature = "inventory")))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! register_cache_view {
+    ($($_:tt)*) => {};
 }
 
 /// Internal names used by salsa macros.
@@ -359,6 +368,8 @@ pub mod plumbing {
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,
         NewMemoIngredientIndices,
     };
+    #[cfg(not(all(feature = "persistence", feature = "inventory")))]
+    pub use crate::register_cache_view;
     pub use crate::revision::{AtomicRevision, Revision};
     pub use crate::runtime::{Runtime, Stamp, stamp};
     pub use crate::salsa_struct::{SalsaStructInDb, assert_supertype_no_overlap};
@@ -368,12 +379,16 @@ pub mod plumbing {
     pub use crate::storage::{HasStorage, Storage};
     pub use crate::table::memo::MemoTableWithTypes;
     pub use crate::tracked_struct::{TrackedStructInDb, update_field};
+    #[cfg(all(feature = "persistence", feature = "inventory"))]
+    pub use crate::views::CacheView;
     pub use crate::views::DatabaseDownCaster;
     pub use crate::zalsa::{
         ErasedJar, HasJar, IngredientIndex, JarKind, Zalsa, ZalsaDatabase, register_jar,
         transmute_data_ptr, views,
     };
     pub use crate::zalsa_local::ZalsaLocal;
+    #[cfg(all(feature = "persistence", feature = "inventory"))]
+    pub use inventory::submit as register_cache_view;
 
     #[cfg(feature = "persistence")]
     pub use serde;
@@ -411,6 +426,8 @@ pub mod plumbing {
     }
 
     pub mod function {
+        #[cfg(feature = "persistence")]
+        pub use crate::function::LazyValue;
         pub use crate::function::{Configuration, IngredientImpl, Memo};
         pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
         pub use crate::table::memo::MemoEntryType;

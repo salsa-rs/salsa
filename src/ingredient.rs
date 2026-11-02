@@ -71,6 +71,12 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         visited_edges: &mut FxHashSet<QueryEdge>,
     );
 
+    /// A base input field cannot be flattened through an omitted query.
+    #[cfg(feature = "persistence")]
+    fn requires_persisted_input(&self) -> bool {
+        false
+    }
+
     /// Returns the function-specific interface for this ingredient, if any.
     #[doc(hidden)]
     fn as_function(&self) -> Option<FunctionIngredientRef<'_>> {
@@ -191,12 +197,75 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
         false
     }
 
+    /// Whether complete, reachable blocks of this ingredient can be copied from a snapshot.
+    #[cfg(feature = "persistence")]
+    fn supports_cache_pages(&self) -> bool {
+        false
+    }
+
+    /// A result memo returns zero while it still has its original encoded record.
+    /// Interned rows return the revision and durability of their immutable fields.
+    ///
+    /// # Safety
+    /// The snapshot writer must exclude mutations and concurrent query execution.
+    #[cfg(feature = "persistence")]
+    unsafe fn cache_page_stamp(
+        &self,
+        _zalsa: &Zalsa,
+        _key: crate::DatabaseKeyIndex,
+    ) -> Option<u128> {
+        None
+    }
+
     /// Whether there is data to serialize for this ingredient.
     ///
     /// If this returns `false`, the ingredient will not be serialized, even if `is_persistable`
     /// returns `true`.
     fn should_serialize(&self, _zalsa: &Zalsa) -> bool {
         false
+    }
+
+    /// Encode one ingredient for a binary cache. Function keys identify the reachable memos.
+    ///
+    /// # Safety
+    ///
+    /// The caller must prevent all database writes (including memoization) during encoding.
+    #[cfg(feature = "persistence")]
+    unsafe fn encode_cache(
+        &self,
+        _zalsa: &Zalsa,
+        _keys: &[DatabaseKeyIndex],
+        _identities: &crate::persistence::IdentityRows,
+    ) -> std::io::Result<Vec<u8>> {
+        unreachable!("only persistable ingredients are encoded")
+    }
+
+    /// Interned-field decoders can run on workers. Other object decoders may use
+    /// application deserialization context installed on the thread opening the cache.
+    #[cfg(feature = "persistence")]
+    fn parallel_cache_decode(&self) -> bool {
+        false
+    }
+
+    /// Restore this ingredient into privately owned pages before publishing them to the table.
+    #[cfg(feature = "persistence")]
+    fn decode_cache(
+        &mut self,
+        _pages: &mut crate::table::RestoredPages,
+        _bytes: &bytes::Bytes,
+    ) -> std::io::Result<()> {
+        unreachable!("only persistable ingredients are decoded")
+    }
+
+    /// Restore query memos after all struct slots exist. Workers can fill distinct memo
+    /// entries concurrently. Omitted producers return the tracked identities they own.
+    #[cfg(feature = "persistence")]
+    fn decode_cache_memos(
+        &self,
+        _zalsa: &Zalsa,
+        _bytes: &bytes::Bytes,
+    ) -> std::io::Result<crate::persistence::IdentityRows> {
+        unreachable!("only query ingredients have memo blocks")
     }
 
     /// Serialize the ingredient.
