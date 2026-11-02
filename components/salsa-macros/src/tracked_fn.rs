@@ -63,7 +63,7 @@ impl AllowedOptions for TrackedFn {
 
     const SELF_TY: bool = true;
 
-    const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedIdent;
+    const PERSIST: AllowedPersistOptions = AllowedPersistOptions::Function;
 }
 
 struct Macro {
@@ -100,6 +100,11 @@ impl Macro {
         let is_specifiable = self.args.specify.is_some();
         let requires_salsa_value = self.args.non_salsa_values.is_none();
         let heap_size_fn = self.args.heap_size_fn.iter();
+        let fingerprint_fn = self
+            .args
+            .persist
+            .as_ref()
+            .and_then(|options| options.fingerprint_fn.as_ref());
         let eq = if let Some(token) = &self.args.no_eq {
             if self.args.cycle_fn.is_some() {
                 return Err(syn::Error::new_spanned(
@@ -108,6 +113,8 @@ impl Macro {
                 ));
             }
             quote!(false)
+        } else if let Some(hash) = fingerprint_fn {
+            quote!(#hash(old_value) == #hash(new_value))
         } else {
             quote_spanned!(output_ty.span() =>
                 old_value == new_value
@@ -190,6 +197,16 @@ impl Macro {
         }
 
         let persist = self.args.persist();
+        let fingerprint = fingerprint_fn.filter(|_| persist);
+        if let Some(path) = fingerprint
+            && (is_specifiable || self.args.no_eq.is_some())
+        {
+            return Err(syn::Error::new_spanned(
+                path,
+                "fingerprint persistence requires a recomputable query with equality",
+            ));
+        }
+        let persist_value = persist && fingerprint.is_none();
 
         let assert_output_is_salsa_value_or_static = if requires_salsa_value {
             crate::salsa_value::assert_salsa_value_or_static(&db_lt, &zalsa, &output_ty)
@@ -236,6 +253,8 @@ impl Macro {
                 lru: #lru,
                 return_mode: #return_mode,
                 persist: #persist,
+                persist_value: #persist_value,
+                fingerprint: #fingerprint,
                 assert_interned_inputs_are_salsa_values: { #assert_interned_inputs_are_salsa_values },
                 assert_output_is_salsa_value_or_static: { #assert_output_is_salsa_value_or_static },
                 #self_ty

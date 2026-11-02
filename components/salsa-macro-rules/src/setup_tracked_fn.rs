@@ -67,8 +67,10 @@ macro_rules! setup_tracked_fn {
         // The return mode for the function, see `salsa_macros::options::Option::returns`
         return_mode: $return_mode:tt,
 
-        // If true, the input and output values implement `serde::{Serialize, Deserialize}`.
+        // Persist the query key and either the output or its fingerprint.
         persist: $persist:tt,
+        persist_value: $persist_value:tt,
+        fingerprint: $($fingerprint:path)?,
 
         assert_interned_inputs_are_salsa_values: {$($assert_interned_inputs_are_salsa_values:tt)*},
 
@@ -323,6 +325,11 @@ macro_rules! setup_tracked_fn {
                 };
                 const DEBUG_NAME: &'static str = concat!($(stringify!($self_ty), "::", )? stringify!($fn_name));
                 const PERSIST: bool = $persist;
+                type CachedValue = $zalsa::macro_if! { if $persist_value { $zalsa::function::LazyValue<Self> } else { ::std::convert::Infallible } };
+                type StoredFingerprint = $zalsa::macro_if! { iftt ($($fingerprint)?) { [u8; 16] } else { ::std::convert::Infallible } };
+                $(
+                    const FINGERPRINT: Option<for<'db> fn(&Self::Output<'db>) -> u128> = Some($fingerprint);
+                )?
 
                 type DbView = dyn $Db;
 
@@ -388,7 +395,7 @@ macro_rules! setup_tracked_fn {
                     serializer: S,
                 ) -> ::std::result::Result<S::Ok, S::Error> {
                     $zalsa::macro_if! {
-                        if $persist {
+                        if $persist_value {
                             $zalsa::serde::Serialize::serialize(value, serializer)
                         } else {
                             panic!("attempted to serialize value not marked with `persist` attribute")
@@ -400,7 +407,7 @@ macro_rules! setup_tracked_fn {
                     deserializer: D,
                 ) -> ::std::result::Result<Self::Output<'static>, D::Error> {
                     $zalsa::macro_if! {
-                        if $persist {
+                        if $persist_value {
                             $zalsa::serde::Deserialize::deserialize(deserializer)
                         } else {
                             panic!("attempted to deserialize value not marked with `persist` attribute")
@@ -473,6 +480,36 @@ macro_rules! setup_tracked_fn {
             }
 
             impl $fn_name {
+                /// Returns the already materialized value if it is verified in this revision.
+                /// Useful for releasing resources after a check without paging in or executing
+                /// the query. Inspecting cache residency inside a query records an untracked read.
+                pub fn get_if_cached<$db_lt>(
+                    $db: &$db_lt dyn $Db,
+                    $($input_id: $interned_input_ty,)*
+                ) -> ::core::option::Option<&$db_lt $output_ty> {
+                    use ::salsa::plumbing as $zalsa;
+                    let key = Self::cache_key($db, $($input_id),*);
+                    $Configuration::fn_ingredient($db).get_if_cached($db, key.key_index())
+                }
+
+                /// Identifies this query invocation as a root for persistent caching.
+                pub fn cache_key<$db_lt>(
+                    $db: &$db_lt dyn $Db,
+                    $($input_id: $interned_input_ty,)*
+                ) -> ::salsa::DatabaseKeyIndex {
+                    use ::salsa::plumbing as $zalsa;
+                    let key = $zalsa::macro_if! {
+                        if $needs_interner {{
+                            let (zalsa, zalsa_local) = $db.zalsas();
+                            $Configuration::intern_ingredient(zalsa).intern_id(zalsa, zalsa_local, ($($input_id),*))
+                        }} else {
+                            $zalsa::AsId::as_id(&($($input_id),*))
+                        }
+                    };
+
+                    $Configuration::fn_ingredient($db).database_key_index(key)
+                }
+
                 $zalsa::gate_accumulated! {
                     pub fn accumulated<$db_lt, A: ::salsa::Accumulator>(
                         $db: &$db_lt dyn $Db,

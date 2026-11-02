@@ -463,6 +463,11 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   accept a reference to the output and return its heap allocation size in bytes.
 /// - `persist` enables persistent caching when Salsa's `persistence` feature is enabled. The query
 ///   inputs and output must implement [`serde::Serialize`] and [`serde::Deserialize`].
+/// - `persist(fingerprint = PATH)` stores a 128-bit fingerprint of the output. `PATH`
+///   takes a reference to the output and returns a `u128`. Use a stable, collision-resistant
+///   hash that includes every observable part of the result. Equal hashes allow callers to
+///   reuse their results after a dependency changes. Fetching the output after a restart
+///   executes the query. The output can contain types without serde implementations.
 /// - `self_ty = TYPE` prefixes the query's debug name with `TYPE`. The impl-block form supplies
 ///   this automatically for methods and associated functions.
 ///

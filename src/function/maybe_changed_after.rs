@@ -115,7 +115,7 @@ where
                 database_key_index,
                 revision,
                 #[cfg(feature = "detailed-trace")]
-                memo.value.is_some(),
+                memo.has_value(),
             ) {
                 return result;
             }
@@ -244,7 +244,7 @@ where
             } => {
                 let old_memo = old_memo.downcast::<C>();
 
-                if old_memo.value.is_none() {
+                if !old_memo.can_compare() {
                     return Some(VerifyResult::changed());
                 }
 
@@ -269,7 +269,7 @@ where
 }
 
 impl MemoHeader {
-    fn maybe_changed_after_hot(
+    pub(super) fn maybe_changed_after_hot(
         &self,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,

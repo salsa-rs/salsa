@@ -27,11 +27,15 @@ use crate::{Cycle, Id, Revision};
 #[cfg(feature = "accumulator")]
 mod accumulated;
 mod backdate;
+mod cached_value;
 mod delete;
 mod diff_outputs;
 mod eviction;
 mod execute;
 mod fetch;
+pub use cached_value::CachedValue;
+#[cfg(feature = "persistence")]
+pub use cached_value::LazyValue;
 mod maybe_changed_after;
 mod memo;
 mod specify;
@@ -40,6 +44,32 @@ mod sync;
 pub use eviction::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
 
 pub type Memo<C> = memo::Memo<C>;
+
+/// Storage for a fingerprint in a value-less memo. An uninhabited fingerprint
+/// keeps ordinary memos the same size as an `Option<Output>` plus the header.
+#[doc(hidden)]
+pub trait StoredFingerprint: Copy + std::fmt::Debug + Send + Sync + 'static {
+    fn from_bytes(bytes: [u8; 16]) -> Self;
+    fn bytes(self) -> [u8; 16];
+}
+
+impl StoredFingerprint for [u8; 16] {
+    fn from_bytes(bytes: [u8; 16]) -> Self {
+        bytes
+    }
+    fn bytes(self) -> [u8; 16] {
+        self
+    }
+}
+
+impl StoredFingerprint for std::convert::Infallible {
+    fn from_bytes(_: [u8; 16]) -> Self {
+        unreachable!("this query persists no fingerprint")
+    }
+    fn bytes(self) -> [u8; 16] {
+        match self {}
+    }
+}
 
 /// Configuration for a Salsa function ingredient.
 ///
@@ -53,6 +83,12 @@ pub unsafe trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const LOCATION: crate::ingredient::Location;
     const PERSIST: bool;
+
+    type StoredFingerprint: StoredFingerprint;
+    type CachedValue: CachedValue<Self>;
+
+    /// Stable, process-independent fingerprint used in place of a persisted output.
+    const FINGERPRINT: Option<for<'db> fn(&Self::Output<'db>) -> u128> = None;
 
     /// The database that this function is associated with.
     type DbView: ?Sized + crate::Database;
@@ -321,6 +357,14 @@ where
         mut memo: memo::Memo<C>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C> {
+        #[cfg(feature = "persistence")]
+        if let Some(image) = &zalsa.cache_image {
+            image.memo_replaced(
+                self.database_key_index(id),
+                C::PERSIST || !memo.header.revisions.tracked_struct_ids().is_empty(),
+                memo.header.origin(),
+            );
+        }
         if let Some(tracked_struct_ids) = memo.header.revisions.tracked_struct_ids_mut() {
             tracked_struct_ids.shrink_to_fit();
         }
@@ -350,6 +394,7 @@ where
         self.memo_ingredient_indices.get_zalsa_id(zalsa, id)
     }
 
+    #[cfg(any(not(feature = "persistence"), feature = "accumulator"))]
     fn view_caster(&self) -> &DatabaseDownCaster<C::DbView> {
         self.view_caster
             .get()
@@ -391,7 +436,7 @@ where
         let memo =
             self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))?;
 
-        if memo.value.is_none() && memo.header.may_be_provisional() {
+        if !memo.has_value() && memo.header.may_be_provisional() {
             return Some(ProvisionalStatus::Poisoned {
                 iteration: memo.header.revisions.iteration(),
                 verified_at: memo.header.verified_at.load(),
@@ -421,8 +466,35 @@ where
         input: Id,
         revision: Revision,
     ) -> VerifyResult {
-        // SAFETY: The `db` belongs to the ingredient as per caller invariant
-        let db = unsafe { self.view_caster().downcast_unchecked(db) };
+        #[cfg(feature = "persistence")]
+        let caster = match self.view_caster.get() {
+            Some(caster) => caster,
+            None => {
+                // A restored dependency can be verified before its accessor runs. If its
+                // view is still unknown, executing the caller registers the correct view.
+                let Some(caster) = _zalsa.views().try_downcaster_for::<C::DbView>() else {
+                    let key = self.database_key_index(input);
+                    let slot = self.memo_ingredient_index(_zalsa, input);
+                    if let Some(memo) = self.get_memo_from_table_for(_zalsa, input, slot)
+                        && let Some(result) = memo.header.maybe_changed_after_hot(
+                            _zalsa,
+                            key,
+                            revision,
+                            #[cfg(feature = "detailed-trace")]
+                            memo.has_value(),
+                        )
+                    {
+                        return result;
+                    }
+                    return VerifyResult::changed();
+                };
+                self.view_caster.get_or_init(|| *caster)
+            }
+        };
+        #[cfg(not(feature = "persistence"))]
+        let caster = self.view_caster();
+        // SAFETY: The database and the caster both belong to this storage.
+        let db = unsafe { caster.downcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision)
     }
 
@@ -559,6 +631,55 @@ where
     }
 
     #[cfg(feature = "persistence")]
+    fn supports_cache_pages(&self) -> bool {
+        C::PERSIST && C::FINGERPRINT.is_none()
+    }
+
+    #[cfg(feature = "persistence")]
+    unsafe fn cache_page_stamp(&self, zalsa: &Zalsa, key: crate::DatabaseKeyIndex) -> Option<u128> {
+        let memo = self.get_memo_from_table_for(
+            zalsa,
+            key.key_index(),
+            self.memo_ingredient_indices.get(key.ingredient_index()),
+        )?;
+        (memo.should_serialize() && memo.cached_record().is_some()).then_some(0)
+    }
+
+    #[cfg(feature = "persistence")]
+    unsafe fn encode_cache(
+        &self,
+        zalsa: &Zalsa,
+        keys: &[crate::DatabaseKeyIndex],
+        identities: &crate::persistence::IdentityRows,
+    ) -> std::io::Result<Vec<u8>> {
+        crate::persistence::encode(&persistence::SerializeIngredient {
+            zalsa,
+            ingredient: self,
+            keys: Some(keys),
+            identities: Some(identities),
+        })
+    }
+
+    #[cfg(feature = "persistence")]
+    fn decode_cache_memos(
+        &self,
+        zalsa: &Zalsa,
+        bytes: &bytes::Bytes,
+    ) -> std::io::Result<crate::persistence::IdentityRows> {
+        let mut identities = crate::persistence::IdentityRows::default();
+        crate::persistence::decode_seed(
+            bytes,
+            persistence::DeserializeIngredient {
+                zalsa,
+                ingredient: self,
+                archive: Some(bytes),
+                identities: &mut identities,
+            },
+        )?;
+        Ok(identities)
+    }
+
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -567,6 +688,8 @@ where
         f(&persistence::SerializeIngredient {
             zalsa,
             ingredient: self,
+            keys: None,
+            identities: None,
         })
     }
 
@@ -579,6 +702,8 @@ where
         let deserialize = persistence::DeserializeIngredient {
             zalsa,
             ingredient: self,
+            archive: None,
+            identities: &mut crate::persistence::IdentityRows::default(),
         };
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
@@ -733,6 +858,7 @@ where
 
 #[cfg(feature = "persistence")]
 mod persistence {
+    use super::memo::persistence::{BinaryMemo, BinaryMemoSeed};
     use super::{Configuration, IngredientImpl, Memo};
     use crate::hash::{FxHashSet, FxIndexSet};
     use crate::plumbing::{MemoIngredientMap, SalsaStructInDb};
@@ -752,6 +878,8 @@ mod persistence {
     {
         pub zalsa: &'db Zalsa,
         pub ingredient: &'db IngredientImpl<C>,
+        pub keys: Option<&'db [crate::DatabaseKeyIndex]>,
+        pub identities: Option<&'db crate::persistence::IdentityRows>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>
@@ -762,9 +890,34 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            let Self { ingredient, zalsa } = self;
+            let Self {
+                ingredient,
+                zalsa,
+                keys,
+                identities,
+            } = self;
+            if !C::PERSIST
+                && let (Some(keys), Some(identities)) = (keys, identities)
+            {
+                let mut map = serializer.serialize_map(Some(keys.len()))?;
+                for entry in *keys {
+                    let query = ingredient.database_key_index(entry.key_index());
+                    map.serialize_entry(
+                        &(entry.ingredient_index(), entry.key_index()),
+                        &identities.0[&query],
+                    )?;
+                }
+                return map.end();
+            }
+            let eligible = |memo: &Memo<C>| memo.should_serialize();
+            let entries = || -> Box<dyn Iterator<Item = crate::DatabaseKeyIndex> + '_> {
+                match keys {
+                    Some(keys) => Box::new(keys.iter().copied()),
+                    None => Box::new(<C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa)),
+                }
+            };
 
-            let count = <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa)
+            let count = entries()
                 .filter(|entry| {
                     let memo_ingredient_index = ingredient
                         .memo_ingredient_indices
@@ -776,7 +929,7 @@ mod persistence {
                         memo_ingredient_index,
                     );
 
-                    memo.is_some_and(|memo| memo.should_serialize())
+                    memo.is_some_and(eligible)
                 })
                 .count();
 
@@ -785,7 +938,7 @@ mod persistence {
             let mut visited_edges = FxHashSet::default();
             let mut flattened_edges = FxIndexSet::default();
 
-            for entry in <C::SalsaStruct<'_> as SalsaStructInDb>::entries(zalsa) {
+            for entry in entries() {
                 let memo_ingredient_index = ingredient
                     .memo_ingredient_indices
                     .get(entry.ingredient_index());
@@ -796,57 +949,98 @@ mod persistence {
                     memo_ingredient_index,
                 );
 
-                if let Some(memo) = memo.filter(|memo| memo.should_serialize()) {
-                    // Flatten the dependencies of this query down to the base inputs.
-                    let flattened_origin = match memo.header.origin() {
-                        QueryOriginRef::Derived(edges) => {
-                            // SAFETY: Serialization's exclusive storage access prevents database writes.
+                if let Some(memo) = memo.filter(|memo| eligible(memo)) {
+                    // A restored memo's value and dependencies are immutable. Verification
+                    // may have advanced since it was loaded; replaying its older timestamp
+                    // merely asks the next reader to validate those dependencies again.
+                    if keys.is_some()
+                        && let Some((bytes, references)) = memo.cached_record()
+                    {
+                        crate::persistence::trace_origin(memo.header.origin());
+                        crate::persistence::trace_saved_references(references)
+                            .map_err(serde::ser::Error::custom)?;
+                        map.serialize_entry(
+                            &(entry.ingredient_index(), entry.key_index()),
+                            &(references, bytes),
+                        )?;
+                        continue;
+                    }
+                    let origin = memo.header.origin();
+                    let flattened_origin = match origin {
+                        QueryOriginRef::Derived(edges)
+                        | QueryOriginRef::DerivedUntracked(edges) => {
+                            let mut untracked =
+                                matches!(origin, QueryOriginRef::DerivedUntracked(_));
+                            // SAFETY: Snapshot creation excludes writes throughout the traversal.
                             unsafe {
-                                collect_minimum_serialized_edges(
-                                    zalsa,
-                                    edges,
-                                    &mut visited_edges,
-                                    &mut flattened_edges,
-                                );
+                                if keys.is_some() {
+                                    untracked |= flatten_for_cache(
+                                        zalsa,
+                                        edges,
+                                        &mut visited_edges,
+                                        &mut flattened_edges,
+                                    )
+                                    .map_err(serde::ser::Error::custom)?;
+                                } else {
+                                    collect_minimum_serialized_edges(
+                                        zalsa,
+                                        edges,
+                                        &mut visited_edges,
+                                        &mut flattened_edges,
+                                    );
+                                }
                             }
-
-                            PersistentQueryOrigin::derived(flattened_edges.drain(..))
-                        }
-                        QueryOriginRef::DerivedUntracked(edges) => {
-                            // SAFETY: Serialization's exclusive storage access prevents database writes.
-                            unsafe {
-                                collect_minimum_serialized_edges(
-                                    zalsa,
-                                    edges,
-                                    &mut visited_edges,
-                                    &mut flattened_edges,
-                                );
+                            if untracked {
+                                PersistentQueryOrigin::derived_untracked(flattened_edges.drain(..))
+                            } else {
+                                PersistentQueryOrigin::derived(flattened_edges.drain(..))
                             }
-
-                            PersistentQueryOrigin::derived_untracked(flattened_edges.drain(..))
                         }
                         QueryOriginRef::Assigned(key) => {
                             let dependency = zalsa.lookup_ingredient(key.ingredient_index());
+                            if !dependency.is_persistable() && keys.is_some() {
+                                return Err(serde::ser::Error::custom(format!(
+                                    "assigner `{}` must be persistable",
+                                    dependency.debug_name()
+                                )));
+                            }
                             assert!(
                                 dependency.is_persistable(),
                                 "specified query `{}` must be persistable",
                                 dependency.debug_name()
                             );
-
                             PersistentQueryOrigin::assigned(key)
                         }
                     };
 
+                    if keys.is_some() {
+                        crate::persistence::trace_origin(flattened_origin.as_ref());
+                    }
                     let memo = memo.with_origin(flattened_origin);
 
-                    // TODO: Group structs by ingredient index into a nested map.
-                    let key = format!(
-                        "{}:{}",
-                        entry.ingredient_index().as_u32(),
-                        entry.key_index().as_bits()
-                    );
-
-                    map.serialize_entry(&key, &memo)?;
+                    if keys.is_some() {
+                        let key = (entry.ingredient_index(), entry.key_index());
+                        if C::FINGERPRINT.is_some() {
+                            map.serialize_entry(&key, &BinaryMemo(&memo))?;
+                        } else {
+                            let (bytes, mut references) =
+                                crate::persistence::with_references(|| {
+                                    crate::persistence::encode(&BinaryMemo(&memo))
+                                });
+                            let bytes =
+                                bytes::Bytes::from(bytes.map_err(serde::ser::Error::custom)?);
+                            let references = crate::persistence::encode_references(&mut references)
+                                .map_err(serde::ser::Error::custom)?;
+                            map.serialize_entry(&key, &(references, bytes))?;
+                        }
+                    } else {
+                        let key = format!(
+                            "{}:{}",
+                            entry.ingredient_index().as_u32(),
+                            entry.key_index().as_bits()
+                        );
+                        map.serialize_entry(&key, &memo)?;
+                    }
 
                     visited_edges.clear();
                 }
@@ -854,6 +1048,73 @@ mod persistence {
 
             map.end()
         }
+    }
+
+    /// Keeps the nearest persisted dependency along each path. An omitted query's
+    /// outputs belong to it alone. Its inputs and any untracked reads must still
+    /// participate in validation of the stored caller.
+    ///
+    /// # Safety
+    /// The database must remain frozen throughout traversal.
+    unsafe fn flatten_for_cache(
+        zalsa: &Zalsa,
+        edges: crate::zalsa_local::QueryEdges<'_>,
+        visited: &mut FxHashSet<QueryEdge>,
+        flattened: &mut FxIndexSet<QueryEdge>,
+    ) -> std::io::Result<bool> {
+        let mut untracked = false;
+        let mut pending = Vec::new();
+        let retains_cache_key = |key: crate::DatabaseKeyIndex| {
+            zalsa
+                .lookup_ingredient(key.ingredient_index())
+                .is_persistable()
+        };
+        for edge in edges {
+            if retains_cache_key(edge.key()) {
+                flattened.insert(edge);
+            } else {
+                pending.push(edge);
+                while let Some(edge) = pending.pop() {
+                    if !visited.insert(edge) {
+                        continue;
+                    }
+                    let dependency = zalsa.lookup_ingredient(edge.key().ingredient_index());
+                    if dependency.as_function().is_none() {
+                        if dependency.requires_persisted_input() && !dependency.is_persistable() {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                format!(
+                                    "input field `{}` must be persistable",
+                                    dependency.debug_name()
+                                ),
+                            ));
+                        }
+                        // SAFETY: The database is frozen.
+                        unsafe {
+                            dependency
+                                .collect_minimum_serialized_edges(zalsa, edge, flattened, visited)
+                        };
+                    } else if retains_cache_key(edge.key()) {
+                        flattened.insert(edge);
+                    } else {
+                        // SAFETY: The database is frozen, including its memo tables.
+                        match unsafe { zalsa.cache_memo(edge.key()) }
+                            .map(|(owner, memo)| (owner, memo.cache_origin()))
+                        {
+                            Some((_, QueryOriginRef::Assigned(assigner))) => {
+                                pending.push(QueryEdge::input(assigner))
+                            }
+                            Some((_, origin)) => {
+                                untracked |= matches!(origin, QueryOriginRef::DerivedUntracked(_));
+                                pending.extend(origin.inputs().rev().map(QueryEdge::input));
+                            }
+                            None => untracked = true,
+                        }
+                    }
+                }
+            }
+        }
+        Ok(untracked)
     }
 
     /// Flatten the dependency edges before serialization.
@@ -893,8 +1154,10 @@ mod persistence {
     where
         C: Configuration,
     {
-        pub zalsa: &'db mut Zalsa,
-        pub ingredient: &'db mut IngredientImpl<C>,
+        pub zalsa: &'db Zalsa,
+        pub ingredient: &'db IngredientImpl<C>,
+        pub archive: Option<&'db bytes::Bytes>,
+        pub identities: &'db mut crate::persistence::IdentityRows,
     }
 
     impl<'de, C> de::DeserializeSeed<'de> for DeserializeIngredient<'_, C>
@@ -925,31 +1188,78 @@ mod persistence {
         where
             M: de::MapAccess<'de>,
         {
-            let DeserializeIngredient { zalsa, ingredient } = self;
+            let DeserializeIngredient {
+                zalsa,
+                ingredient,
+                archive,
+                identities,
+            } = self;
 
-            while let Some((key, memo)) = access.next_entry::<&str, Memo<C>>()? {
-                let (ingredient_index, id) = key
-                    .split_once(':')
-                    .ok_or_else(|| de::Error::custom("invalid database key"))?;
+            loop {
+                let (ingredient_index, id) = if archive.is_some() {
+                    let Some(key) = access.next_key::<(IngredientIndex, Id)>()? else {
+                        break;
+                    };
+                    key
+                } else {
+                    let Some(key) = access.next_key::<&str>()? else {
+                        break;
+                    };
+                    let (index, id) = key
+                        .split_once(':')
+                        .ok_or_else(|| de::Error::custom("invalid database key"))?;
+                    (
+                        IngredientIndex::new(index.parse().map_err(de::Error::custom)?),
+                        Id::from_bits(id.parse().map_err(de::Error::custom)?),
+                    )
+                };
+                let memo: Memo<C> = if let Some(archive) = archive {
+                    access.next_value_seed(BinaryMemoSeed(
+                        archive,
+                        zalsa,
+                        std::marker::PhantomData,
+                    ))?
+                } else {
+                    access.next_value()?
+                };
 
-                let ingredient_index = IngredientIndex::new(
-                    ingredient_index.parse::<u32>().map_err(de::Error::custom)?,
-                );
-
-                let id = Id::from_bits(id.parse::<u64>().map_err(de::Error::custom)?);
-
+                if archive.is_some()
+                    && (zalsa.table().allocated_ingredient(id) != Some(ingredient_index)
+                        || !zalsa.accepts_cache_key(ingredient.index, ingredient_index))
+                {
+                    return Err(de::Error::custom("cached memo has an incompatible owner"));
+                }
+                if archive.is_some() && !C::PERSIST {
+                    for &(identity, output) in memo.header.revisions.tracked_struct_ids() {
+                        if zalsa.table().allocated_ingredient(output)
+                            != Some(identity.ingredient_index())
+                        {
+                            return Err(de::Error::custom("invalid tracked output in cache"));
+                        }
+                        identities
+                            .0
+                            .entry(ingredient.database_key_index(id))
+                            .or_default()
+                            .push((identity, output));
+                    }
+                }
                 let memo_ingredient_index =
                     ingredient.memo_ingredient_indices.get(ingredient_index);
 
-                // SAFETY: Deserialization holds exclusive database access. The slot was restored
-                // before its memos, but its saved revision may differ from the current runtime.
+                // SAFETY: All owner slots already exist and cannot be reused during restore.
+                // Workers install memos atomically and never execute queries on this database.
                 let memo_table = unsafe { zalsa.table().dyn_memos_unchecked(id) };
 
-                memo_table.insert(
+                let replaced = memo_table.insert(
                     memo_ingredient_index,
-                    // FIXME: Use `Box::into_non_null` once stable.
                     NonNull::from(Box::leak(Box::new(memo))),
                 );
+                if let Some(previous) = replaced {
+                    // SAFETY: The atomic swap transferred ownership of this box. No reader
+                    // can access the database until the restore has completed.
+                    drop(unsafe { Box::from_raw(previous.as_ptr()) });
+                    return Err(de::Error::custom("duplicate query memo in snapshot"));
+                }
             }
 
             Ok(())

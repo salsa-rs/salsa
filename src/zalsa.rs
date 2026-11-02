@@ -152,6 +152,15 @@ pub struct Zalsa {
     /// as input.
     memo_ingredient_indices: Vec<Vec<IngredientIndex>>,
 
+    // A query usually has one possible owner, while an input can own hundreds of queries.
+    #[cfg(feature = "persistence")]
+    cache_memo_indices: std::sync::OnceLock<Vec<Vec<(IngredientIndex, MemoIngredientIndex)>>>,
+    #[cfg(feature = "persistence")]
+    pub(crate) cache_image: Option<Box<crate::persistence::CacheImage>>,
+    #[cfg(feature = "persistence")]
+    pub(crate) cache_creators:
+        FxHashMap<Id, (crate::DatabaseKeyIndex, crate::tracked_struct::Identity)>,
+
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
     jar_map: HashMap<TypeId, IngredientIndex, BuildHasherDefault<TypeIdHasher>>,
 
@@ -193,20 +202,18 @@ impl Zalsa {
             ingredients_requiring_reset: Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
+            #[cfg(feature = "persistence")]
+            cache_memo_indices: Default::default(),
+            #[cfg(feature = "persistence")]
+            cache_image: None,
+            #[cfg(feature = "persistence")]
+            cache_creators: FxHashMap::default(),
             event_callback,
             #[cfg(not(feature = "inventory"))]
             nonce: NONCE.nonce(),
         };
 
-        // Collect and initialize all registered ingredients.
-        #[cfg(feature = "inventory")]
-        let mut jars = inventory::iter::<ErasedJar>()
-            .copied()
-            .chain(jars)
-            .collect::<Vec<_>>();
-
-        #[cfg(not(feature = "inventory"))]
-        let mut jars = jars;
+        let mut jars: Vec<_> = ErasedJar::all(jars).collect();
 
         // Ensure structs are initialized before tracked functions.
         //
@@ -283,11 +290,91 @@ impl Zalsa {
             [memo_ingredient_index.as_usize()]
     }
 
+    #[cfg(feature = "persistence")]
+    fn cache_memo_indices(&self) -> &[Vec<(IngredientIndex, MemoIngredientIndex)>] {
+        self.cache_memo_indices.get_or_init(|| {
+            let mut indices = Vec::new();
+            for (owner, slots) in self.memo_ingredient_indices.iter().enumerate() {
+                for (slot, ingredient) in slots.iter().enumerate() {
+                    let index = ingredient.as_u32() as usize;
+                    if indices.len() <= index {
+                        indices.resize_with(index + 1, Vec::new);
+                    }
+                    indices[index].push((
+                        IngredientIndex::new(owner as u32),
+                        MemoIngredientIndex::from_usize(slot),
+                    ));
+                }
+            }
+            indices
+        })
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn accepts_cache_key(
+        &self,
+        function: IngredientIndex,
+        owner: IngredientIndex,
+    ) -> bool {
+        self.cache_memo_indices()
+            .get(function.as_u32() as usize)
+            .is_some_and(|slots| slots.iter().any(|(index, _)| *index == owner))
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn is_cache_function(&self, index: IngredientIndex) -> bool {
+        self.cache_memo_indices()
+            .get(index.as_u32() as usize)
+            .is_some_and(|slots| !slots.is_empty())
+    }
+
+    /// # Safety
+    /// Database writes and query execution must be excluded for the lifetime of the result.
+    #[cfg(feature = "persistence")]
+    pub(crate) unsafe fn cache_memo(
+        &self,
+        key: crate::DatabaseKeyIndex,
+    ) -> Option<(IngredientIndex, crate::function::ErasedMemo<'_>)> {
+        let slots = self
+            .cache_memo_indices()
+            .get(key.ingredient_index().as_u32() as usize)?;
+        if slots.is_empty() {
+            return None;
+        }
+        let owner = self.table().allocated_ingredient(key.key_index())?;
+        let &(_, slot) = slots.iter().find(|&&(index, _)| index == owner)?;
+        // SAFETY: The slot is initialized and our caller excludes writes and slot reuse.
+        let memo = unsafe {
+            self.table()
+                .dyn_memos_unchecked(key.key_index())
+                .get_erased(slot)?
+        };
+        Some((owner, memo))
+    }
+
     #[allow(unused)]
     pub(crate) fn ingredients(&self) -> impl Iterator<Item = &dyn Ingredient> {
         self.ingredients_vec
             .iter()
             .map(|ingredient| ingredient.as_ref())
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn ingredients_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut (dyn Ingredient + 'static)> {
+        self.ingredients_vec.iter_mut().map(Box::as_mut)
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn registered_jars(&self) -> impl Iterator<Item = (TypeId, &'static str)> {
+        self.jar_map.iter().map(|(&jar, &index)| {
+            let name = self
+                .ingredients_vec
+                .get(index.as_u32() as usize)
+                .map_or("<empty jar>", |ingredient| ingredient.debug_name());
+            (jar, name)
+        })
     }
 
     /// Starts unwinding the stack if the current revision is cancelled.
@@ -521,6 +608,18 @@ pub enum JarKind {
 }
 
 impl ErasedJar {
+    pub(crate) fn all(manual: impl IntoIterator<Item = Self>) -> impl Iterator<Item = Self> {
+        let manual = manual.into_iter();
+        #[cfg(feature = "inventory")]
+        let manual = inventory::iter::<Self>().copied().chain(manual);
+        manual
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn jar_type_id(&self) -> TypeId {
+        (self.type_id)()
+    }
+
     /// Performs type-erasure of a given ingredient.
     pub const fn erase<I: HasJar>() -> Self {
         Self {
