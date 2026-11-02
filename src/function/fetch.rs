@@ -46,7 +46,9 @@ where
         #[cfg(feature = "detailed-trace")]
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
-        let (memo, memo_value) = self.refresh_memo(db, zalsa, zalsa_local, id);
+        let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+        // SAFETY: A successful refresh verifies the memo and materializes its value.
+        let memo_value = unsafe { memo.resident_value().unwrap_unchecked() };
 
         self.eviction.record_use(id);
 
@@ -72,7 +74,7 @@ where
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
         id: Id,
-    ) -> (&'db Memo<C>, &'db C::Output<'db>) {
+    ) -> &'db Memo<C> {
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         loop {
@@ -84,9 +86,9 @@ where
             }
 
             if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)
-                && let Some(value) = memo.value()
+                && memo.value().is_some()
             {
-                return (memo, value);
+                return memo;
             }
         }
     }
@@ -97,8 +99,12 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<(&'db Memo<C>, &'db C::Output<'db>)> {
+    ) -> Option<&'db Memo<C>> {
         let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
+
+        if !memo.has_value() {
+            return None;
+        }
 
         let database_key_index = self.database_key_index(id);
 
@@ -109,11 +115,13 @@ where
             true,
         );
 
-        if can_shallow_update.yes() && !memo.header.may_be_provisional() {
-            let value = memo.value()?;
+        if can_shallow_update.yes()
+            && !memo.header.may_be_provisional()
+            && memo.materialize_if_cached()
+        {
             memo.header
                 .update_shallow(zalsa, database_key_index, can_shallow_update);
-            Some((memo, value))
+            Some(memo)
         } else {
             None
         }

@@ -413,6 +413,15 @@ impl<C: Configuration> Memo<C> {
         }
     }
 
+    /// Decode a restored result only after verifying its dependencies. This is a
+    /// no-op for queries that cannot restore a value.
+    pub(super) fn materialize_if_cached(&self) -> bool {
+        match &self.value {
+            MemoValue::Cached(lazy) => lazy.get().is_some(),
+            _ => true,
+        }
+    }
+
     #[cfg(feature = "persistence")]
     pub(super) fn cached_record(&self) -> Option<(&bytes::Bytes, &bytes::Bytes)> {
         if let MemoValue::Cached(lazy) = &self.value {

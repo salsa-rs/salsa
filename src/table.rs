@@ -256,11 +256,10 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// See [`Page::get_raw`][].
+    /// Dereferencing the returned pointer must respect the aliasing rules for the slot.
     pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
         let (page, slot) = split_id(id);
-        let page_ref = self.page::<T>(page);
-        page_ref.0.get(slot).cast::<T>()
+        self.page::<T>(page).get_raw(slot)
     }
 
     /// Returns the number of pages that have been allocated.
@@ -428,7 +427,7 @@ impl Table {
     ) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
         let page = self.pages[page.0].assert_type::<T>();
-        let slot = page.0.get(slot).cast::<T>();
+        let slot = page.get_raw(slot);
 
         // SAFETY: The caller is required to pass the `current_revision`.
         let memos = unsafe { &*T::memos(slot, current_revision) };
@@ -573,6 +572,19 @@ impl Iterator for ErasedSlots<'_> {
 }
 
 impl<'db, T: Slot> PageView<'db, T> {
+    #[inline]
+    fn get_raw(&self, slot: SlotIndex) -> *mut T {
+        #[cfg(feature = "persistence")]
+        assert!(!self.0.is_hole(slot.0), "uninitialized slot {slot:?}");
+        let len = self.0.allocated.load(Ordering::Acquire);
+        // SAFETY: The page holds T and len is its allocated prefix. The entry
+        // type permits uninitialized slots in sparse, restored pages.
+        let entries = unsafe {
+            std::slice::from_raw_parts(self.0.data.cast::<PageDataEntry<T>>().as_ptr(), len)
+        };
+        entries[slot.0].get().cast::<T>()
+    }
+
     /// Allocate a value in this page.
     ///
     /// # Safety
