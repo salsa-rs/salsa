@@ -2,11 +2,11 @@ error[E0308]: mismatched types
  --> tests/compile-fail/span-tracked-getter.rs:9:13
   |
 9 |     x.field(22);
-  |       ----- ^^ expected `&_`, found integer
+  |       ----- ^^ expected `&dyn Database`, found integer
   |       |
   |       arguments to this method are incorrect
   |
-  = note: expected reference `&_`
+  = note: expected reference `&(dyn Database + 'static)`
                   found type `{integer}`
 note: method defined here
  --> tests/compile-fail/span-tracked-getter.rs:3:5
@@ -16,10 +16,6 @@ note: method defined here
 2 | pub struct MyTracked<'db> {
 3 |     field: u32,
   |     ^^^^^
-help: consider borrowing here
-  |
-9 |     x.field(&22);
-  |             +
 
 warning: variable does not need to be mutable
   --> tests/compile-fail/span-tracked-getter.rs:13:9
