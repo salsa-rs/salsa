@@ -251,11 +251,7 @@ macro_rules! setup_input_struct {
             }
             impl $Struct {
                 #[inline]
-                pub fn $new_fn<$Db>(db: &$Db, $($required_field_id: $required_field_ty),*) -> Self
-                where
-                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + salsa::Database,
-                {
+                pub fn $new_fn(db: &dyn $zalsa::Database, $($required_field_id: $required_field_ty),*) -> Self {
                     Self::builder($($required_field_id,)*).new(db)
                 }
 
@@ -266,11 +262,7 @@ macro_rules! setup_input_struct {
 
                 $(
                     $(#[$field_attr])*
-                    $field_getter_vis fn $field_getter_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::return_mode_ty!($field_option, 'db, $field_ty)
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + $zalsa::Database,
-                    {
+                    $field_getter_vis fn $field_getter_id<'db>(self, db: &'db dyn $zalsa::Database) -> $zalsa::return_mode_ty!($field_option, 'db, $field_ty) {
                         let (zalsa, zalsa_local) = db.zalsas();
                         let fields = $Configuration::ingredient_(zalsa).field(
                             zalsa,
@@ -288,11 +280,7 @@ macro_rules! setup_input_struct {
 
                 $(
                     #[must_use]
-                    $field_setter_vis fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty>
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + $zalsa::Database,
-                    {
+                    $field_setter_vis fn $field_setter_id<'db>(self, db: &'db mut dyn $zalsa::Database) -> impl salsa::Setter<FieldTy = $field_ty> {
                         let zalsa = db.zalsa_mut();
                         let (ingredient, revision) = $Configuration::ingredient_mut(zalsa);
                         $zalsa::input::SetterImpl::new(
@@ -306,21 +294,13 @@ macro_rules! setup_input_struct {
                 )*
 
                 $zalsa::macro_if! { $is_singleton =>
-                    pub fn try_get<$Db>(db: &$Db) -> Option<Self>
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + salsa::Database,
-                    {
+                    pub fn try_get(db: &dyn $zalsa::Database) -> Option<Self> {
                         let zalsa = db.zalsa();
                         $Configuration::ingredient_(zalsa).get_singleton_input(zalsa)
                     }
 
                     #[track_caller]
-                    pub fn get<$Db>(db: &$Db) -> Self
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + salsa::Database,
-                    {
+                    pub fn get(db: &dyn $zalsa::Database) -> Self {
                         Self::try_get(db).unwrap()
                     }
                 }
@@ -358,11 +338,7 @@ macro_rules! setup_input_struct {
             impl builder::$Builder {
                 /// Creates the new input with the set values.
                 #[must_use]
-                pub fn new<$Db>(self, db: &$Db) -> $Struct
-                where
-                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + ::salsa::Database
-                {
+                pub fn new(self, db: &dyn $zalsa::Database) -> $Struct {
                     let (zalsa, zalsa_local) = db.zalsas();
                     let current_revision = zalsa.current_revision();
                     let ingredient = $Configuration::ingredient_(zalsa);
