@@ -261,3 +261,35 @@ impl Drop for CaptureBacktraceOnDrop {
         salsa::Backtrace::capture().expect("query stack should be accessible during drop");
     }
 }
+
+#[test]
+fn mismatched_accumulator_drops_after_releasing_stack() {
+    use salsa::plumbing::accumulator::IngredientImpl;
+    use std::cell::Cell;
+
+    thread_local! {
+        static COULD_READ_STACK: Cell<bool> = const { Cell::new(false) };
+    }
+
+    #[salsa::accumulator]
+    struct Rejected;
+
+    impl Drop for Rejected {
+        fn drop(&mut self) {
+            COULD_READ_STACK.set(salsa::Backtrace::capture().is_some());
+        }
+    }
+
+    #[salsa::tracked]
+    fn mismatch(db: &dyn Database) {
+        Log(String::new()).accumulate(db);
+        let log = IngredientImpl::<Log>::from_zalsa(db.zalsa()).unwrap();
+        IngredientImpl::<Rejected>::new(log.index()).push(db.zalsa_local(), Rejected);
+    }
+
+    let db = salsa::DatabaseImpl::default();
+    db.attach(|db| {
+        assert!(std::panic::catch_unwind(|| mismatch(db)).is_err());
+    });
+    assert!(COULD_READ_STACK.get());
+}

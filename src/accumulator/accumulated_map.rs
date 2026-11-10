@@ -21,11 +21,15 @@ impl std::fmt::Debug for AccumulatedMap {
 }
 
 impl AccumulatedMap {
-    pub fn accumulate<A: Accumulator>(&mut self, index: IngredientIndex, value: A) {
+    pub(crate) fn get_or_insert<A: Accumulator>(
+        &mut self,
+        index: IngredientIndex,
+    ) -> Option<&mut Accumulated<A>> {
         self.map
             .entry(index)
             .or_insert_with(|| <Box<Accumulated<A>>>::default())
-            .accumulate(value);
+            .as_dyn_any_mut()
+            .downcast_mut()
     }
 
     pub fn extend_with_accumulated<'slf, A: Accumulator>(
