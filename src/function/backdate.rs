@@ -19,11 +19,7 @@ where
         revisions: &mut QueryRevisions,
         value: &C::Output<'db>,
     ) {
-        if old_memo.header.can_backdate(revisions)
-            && old_memo
-                .value()
-                .is_some_and(|old_value| C::values_equal(old_value, value))
-        {
+        if old_memo.header.can_backdate(revisions) && old_memo.matches_value(value) {
             old_memo.header.backdate(index, revisions);
         }
     }
