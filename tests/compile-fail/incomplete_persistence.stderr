@@ -80,10 +80,11 @@ note: required by a bound in `query_input_is_persistable`
   --> tests/compile-fail/incomplete_persistence.rs:11:1
    |
 11 | #[salsa::tracked(persist)]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
-   | |
-   | required by a bound in this function
-   | required by this bound in `query_input_is_persistable`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `query_input_is_persistable`
+   |
+  ::: components/salsa-macro-rules/src/setup_tracked_fn.rs
+   |
+   |                         const fn query_input_is_persistable<T>()
    = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotPersistable<'db>: serde::Deserialize<'de>` is not satisfied
@@ -113,8 +114,9 @@ note: required by a bound in `query_input_is_persistable`
   --> tests/compile-fail/incomplete_persistence.rs:11:1
    |
 11 | #[salsa::tracked(persist)]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
-   | |
-   | required by a bound in this function
-   | required by this bound in `query_input_is_persistable`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `query_input_is_persistable`
+   |
+  ::: components/salsa-macro-rules/src/setup_tracked_fn.rs
+   |
+   |                         const fn query_input_is_persistable<T>()
    = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)

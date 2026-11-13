@@ -11,6 +11,7 @@ help: the trait `SalsaValue` is not implemented for `NotSalsaValue<'db>`
   | ^^^^^^^^^^^^^^^^^^^^^^^^^
   = note: add `#[derive(salsa::SalsaValue)]` to `NotSalsaValue<'db>`
   = help: the following other types implement trait `SalsaValue`:
+            !
             &'static T
             ()
             (A, B)
@@ -18,7 +19,6 @@ help: the trait `SalsaValue` is not implemented for `NotSalsaValue<'db>`
             (A, B, C, D)
             (A, B, C, D, E)
             (A, B, C, D, E, F)
-            (A, B, C, D, E, F, G)
           and $N others
 note: required by a bound in `salsa::plumbing::assert_salsa_value`
  --> src/salsa_value.rs
