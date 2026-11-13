@@ -17,8 +17,9 @@ help: the trait `salsa::plumbing::TrackedStructInDb` is implemented for `MyTrack
 note: required by a bound in `salsa::function::specify::<impl salsa::plumbing::function::IngredientImpl<C>>::specify_and_record`
   --> src/function/specify.rs
    |
+   | impl<C> IngredientImpl<C>
+...
    |     pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Output<'db>)
-   |            ------------------ required by a bound in this associated function
    |     where
    |         C::Input<'db>: TrackedStructInDb,
    |                        ^^^^^^^^^^^^^^^^^ required by this bound in `salsa::function::specify::<impl IngredientImpl<C>>::specify_and_record`
