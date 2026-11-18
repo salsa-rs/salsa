@@ -17,6 +17,13 @@ pub struct DatabaseKeyIndex {
 // ANCHOR_END: DatabaseKeyIndex
 
 impl DatabaseKeyIndex {
+    /// Selects a struct as a cache root when it is also held outside the query graph.
+    #[cfg(feature = "persistence")]
+    pub fn for_struct(db: &dyn crate::Database, value: impl crate::plumbing::AsId) -> Self {
+        let id = value.as_id();
+        Self::new(db.zalsa().table().ingredient_index(id), id)
+    }
+
     #[inline]
     pub(crate) const fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
         Self {

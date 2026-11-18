@@ -119,6 +119,11 @@ where
         unreachable!("input fields do not allocate pages")
     }
 
+    #[cfg(feature = "persistence")]
+    fn requires_persisted_input(&self) -> bool {
+        true
+    }
+
     fn is_persistable(&self) -> bool {
         // Input field dependencies are valid as long as the input is persistable.
         C::PERSIST

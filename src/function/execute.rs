@@ -153,7 +153,7 @@ where
             match old_memo.header.previous_iteration(
                 database_key_index,
                 cancellation_count,
-                old_memo.value.is_some(),
+                old_memo.has_value(),
             ) {
                 Some(previous_iteration) => {
                     if previous_iteration.reuse_as_provisional {

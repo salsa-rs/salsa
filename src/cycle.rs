@@ -424,13 +424,9 @@ impl serde::Serialize for CycleHeads {
     {
         use serde::ser::SerializeSeq;
 
-        let mut seq = serializer.serialize_seq(None)?;
-        for e in self {
-            if e.removed.load(Ordering::Relaxed) {
-                continue;
-            }
-
-            seq.serialize_element(e)?;
+        let mut seq = serializer.serialize_seq(Some(self.iter().count()))?;
+        for head in self.iter() {
+            seq.serialize_element(head)?;
         }
         seq.end()
     }

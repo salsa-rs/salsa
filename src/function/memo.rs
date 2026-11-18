@@ -6,7 +6,9 @@ use std::ptr::NonNull;
 use crate::cycle::{
     CycleHeads, CycleHeadsIterator, IterationStamp, ProvisionalStatus, empty_cycle_heads,
 };
-use crate::function::{ClaimResult, Configuration, IngredientImpl, Reentrancy};
+use crate::function::{
+    CachedValue, ClaimResult, Configuration, IngredientImpl, Reentrancy, StoredFingerprint,
+};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::sync::atomic::Ordering;
@@ -94,8 +96,13 @@ impl<C: Configuration> IngredientImpl<C> {
     ) {
         let map = |memo: &mut Memo<C>| {
             if memo.header.can_evict_value() {
-                // Set the memo value to `None`.
-                memo.value = None;
+                #[cfg(feature = "persistence")]
+                if let Some(fingerprint) = memo.fingerprint() {
+                    memo.value =
+                        MemoValue::Fingerprint(C::StoredFingerprint::from_bytes(fingerprint));
+                    return;
+                }
+                memo.value = MemoValue::Evicted;
             }
         };
 
@@ -120,7 +127,17 @@ pub struct Memo<C: Configuration> {
     pub(super) header: MemoHeader,
 
     /// The result of the query, if we decide to memoize it.
-    pub(super) value: Option<C::Output<'static>>,
+    value: MemoValue<C::Output<'static>, C::StoredFingerprint, C::CachedValue>,
+}
+
+#[derive(Debug)]
+enum MemoValue<V, F, L> {
+    Computed(V),
+    Evicted,
+    #[cfg_attr(not(feature = "persistence"), allow(dead_code))]
+    Fingerprint(F),
+    #[cfg_attr(not(feature = "persistence"), allow(dead_code))]
+    Cached(L),
 }
 
 /// A shared, type-erased handle to a [`Memo`].
@@ -173,6 +190,27 @@ impl<'memo> ErasedMemo<'memo> {
         // SAFETY: `data` points to the base address of a `Memo` allocation valid for `'memo`, with
         // spatial provenance covering the allocation, and `Memo::header` has offset zero.
         unsafe { self.data.cast::<MemoHeader>().as_ref() }
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn cache_identities(self) -> &'memo [(crate::tracked_struct::Identity, crate::Id)] {
+        let header = self.header();
+        if header.may_be_provisional() {
+            &[]
+        } else {
+            header.revisions.tracked_struct_ids()
+        }
+    }
+
+    #[cfg(all(feature = "accumulator", feature = "persistence"))]
+    pub(crate) fn has_accumulated_values(self) -> bool {
+        let revisions = &self.header().revisions;
+        revisions.accumulated().is_some() || revisions.accumulated_inputs.load().is_any()
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn cache_origin(self) -> QueryOriginRef<'memo> {
+        self.header().origin()
     }
 
     /// Returns whether the memo currently contains a value.
@@ -337,37 +375,98 @@ impl<C: Configuration> Memo<C> {
         revisions: QueryRevisions,
     ) -> Self {
         Self {
-            value: value.map(|value| {
+            value: value.map_or(MemoValue::Evicted, |value| {
                 // SAFETY: Guaranteed by `Configuration` and retained only in this memo.
-                unsafe { std::mem::transmute::<C::Output<'_>, C::Output<'static>>(value) }
+                MemoValue::Computed(unsafe {
+                    std::mem::transmute::<C::Output<'_>, C::Output<'static>>(value)
+                })
             }),
             header: MemoHeader::new(revision_now, revisions),
         }
     }
 
     pub(super) fn value(&self) -> Option<&C::Output<'_>> {
-        self.value.as_ref().map(|value| {
-            // SAFETY: Guaranteed by `Configuration`; the restored lifetime is
-            // bounded by the borrow of this memo.
-            unsafe { std::mem::transmute::<&C::Output<'static>, &C::Output<'_>>(value) }
-        })
+        let value = match &self.value {
+            MemoValue::Computed(value) => value,
+            MemoValue::Cached(lazy) => lazy.get()?,
+            MemoValue::Evicted | MemoValue::Fingerprint(_) => return None,
+        };
+        // SAFETY: The Configuration contract permits rebranding a retained output.
+        Some(unsafe { std::mem::transmute::<&C::Output<'static>, &C::Output<'_>>(value) })
+    }
+
+    pub(super) fn resident_value(&self) -> Option<&C::Output<'_>> {
+        let value = match &self.value {
+            MemoValue::Computed(value) => value,
+            MemoValue::Cached(lazy) => lazy.resident()?,
+            MemoValue::Evicted | MemoValue::Fingerprint(_) => return None,
+        };
+        // SAFETY: Configuration permits rebranding a retained output to this borrow.
+        Some(unsafe { std::mem::transmute::<&C::Output<'static>, &C::Output<'_>>(value) })
+    }
+
+    pub(super) fn has_value(&self) -> bool {
+        match &self.value {
+            MemoValue::Computed(_) => true,
+            MemoValue::Cached(lazy) => lazy.available(),
+            MemoValue::Evicted | MemoValue::Fingerprint(_) => false,
+        }
+    }
+
+    /// Decode a restored result only after verifying its dependencies. This is a
+    /// no-op for queries that cannot restore a value.
+    pub(super) fn materialize_if_cached(&self) -> bool {
+        match &self.value {
+            MemoValue::Cached(lazy) => lazy.get().is_some(),
+            _ => true,
+        }
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(super) fn cached_record(&self) -> Option<(&bytes::Bytes, &bytes::Bytes)> {
+        if let MemoValue::Cached(lazy) = &self.value {
+            Some(lazy.encoded())
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn can_compare(&self) -> bool {
+        !matches!(self.value, MemoValue::Evicted)
+    }
+
+    pub(super) fn matches_value<'db>(&'db self, value: &C::Output<'db>) -> bool {
+        if let MemoValue::Fingerprint(saved) = &self.value {
+            return C::FINGERPRINT.is_some_and(|hash| hash(value).to_le_bytes() == saved.bytes());
+        }
+        self.value().is_some_and(|old| C::values_equal(old, value))
+    }
+
+    #[cfg(feature = "persistence")]
+    fn fingerprint(&self) -> Option<[u8; 16]> {
+        if let MemoValue::Fingerprint(saved) = &self.value {
+            return Some(saved.bytes());
+        }
+        let hash = C::FINGERPRINT?;
+        let value = self.value()?;
+        Some(crate::persistence::without_references(|| hash(value)).to_le_bytes())
     }
 
     /// Returns `true` if this memo should be serialized.
     pub(super) fn should_serialize(&self) -> bool {
         // TODO: Serialization is a good opportunity to prune old query results based on
         // the `verified_at` revision.
-        self.value.is_some() && !self.header.may_be_provisional()
+        self.can_compare() && !self.header.may_be_provisional()
     }
 
     pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + use<'_, C> {
-        self.header.tracing_debug(self.value.is_some())
+        self.header.tracing_debug(self.has_value())
     }
 }
 
 impl<C: Configuration> crate::table::memo::Memo for Memo<C> {
     fn has_value(&self) -> bool {
-        self.value.is_some()
+        self.has_value()
     }
 
     fn remove_outputs(&self, zalsa: &Zalsa, executor: DatabaseKeyIndex) {
@@ -377,7 +476,7 @@ impl<C: Configuration> crate::table::memo::Memo for Memo<C> {
     #[cfg(feature = "salsa_unstable")]
     fn memory_usage(&self) -> crate::database::MemoInfo {
         let size_of = std::mem::size_of::<Memo<C>>() + self.header.revisions.allocation_size();
-        let heap_size = self.value().map_or(Some(0), C::heap_size);
+        let heap_size = self.resident_value().map_or(Some(0), C::heap_size);
 
         crate::database::MemoInfo {
             debug_name: C::DEBUG_NAME,
@@ -393,9 +492,9 @@ impl<C: Configuration> crate::table::memo::Memo for Memo<C> {
 }
 
 #[cfg(feature = "persistence")]
-mod persistence {
-    use crate::function::Configuration;
-    use crate::function::memo::{Memo, MemoHeader};
+pub(super) mod persistence {
+    use crate::function::memo::{Memo, MemoHeader, MemoValue};
+    use crate::function::{CachedValue, Configuration, StoredFingerprint};
     use crate::revision::AtomicRevision;
     use crate::zalsa_local::QueryRevisions;
     use crate::zalsa_local::persistence::{MappedQueryRevisions, PersistentQueryOrigin};
@@ -405,7 +504,7 @@ mod persistence {
 
     /// A reference to the fields of a [`Memo`], with its [`QueryRevisions`] transformed.
     pub(crate) struct MappedMemo<'memo, C: Configuration> {
-        pub(crate) value: Option<&'memo C::Output<'memo>>,
+        memo: &'memo Memo<C>,
         pub(crate) verified_at: AtomicRevision,
         pub(crate) revisions: MappedQueryRevisions<'memo>,
     }
@@ -415,7 +514,6 @@ mod persistence {
             &self,
             serialized_origin: PersistentQueryOrigin,
         ) -> MappedMemo<'_, C> {
-            let value = self.value();
             let Memo { ref header, .. } = *self;
             let MemoHeader {
                 ref verified_at,
@@ -423,10 +521,100 @@ mod persistence {
             } = *header;
 
             MappedMemo {
-                value,
+                memo: self,
                 verified_at: AtomicRevision::from(verified_at.load()),
                 revisions: revisions.with_origin(serialized_origin),
             }
+        }
+    }
+
+    struct SerializeValue<'me, 'db, C: Configuration>(&'me C::Output<'db>);
+
+    impl<C> serde::Serialize for SerializeValue<'_, '_, C>
+    where
+        C: Configuration,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            C::serialize(self.0, serializer)
+        }
+    }
+
+    pub(crate) struct BinaryMemo<'a, 'memo, C: Configuration>(pub &'a MappedMemo<'memo, C>);
+
+    impl<C: Configuration> serde::Serialize for BinaryMemo<'_, '_, C> {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let MappedMemo {
+                memo,
+                verified_at,
+                revisions,
+            } = self.0;
+            if let Some(fingerprint) = memo.fingerprint() {
+                return (fingerprint, verified_at, revisions).serialize(serializer);
+            }
+            let value = memo.value().expect("only computed outputs are persisted");
+            let bytes = crate::persistence::encode(&SerializeValue::<C>(value))
+                .map_err(serde::ser::Error::custom)?;
+            (bytes::Bytes::from(bytes), verified_at, revisions.binary()).serialize(serializer)
+        }
+    }
+
+    pub(crate) struct BinaryMemoSeed<'a, C>(
+        pub &'a bytes::Bytes,
+        pub &'a crate::zalsa::Zalsa,
+        pub std::marker::PhantomData<C>,
+    );
+
+    impl<'de, C: Configuration> serde::de::DeserializeSeed<'de> for BinaryMemoSeed<'_, C> {
+        type Value = Memo<C>;
+
+        fn deserialize<D: serde::Deserializer<'de>>(self, de: D) -> Result<Self::Value, D::Error> {
+            let (value, verified_at, revisions) = if !C::PERSIST {
+                let ids = thin_vec::ThinVec::deserialize(de)?;
+                (
+                    MemoValue::Evicted,
+                    AtomicRevision::new(self.1.current_revision()),
+                    QueryRevisions::cached_identities(ids),
+                )
+            } else if C::FINGERPRINT.is_some() {
+                let (hash, at, revisions) =
+                    <([u8; 16], AtomicRevision, QueryRevisions)>::deserialize(de)?;
+                (
+                    MemoValue::Fingerprint(C::StoredFingerprint::from_bytes(hash)),
+                    at,
+                    revisions,
+                )
+            } else {
+                let (refs, record) = <(&'de [u8], &'de [u8])>::deserialize(de)?;
+                let ((bytes, at, revisions), used) =
+                    bincode::serde::borrow_decode_from_slice::<
+                        (
+                            &[u8],
+                            AtomicRevision,
+                            crate::zalsa_local::persistence::DecodeBinaryRevisions<'_>,
+                        ),
+                        _,
+                    >(record, bincode::config::standard())
+                    .map_err(serde::de::Error::custom)?;
+                if used != record.len() {
+                    return Err(serde::de::Error::custom("trailing data in cached memo"));
+                }
+                let lazy = C::CachedValue::new(
+                    self.0.slice_ref(bytes),
+                    self.0.slice_ref(record),
+                    self.0.slice_ref(refs),
+                );
+                let revisions = revisions
+                    .restore(self.0)
+                    .map_err(serde::de::Error::custom)?;
+                (MemoValue::Cached(lazy), at, revisions)
+            };
+            Ok(Memo {
+                value,
+                header: MemoHeader::new(verified_at.load(), revisions),
+            })
         }
     }
 
@@ -438,32 +626,21 @@ mod persistence {
         where
             S: serde::Serializer,
         {
-            struct SerializeValue<'me, 'db, C: Configuration>(&'me C::Output<'db>);
-
-            impl<C> serde::Serialize for SerializeValue<'_, '_, C>
-            where
-                C: Configuration,
-            {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: serde::Serializer,
-                {
-                    C::serialize(self.0, serializer)
-                }
-            }
-
             let MappedMemo {
-                value,
+                memo,
                 verified_at,
                 revisions,
             } = self;
 
-            let value = value.expect(
-                "attempted to serialize memo where `Memo::should_serialize` returned `false`",
-            );
-
             let mut s = serializer.serialize_struct("Memo", 3)?;
-            s.serialize_field("value", &SerializeValue::<C>(value))?;
+            if let Some(fingerprint) = memo.fingerprint() {
+                s.serialize_field("value", &fingerprint)?;
+            } else {
+                let value = memo
+                    .value()
+                    .expect("only memos with a value or fingerprint can be persisted");
+                s.serialize_field("value", &SerializeValue::<C>(value))?;
+            }
             s.serialize_field("verified_at", &verified_at)?;
             s.serialize_field("revisions", &revisions)?;
             s.end()
@@ -487,7 +664,9 @@ mod persistence {
                 revisions: QueryRevisions,
             }
 
-            struct DeserializeValue<C: Configuration>(C::Output<'static>);
+            struct DeserializeValue<C: Configuration>(
+                MemoValue<C::Output<'static>, C::StoredFingerprint, C::CachedValue>,
+            );
 
             impl<'de, C> serde::Deserialize<'de> for DeserializeValue<C>
             where
@@ -497,19 +676,25 @@ mod persistence {
                 where
                     D: serde::Deserializer<'de>,
                 {
-                    C::deserialize(deserializer)
-                        .map(DeserializeValue)
-                        .map_err(serde::de::Error::custom)
+                    if C::FINGERPRINT.is_some() {
+                        <[u8; 16]>::deserialize(deserializer).map(|hash| {
+                            DeserializeValue(MemoValue::Fingerprint(
+                                C::StoredFingerprint::from_bytes(hash),
+                            ))
+                        })
+                    } else {
+                        C::deserialize(deserializer)
+                            .map(|value| DeserializeValue(MemoValue::Computed(value)))
+                    }
                 }
             }
 
             let memo = DeserializeMemo::<C>::deserialize(deserializer)?;
 
-            Ok(Memo::new(
-                Some(memo.value.0),
-                memo.verified_at.load(),
-                memo.revisions,
-            ))
+            Ok(Memo {
+                value: memo.value.0,
+                header: MemoHeader::new(memo.verified_at.load(), memo.revisions),
+            })
         }
     }
 }
@@ -668,6 +853,8 @@ mod _memory_usage {
 
     // SAFETY: `NonZeroUsize` is `'static` and contains no database lifetime.
     unsafe impl super::Configuration for DummyConfiguration {
+        type StoredFingerprint = std::convert::Infallible;
+        type CachedValue = std::convert::Infallible;
         const DEBUG_NAME: &'static str = "";
         const LOCATION: Location = Location { file: "", line: 0 };
         const PERSIST: bool = false;

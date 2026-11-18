@@ -4,7 +4,7 @@ use crate::function::execute::complete_cycle_query;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
-use crate::zalsa::{MemoIngredientIndex, Zalsa};
+use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::ZalsaLocal;
 use crate::{Cancelled, DatabaseKeyIndex, Id};
 
@@ -12,6 +12,25 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
+    /// Looks up a current, already materialized result for cache housekeeping.
+    pub fn get_if_cached<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db C::Output<'db>> {
+        let zalsa = db.zalsa();
+        db.zalsa_local()
+            .report_untracked_read(zalsa.current_revision());
+        let memo =
+            self.get_memo_from_table_for(zalsa, id, self.memo_ingredient_index(zalsa, id))?;
+        if memo.header.verified_at.load() != zalsa.current_revision()
+            || memo.header.may_be_provisional()
+        {
+            return None;
+        }
+        memo.resident_value()
+    }
+
     #[inline]
     pub fn fetch<'db>(
         &'db self,
@@ -28,9 +47,8 @@ where
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
-
-        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
-        let memo_value = unsafe { memo.value().unwrap_unchecked() };
+        // SAFETY: A successful refresh verifies the memo and materializes its value.
+        let memo_value = unsafe { memo.resident_value().unwrap_unchecked() };
 
         self.eviction.record_use(id);
 
@@ -67,7 +85,11 @@ where
                 return memo;
             }
 
-            if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index) {
+            // A successful cold fetch has a value. Only a persisted query can still
+            // need a fallible lazy decode before handing that value to the caller.
+            if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index)
+                && (!C::PERSIST || memo.value().is_some())
+            {
                 return memo;
             }
         }
@@ -82,7 +104,9 @@ where
     ) -> Option<&'db Memo<C>> {
         let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
 
-        memo.value.as_ref()?;
+        if !memo.has_value() {
+            return None;
+        }
 
         let database_key_index = self.database_key_index(id);
 
@@ -93,10 +117,12 @@ where
             true,
         );
 
-        if can_shallow_update.yes() && !memo.header.may_be_provisional() {
+        if can_shallow_update.yes()
+            && !memo.header.may_be_provisional()
+            && memo.materialize_if_cached()
+        {
             memo.header
                 .update_shallow(zalsa, database_key_index, can_shallow_update);
-
             Some(memo)
         } else {
             None
@@ -138,7 +164,7 @@ where
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
 
         if let Some(old_memo) = opt_old_memo
-            && old_memo.value.is_some()
+            && old_memo.has_value()
             && old_memo.header.verify_memo(
                 db.into(),
                 &claim_guard,
@@ -190,7 +216,7 @@ where
                 if let Some(memo) = last_provisional_memo {
                     let revisions = &memo.header.revisions;
                     // Don't replace a poisoned memo from this execution with a new initial value.
-                    if memo.value.is_none() {
+                    if !memo.has_value() {
                         Cancelled::PropagatedPanic.throw();
                     }
 

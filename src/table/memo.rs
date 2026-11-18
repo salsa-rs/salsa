@@ -408,7 +408,7 @@ impl<'a> MemoTableWithTypes<'a> {
     /// Any allocation observed in the table entry must remain at the same address and valid for
     /// shared access for `'a`.
     #[inline]
-    unsafe fn get_erased(
+    pub(crate) unsafe fn get_erased(
         &self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ErasedMemo<'a>> {

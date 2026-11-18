@@ -48,6 +48,9 @@ triomphe = { version = "0.1", optional = true }
 shuttle = { version = "0.9.1", optional = true }
 
 # Persistent caching
+crc32fast = { version = "1", optional = true }
+bytes = { version = "1.10", features = ["serde"], optional = true }
+bincode = { version = "2.0.1", default-features = false, features = ["serde", "std"], optional = true }
 erased-serde = { version = "0.4.6", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
@@ -60,6 +63,10 @@ inventory = ["dep:inventory"]
 # Enables Salsa's `DEBUG` and `TRACE` tracing events and spans. Disabled by default.
 detailed-trace = []
 persistence = [
+    "dep:bincode",
+    "dep:crc32fast",
+    "dep:bytes",
+    "rayon",
     "dep:serde",
     "dep:erased-serde",
     "salsa-macros/persistence",
