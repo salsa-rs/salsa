@@ -170,6 +170,7 @@ pub struct Zalsa {
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
 
+    #[cfg(feature = "events-introspection")]
     event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync>>,
 }
 
@@ -185,6 +186,10 @@ impl Zalsa {
         event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
         jars: Vec<ErasedJar>,
     ) -> Self {
+        if cfg!(not(feature = "events-introspection")) && event_callback.is_some() {
+            panic!("cannot provide an event callback if the `events-introspection` feature is off");
+        }
+
         let mut zalsa = Self {
             views_of: Views::new::<Db>(),
             jar_map: HashMap::default(),
@@ -193,6 +198,7 @@ impl Zalsa {
             ingredients_requiring_reset: Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
+            #[cfg(feature = "events-introspection")]
             event_callback,
             #[cfg(not(feature = "inventory"))]
             nonce: NONCE.nonce(),
@@ -481,6 +487,11 @@ impl Zalsa {
     }
 
     #[inline(always)]
+    #[cfg(not(feature = "events-introspection"))]
+    pub fn event(&self, _event: &impl Fn() -> crate::Event) {}
+
+    #[inline(always)]
+    #[cfg(feature = "events-introspection")]
     pub fn event(&self, event: &dyn Fn() -> crate::Event) {
         if self.event_callback.is_some() {
             self.event_cold(event);
@@ -490,6 +501,7 @@ impl Zalsa {
     // Avoid inlining, as events are typically only enabled for debugging purposes.
     #[cold]
     #[inline(never)]
+    #[cfg(feature = "events-introspection")]
     pub fn event_cold(&self, event: &dyn Fn() -> crate::Event) {
         let event_callback = self.event_callback.as_ref().unwrap();
         event_callback(event());
