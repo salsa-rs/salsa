@@ -2,11 +2,11 @@ error[E0308]: mismatched types
   --> tests/compile-fail/span-input-setter.rs:10:21
    |
 10 |     input.set_field(22);
-   |           --------- ^^ expected `&mut _`, found integer
+   |           --------- ^^ expected `&mut dyn Database`, found integer
    |           |
    |           arguments to this method are incorrect
    |
-   = note: expected mutable reference `&mut _`
+   = note: expected mutable reference `&mut (dyn Database + 'static)`
                            found type `{integer}`
 note: method defined here
   --> tests/compile-fail/span-input-setter.rs:3:5
@@ -16,7 +16,3 @@ note: method defined here
  2 | pub struct MyInput {
  3 |     field: u32,
    |     ^^^^^
-help: consider mutably borrowing here
-   |
-10 |     input.set_field(&mut 22);
-   |                     ++++
