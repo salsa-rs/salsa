@@ -93,7 +93,7 @@ divan = { package = "codspeed-divan-compat", version = "=6.0.0" }
 expect-test = "=1.5.1"
 rustversion = "=1.0.23"
 test-log = { version = "=0.2.21", features = ["trace"] }
-trybuild = "=1.0.122"
+trybuild = "=1.0.123"
 serde_json = "=1.0.154"
 
 [[bench]]
