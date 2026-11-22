@@ -163,16 +163,35 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      # taiki-e/install-action uses Bash process substitution, which fails on this runner.
-      - name: Install cargo-codspeed
-        working-directory: ${{ runner.temp }}
-        env:
-          CARGO_CODSPEED_VERSION: "6.1.0"
-          CARGO_CODSPEED_SHA256: "165dd7d694f4d5f776bf2e5ceadd03a4194f960e5d5a87a25645918c19c6692d"
+      - name: Diagnose Bash process substitution
+        shell: bash
         run: |
-          curl -fsSL "https://github.com/CodSpeedHQ/codspeed-rust/releases/download/v$CARGO_CODSPEED_VERSION/cargo-codspeed-x86_64-unknown-linux-musl" -o cargo-codspeed
-          echo "$CARGO_CODSPEED_SHA256  cargo-codspeed" | sha256sum -c -
-          install -m 755 cargo-codspeed ~/.cargo/bin/
+          echo "Bash $BASH_VERSION"
+          cat /proc/1/comm
+          findmnt -n -o TARGET,FSTYPE /dev || true
+          ls -ld /dev/fd /dev/stdin /proc/self/fd || true
+          probe() {
+            echo "Bash passed $1"
+            local fd="/proc/self/fd/${1##*/}"
+            if [[ -p "$fd" ]]; then
+              echo "$fd is a pipe"
+            fi
+            if read -r tool < "$1"; then
+              echo "Read $tool via $1"
+            elif read -r tool < "$fd"; then
+              echo "Read $tool via $fd"
+            fi
+          }
+          probe <(echo cargo-codspeed)
+          if [[ ! -e /dev/fd && ! -L /dev/fd && -d /proc/self/fd ]]; then
+            sudo ln -sv /proc/self/fd /dev/fd
+            probe <(echo cargo-codspeed)
+          fi
+
+      - name: "Setup codspeed"
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-codspeed
 
       - name: "Build benchmarks"
         run: |
