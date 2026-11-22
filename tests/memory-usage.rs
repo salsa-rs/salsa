@@ -145,7 +145,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "MyInput",
                 count: 3,
-                size_of_metadata: 216,
+                size_of_metadata: 168,
                 size_of_fields: 72,
                 heap_size_of_fields: Some(
                     450,
@@ -208,7 +208,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "input_to_string::interned_arguments",
                 count: 1,
-                size_of_metadata: 56,
+                size_of_metadata: 48,
                 size_of_fields: 0,
                 heap_size_of_fields: None,
                 page_info: Some(
@@ -227,7 +227,7 @@ fn test() {
             IngredientInfo {
                 debug_name: "input_to_string_get_size::interned_arguments",
                 count: 1,
-                size_of_metadata: 56,
+                size_of_metadata: 48,
                 size_of_fields: 0,
                 heap_size_of_fields: None,
                 page_info: Some(
