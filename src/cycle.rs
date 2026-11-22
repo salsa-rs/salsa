@@ -327,6 +327,12 @@ impl CycleHeads {
         if other.is_empty() {
             return;
         }
+
+        if self.is_empty() {
+            // The stored length includes removed heads, but avoids a second pass to count live ones.
+            self.0.reserve(other.0.len());
+        }
+
         self.extend_sorted(
             other
                 .iter()
