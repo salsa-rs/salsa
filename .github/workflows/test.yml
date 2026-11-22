@@ -150,7 +150,7 @@ jobs:
     # https://github.com/CodSpeedHQ/action/issues/126
     if: github.repository == 'salsa-rs/salsa' && github.event_name != 'merge_group'
     name: Benchmarks
-    runs-on: codspeed-macro
+    runs-on: codspeed-macro-x64-ryzen-9950x-ubuntu-24-04
     timeout-minutes: 10
     steps:
       - name: Checkout
