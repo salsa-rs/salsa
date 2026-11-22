@@ -163,29 +163,11 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      - name: Diagnose Bash process substitution
-        shell: bash
+      # taiki-e/install-action uses Bash process substitution, which needs /dev/fd.
+      - name: Set up /dev/fd on the CodSpeed runner
         run: |
-          echo "Bash $BASH_VERSION"
-          cat /proc/1/comm
-          findmnt -n -o TARGET,FSTYPE /dev || true
-          ls -ld /dev/fd /dev/stdin /proc/self/fd || true
-          probe() {
-            echo "Bash passed $1"
-            local fd="/proc/self/fd/${1##*/}"
-            if [[ -p "$fd" ]]; then
-              echo "$fd is a pipe"
-            fi
-            if read -r tool < "$1"; then
-              echo "Read $tool via $1"
-            elif read -r tool < "$fd"; then
-              echo "Read $tool via $fd"
-            fi
-          }
-          probe <(echo cargo-codspeed)
-          if [[ ! -e /dev/fd && ! -L /dev/fd && -d /proc/self/fd ]]; then
-            sudo ln -sv /proc/self/fd /dev/fd
-            probe <(echo cargo-codspeed)
+          if [ ! -e /dev/fd ]; then
+            sudo ln -s /proc/self/fd /dev/fd
           fi
 
       - name: "Setup codspeed"
