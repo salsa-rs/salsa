@@ -1895,6 +1895,10 @@ impl<'me> ActiveQueryGuard<'me> {
 
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &[(Identity, Id)]) {
+        if tracked_struct_ids.is_empty() {
+            return;
+        }
+
         self.with_frame_mut(|frame| {
             frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
         })
