@@ -66,6 +66,19 @@ fn intern_same_many(bencher: divan::Bencher) {
 /// Creates many tracked structs inside a query.
 #[divan::bench]
 fn tracked_create_many(bencher: divan::Bencher) {
+    bench_tracked_create(bencher, create_tracked);
+}
+
+/// Creates tracked structs that all have the same identity fields.
+#[divan::bench]
+fn tracked_create_repeated(bencher: divan::Bencher) {
+    bench_tracked_create(bencher, create_repeated);
+}
+
+fn bench_tracked_create(
+    bencher: divan::Bencher,
+    create: fn(&dyn salsa::Database, TrackedInput) -> usize,
+) {
     bencher
         .with_inputs(|| {
             let db = salsa::DatabaseImpl::default();
@@ -74,7 +87,7 @@ fn tracked_create_many(bencher: divan::Bencher) {
             (db, input)
         })
         .bench_local_refs(|(db, input)| {
-            let sum = create_tracked(black_box(db), black_box(*input));
+            let sum = create(black_box(db), black_box(*input));
             assert_eq!(black_box(sum), MANY);
         });
 }
@@ -82,18 +95,31 @@ fn tracked_create_many(bencher: divan::Bencher) {
 /// Recreates many tracked structs and reuses their identities.
 #[divan::bench]
 fn tracked_reuse_many(bencher: divan::Bencher) {
+    bench_tracked_reuse(bencher, create_tracked);
+}
+
+/// Reuses tracked structs that differ only in their disambiguator.
+#[divan::bench]
+fn tracked_reuse_repeated(bencher: divan::Bencher) {
+    bench_tracked_reuse(bencher, create_repeated);
+}
+
+fn bench_tracked_reuse(
+    bencher: divan::Bencher,
+    create: fn(&dyn salsa::Database, TrackedInput) -> usize,
+) {
     bencher
         .with_inputs(|| {
             let db = salsa::DatabaseImpl::default();
             warm_db(&db);
             let input = TrackedInput::new(black_box(&db), black_box(MANY), black_box(1));
-            let sum = create_tracked(black_box(&db), black_box(input));
+            let sum = create(black_box(&db), black_box(input));
             assert_eq!(black_box(sum), MANY);
             (db, input)
         })
         .bench_local_refs(|(db, input)| {
             input.set_value(black_box(db)).to(black_box(2));
-            let sum = create_tracked(black_box(db), black_box(*input));
+            let sum = create(black_box(db), black_box(*input));
             assert_eq!(black_box(sum), 2 * MANY);
         });
 }
@@ -177,12 +203,26 @@ struct TrackedValue<'db> {
 #[salsa::tracked(returns(copy))]
 #[inline(never)]
 fn create_tracked(db: &dyn salsa::Database, input: TrackedInput) -> usize {
+    create_tracked_with(db, input, |index| index)
+}
+
+#[salsa::tracked(returns(copy))]
+#[inline(never)]
+fn create_repeated(db: &dyn salsa::Database, input: TrackedInput) -> usize {
+    create_tracked_with(db, input, |_| 0)
+}
+
+fn create_tracked_with(
+    db: &dyn salsa::Database,
+    input: TrackedInput,
+    key: impl Fn(usize) -> usize,
+) -> usize {
     let count = input.count(db);
     let value = input.value(db);
     let mut sum = 0;
 
     for index in 0..count {
-        let tracked = TrackedValue::new(db, index, value);
+        let tracked = TrackedValue::new(db, key(index), value);
         black_box(tracked);
         sum += value;
     }
