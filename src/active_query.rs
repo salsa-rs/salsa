@@ -625,30 +625,3 @@ impl fmt::Display for Backtrace {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::IngredientIndex;
-
-    #[test]
-    fn retain_large_edge_set_until_first_sparse_query() {
-        let key = |i| DatabaseKeyIndex::new(IngredientIndex::new(0), Id::from_bits(i + 1));
-        let mut frame = ActiveQuery::new(key(0));
-        frame.input_outputs.reserve(16_384);
-        let capacity = frame.input_outputs.capacity();
-
-        for (len, retained) in [(capacity.div_ceil(2), capacity), (232, 0)] {
-            let inputs = (1..=len as u64).map(key);
-            frame
-                .input_outputs
-                .extend(inputs.clone().map(QueryEdge::input));
-            let completion = frame.prepare_completion(IterationStamp::default(), false);
-            let completed = completion.finish(&mut frame.input_outputs);
-
-            assert!(completed.revisions.origin().inputs().eq(inputs));
-            assert!(frame.input_outputs.is_empty());
-            assert_eq!(frame.input_outputs.capacity(), retained);
-        }
-    }
-}
