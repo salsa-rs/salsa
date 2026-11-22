@@ -286,7 +286,7 @@ impl ActiveQuery {
             #[cfg(feature = "accumulator")]
                 accumulated_inputs: _,
         } = self;
-        input_outputs.clear();
+        clear_input_outputs(input_outputs);
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         *cycle_heads = Default::default();
@@ -430,7 +430,7 @@ impl QueryStack {
         );
         let completion = active_query.prepare_completion(iteration, force_extra);
         let DetachedInputOutputs(mut reusable_frame_input_outputs) = detached_input_outputs;
-        reusable_frame_input_outputs.clear();
+        clear_input_outputs(&mut reusable_frame_input_outputs);
         active_query.input_outputs = reusable_frame_input_outputs;
         completion
     }
@@ -463,7 +463,7 @@ pub(crate) struct QueryCompletion {
 
 impl QueryCompletion {
     /// Builds the [`CompletedQuery`] from the given edges, leaving `input_outputs` empty
-    /// (but with its allocation intact) so that it can be reused.
+    /// for reuse.
     pub(crate) fn finish(self, input_outputs: &mut FxIndexSet<QueryEdge>) -> CompletedQuery {
         // `QueryEdge` is `Copy`, so copy the edges in their existing order, then clear the set.
         // This preserves the dependency order of `drain(..)` while using a plain slice iterator
@@ -475,7 +475,7 @@ impl QueryCompletion {
         } else {
             OriginAndExtra::derived(edges, self.extra)
         };
-        input_outputs.clear();
+        clear_input_outputs(input_outputs);
         CompletedQuery {
             revisions: QueryRevisions {
                 changed_at: self.changed_at,
@@ -487,6 +487,24 @@ impl QueryCompletion {
             },
             stale_tracked_structs: self.stale_tracked_structs,
         }
+    }
+}
+
+/// Clears a frame's edges or the thread-local set of flattened cycle dependencies.
+fn clear_input_outputs(edges: &mut FxIndexSet<QueryEdge>) {
+    // Clearing a nonempty IndexSet resets hash control bytes in O(capacity). One large
+    // query can leave thousands of small queries paying for the same oversized table.
+    // The 16K floor avoids reallocating ordinary sets as query sizes fluctuate.
+    const MIN_DISCARD_CAPACITY: usize = 16_384;
+
+    // Consecutive cycle participants often have similarly large dependency sets.
+    // Keep the allocation until a query uses less than half of it, allowing for
+    // the spare capacity left when the table doubles in size.
+    let capacity = edges.capacity();
+    if capacity >= MIN_DISCARD_CAPACITY && edges.len() < capacity.div_ceil(2) {
+        *edges = FxIndexSet::default();
+    } else {
+        edges.clear();
     }
 }
 
@@ -605,5 +623,32 @@ impl fmt::Display for Backtrace {
             .transpose()?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::IngredientIndex;
+
+    #[test]
+    fn retain_large_edge_set_until_first_sparse_query() {
+        let key = |i| DatabaseKeyIndex::new(IngredientIndex::new(0), Id::from_bits(i + 1));
+        let mut frame = ActiveQuery::new(key(0));
+        frame.input_outputs.reserve(16_384);
+        let capacity = frame.input_outputs.capacity();
+
+        for (len, retained) in [(capacity.div_ceil(2), capacity), (232, 0)] {
+            let inputs = (1..=len as u64).map(key);
+            frame
+                .input_outputs
+                .extend(inputs.clone().map(QueryEdge::input));
+            let completion = frame.prepare_completion(IterationStamp::default(), false);
+            let completed = completion.finish(&mut frame.input_outputs);
+
+            assert!(completed.revisions.origin().inputs().eq(inputs));
+            assert!(frame.input_outputs.is_empty());
+            assert_eq!(frame.input_outputs.capacity(), retained);
+        }
     }
 }
