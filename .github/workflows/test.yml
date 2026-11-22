@@ -163,13 +163,6 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      # taiki-e/install-action uses Bash process substitution, which needs /dev/fd.
-      - name: Set up /dev/fd on the CodSpeed runner
-        run: |
-          if [ ! -e /dev/fd ]; then
-            sudo ln -s /proc/self/fd /dev/fd
-          fi
-
       - name: "Setup codspeed"
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
