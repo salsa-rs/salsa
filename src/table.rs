@@ -336,6 +336,7 @@ impl Table {
     /// # Panics
     ///
     /// If `page` is out of bounds or the type `T` is incorrect.
+    #[inline]
     pub unsafe fn memos<T: Slot>(
         &self,
         id: Id,
