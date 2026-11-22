@@ -163,10 +163,16 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      - name: "Setup codspeed"
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
-        with:
-          tool: cargo-codspeed
+      # taiki-e/install-action uses Bash process substitution, which fails on this runner.
+      - name: Install cargo-codspeed
+        working-directory: ${{ runner.temp }}
+        env:
+          CARGO_CODSPEED_VERSION: "6.1.0"
+          CARGO_CODSPEED_SHA256: "165dd7d694f4d5f776bf2e5ceadd03a4194f960e5d5a87a25645918c19c6692d"
+        run: |
+          curl -fsSL "https://github.com/CodSpeedHQ/codspeed-rust/releases/download/v$CARGO_CODSPEED_VERSION/cargo-codspeed-x86_64-unknown-linux-musl" -o cargo-codspeed
+          echo "$CARGO_CODSPEED_SHA256  cargo-codspeed" | sha256sum -c -
+          install -m 755 cargo-codspeed ~/.cargo/bin/
 
       - name: "Build benchmarks"
         run: |
