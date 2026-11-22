@@ -378,14 +378,26 @@ impl ops::Deref for QueryStack {
     }
 }
 
-impl ops::DerefMut for QueryStack {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.stack[..self.len]
-    }
-}
-
 impl QueryStack {
+    #[inline]
+    fn last_index(&self) -> usize {
+        debug_assert!(self.len <= self.stack.len());
+        // When len is zero, the index wraps to usize::MAX and the lookup
+        // returns None even if the stack retains frames from earlier queries.
+        self.len.wrapping_sub(1)
+    }
+
+    #[inline]
+    pub(crate) fn last(&self) -> Option<&ActiveQuery> {
+        self.stack.get(self.last_index())
+    }
+
+    #[inline]
+    pub(crate) fn last_mut(&mut self) -> Option<&mut ActiveQuery> {
+        let index = self.last_index();
+        self.stack.get_mut(index)
+    }
+
     pub(crate) fn push_new_query(&mut self, database_key_index: DatabaseKeyIndex) {
         if self.len < self.stack.len() {
             self.stack[self.len].reset_for(database_key_index);

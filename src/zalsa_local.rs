@@ -303,7 +303,10 @@ impl ZalsaLocal {
     ) -> Option<R> {
         let mut stack = self.query_stack.borrow_mut();
         // On an empty stack, release the borrow before dropping any user values in f.
-        let query = stack.last_mut()?;
+        let Some(query) = stack.last_mut() else {
+            std::hint::cold_path();
+            return None;
+        };
         Some(f(query))
     }
 
@@ -2221,6 +2224,20 @@ mod tests {
     };
     use super::{OriginAndExtra, PackedQueryEdge, QueryEdge, QueryOriginRef};
     use crate::{DatabaseKeyIndex, Id, IngredientIndex};
+
+    #[test]
+    #[cfg(not(feature = "shuttle"))]
+    fn active_query_ignores_popped_frames() {
+        let local = super::ZalsaLocal::new();
+        let outer = local.push_query(key(1, 0, 0));
+        let inner = local.push_query(key(2, 0, 0));
+        assert_eq!(local.active_query().unwrap().0, inner.database_key_index);
+
+        drop(inner);
+        assert_eq!(local.active_query().unwrap().0, outer.database_key_index);
+        drop(outer);
+        assert!(local.active_query().is_none());
+    }
 
     #[test]
     #[cfg(not(feature = "shuttle"))]
