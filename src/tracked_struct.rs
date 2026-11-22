@@ -1,18 +1,17 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
 use std::any::TypeId;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::Index;
 use std::{fmt, iter, mem};
 
 use crossbeam_queue::SegQueue;
-use hashbrown::hash_table::Entry;
 use thin_vec::ThinVec;
 use tracked_field::FieldIngredientImpl;
 
 use crate::function::VerifyResult;
-use crate::hash::{FxHashSet, FxIndexSet};
+use crate::hash::{FxHashMap, FxHashSet, FxIndexSet};
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
@@ -240,6 +239,16 @@ impl Identity {
     }
 }
 
+impl Hash for Identity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash the disambiguator so inserting many structs with the same identity
+        // fields doesn't take quadratic time. The ingredient index is constant
+        // for structs of the same type, so only compare it for equality.
+        self.hash.hash(state);
+        self.disambiguator.0.hash(state);
+    }
+}
+
 /// Stores the data that (almost) uniquely identifies a tracked struct.
 ///
 /// This includes the ingredient index of that struct type plus the hash of its untracked
@@ -258,9 +267,7 @@ pub struct IdentityHash {
 /// A map from tracked struct [`Identity`] to their final [`Id`].
 #[derive(Default, Debug)]
 pub(crate) struct IdentityMap {
-    // We use a `HashTable` here as our key contains its own hash (`Identity::hash`),
-    // so we do the hash wrangling ourselves.
-    table: hashbrown::HashTable<TrackedEntry>,
+    table: FxHashMap<Identity, TrackedEntry>,
 }
 
 impl IdentityMap {
@@ -284,52 +291,29 @@ impl IdentityMap {
     }
 
     fn insert_entry(&mut self, key: Identity, id: Id, active: bool) -> Option<Id> {
-        let entry = self.table.entry(
-            key.hash,
-            |entry| entry.identity == key,
-            |entry| entry.identity.hash,
-        );
-
-        match entry {
-            Entry::Vacant(entry) => {
-                entry.insert(TrackedEntry {
-                    identity: key,
-                    id,
-                    active,
-                });
-
-                None
-            }
-            Entry::Occupied(mut entry) => {
-                let tracked = entry.get_mut();
-                tracked.active = active;
-
-                Some(std::mem::replace(&mut tracked.id, id))
-            }
-        }
+        self.table
+            .insert(key, TrackedEntry { id, active })
+            .map(|previous| previous.id)
     }
 
     /// Reuses an existing identity if it already exists in the map, marking it as active.
     ///
     /// Returns the existing ID, or `None` if no ID for the given identity exists.
     pub(crate) fn reuse(&mut self, key: &Identity) -> Option<Id> {
-        self.table
-            .find_mut(key.hash, |entry| key == &entry.identity)
-            .map(|entry| {
-                entry.active = true;
-                entry.id
-            })
+        self.table.get_mut(key).map(|entry| {
+            entry.active = true;
+            entry.id
+        })
     }
 
     /// Returns `true` if the given tracked struct key was created in the current query execution.
     pub(crate) fn is_active(&self, key: DatabaseKeyIndex) -> bool {
         self.table
             .iter()
-            .find(|entry| {
-                entry.id == key.key_index()
-                    && entry.identity.ingredient_index() == key.ingredient_index()
+            .find(|(identity, entry)| {
+                entry.id == key.key_index() && identity.ingredient_index() == key.ingredient_index()
             })
-            .is_some_and(|entry| entry.active)
+            .is_some_and(|(_, entry)| entry.active)
     }
 
     /// Drains the [`IdentityMap`] into a tuple of active and stale tracked structs.
@@ -346,11 +330,11 @@ impl IdentityMap {
         let mut stale = Vec::new();
         let mut active = ThinVec::with_capacity(self.table.len());
 
-        for entry in self.table.drain() {
+        for (identity, entry) in self.table.drain() {
             if entry.active {
-                active.push((entry.identity, entry.id));
+                active.push((identity, entry.id));
             } else {
-                stale.push((entry.identity, entry.id));
+                stale.push((identity, entry.id));
             }
         }
 
@@ -375,9 +359,6 @@ impl IdentityMap {
 /// A tracked struct entry stored in an [`IdentityMap`].
 #[derive(Debug)]
 struct TrackedEntry {
-    /// The identity of the tracked struct.
-    identity: Identity,
-
     /// The current ID of the tracked struct.
     id: Id,
 
