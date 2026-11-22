@@ -17,7 +17,9 @@ use crate::accumulator::{
     Accumulator,
     accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
 };
-use crate::active_query::{CompletedQuery, DetachedInputOutputs, QueryCompletion, QueryStack};
+use crate::active_query::{
+    ActiveQuery, CompletedQuery, DetachedInputOutputs, QueryCompletion, QueryStack,
+};
 use crate::cycle::{AtomicIterationStamp, CycleHeads, IterationStamp, empty_cycle_heads};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
@@ -180,51 +182,39 @@ impl ZalsaLocal {
 
     #[inline]
     pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                stack.push_new_query(database_key_index);
+        self.with_query_stack_mut(|stack| {
+            stack.push_new_query(database_key_index);
 
-                ActiveQueryGuard {
-                    local_state: self,
-                    database_key_index,
-                    #[cfg(debug_assertions)]
-                    push_len: stack.len(),
-                }
-            })
-        }
+            ActiveQueryGuard {
+                local_state: self,
+                database_key_index,
+                #[cfg(debug_assertions)]
+                push_len: stack.len(),
+            }
+        })
     }
 
-    /// Executes a closure within the context of the current active query stacks (mutable).
+    /// Runs `f` while holding a mutable borrow of the query stack.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// The closure cannot access the query stack reentrantly, whether mutable or immutable.
+    /// Panics if the stack is already borrowed. Calling either `with_query_stack`
+    /// or `with_query_stack_mut` on the same stack from within `f` also panics.
     #[inline(always)]
-    pub(crate) unsafe fn with_query_stack_unchecked_mut<R>(
-        &self,
-        f: impl UnwindSafe + FnOnce(&mut QueryStack) -> R,
-    ) -> R {
-        // SAFETY: The caller guarantees that the query stack will not be accessed reentrantly.
-        // Additionally, `ZalsaLocal` is `!Sync`, and we never expose a reference to the query
-        // stack except through this method, so we have exclusive access.
-        unsafe { f(&mut self.query_stack.try_borrow_mut().unwrap_unchecked()) }
+    fn with_query_stack_mut<R>(&self, f: impl UnwindSafe + FnOnce(&mut QueryStack) -> R) -> R {
+        f(&mut self.query_stack.borrow_mut())
     }
 
-    /// Executes a closure within the context of the current active query stacks.
+    /// Runs `f` while holding a shared borrow of the query stack.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// No mutable references to the query stack can exist while the closure is executed.
+    /// Panics if the stack is already mutably borrowed. Nested shared borrows
+    /// are allowed, but calling `with_query_stack_mut` on the same stack from
+    /// within `f` panics.
     #[inline(always)]
-    pub(crate) unsafe fn with_query_stack_unchecked<R>(
-        &self,
-        f: impl UnwindSafe + FnOnce(&QueryStack) -> R,
-    ) -> R {
-        // SAFETY: The caller guarantees that the query stack will not being accessed mutably.
-        // Additionally, `ZalsaLocal` is `!Sync`, and we never expose a reference to the query
-        // stack except through this method, so we have exclusive access.
-        unsafe { f(&self.query_stack.try_borrow().unwrap_unchecked()) }
+    pub(crate) fn with_query_stack<R>(&self, f: impl UnwindSafe + FnOnce(&QueryStack) -> R) -> R {
+        f(&self.query_stack.borrow())
     }
 
     #[inline(always)]
@@ -289,28 +279,38 @@ impl ZalsaLocal {
         index: IngredientIndex,
         value: A,
     ) -> Result<(), ()> {
-        let mut stack = self.query_stack.borrow_mut();
-        let Some(top_query) = stack.last_mut() else {
-            // The local guard drops before `value`, whose destructor may access the stack.
-            return Err(());
-        };
-        top_query.accumulate(index, value);
-        Ok(())
+        self.with_active_query_mut(|query| query.accumulate(index, value))
+            .ok_or(())
     }
 
     /// Add an output to the current query's list of dependencies, returning whether it was new.
     pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) -> bool {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                stack
-                    .last_mut()
-                    .is_some_and(|top_query| top_query.add_output(entity))
-            })
-        }
+        self.with_active_query_mut(|query| query.add_output(entity))
+            .unwrap_or(false)
     }
 
-    /// Register that currently active query reads the given input
+    /// Runs `f` on the active query, if there is one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the query stack is already borrowed, even if it is empty.
+    /// While `f` runs, the stack is mutably borrowed, so reading an input
+    /// field through the same database handle also panics.
+    #[inline(always)]
+    fn with_active_query_mut<R>(
+        &self,
+        f: impl UnwindSafe + FnOnce(&mut ActiveQuery) -> R,
+    ) -> Option<R> {
+        let mut stack = self.query_stack.borrow_mut();
+        // On an empty stack, release the borrow before dropping any user values in f.
+        let Some(query) = stack.last_mut() else {
+            std::hint::cold_path();
+            return None;
+        };
+        Some(f(query))
+    }
+
+    /// Record a dependency on a fetched memo.
     #[inline(always)]
     pub(crate) fn report_tracked_read(
         &self,
@@ -328,26 +328,21 @@ impl ZalsaLocal {
             changed_at
         );
 
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.add_read(
-                        input,
-                        durability,
-                        changed_at,
-                        cycle_heads,
-                        #[cfg(feature = "accumulator")]
-                        has_accumulated,
-                        #[cfg(feature = "accumulator")]
-                        accumulated_inputs,
-                    );
-                }
-            })
-        }
+        self.with_active_query_mut(|query| {
+            query.add_read(
+                input,
+                durability,
+                changed_at,
+                cycle_heads,
+                #[cfg(feature = "accumulator")]
+                has_accumulated,
+                #[cfg(feature = "accumulator")]
+                accumulated_inputs,
+            );
+        });
     }
 
-    /// Register that currently active query reads the given input
+    /// Register that the active query reads the given input.
     #[inline(always)]
     pub(crate) fn report_tracked_read_simple(
         &self,
@@ -362,22 +357,17 @@ impl ZalsaLocal {
             changed_at
         );
 
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.add_read_simple(input, durability, changed_at);
-                }
-            })
-        }
+        self.with_active_query_mut(|query| {
+            query.add_read_simple(input, durability, changed_at);
+        });
     }
 
     /// Update the active query's changed revision and return its durability.
     pub(crate) fn report_tracked_read_revision(&self, changed_at: Revision) -> Option<Durability> {
-        let mut stack = self.query_stack.borrow_mut();
-        let query = stack.last_mut()?;
-        query.add_changed_at(changed_at);
-        Some(query.stamp().durability)
+        self.with_active_query_mut(|query| {
+            query.add_changed_at(changed_at);
+            query.stamp().durability
+        })
     }
 
     /// Register that the current query read an untracked value
@@ -387,14 +377,7 @@ impl ZalsaLocal {
     /// * `current_revision`, the current revision
     #[inline(always)]
     pub(crate) fn report_untracked_read(&self, current_revision: Revision) {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                if let Some(top_query) = stack.last_mut() {
-                    top_query.add_untracked_read(current_revision);
-                }
-            })
-        }
+        self.with_active_query_mut(|query| query.add_untracked_read(current_revision));
     }
 
     /// Assign the new tracked struct an identity and look for an ID from the previous execution.
@@ -403,32 +386,20 @@ impl ZalsaLocal {
         &self,
         key: IdentityHash,
     ) -> (Stamp, Identity, Option<Id>) {
-        if let Some(query) = self.query_stack.borrow_mut().last_mut() {
+        self.with_active_query_mut(|query| {
             let identity = Identity::new(key, query.disambiguate(key));
             let existing_id = query.tracked_struct_ids_mut().reuse(&identity);
-            return (query.stamp(), identity, existing_id);
-        }
-
-        panic!("cannot create a tracked struct disambiguator outside of a tracked function");
+            (query.stamp(), identity, existing_id)
+        })
+        .expect("cannot create a tracked struct disambiguator outside of a tracked function")
     }
 
     #[track_caller]
     pub(crate) fn store_tracked_struct_id(&self, identity: Identity, id: Id) {
-        // SAFETY: We do not access the query stack reentrantly.
-        let stored = unsafe {
-            self.with_query_stack_unchecked_mut(|stack| {
-                let Some(query) = stack.last_mut() else {
-                    return false;
-                };
-                query.tracked_struct_ids_mut().insert(identity, id);
-                true
-            })
-        };
-        // A panic hook may inspect the query stack.
-        assert!(
-            stored,
-            "cannot store a tracked struct ID outside of a tracked function"
-        );
+        self.with_active_query_mut(|query| {
+            query.tracked_struct_ids_mut().insert(identity, id);
+        })
+        .expect("cannot store a tracked struct ID outside of a tracked function");
     }
 
     #[inline]
@@ -1904,17 +1875,33 @@ pub(crate) struct ActiveQueryGuard<'me> {
 }
 
 impl<'me> ActiveQueryGuard<'me> {
+    /// Runs `f` on the frame this guard pushed, which must still be on top of the stack.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the query stack is empty or already borrowed. The stack stays
+    /// mutably borrowed while `f` runs, as in [`ZalsaLocal::with_query_stack_mut`].
+    ///
+    /// With debug assertions enabled, also panics if the stack depth differs
+    /// from its depth when this guard was created.
+    #[inline(always)]
+    fn with_frame_mut<R>(&self, f: impl UnwindSafe + FnOnce(&mut ActiveQuery) -> R) -> R {
+        self.local_state.with_query_stack_mut(|stack| {
+            #[cfg(debug_assertions)]
+            assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
+            f(stack.last_mut().unwrap())
+        })
+    }
+
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &[(Identity, Id)]) {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.local_state.with_query_stack_unchecked_mut(|stack| {
-                #[cfg(debug_assertions)]
-                assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
-                let frame = stack.last_mut().unwrap();
-                frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
-            })
+        if tracked_struct_ids.is_empty() {
+            return;
         }
+
+        self.with_frame_mut(|frame| {
+            frame.tracked_struct_ids_mut().seed(tracked_struct_ids);
+        })
     }
 
     /// Append the given `outputs` to the query's output list.
@@ -1926,50 +1913,22 @@ impl<'me> ActiveQueryGuard<'me> {
 
         let tracked_ids = previous.tracked_struct_ids();
 
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.local_state.with_query_stack_unchecked_mut(|stack| {
-                #[cfg(debug_assertions)]
-                assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
-                let frame = stack.last_mut().unwrap();
-                frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
-            })
-        }
+        self.with_frame_mut(|frame| {
+            frame.seed_iteration(durability, changed_at, edges, untracked_read, tracked_ids);
+        })
     }
 
     /// Record a read of the previous result before passing it to a cycle callback.
     pub(crate) fn report_previous_result_read(&self, previous: &QueryRevisions) {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.local_state.with_query_stack_unchecked_mut(|stack| {
-                #[cfg(debug_assertions)]
-                assert_eq!(stack.len(), self.push_len, "mismatched push and pop");
-                stack.last_mut().unwrap().add_previous_result_read(previous);
-            })
-        }
+        self.with_frame_mut(|frame| frame.add_previous_result_read(previous))
     }
 
     pub(crate) fn take_cycle_heads(&mut self) -> CycleHeads {
-        // SAFETY: We do not access the query stack reentrantly.
-        unsafe {
-            self.local_state.with_query_stack_unchecked_mut(|stack| {
-                #[cfg(debug_assertions)]
-                assert_eq!(stack.len(), self.push_len);
-                let frame = stack.last_mut().unwrap();
-                frame.take_cycle_heads()
-            })
-        }
+        self.with_frame_mut(ActiveQuery::take_cycle_heads)
     }
 
     pub(crate) fn detach(self) -> DetachedQuery<'me> {
-        // SAFETY: We do not access the query stack reentrantly.
-        let input_outputs = unsafe {
-            self.local_state.with_query_stack_unchecked_mut(|stack| {
-                #[cfg(debug_assertions)]
-                assert_eq!(stack.len(), self.push_len);
-                stack.last_mut().unwrap().detach_input_outputs()
-            })
-        };
+        let input_outputs = self.with_frame_mut(ActiveQuery::detach_input_outputs);
         DetachedQuery {
             guard: self,
             input_outputs,
@@ -1978,17 +1937,14 @@ impl<'me> ActiveQueryGuard<'me> {
 
     /// Invoked when the query has successfully completed execution.
     fn complete(self, iteration: IterationStamp) -> CompletedQuery {
-        // SAFETY: We do not access the query stack reentrantly.
-        let query = unsafe {
-            self.local_state.with_query_stack_unchecked_mut(|stack| {
-                stack.pop_into_revisions(
-                    self.database_key_index,
-                    iteration,
-                    #[cfg(debug_assertions)]
-                    self.push_len,
-                )
-            })
-        };
+        let query = self.local_state.with_query_stack_mut(|stack| {
+            stack.pop_into_revisions(
+                self.database_key_index,
+                iteration,
+                #[cfg(debug_assertions)]
+                self.push_len,
+            )
+        });
         std::mem::forget(self);
         query
     }
@@ -2007,20 +1963,16 @@ impl<'me> ActiveQueryGuard<'me> {
         detached_input_outputs: DetachedInputOutputs,
         force_extra: bool,
     ) -> QueryCompletion {
-        // SAFETY: We do not access the query stack reentrantly.
-        let completion = unsafe {
-            self.local_state
-                .with_query_stack_unchecked_mut(move |stack| {
-                    stack.pop_detached_completion(
-                        self.database_key_index,
-                        iteration,
-                        detached_input_outputs,
-                        force_extra,
-                        #[cfg(debug_assertions)]
-                        self.push_len,
-                    )
-                })
-        };
+        let completion = self.local_state.with_query_stack_mut(move |stack| {
+            stack.pop_detached_completion(
+                self.database_key_index,
+                iteration,
+                detached_input_outputs,
+                force_extra,
+                #[cfg(debug_assertions)]
+                self.push_len,
+            )
+        });
         std::mem::forget(self);
         completion
     }
@@ -2276,6 +2228,47 @@ mod tests {
     };
     use super::{OriginAndExtra, PackedQueryEdge, QueryEdge, QueryOriginRef};
     use crate::{DatabaseKeyIndex, Id, IngredientIndex};
+
+    #[test]
+    #[cfg(not(feature = "shuttle"))]
+    fn active_query_ignores_popped_frames() {
+        let local = super::ZalsaLocal::new();
+        let outer = local.push_query(key(1, 0, 0));
+        let inner = local.push_query(key(2, 0, 0));
+        assert_eq!(local.active_query().unwrap().0, inner.database_key_index);
+
+        drop(inner);
+        assert_eq!(local.active_query().unwrap().0, outer.database_key_index);
+        drop(outer);
+        assert!(local.active_query().is_none());
+    }
+
+    #[test]
+    #[cfg(not(feature = "shuttle"))]
+    fn reentrant_stack_access_checks_both_borrows() {
+        use std::panic::catch_unwind;
+
+        let local = super::ZalsaLocal::new();
+        let frame = local.push_query(key(1, 0, 0));
+        let revision = crate::Revision::start();
+
+        local.with_query_stack(|_| {
+            assert!(catch_unwind(|| local.report_untracked_read(revision)).is_err());
+        });
+        local.with_query_stack_mut(|_| {
+            assert!(catch_unwind(|| local.with_query_stack(|stack| stack.is_empty())).is_err());
+            assert!(catch_unwind(|| local.report_untracked_read(revision)).is_err());
+        });
+
+        // Recording resumes on the original frame once its borrow is released.
+        local.report_untracked_read(revision);
+        assert!(
+            frame
+                .pop(Default::default())
+                .revisions
+                .is_derived_untracked()
+        );
+    }
 
     #[test]
     fn query_origin_packs_edges_that_fit() {
