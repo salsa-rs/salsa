@@ -94,68 +94,34 @@ impl Attached {
         Db: ?Sized + Database,
     {
         struct DbGuard<'s> {
-            /// The database that *we* attached on scope entry.
-            ///
-            /// `None` if one was already attached by a parent scope.
-            state: Option<&'s Attached>,
-            /// The previously attached database that we replaced, if any.
-            ///
-            /// We need to make sure to rollback and activate it again when we exit the scope.
+            attached: &'s Attached,
             prev: Option<NonNull<dyn Database>>,
-        }
-
-        impl<'s> DbGuard<'s> {
-            #[inline]
-            fn new(attached: &'s Attached, db: &dyn Database) -> Self {
-                let db = NonNull::from(db);
-                match attached.database.replace(Some(db)) {
-                    // A database was already attached by a parent scope.
-                    Some(prev) => {
-                        // The same database can have multiple vtables. A database
-                        // and a field of a different type can share an address.
-                        if std::ptr::addr_eq(db.as_ptr(), prev.as_ptr())
-                            // SAFETY: Both databases are borrowed by active attachment scopes.
-                            && unsafe { db.as_ref().type_id() == prev.as_ref().type_id() }
-                        {
-                            attached.database.set(Some(prev));
-                            Self {
-                                state: None,
-                                prev: None,
-                            }
-                        } else {
-                            // and it was the a different one from ours, record the state changes.
-                            Self {
-                                state: Some(attached),
-                                prev: Some(prev),
-                            }
-                        }
-                    }
-                    // No database is attached, attach the new one.
-                    None => {
-                        attached.database.set(Some(db));
-                        Self {
-                            state: Some(attached),
-                            prev: None,
-                        }
-                    }
-                }
-            }
         }
 
         impl Drop for DbGuard<'_> {
             #[inline]
             fn drop(&mut self) {
-                // Reset database to null if we did anything in `DbGuard::new`.
-                if let Some(attached) = self.state
-                    && let Some(prev) = attached.database.replace(self.prev)
-                {
-                    // SAFETY: `prev` is a valid pointer to a database.
-                    unsafe { prev.as_ref().zalsa_local().uncancel() };
+                if let Some(current) = self.attached.database.replace(self.prev) {
+                    // SAFETY: The database is borrowed for the duration of this scope.
+                    unsafe { current.as_ref().zalsa_local().uncancel() };
                 }
             }
         }
 
-        let _guard = DbGuard::new(self, db.as_dyn_database());
+        // The same database can have multiple vtables. A database and a field
+        // of a different type can share an address.
+        let same_db = self
+            .with(|current| std::ptr::addr_eq(current, db) && current.type_id() == db.type_id())
+            .unwrap_or(false);
+        if same_db {
+            return op();
+        }
+
+        let db = NonNull::from(db.as_dyn_database());
+        let _guard = DbGuard {
+            attached: self,
+            prev: self.database.replace(Some(db)),
+        };
         op()
     }
 

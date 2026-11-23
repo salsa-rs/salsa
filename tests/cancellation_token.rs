@@ -101,6 +101,35 @@ fn reattaching_the_same_database_preserves_cancellation() {
 }
 
 #[test]
+fn switching_to_a_database_at_the_same_address() {
+    #[salsa::db]
+    #[derive(Default)]
+    #[repr(C)]
+    struct Outer {
+        inner: common::LoggerDatabase,
+        storage: salsa::Storage<Self>,
+    }
+
+    #[salsa::db]
+    impl Database for Outer {}
+
+    let outer = Outer::default();
+    let inner = &outer.inner;
+    assert!(std::ptr::addr_eq(&outer, inner));
+
+    let attached_token = || salsa::with_attached_database(|db| db.cancellation_token()).unwrap();
+    salsa::attach(&outer, || {
+        outer.cancellation_token().cancel();
+        salsa::attach_allow_change(inner, || {
+            attached_token().cancel();
+            assert!(inner.cancellation_token().is_cancelled());
+        });
+        assert!(!inner.cancellation_token().is_cancelled());
+        assert!(attached_token().is_cancelled());
+    });
+}
+
+#[test]
 fn cancellation_is_restored_after_cycle_panic() {
     let db = common::LoggerDatabase::default();
     let result = Cancelled::catch(|| cancel_after_cycle_panic(&db));
