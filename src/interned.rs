@@ -497,8 +497,8 @@ where
                     // SAFETY: We hold the lock for the shard containing the value, and `value`
                     // was previously reusable, so is in the list.
                     unsafe { shard.lru.cursor_mut_from_ptr(&value.lru).remove() };
+                    value.durability.store(durability);
                 }
-                value.durability.store(durability);
             }
 
             // Record a dependency on the value if its slot can be reused.
