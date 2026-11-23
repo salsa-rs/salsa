@@ -135,3 +135,31 @@ fn cancellation_is_restored_after_cycle_panic() {
     let result = Cancelled::catch(|| cancel_after_cycle_panic(&db));
     assert!(matches!(result, Err(Cancelled::Local)), "{result:?}");
 }
+
+#[test]
+fn nested_attachment_keeps_cancellation_until_outer_detach() {
+    let db = common::LoggerDatabase::default();
+    let view: &dyn LogDatabase = &db;
+    let token = db.cancellation_token();
+
+    salsa::attach(view, || {
+        salsa::attach(&db as &dyn Database, || {
+            salsa::attach_allow_change(view, || token.cancel());
+            assert!(token.is_cancelled());
+        });
+        assert!(token.is_cancelled());
+    });
+
+    assert!(!token.is_cancelled());
+    assert!(salsa::with_attached_database(|_| ()).is_none());
+}
+
+#[test]
+#[should_panic(expected = "Cannot change database mid-query")]
+fn nested_attachment_rejects_another_database() {
+    let db = common::LoggerDatabase::default();
+    let other = common::LoggerDatabase::default();
+    let view: &dyn LogDatabase = &db;
+
+    salsa::attach(view, || salsa::attach(&other as &dyn Database, || ()));
+}

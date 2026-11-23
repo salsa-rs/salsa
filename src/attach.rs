@@ -48,12 +48,14 @@ impl Attached {
 
         impl<'s> DbGuard<'s> {
             #[inline]
-            fn new(attached: &'s Attached, db: &dyn Database) -> Self {
+            fn new<Db: ?Sized + Database>(attached: &'s Attached, db: &Db) -> Self {
                 match attached.database.get() {
                     // A database is already attached, make sure it's the same as the new one.
                     Some(current_db) => {
-                        let new_db = NonNull::from(db);
-                        if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
+                        // AsDynDatabase returns self, so comparing data addresses
+                        // requires no virtual call to construct a dyn Database.
+                        if !std::ptr::addr_eq(current_db.as_ptr(), db) {
+                            let new_db = NonNull::from(db.as_dyn_database());
                             panic!(
                                 "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}"
                             );
@@ -62,7 +64,9 @@ impl Attached {
                     }
                     // No database is attached, attach the new one.
                     None => {
-                        attached.database.set(Some(NonNull::from(db)));
+                        attached
+                            .database
+                            .set(Some(NonNull::from(db.as_dyn_database())));
                         Self {
                             state: Some(attached),
                         }
@@ -84,7 +88,7 @@ impl Attached {
             }
         }
 
-        let _guard = DbGuard::new(self, db.as_dyn_database());
+        let _guard = DbGuard::new(self, db);
         op()
     }
 
