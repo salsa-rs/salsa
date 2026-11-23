@@ -205,3 +205,29 @@ fn becoming_never_change_preserves_recreated_outputs() {
     assert_eq!(specified(&db, retained_output), 11);
     db.assert_logs(expect!["[]"]);
 }
+
+#[salsa::tracked(returns(copy))]
+fn middle(db: &dyn Database, input: MyInput) -> u32 {
+    immutable_value(db, input)
+}
+
+#[salsa::tracked(returns(copy))]
+fn outer(db: &dyn Database, input: MyInput) -> u32 {
+    middle(db, input)
+}
+
+#[test]
+fn freezing_a_changed_child_still_invalidates_its_grandparent() {
+    let mut db = salsa::DatabaseImpl::default();
+    let input = MyInput::new(&db, 10);
+    assert_eq!(outer(&db, input), 10);
+
+    input
+        .set_value(&mut db)
+        .with_durability(Durability::NEVER_CHANGE)
+        .to(11);
+    // The child is now cached and frozen. Its new changed_at must reach middle.
+    assert_eq!(immutable_value(&db, input), 11);
+    assert_eq!(middle(&db, input), 11);
+    assert_eq!(outer(&db, input), 11);
+}

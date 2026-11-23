@@ -105,6 +105,7 @@ impl ActiveQuery {
         DetachedInputOutputs(std::mem::take(&mut self.input_outputs))
     }
 
+    #[cfg_attr(not(feature = "accumulator"), inline)]
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
@@ -114,7 +115,6 @@ impl ActiveQuery {
         #[cfg(feature = "accumulator")] has_accumulated: bool,
         #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
-        self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
 
         #[cfg(feature = "accumulator")]
@@ -130,9 +130,12 @@ impl ActiveQuery {
         #[cfg(feature = "accumulator")]
         let record_input = record_input || accumulated_inputs.is_any();
 
-        if record_input {
-            self.input_outputs.insert(QueryEdge::input(input));
+        // A read that needs no edge can only advance the parent's changed revision.
+        if !record_input {
+            return;
         }
+        self.durability = self.durability.min(durability);
+        self.input_outputs.insert(QueryEdge::input(input));
 
         self.cycle_heads.extend(cycle_heads);
         #[cfg(feature = "accumulator")]
