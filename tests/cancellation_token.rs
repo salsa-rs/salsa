@@ -89,6 +89,18 @@ fn cancellation_token() {
 }
 
 #[test]
+fn reattaching_the_same_database_preserves_cancellation() {
+    let db = common::LoggerDatabase::default();
+    let token = db.cancellation_token();
+
+    salsa::attach(&db, || {
+        salsa::attach_allow_change(&db as &dyn LogDatabase, || token.cancel());
+        assert!(token.is_cancelled());
+    });
+    assert!(!token.is_cancelled());
+}
+
+#[test]
 fn cancellation_is_restored_after_cycle_panic() {
     let db = common::LoggerDatabase::default();
     let result = Cancelled::catch(|| cancel_after_cycle_panic(&db));

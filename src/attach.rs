@@ -111,8 +111,13 @@ impl Attached {
                 match attached.database.replace(Some(db)) {
                     // A database was already attached by a parent scope.
                     Some(prev) => {
-                        if std::ptr::eq(db.as_ptr(), prev.as_ptr()) {
-                            // and it was the same as ours, so we did not change anything.
+                        // The same database can have multiple vtables. A database
+                        // and a field of a different type can share an address.
+                        if std::ptr::addr_eq(db.as_ptr(), prev.as_ptr())
+                            // SAFETY: Both databases are borrowed by active attachment scopes.
+                            && unsafe { db.as_ref().type_id() == prev.as_ref().type_id() }
+                        {
+                            attached.database.set(Some(prev));
                             Self {
                                 state: None,
                                 prev: None,
