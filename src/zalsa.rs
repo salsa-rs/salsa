@@ -51,7 +51,7 @@ pub unsafe trait ZalsaDatabase: Any {
     fn zalsa_local(&self) -> &ZalsaLocal;
 }
 
-pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
+pub fn views(db: &dyn Database) -> &Views {
     db.zalsa().views()
 }
 /// Nonce type representing the underlying database storage.
@@ -567,27 +567,3 @@ macro_rules! register_jar {
 
 #[cfg(not(feature = "inventory"))]
 pub use crate::register_jar;
-
-/// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
-///
-/// # Safety
-///
-/// `U` must be correct type for the data pointer.
-pub unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
-    let t: *const T = t;
-    let u: *const U = t as *const U;
-    // SAFETY: the caller must guarantee that `T` is a wide pointer for `U`
-    unsafe { &*u }
-}
-
-/// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
-///
-/// # Safety
-///
-/// `U` must be correct type for the data pointer.
-pub(crate) unsafe fn transmute_data_mut_ptr<T: ?Sized, U>(t: &mut T) -> &mut U {
-    let t: *mut T = t;
-    let u: *mut U = t as *mut U;
-    // SAFETY: the caller must guarantee that `T` is a wide pointer for `U`
-    unsafe { &mut *u }
-}
