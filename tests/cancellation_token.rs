@@ -100,19 +100,34 @@ fn reattaching_the_same_database_preserves_cancellation() {
     assert!(!token.is_cancelled());
 }
 
+#[salsa::db]
+#[derive(Default)]
+#[repr(C)]
+struct Outer {
+    inner: common::LoggerDatabase,
+    storage: salsa::Storage<Self>,
+}
+
+#[salsa::db]
+impl Database for Outer {}
+
+#[test]
+#[should_panic(expected = "Cannot change database mid-query")]
+fn attach_rejects_a_different_database_at_the_same_address() {
+    let outer = Outer::default();
+    salsa::attach(&outer, || salsa::attach(&outer.inner, || ()));
+}
+
+#[test]
+#[should_panic(expected = "Cannot change database mid-query")]
+fn memo_hit_rejects_a_different_database_at_the_same_address() {
+    let outer = Outer::default();
+    uncancelled_query(&outer.inner);
+    salsa::attach(&outer, || uncancelled_query(&outer.inner));
+}
+
 #[test]
 fn switching_to_a_database_at_the_same_address() {
-    #[salsa::db]
-    #[derive(Default)]
-    #[repr(C)]
-    struct Outer {
-        inner: common::LoggerDatabase,
-        storage: salsa::Storage<Self>,
-    }
-
-    #[salsa::db]
-    impl Database for Outer {}
-
     let outer = Outer::default();
     let inner = &outer.inner;
     assert!(std::ptr::addr_eq(&outer, inner));

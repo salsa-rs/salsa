@@ -52,9 +52,10 @@ impl Attached {
                 match attached.database.get() {
                     // A database is already attached, make sure it's the same as the new one.
                     Some(current_db) => {
-                        // AsDynDatabase returns self, so comparing data addresses
-                        // requires no virtual call to construct a dyn Database.
-                        if !std::ptr::addr_eq(current_db.as_ptr(), db) {
+                        // A database and its first field can share an address.
+                        // SAFETY: The outer attachment keeps the database alive.
+                        let current = unsafe { current_db.as_ref() };
+                        if !std::ptr::addr_eq(current, db) || current.type_id() != db.type_id() {
                             let new_db = NonNull::from(db.as_dyn_database());
                             panic!(
                                 "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}"
