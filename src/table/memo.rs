@@ -337,6 +337,19 @@ impl<'a> MemoSlot<'a> {
         }
     }
 
+    pub(crate) fn index(&self) -> MemoIngredientIndex {
+        self.memo_ingredient_index
+    }
+
+    /// Loads the current memo and checks its registered type.
+    #[inline]
+    pub(crate) fn get<M: Memo>(&self) -> Option<&'a M> {
+        let memo = self.table.get(self.memo_ingredient_index)?;
+        // SAFETY: The table checks the type and the caller of `new` guarantees
+        // the allocation remains valid even when the slot is replaced.
+        Some(unsafe { memo.as_ref() })
+    }
+
     /// Loads the erased memo currently stored in this slot.
     #[inline]
     pub(crate) fn get_erased(&self) -> Option<ErasedMemo<'a>> {
@@ -378,7 +391,7 @@ impl<'a> MemoTableWithTypes<'a> {
     /// Returns a pointer to the memo at the given index, if one has been inserted.
     #[inline]
     pub(crate) fn get<M: Memo>(
-        self,
+        &self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<M>> {
         let MemoEntry { atomic_memo } = self.memos.memos.get(memo_ingredient_index.as_usize())?;

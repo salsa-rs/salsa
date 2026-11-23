@@ -4,6 +4,7 @@ use crate::function::execute::complete_cycle_query;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::table::memo::MemoSlot;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::ZalsaLocal;
 use crate::{Cancelled, DatabaseKeyIndex, Id};
@@ -57,17 +58,31 @@ where
         zalsa_local: &'db ZalsaLocal,
         id: Id,
     ) -> &'db Memo<C> {
-        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        // Resolve the table once, but reload the pointer after acquiring the claim.
+        // Keep retries out of the first probe so a hit can return directly.
+        let slot = self.memo_slot(zalsa, id, self.memo_ingredient_index(zalsa, id));
 
+        if let Some(memo) = self.fetch_hot(zalsa, id, &slot) {
+            return memo;
+        }
+        self.refresh_memo_cold(db, zalsa, zalsa_local, id, &slot)
+    }
+
+    fn refresh_memo_cold<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        id: Id,
+        slot: &MemoSlot<'db>,
+    ) -> &'db Memo<C> {
         loop {
-            // Keep the hot and cold probes in distinct control-flow blocks. Using `or_else`
-            // here can outline both into one function, making hot hits pay for the cold path's
-            // stack frame.
-            if let Some(memo) = self.fetch_hot(zalsa, id, memo_ingredient_index) {
+            if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, slot) {
                 return memo;
             }
 
-            if let Some(memo) = self.fetch_cold(zalsa, zalsa_local, db, id, memo_ingredient_index) {
+            // A different thread may have finished the query while we waited.
+            if let Some(memo) = self.fetch_hot(zalsa, id, slot) {
                 return memo;
             }
         }
@@ -78,9 +93,9 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
-        memo_ingredient_index: MemoIngredientIndex,
+        slot: &MemoSlot<'db>,
     ) -> Option<&'db Memo<C>> {
-        let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
+        let memo = slot.get::<Memo<C>>()?;
 
         memo.value.as_ref()?;
 
@@ -109,7 +124,7 @@ where
         zalsa_local: &'db ZalsaLocal,
         db: &'db C::DbView,
         id: Id,
-        memo_ingredient_index: MemoIngredientIndex,
+        slot: &MemoSlot<'db>,
     ) -> Option<&'db Memo<C>> {
         let database_key_index = self.database_key_index(id);
         // Try to claim this query: if someone else has claimed it already, go back and start again.
@@ -129,13 +144,13 @@ where
                     db,
                     id,
                     database_key_index,
-                    memo_ingredient_index,
+                    slot.index(),
                 ));
             }
         };
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+        let opt_old_memo = slot.get::<Memo<C>>();
 
         if let Some(old_memo) = opt_old_memo
             && old_memo.value.is_some()
