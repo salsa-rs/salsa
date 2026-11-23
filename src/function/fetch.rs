@@ -68,7 +68,6 @@ where
         self.refresh_memo_cold(db, zalsa, zalsa_local, id, &slot)
     }
 
-    #[inline(never)]
     fn refresh_memo_cold<'db>(
         &'db self,
         db: &'db C::DbView,
