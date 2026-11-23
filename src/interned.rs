@@ -488,9 +488,11 @@ where
                 return id;
             }
 
-            if let Some((_, stamp)) = zalsa_local.active_query() {
+            if let Some((_, stamp)) = zalsa_local.active_query()
+                && stamp.durability > durability
+            {
                 // Record the maximum durability across all queries that intern this value.
-                durability = std::cmp::max(durability, stamp.durability);
+                durability = stamp.durability;
 
                 // Remove the value from the LRU before publishing a non-reusable durability.
                 if !is_reusable::<C>(durability) {
