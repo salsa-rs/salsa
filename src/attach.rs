@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::ptr::NonNull;
 
-use crate::Database;
+use crate::{Database, zalsa::Zalsa, zalsa_local::ZalsaLocal};
 
 #[cfg(feature = "shuttle")]
 crate::sync::thread_local! {
@@ -18,13 +18,28 @@ crate::sync::thread_local! {
 
 /// State that is specific to a single execution thread.
 ///
-/// Internally, this type uses ref-cells.
-///
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
 struct Attached {
-    /// Pointer to the currently attached database.
-    database: Cell<Option<NonNull<dyn Database>>>,
+    /// The active attachment borrows both the database and its local storage.
+    database: Cell<Option<Handle>>,
+}
+
+#[derive(Clone, Copy)]
+struct Handle {
+    local: NonNull<ZalsaLocal>,
+    db: NonNull<dyn Database>,
+}
+
+/// Clears an attachment installed on a previously empty thread.
+struct RootGuard<'db>(&'db ZalsaLocal);
+
+impl Drop for RootGuard<'_> {
+    #[inline]
+    fn drop(&mut self) {
+        ATTACHED.with(|a| a.database.set(None));
+        self.0.uncancel();
+    }
 }
 
 impl Attached {
@@ -35,62 +50,35 @@ impl Attached {
     }
 
     #[inline]
-    fn attach<Db, R>(&self, db: &Db, op: impl FnOnce() -> R) -> R
-    where
-        Db: ?Sized + Database,
-    {
-        struct DbGuard<'s> {
-            /// The database that *we* attached on scope entry.
-            ///
-            /// `None` if one was already attached by a parent scope.
-            state: Option<&'s Attached>,
+    fn attach<'db, Db: ?Sized + Database>(
+        &self,
+        db: &'db Db,
+        local: &'db ZalsaLocal,
+    ) -> Option<RootGuard<'db>> {
+        // HasStorage requires an owned Storage<Self>. Its ZalsaLocal is unique
+        // even when two databases of different types share a data address.
+        // A borrowed local is never null, so one comparison covers an empty slot.
+        let current = self
+            .database
+            .get()
+            .map_or(std::ptr::null(), |handle| handle.local.as_ptr());
+        if std::ptr::eq(current, local) {
+            return None;
         }
 
-        impl<'s> DbGuard<'s> {
-            #[inline]
-            fn new<Db: ?Sized + Database>(attached: &'s Attached, db: &Db) -> Self {
-                match attached.database.get() {
-                    // A database is already attached, make sure it's the same as the new one.
-                    Some(current_db) => {
-                        // A database and its first field can share an address.
-                        // SAFETY: The outer attachment keeps the database alive.
-                        let current = unsafe { current_db.as_ref() };
-                        if !std::ptr::addr_eq(current, db) || current.type_id() != db.type_id() {
-                            let new_db = NonNull::from(db.as_dyn_database());
-                            panic!(
-                                "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}"
-                            );
-                        }
-                        Self { state: None }
-                    }
-                    // No database is attached, attach the new one.
-                    None => {
-                        attached
-                            .database
-                            .set(Some(NonNull::from(db.as_dyn_database())));
-                        Self {
-                            state: Some(attached),
-                        }
-                    }
-                }
-            }
+        std::hint::cold_path();
+        let db = NonNull::from(db.as_dyn_database());
+        if let Some(current) = self.database.get() {
+            panic!(
+                "Cannot change database mid-query. current: {:?}, new: {db:?}",
+                current.db
+            );
         }
-
-        impl Drop for DbGuard<'_> {
-            #[inline]
-            fn drop(&mut self) {
-                // Reset database to null if we did anything in `DbGuard::new`.
-                if let Some(attached) = self.state
-                    && let Some(prev) = attached.database.replace(None)
-                {
-                    // SAFETY: `prev` is a valid pointer to a database.
-                    unsafe { prev.as_ref().zalsa_local().uncancel() };
-                }
-            }
-        }
-
-        let _guard = DbGuard::new(self, db);
-        op()
+        self.database.set(Some(Handle {
+            db,
+            local: NonNull::from(local),
+        }));
+        Some(RootGuard(local))
     }
 
     #[inline]
@@ -100,7 +88,7 @@ impl Attached {
     {
         struct DbGuard<'s> {
             attached: &'s Attached,
-            prev: Option<NonNull<dyn Database>>,
+            prev: Option<Handle>,
         }
 
         impl Drop for DbGuard<'_> {
@@ -108,7 +96,7 @@ impl Attached {
             fn drop(&mut self) {
                 if let Some(current) = self.attached.database.replace(self.prev) {
                     // SAFETY: The database is borrowed for the duration of this scope.
-                    unsafe { current.as_ref().zalsa_local().uncancel() };
+                    unsafe { current.local.as_ref().uncancel() };
                 }
             }
         }
@@ -122,7 +110,10 @@ impl Attached {
             return op();
         }
 
-        let db = NonNull::from(db.as_dyn_database());
+        let db = Handle {
+            db: NonNull::from(db.as_dyn_database()),
+            local: NonNull::from(db.zalsa_local()),
+        };
         let _guard = DbGuard {
             attached: self,
             prev: self.database.replace(Some(db)),
@@ -134,7 +125,7 @@ impl Attached {
     /// Databases are attached with `attach_database`.
     #[inline]
     fn with<R>(&self, op: impl FnOnce(&dyn Database) -> R) -> Option<R> {
-        let db = self.database.get()?;
+        let db = self.database.get()?.db;
 
         // SAFETY: We always attach the database in for the entire duration of a function,
         // so it cannot become "unattached" while this function is running.
@@ -149,10 +140,19 @@ pub fn attach<R, Db>(db: &Db, op: impl FnOnce() -> R) -> R
 where
     Db: ?Sized + Database,
 {
-    ATTACHED.with(
-        #[inline]
-        |a| a.attach(db, op),
-    )
+    let _guard = ATTACHED.with(|a| a.attach(db, db.zalsa_local()));
+    op()
+}
+
+/// Attach a tracked function using the storage references needed by the query.
+#[inline]
+pub fn attach_query<'db, R, Db: ?Sized + Database>(
+    db: &'db Db,
+    op: impl FnOnce(&'db Zalsa, &'db ZalsaLocal) -> R,
+) -> R {
+    let (zalsa, local) = db.zalsas();
+    let _guard = ATTACHED.with(|a| a.attach(db, local));
+    op(zalsa, local)
 }
 
 /// Attach the database to the current thread and execute `op`.

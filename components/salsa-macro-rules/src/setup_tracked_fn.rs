@@ -97,8 +97,7 @@ macro_rules! setup_tracked_fn {
         ) -> ::salsa::plumbing::return_mode_ty!(($return_mode, __), $db_lt, $output_ty) {
             use ::salsa::plumbing as $zalsa;
 
-            $zalsa::attach($db, || {
-                let (zalsa, zalsa_local) = $db.zalsas();
+            $zalsa::attach_query($db, |zalsa, zalsa_local| {
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
                         {

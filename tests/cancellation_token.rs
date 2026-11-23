@@ -127,6 +127,24 @@ fn memo_hit_rejects_a_different_database_at_the_same_address() {
 }
 
 #[test]
+fn cancelled_switch_restores_the_outer_query_handle() {
+    let outer = common::LoggerDatabase::default();
+    let inner = outer.clone();
+
+    salsa::attach(&outer, || {
+        let result = Cancelled::catch(|| {
+            salsa::attach_allow_change(&inner, || {
+                inner.cancellation_token().cancel();
+                uncancelled_query(&inner)
+            })
+        });
+        assert!(matches!(result, Err(Cancelled::Local)));
+        assert!(!inner.cancellation_token().is_cancelled());
+        assert_eq!(uncancelled_query(&outer), 1);
+    });
+}
+
+#[test]
 fn switching_to_a_database_at_the_same_address() {
     let outer = Outer::default();
     let inner = &outer.inner;
