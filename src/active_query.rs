@@ -105,28 +105,22 @@ impl ActiveQuery {
         DetachedInputOutputs(std::mem::take(&mut self.input_outputs))
     }
 
-    #[cfg_attr(not(feature = "accumulator"), inline)]
+    #[inline]
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
-        durability: Durability,
-        changed_at: Revision,
+        revisions: &QueryRevisions,
         cycle_heads: &CycleHeads,
-        #[cfg(feature = "accumulator")] has_accumulated: bool,
-        #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
-        self.changed_at = self.changed_at.max(changed_at);
+        let durability = revisions.durability;
+        self.changed_at = self.changed_at.max(revisions.changed_at);
 
         #[cfg(feature = "accumulator")]
-        let accumulated_inputs = match has_accumulated {
-            true => InputAccumulatedValues::Any,
-            false => accumulated_inputs.load(),
-        };
+        let accumulated_inputs = revisions.accumulated_values();
 
-        #[cfg(feature = "persistence")]
-        let record_input = true;
-        #[cfg(not(feature = "persistence"))]
-        let record_input = durability != Durability::NEVER_CHANGE || !cycle_heads.is_empty();
+        let record_input = cfg!(feature = "persistence")
+            || durability != Durability::NEVER_CHANGE
+            || !cycle_heads.is_empty();
         #[cfg(feature = "accumulator")]
         let record_input = record_input || accumulated_inputs.is_any();
 

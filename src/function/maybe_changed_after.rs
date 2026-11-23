@@ -70,10 +70,7 @@ impl VerifyResult {
 
         Self::unchanged_with_accumulated(
             #[cfg(feature = "accumulator")]
-            match revisions.accumulated() {
-                Some(_) => InputAccumulatedValues::Any,
-                None => revisions.accumulated_inputs.load(),
-            },
+            revisions.accumulated_values(),
         )
     }
 

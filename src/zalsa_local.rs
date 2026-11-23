@@ -15,7 +15,7 @@ use thin_vec::ThinVec;
 #[cfg(feature = "accumulator")]
 use crate::accumulator::{
     Accumulator,
-    accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues},
+    accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues},
 };
 use crate::active_query::{
     ActiveQuery, CompletedQuery, DetachedInputOutputs, QueryCompletion, QueryStack,
@@ -315,31 +315,17 @@ impl ZalsaLocal {
     pub(crate) fn report_tracked_read(
         &self,
         input: DatabaseKeyIndex,
-        durability: Durability,
-        changed_at: Revision,
+        revisions: &QueryRevisions,
         cycle_heads: &CycleHeads,
-        #[cfg(feature = "accumulator")] has_accumulated: bool,
-        #[cfg(feature = "accumulator")] accumulated_inputs: &AtomicInputAccumulatedValues,
     ) {
         crate::tracing::debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
             input,
-            durability,
-            changed_at
+            revisions.durability,
+            revisions.changed_at
         );
 
-        self.with_active_query_mut(|query| {
-            query.add_read(
-                input,
-                durability,
-                changed_at,
-                cycle_heads,
-                #[cfg(feature = "accumulator")]
-                has_accumulated,
-                #[cfg(feature = "accumulator")]
-                accumulated_inputs,
-            );
-        });
+        self.with_active_query_mut(|query| query.add_read(input, revisions, cycle_heads));
     }
 
     /// Register that the active query reads the given input.
@@ -727,6 +713,15 @@ impl QueryRevisions {
         extra.cycle_converged = false;
         *self.verified_final.get_mut() = false;
         self
+    }
+
+    /// Whether the memo or any of its inputs has accumulated values.
+    #[cfg(feature = "accumulator")]
+    pub(crate) fn accumulated_values(&self) -> InputAccumulatedValues {
+        match self.accumulated() {
+            Some(_) => InputAccumulatedValues::Any,
+            None => self.accumulated_inputs.load(),
+        }
     }
 
     /// Returns a reference to the `AccumulatedMap` for this query, or `None` if the map is empty.
