@@ -38,14 +38,10 @@ impl<C: Configuration> IngredientImpl<C> {
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C>> {
-        let memo = zalsa
-            .memo_table_for::<C::SalsaStruct<'_>>(id)
-            .get(memo_ingredient_index)?;
-        // SAFETY: If another thread replaces the memo, `self.deleted_entries` keeps the
-        // allocation alive for the duration of this borrow.
-        Some(unsafe { memo.as_ref() })
+        self.memo_slot(zalsa, id, memo_ingredient_index).get()
     }
 
+    #[inline]
     pub(super) fn memo_slot<'db>(
         &self,
         zalsa: &'db Zalsa,
