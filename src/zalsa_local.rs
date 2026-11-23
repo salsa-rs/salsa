@@ -471,7 +471,7 @@ pub(crate) struct QueryRevisions {
 impl QueryRevisions {
     /// Returns the semantic origin of this query.
     #[inline]
-    pub(crate) const fn origin(&self) -> QueryOriginRef<'_> {
+    pub(crate) fn origin(&self) -> QueryOriginRef<'_> {
         self.origin_and_extra.origin()
     }
 
@@ -700,6 +700,25 @@ const _: [(); std::mem::size_of::<QueryRevisionsExtraInner>()] =
     [(); std::mem::size_of::<[usize; if cfg!(feature = "accumulator") { 7 } else { 3 }]>()];
 
 impl QueryRevisions {
+    #[cfg(feature = "persistence")]
+    pub(crate) fn cached_identities(ids: ThinVec<(Identity, Id)>) -> Self {
+        let extra = QueryRevisionsExtra::new(
+            #[cfg(feature = "accumulator")]
+            &mut Default::default(),
+            ids,
+            &mut Default::default(),
+            Default::default(),
+            false,
+        );
+        Self {
+            // Tracked outputs live in the identity map. The normal output diff
+            // retires any IDs that the producer does not recreate.
+            origin_and_extra: OriginAndExtra::derived_untracked(std::iter::empty(), extra),
+            durability: Durability::LOW,
+            ..Self::empty()
+        }
+    }
+
     /// Revisions for a computation that has read no inputs or created any outputs.
     pub(crate) fn empty() -> Self {
         Self {
@@ -949,8 +968,10 @@ impl QueryOriginTag {
 ///
 /// `E` is [`PackedQueryEdge`] or [`QueryEdge`], as recorded by [`QueryOriginTag`]. Assigned origins
 /// without extra data require no allocation. Assigned origins with extra data use a regular box.
-/// Derived origins always allocate their edge slice, placing the extra data in the same allocation
-/// as the edges when it exists.
+/// Owned derived origins allocate their edge slice, placing extra data in the same allocation
+/// when present. A fourth tag bit identifies archived input edges under the persistence feature.
+/// For that tag alone, `payload.allocation` owns a `Box<bytes::Bytes>` with four-byte input
+/// records, `metadata` is unused, and the origin has no extra revision data.
 ///
 /// These combinations are invariants of the type: all accesses to the payload, allocation header,
 /// and edge slice rely on the tag accurately describing the initialized representation.
@@ -965,7 +986,8 @@ const _: [(); std::mem::size_of::<OriginAndExtra>()] = [(); 13];
 
 /// SAFETY: [`OriginAndExtra`] uses its tag and metadata to maintain the active payload field and its
 /// allocation layout. Assigned origins contain an `Id`, directly or after an extra header. Derived
-/// origins own an allocation containing packed or wide edges, optionally after an extra header.
+/// origins own their packed or wide edges, optionally after an extra header. An archived origin
+/// owns a boxed thread-safe immutable byte view instead.
 unsafe impl Send for OriginAndExtra
 where
     Id: Send,
@@ -1192,7 +1214,16 @@ impl OriginAndExtra {
         matches!(self.tag.origin().kind(), QueryOriginKind::DerivedUntracked)
     }
 
-    const fn origin(&self) -> QueryOriginRef<'_> {
+    fn origin(&self) -> QueryOriginRef<'_> {
+        #[cfg(feature = "persistence")]
+        if self.tag.is_archived() {
+            // SAFETY: An archived origin owns a boxed byte slice containing only
+            // four-byte generation-zero input edges, without any extra header.
+            let edges = unsafe { self.payload.allocation.cast::<bytes::Bytes>().as_ref() };
+            return QueryOriginRef::Derived(QueryEdges {
+                data: QueryEdgesData::Archived(edges),
+            });
+        }
         let tag = self.tag.origin();
         match tag.kind() {
             QueryOriginKind::Assigned => {
@@ -1263,6 +1294,11 @@ impl OriginAndExtra {
 
     #[cfg(any(test, feature = "salsa_unstable"))]
     fn allocation_size(&self) -> usize {
+        #[cfg(feature = "persistence")]
+        if self.tag.is_archived() {
+            // The edge bytes share the cache image's allocation.
+            return std::mem::size_of::<bytes::Bytes>();
+        }
         let tag = self.tag.origin();
         let memory = match (self.tag.layout(), tag.kind(), tag.layout()) {
             (OriginAndExtraLayout::WithoutExtra, QueryOriginKind::Assigned, _) => 0,
@@ -1297,6 +1333,16 @@ impl OriginAndExtra {
 
 impl Drop for OriginAndExtra {
     fn drop(&mut self) {
+        #[cfg(feature = "persistence")]
+        if self.tag.is_archived() {
+            // SAFETY: `from_archived_inputs` installed a uniquely owned Box<Bytes>.
+            unsafe {
+                drop(Box::from_raw(
+                    self.payload.allocation.cast::<bytes::Bytes>().as_ptr(),
+                ))
+            };
+            return;
+        }
         let tag = self.tag.origin();
         match (tag.kind(), self.tag.layout(), tag.layout()) {
             (QueryOriginKind::Assigned, OriginAndExtraLayout::WithoutExtra, _) => {}
@@ -1370,6 +1416,13 @@ struct OriginAndExtraTag(u8);
 
 impl OriginAndExtraTag {
     const WITH_EXTRA_MASK: u8 = OriginAndExtraLayout::WithExtra as u8;
+    #[cfg(feature = "persistence")]
+    const ARCHIVED: u8 = 0b1_0000;
+
+    #[cfg(feature = "persistence")]
+    const fn is_archived(self) -> bool {
+        self.0 & Self::ARCHIVED != 0
+    }
 
     const fn without_extra(origin: QueryOriginTag) -> Self {
         OriginAndExtraTag(origin.0)
@@ -1394,7 +1447,7 @@ impl OriginAndExtraTag {
 
 /// The payload of [`OriginAndExtra`].
 union OriginAndExtraPayload {
-    /// The allocation storing derived edges and, for origins with extra data, that data.
+    /// The derived edge allocation, archived byte owner, or allocation with extra revision data.
     allocation: NonNull<()>,
 
     /// The identity of the assigning query for a directly stored assigned origin.
@@ -1728,6 +1781,8 @@ pub struct QueryEdges<'a> {
 enum QueryEdgesData<'a> {
     Packed(&'a [PackedQueryEdge]),
     Wide(&'a [QueryEdge]),
+    #[cfg(feature = "persistence")]
+    Archived(&'a [u8]),
 }
 
 impl<'a> QueryEdges<'a> {
@@ -1748,6 +1803,8 @@ impl<'a> QueryEdges<'a> {
         match self.data {
             QueryEdgesData::Packed(edges) => edges.len(),
             QueryEdgesData::Wide(edges) => edges.len(),
+            #[cfg(feature = "persistence")]
+            QueryEdgesData::Archived(bytes) => bytes.len() / 4,
         }
     }
 
@@ -1756,6 +1813,8 @@ impl<'a> QueryEdges<'a> {
         match self.data {
             QueryEdgesData::Packed(edges) => std::mem::size_of_val(edges),
             QueryEdgesData::Wide(edges) => std::mem::size_of_val(edges),
+            #[cfg(feature = "persistence")]
+            QueryEdgesData::Archived(edges) => edges.len(),
         }
     }
 
@@ -1763,6 +1822,10 @@ impl<'a> QueryEdges<'a> {
         let data = match self.data {
             QueryEdgesData::Packed(edges) => QueryEdgeIterData::Packed(edges.iter()),
             QueryEdgesData::Wide(edges) => QueryEdgeIterData::Wide(edges.iter()),
+            #[cfg(feature = "persistence")]
+            QueryEdgesData::Archived(edges) => {
+                QueryEdgeIterData::Archived(edges.as_chunks().0.iter())
+            }
         };
 
         QueryEdgeIter { data }
@@ -1771,6 +1834,8 @@ impl<'a> QueryEdges<'a> {
     pub(crate) fn iter_outputs(self) -> impl DoubleEndedIterator<Item = QueryEdge> + use<'a> {
         let wide_edges = match self.data {
             QueryEdgesData::Packed(_) => &[][..],
+            #[cfg(feature = "persistence")]
+            QueryEdgesData::Archived(_) => &[][..],
             QueryEdgesData::Wide(edges) => edges,
         };
 
@@ -1793,6 +1858,8 @@ pub struct QueryEdgeIter<'a> {
 enum QueryEdgeIterData<'a> {
     Packed(std::slice::Iter<'a, PackedQueryEdge>),
     Wide(std::slice::Iter<'a, QueryEdge>),
+    #[cfg(feature = "persistence")]
+    Archived(std::slice::Iter<'a, [u8; 4]>),
 }
 
 impl Iterator for QueryEdgeIter<'_> {
@@ -1802,6 +1869,8 @@ impl Iterator for QueryEdgeIter<'_> {
         match &mut self.data {
             QueryEdgeIterData::Packed(edges) => edges.next().copied().map(PackedQueryEdge::edge),
             QueryEdgeIterData::Wide(edges) => edges.next().copied(),
+            #[cfg(feature = "persistence")]
+            QueryEdgeIterData::Archived(edges) => edges.next().map(persistence::archived_input),
         }
     }
 
@@ -1818,6 +1887,10 @@ impl DoubleEndedIterator for QueryEdgeIter<'_> {
                 edges.next_back().copied().map(PackedQueryEdge::edge)
             }
             QueryEdgeIterData::Wide(edges) => edges.next_back().copied(),
+            #[cfg(feature = "persistence")]
+            QueryEdgeIterData::Archived(edges) => {
+                edges.next_back().map(persistence::archived_input)
+            }
         }
     }
 }
@@ -1827,6 +1900,8 @@ impl ExactSizeIterator for QueryEdgeIter<'_> {
         match &self.data {
             QueryEdgeIterData::Packed(edges) => edges.len(),
             QueryEdgeIterData::Wide(edges) => edges.len(),
+            #[cfg(feature = "persistence")]
+            QueryEdgeIterData::Archived(edges) => edges.len(),
         }
     }
 }
@@ -2023,7 +2098,6 @@ impl Drop for ActiveQueryGuard<'_> {
 
 #[cfg(feature = "persistence")]
 pub(crate) mod persistence {
-    #[cfg(test)]
     use super::QueryOriginRef;
     use super::{OriginAndExtra, QueryEdge, QueryEdges, QueryRevisions, QueryRevisionsExtra};
     use crate::DatabaseKeyIndex;
@@ -2117,7 +2191,6 @@ pub(crate) mod persistence {
             Self::Assigned(key)
         }
 
-        #[cfg(test)]
         pub(crate) const fn as_ref(&self) -> QueryOriginRef<'_> {
             match self {
                 Self::Assigned(key) => QueryOriginRef::Assigned(*key),
@@ -2129,16 +2202,120 @@ pub(crate) mod persistence {
         }
     }
 
+    /// Most memo edges refer to an original input in a small ingredient registry. An
+    /// encoded edge is its 24-bit slot index and 8-bit ingredient. Every bit pattern
+    /// decodes to an in-range ID, so validating the byte length is sufficient.
+    pub(super) fn archived_input(chunk: &[u8; 4]) -> QueryEdge {
+        let bits = u32::from_le_bytes(*chunk);
+        QueryEdge {
+            index: bits & 0x00ff_ffff,
+            generation: 0,
+            ingredient: crate::IngredientIndex::new(bits >> 24),
+        }
+    }
+
+    impl OriginAndExtra {
+        fn from_archived_inputs(edges: bytes::Bytes) -> Self {
+            if edges.is_empty() {
+                return Self::derived([].into_iter(), QueryRevisionsExtra::default());
+            }
+            let tag = super::QueryOriginTag::derived(
+                super::DerivedOriginKind::Derived,
+                super::QueryEdgeLayout::Packed,
+            );
+            Self {
+                tag: super::OriginAndExtraTag(tag.0 | super::OriginAndExtraTag::ARCHIVED),
+                metadata: 0,
+                payload: super::OriginAndExtraPayload {
+                    allocation: std::ptr::NonNull::from(Box::leak(Box::new(edges))).cast(),
+                },
+            }
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    pub(crate) enum EncodeBinaryRevisions<'a, 'b> {
+        Full(&'a MappedQueryRevisions<'b>),
+        Inputs(Revision, Durability, bytes::Bytes),
+    }
+
+    impl<'b> MappedQueryRevisions<'b> {
+        pub(crate) fn binary(&self) -> EncodeBinaryRevisions<'_, 'b> {
+            if let PersistentQueryOrigin::Derived(edges) = &self.origin
+                && self.extra.is_none()
+                && self.verified_final.load(Ordering::Relaxed)
+            {
+                let mut encoded = Vec::with_capacity(edges.len() * 4);
+                for &edge in edges {
+                    let ingredient = edge.ingredient.as_u32();
+                    // The output bit belongs to the ingredient index and cannot fit in eight bits.
+                    if edge.generation != 0
+                        || ingredient > u8::MAX.into()
+                        || edge.index > 0x00ff_ffff
+                    {
+                        return EncodeBinaryRevisions::Full(self);
+                    }
+                    encoded.extend_from_slice(&(ingredient << 24 | edge.index).to_le_bytes());
+                }
+                return EncodeBinaryRevisions::Inputs(
+                    self.changed_at,
+                    self.durability,
+                    encoded.into(),
+                );
+            }
+            EncodeBinaryRevisions::Full(self)
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    pub(crate) enum DecodeBinaryRevisions<'a> {
+        Full(QueryRevisions),
+        Inputs(Revision, Durability, #[serde(borrow)] &'a [u8]),
+    }
+
+    impl DecodeBinaryRevisions<'_> {
+        pub(crate) fn restore(
+            self,
+            archive: &bytes::Bytes,
+        ) -> Result<QueryRevisions, &'static str> {
+            match self {
+                Self::Full(full) => Ok(full),
+                Self::Inputs(changed_at, durability, edges) => {
+                    if !edges.len().is_multiple_of(4) {
+                        return Err("invalid packed query edges");
+                    }
+                    Ok(QueryRevisions {
+                        changed_at,
+                        durability,
+                        origin_and_extra: OriginAndExtra::from_archived_inputs(
+                            archive.slice_ref(edges),
+                        ),
+                        #[cfg(feature = "accumulator")]
+                        accumulated_inputs: Default::default(),
+                        verified_final: AtomicBool::new(true),
+                    })
+                }
+            }
+        }
+    }
+
     /// A serialization view that separates the packed origin from optional revision data.
     #[derive(serde::Serialize)]
     pub(crate) struct MappedQueryRevisions<'a> {
         changed_at: Revision,
         durability: Durability,
-        #[serde(rename = "origin")]
+        #[serde(serialize_with = "serialize_mapped_origin")]
         origin: PersistentQueryOrigin,
         #[serde(with = "verified_final")]
         verified_final: AtomicBool,
         extra: Option<&'a super::QueryRevisionsExtraInner>,
+    }
+
+    fn serialize_mapped_origin<S: serde::Serializer>(
+        origin: &PersistentQueryOrigin,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        crate::persistence::without_references(|| serde::Serialize::serialize(origin, serializer))
     }
 
     impl QueryRevisions {

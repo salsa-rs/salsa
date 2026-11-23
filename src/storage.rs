@@ -230,6 +230,35 @@ impl<Db: Database> StorageBuilder<Db> {
         self
     }
 
+    /// Builds fresh storage from a snapshot created by `<dyn Database>::write_cache`.
+    /// Supply the binary-specific key used to write the snapshot. An incompatible or damaged
+    /// cache returns [`std::io::ErrorKind::InvalidData`].
+    /// The concrete database type and registered ingredients must match the writer's.
+    /// Missing registrations are reported before any ingredients are constructed.
+    ///
+    /// Salsa restores the graph and retained structs here, decoding interned fields in parallel.
+    /// Stored query outputs borrow their encoded bytes until first fetched, when their
+    /// deserializers run on the requesting thread. To use an immutable memory-mapped
+    /// snapshot, pass [`bytes::Bytes::from_owner`] with the mapping as its owner.
+    /// The file must remain immutable for the lifetime of every mapping. Opening a
+    /// snapshot still checksums the full image and reconstructs the dependency graph.
+    /// Fingerprinted intermediates retain their dependencies and recompute their values on demand.
+    #[cfg(feature = "persistence")]
+    pub fn build_from_cache(
+        self,
+        bytes: impl Into<bytes::Bytes>,
+        cache_key: u128,
+    ) -> std::io::Result<Storage<Db>> {
+        let bytes = bytes.into();
+        let (layout, body) = crate::persistence::read_header::<Db>(&bytes, cache_key, &self.jars)?;
+        let mut storage = self.build();
+        let zalsa = Arc::get_mut(&mut storage.handle.zalsa_impl).unwrap();
+        #[cfg(feature = "inventory")]
+        zalsa.views().register_cache_views();
+        crate::persistence::restore(zalsa, bytes, cache_key, layout, &body)?;
+        Ok(storage)
+    }
+
     /// Construct the [`Storage`] using the provided builder options.
     pub fn build(self) -> Storage<Db> {
         Storage {

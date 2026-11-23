@@ -146,6 +146,7 @@ impl serde::Serialize for Id {
     where
         S: serde::Serializer,
     {
+        crate::persistence::trace_id(*self);
         serde::Serialize::serialize(&self.as_bits(), serializer)
     }
 }

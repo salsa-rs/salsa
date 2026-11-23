@@ -81,7 +81,41 @@ impl<DbView: ?Sized + Any> DatabaseDownCaster<DbView> {
     }
 }
 
+// Restored memos can need their database view before any accessor has run.
+#[cfg(all(feature = "persistence", feature = "inventory"))]
+pub struct CacheView {
+    source: fn() -> TypeId,
+    register: fn(&Views),
+}
+
+#[cfg(all(feature = "persistence", feature = "inventory"))]
+impl CacheView {
+    pub const fn new<Db: Database>(register: fn(&Views)) -> Self {
+        Self {
+            source: TypeId::of::<Db>,
+            register,
+        }
+    }
+}
+
+#[cfg(all(feature = "persistence", feature = "inventory"))]
+inventory::collect!(CacheView);
+
 impl Views {
+    #[cfg(all(feature = "persistence", feature = "inventory"))]
+    pub(crate) fn register_cache_views(&self) {
+        for view in inventory::iter::<CacheView> {
+            if (view.source)() == self.source_type_id {
+                (view.register)(self);
+            }
+        }
+    }
+
+    #[cfg(feature = "persistence")]
+    pub(crate) fn source_type_id(&self) -> TypeId {
+        self.source_type_id
+    }
+
     pub(crate) fn new<Db: Database>() -> Self {
         let source_type_id = TypeId::of::<Db>();
         let view_casters = boxcar::Vec::new();
@@ -131,21 +165,29 @@ impl Views {
     ///
     /// If the underlying type of `db` is not the same as the database type this downcasts was created for.
     pub fn downcaster_for<DbView: ?Sized + Any>(&self) -> &DatabaseDownCaster<DbView> {
+        self.try_downcaster_for().unwrap_or_else(|| {
+            panic!(
+                "No downcaster registered for type `{}` in `Views`",
+                std::any::type_name::<DbView>()
+            )
+        })
+    }
+
+    pub(crate) fn try_downcaster_for<DbView: ?Sized + Any>(
+        &self,
+    ) -> Option<&DatabaseDownCaster<DbView>> {
         let view_type_id = TypeId::of::<DbView>();
         for (_, view) in self.view_casters.iter() {
             if view.target_type_id == view_type_id {
                 // SAFETY: We are unerasing the type erased function pointer having made sure the
                 // TypeId matches.
-                return unsafe {
+                return Some(unsafe {
                     &*((view as *const ViewCaster).cast::<DatabaseDownCaster<DbView>>())
-                };
+                });
             }
         }
 
-        panic!(
-            "No downcaster registered for type `{}` in `Views`",
-            std::any::type_name::<DbView>(),
-        );
+        None
     }
 }
 

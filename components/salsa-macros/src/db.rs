@@ -48,8 +48,20 @@ impl DbMacro {
             }
             syn::Item::Impl(mut input) => {
                 self.add_salsa_view_method_impl(&mut input)?;
+                let registration = input.generics.params.is_empty().then(|| {
+                    let db = &input.self_ty;
+                    let (db_trait, _) = input.trait_.as_ref().unwrap();
+                    quote! {
+                        salsa::plumbing::register_cache_view! {
+                            salsa::plumbing::CacheView::new::<#db>(|views| {
+                                views.add::<#db, dyn #db_trait>(|ptr| ptr);
+                            })
+                        }
+                    }
+                });
                 Ok(quote! {
                     #input
+                    #registration
                 })
             }
             _ => Err(syn::Error::new_spanned(

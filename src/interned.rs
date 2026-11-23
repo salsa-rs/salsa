@@ -119,6 +119,11 @@ struct IngredientShard {
     /// lookup when hashing or comparing an existing entry.
     key_map: hashbrown::HashTable<ValueKey>,
 
+    /// Restored values already have stable table slots. Build the lookup map and LRU
+    /// only if a caller interns a key in this shard.
+    #[cfg(feature = "persistence")]
+    unindexed: Vec<(u64, ValueKey)>,
+
     /// An intrusive linked list for LRU.
     lru: LinkedList<LruEntryAdapter>,
 }
@@ -128,6 +133,8 @@ impl Default for IngredientShard {
         Self {
             lru: LinkedList::default(),
             key_map: hashbrown::HashTable::new(),
+            #[cfg(feature = "persistence")]
+            unindexed: Vec::new(),
         }
     }
 }
@@ -435,6 +442,11 @@ where
         let shard_index = self.shard(hash);
         // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.
         let shard = unsafe { &mut *self.shards.get_unchecked(shard_index).lock() };
+
+        #[cfg(feature = "persistence")]
+        if !shard.unindexed.is_empty() {
+            self.index_restored_values(shard);
+        }
 
         // SAFETY: We hold the lock for the shard containing the value.
         let eq = |value: &ValueKey| unsafe { Self::value_eq(value.value::<C>(), &key) };
@@ -959,9 +971,30 @@ where
         self.data(zalsa, AsId::as_id(&s))
     }
 
+    #[cfg(feature = "persistence")]
+    #[cold]
+    fn index_restored_values(&self, shard: &mut IngredientShard) {
+        let rows = std::mem::take(&mut shard.unindexed);
+        // No interning operation can insert or reuse a value before this shard is indexed.
+        debug_assert!(shard.key_map.is_empty());
+        shard.key_map.reserve(rows.len(), |_| unreachable!());
+        for (hash, key) in rows {
+            // SAFETY: The snapshot allocated a stable Value<C> in this shard. Holding
+            // the shard lock excludes reuse and concurrent insertion into its map and LRU.
+            unsafe { self.insert_value(shard, hash, key.value::<C>()) };
+        }
+    }
+
     pub fn reset(&mut self, zalsa_mut: &mut Zalsa) {
         _ = zalsa_mut;
 
+        #[cfg(feature = "persistence")]
+        for shard in self.shards.iter() {
+            let mut shard = shard.lock();
+            if !shard.unindexed.is_empty() {
+                self.index_restored_values(&mut shard);
+            }
+        }
         for shard in self.shards.iter_mut() {
             // We can clear the key maps now that we have cancelled all other handles.
             shard.get_mut().key_map.clear();
@@ -1218,6 +1251,56 @@ where
     }
 
     #[cfg(feature = "persistence")]
+    fn supports_cache_pages(&self) -> bool {
+        C::PERSIST
+    }
+
+    #[cfg(feature = "persistence")]
+    unsafe fn cache_page_stamp(&self, zalsa: &Zalsa, key: crate::DatabaseKeyIndex) -> Option<u128> {
+        let value = zalsa.table().get::<Value<C>>(key.key_index());
+        // SAFETY: The snapshot writer excludes slot recycling. A recycled slot has a new ID.
+        (unsafe { *value.lru.id.get() } == key.key_index()).then(|| {
+            ((value.lru.last_interned_at.load().as_usize() as u128) << 8)
+                | value.durability.load().index() as u128
+        })
+    }
+
+    #[cfg(feature = "persistence")]
+    unsafe fn encode_cache(
+        &self,
+        zalsa: &Zalsa,
+        keys: &[crate::DatabaseKeyIndex],
+        _identities: &crate::persistence::IdentityRows,
+    ) -> std::io::Result<Vec<u8>> {
+        crate::persistence::encode(&persistence::SerializeIngredient {
+            zalsa,
+            _ingredient: self,
+            keys: Some(keys),
+        })
+    }
+
+    #[cfg(feature = "persistence")]
+    fn parallel_cache_decode(&self) -> bool {
+        true
+    }
+
+    #[cfg(feature = "persistence")]
+    fn decode_cache(
+        &mut self,
+        pages: &mut crate::table::RestoredPages,
+        bytes: &bytes::Bytes,
+    ) -> std::io::Result<()> {
+        crate::persistence::decode_seed(
+            bytes,
+            persistence::DeserializeIngredient {
+                slots: crate::table::RestoreSlots::Pages(pages),
+                ingredient: self,
+                defer_index: true,
+            },
+        )
+    }
+
+    #[cfg(feature = "persistence")]
     unsafe fn serialize<'db>(
         &'db self,
         zalsa: &'db Zalsa,
@@ -1226,6 +1309,7 @@ where
         f(&persistence::SerializeIngredient {
             zalsa,
             _ingredient: self,
+            keys: None,
         })
     }
 
@@ -1236,8 +1320,9 @@ where
         deserializer: &mut dyn erased_serde::Deserializer,
     ) -> Result<(), erased_serde::Error> {
         let deserialize = persistence::DeserializeIngredient {
-            zalsa,
+            slots: crate::table::RestoreSlots::Table(zalsa.table_mut()),
             ingredient: self,
+            defer_index: false,
         };
 
         serde::de::DeserializeSeed::deserialize(deserialize, deserializer)
@@ -1681,6 +1766,7 @@ mod persistence {
     {
         pub zalsa: &'db Zalsa,
         pub _ingredient: &'db IngredientImpl<C>,
+        pub keys: Option<&'db [crate::DatabaseKeyIndex]>,
     }
 
     impl<C> serde::Serialize for SerializeIngredient<'_, C>
@@ -1692,6 +1778,17 @@ mod persistence {
             S: serde::Serializer,
         {
             let Self { zalsa, .. } = *self;
+            if let Some(keys) = self.keys {
+                let mut map = serializer.serialize_map(Some(keys.len()))?;
+                for key in keys {
+                    let id = key.key_index();
+                    let value = zalsa.table().get::<Value<C>>(id);
+                    // SAFETY: Snapshot creation excludes interning and reuse.
+                    let id = unsafe { *value.lru.id.get() };
+                    map.serialize_entry(&id.as_bits(), value)?;
+                }
+                return map.end();
+            }
 
             // Counting slots does not access shard metadata or interned fields. The exclusive
             // storage access acquired by `SerializeDatabase::new` keeps the count stable.
@@ -1762,102 +1859,81 @@ mod persistence {
         }
     }
 
-    pub struct DeserializeIngredient<'db, C>
-    where
-        C: Configuration,
-    {
-        pub zalsa: &'db mut Zalsa,
-        pub ingredient: &'db mut IngredientImpl<C>,
+    pub(super) struct DeserializeIngredient<'a, C: Configuration> {
+        pub(super) slots: crate::table::RestoreSlots<'a>,
+        pub(super) ingredient: &'a mut IngredientImpl<C>,
+        pub(super) defer_index: bool,
     }
 
-    impl<'de, C> de::DeserializeSeed<'de> for DeserializeIngredient<'_, C>
-    where
-        C: Configuration,
-    {
+    impl<'de, C: Configuration> de::DeserializeSeed<'de> for DeserializeIngredient<'_, C> {
         type Value = ();
 
-        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
+        fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
             deserializer.deserialize_map(self)
         }
     }
 
-    impl<'de, C> de::Visitor<'de> for DeserializeIngredient<'_, C>
-    where
-        C: Configuration,
-    {
+    impl<'de, C: Configuration> de::Visitor<'de> for DeserializeIngredient<'_, C> {
         type Value = ();
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map")
+            formatter.write_str("a map of interned values")
         }
 
-        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-        where
-            M: de::MapAccess<'de>,
-        {
-            let DeserializeIngredient { zalsa, ingredient } = self;
-
+        fn visit_map<M: de::MapAccess<'de>>(mut self, mut access: M) -> Result<(), M::Error> {
             while let Some((id, value)) = access.next_entry::<u64, DeserializeValue<C>>()? {
                 let id = Id::from_bits(id);
-                let (page_idx, _) = crate::table::split_id(id);
-
-                // Determine the value shard.
-                let hash = ingredient.hasher.hash_one(&value.fields.0);
-                let shard_index = ingredient.shard(hash);
-
-                // SAFETY: `shard_index` is guaranteed to be in-bounds for `self.shards`.
-                let shard = unsafe { &mut *ingredient.shards.get_unchecked(shard_index).lock() };
-
-                let value = Value::<C> {
-                    shard: shard_index as u16,
-                    lru: LruEntry {
-                        link: LinkedListLink::new(),
-                        id: UnsafeCell::new(id),
-                        last_interned_at: AtomicRevision::new(value.last_interned_at),
-                    },
-                    fields: UnsafeCell::new(value.fields.0),
-                    // SAFETY: We only ever access the memos of a value that we allocated through
-                    // our `MemoTableTypes`.
-                    memos: UnsafeCell::new(unsafe {
-                        MemoTable::new(ingredient.memo_table_types())
-                    }),
-                    durability: AtomicDurability::new(value.durability),
-                };
-
-                // Force initialize the relevant page.
-                zalsa.table_mut().force_page::<Value<C>>(
-                    page_idx,
-                    ingredient.ingredient_index(),
-                    ingredient.memo_table_types(),
-                );
-
-                // Initialize the slot.
-                //
-                // SAFETY: We have a mutable reference to the database.
-                let (allocated_id, value) = unsafe {
-                    zalsa
-                        .table()
-                        .page(page_idx)
-                        .allocate(page_idx, |_| value)
-                        .unwrap_or_else(|_| panic!("serialized an invalid `Id`: {id:?}"))
-                };
-
-                assert_eq!(
-                    allocated_id.index(),
-                    id.index(),
-                    "values are serialized in allocation order"
-                );
-
-                // Insert the newly allocated value into our ingredient.
-                //
-                // SAFETY: We hold this ingredient's shard lock, and `value` is the live, stable
-                // value that we just allocated in that shard.
-                unsafe { ingredient.insert_value(shard, hash, value) };
+                let hash = self.ingredient.hasher.hash_one(&value.fields.0);
+                value
+                    .install(&mut self.slots, self.ingredient, id, hash, self.defer_index)
+                    .map_err(de::Error::custom)?;
             }
+            Ok(())
+        }
+    }
 
+    impl<C: Configuration> DeserializeValue<C> {
+        fn install(
+            self,
+            slots: &mut crate::table::RestoreSlots,
+            ingredient: &mut IngredientImpl<C>,
+            id: Id,
+            hash: u64,
+            defer_index: bool,
+        ) -> Result<(), &'static str> {
+            let shard_index = ingredient.shard(hash);
+
+            let value = Value::<C> {
+                shard: shard_index as u16,
+                lru: LruEntry {
+                    link: LinkedListLink::new(),
+                    id: UnsafeCell::new(id),
+                    last_interned_at: AtomicRevision::new(self.last_interned_at),
+                },
+                fields: UnsafeCell::new(self.fields.0),
+                // SAFETY: We only ever access the memos of a value that we allocated through
+                // our `MemoTableTypes`.
+                memos: UnsafeCell::new(unsafe { MemoTable::new(ingredient.memo_table_types()) }),
+                durability: AtomicDurability::new(self.durability),
+            };
+
+            let value = slots.restore_slot(
+                id,
+                ingredient.ingredient_index(),
+                ingredient.memo_table_types(),
+                value,
+            )?;
+
+            if defer_index {
+                ingredient.shards[shard_index]
+                    .get_mut()
+                    .unindexed
+                    .push((hash, super::ValueKey::new(value)));
+            } else {
+                let mut shard = ingredient.shards[shard_index].lock();
+                // SAFETY: This is the live, stable value just allocated in the locked shard.
+                unsafe { ingredient.insert_value(&mut shard, hash, value) };
+            }
             Ok(())
         }
     }

@@ -132,8 +132,11 @@ pub struct PersistOptions {
     /// Path to a custom serialize function.
     pub serialize_fn: Option<syn::Path>,
 
-    /// Path to a custom serialize function.
+    /// Path to a custom deserialize function.
     pub deserialize_fn: Option<syn::Path>,
+
+    /// Function mapping a tracked query result to a stable fingerprint.
+    pub fingerprint_fn: Option<syn::Path>,
 }
 
 impl<A: AllowedOptions> Default for Options<A> {
@@ -187,14 +190,14 @@ pub(crate) trait AllowedOptions {
 }
 
 pub(crate) enum AllowedPersistOptions {
-    AllowedIdent,
+    Function,
     AllowedValue,
     Invalid,
 }
 
 impl AllowedPersistOptions {
     fn allowed(&self) -> bool {
-        matches!(self, Self::AllowedIdent | Self::AllowedValue)
+        matches!(self, Self::Function | Self::AllowedValue)
     }
 
     fn allowed_value(&self) -> bool {
@@ -315,6 +318,18 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     };
 
                     for (ident, path) in content.parse_terminated(parse_argument, syn::Token![,])? {
+                        if ident == "fingerprint"
+                            && matches!(A::PERSIST, AllowedPersistOptions::Function)
+                        {
+                            if persist.fingerprint_fn.replace(path).is_some() {
+                                return Err(syn::Error::new(
+                                    ident.span(),
+                                    "option `fingerprint` provided twice",
+                                ));
+                            }
+                            continue;
+                        }
+
                         if !A::PERSIST.allowed_value() {
                             return Err(syn::Error::new(ident.span(), "unexpected argument"));
                         }
@@ -660,6 +675,10 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         }
         if let Some(persist) = persist {
             let mut args = proc_macro2::TokenStream::new();
+
+            if let Some(path) = &persist.fingerprint_fn {
+                args.extend(quote::quote! { fingerprint = #path, });
+            }
 
             if let Some(path) = &persist.serialize_fn {
                 args.extend(quote::quote! { serialize = #path, });
