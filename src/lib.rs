@@ -411,11 +411,6 @@ pub mod plumbing {
     }
 
     pub mod function {
-        // The `eviction(...)` syntax uses this path, while `lru = N` uses `Lru` directly.
-        #[cfg(feature = "salsa_unstable")]
-        pub mod salsa_unstable {
-            pub use crate::function::Lru;
-        }
         pub use crate::function::{Configuration, IngredientImpl, Memo};
         pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
         pub use crate::table::memo::MemoEntryType;

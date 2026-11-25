@@ -444,8 +444,7 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   Salsa book] for an example.
 /// - `lru = INTEGER` bounds the number of memoized values retained by the function and sets the
 ///   initial capacity used by `FUNCTION::set_lru_capacity`.
-/// - `eviction(capacity = INTEGER)` requires `salsa_unstable`.
-///   The policy defaults to `lru`.
+/// - `eviction(capacity = INTEGER)` defaults to `policy = lru`.
 ///   Use `FUNCTION::set_eviction_capacity` to change the capacity at runtime.
 ///   This option cannot be combined with `lru` or `specify`.
 /// - `cycle_initial = EXPR` enables fixed-point cycle recovery and computes the initial value. The

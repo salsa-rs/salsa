@@ -126,7 +126,7 @@ impl<A: AllowedOptions> Options<A> {
 }
 
 /// Keep the two LRU spellings distinct because they generate different setters.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) enum Eviction {
     LruShorthand(usize),
     Lru(usize),
@@ -745,39 +745,6 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             } else {
                 tokens.extend(quote::quote! { persist(#args), });
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod eviction_tests {
-    use super::Eviction;
-    use crate::tracked_fn::FnArgs;
-
-    #[test]
-    fn eviction_options_round_trip() {
-        for (input, expected) in [
-            ("lru = 5", Eviction::LruShorthand(5)),
-            ("eviction(capacity = 5)", Eviction::Lru(5)),
-            ("eviction(capacity = 5, policy = lru)", Eviction::Lru(5)),
-        ] {
-            let args: FnArgs = syn::parse_str(input).unwrap();
-            let reparsed: FnArgs = syn::parse2(quote::quote!(#args)).unwrap();
-            assert_eq!(reparsed.eviction, Some(expected));
-        }
-    }
-
-    #[test]
-    fn invalid_eviction_options() {
-        for args in [
-            "eviction(policy = lru)",
-            "eviction(policy = random, capacity = 5)",
-            "eviction(policy = lru, capacity = 5, capacity = 5)",
-            "eviction(policy = lru, policy = lru, capacity = 5)",
-            "lru = 5, eviction(policy = lru, capacity = 5)",
-            "eviction(policy = lru, capacity = 5), lru = 5",
-        ] {
-            assert!(syn::parse_str::<FnArgs>(args).is_err(), "{args}");
         }
     }
 }

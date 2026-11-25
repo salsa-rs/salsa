@@ -146,7 +146,6 @@ fn lru_keeps_dependency_info() {
     db.assert_logs_len(0);
 }
 
-#[cfg(feature = "salsa_unstable")]
 #[test]
 fn eviction_defaults_to_lru() {
     #[salsa::tracked(returns(copy), eviction(capacity = 1))]
@@ -158,13 +157,15 @@ fn eviction_defaults_to_lru() {
     let mut db = common::LoggerDatabase::default();
     let [a, b, c] = [0, 1, 2].map(|field| MyInput::new(&db, field));
     read::set_eviction_capacity(&mut db, 2);
-    // Both A and B have been revisited. A was read last, so LRU must evict B.
-    for key in [a, b, a, b, a, c] {
-        read(&db, key);
-    }
+    read(&db, a);
+    read(&db, b);
+    read(&db, b);
+    read(&db, a);
+    read(&db, c);
     db.assert_logs_len(3);
 
-    db.trigger_eviction();
+    // Both A and B were revisited. LRU keeps A because it was read last.
+    db.trigger_lru_eviction();
     read(&db, a);
     db.assert_logs_len(0);
     read(&db, b);

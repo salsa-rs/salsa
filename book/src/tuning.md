@@ -17,13 +17,14 @@ With `lru = 128`, Salsa will keep at most 128 memoized values for this function.
 When the cache exceeds this capacity, the least recently used values are evicted
 at the start of each new revision.
 
-### Experimental eviction options
+### Choosing an eviction policy
 
-With the `salsa_unstable` feature, you can also write
-`#[salsa::tracked(eviction(capacity = 128))]`. This defaults to `policy = lru`.
+You can also write `#[salsa::tracked(eviction(capacity = 128))]`.
+This defaults to `policy = lru`.
 The policy is fixed at compile time. Use `parse::set_eviction_capacity(&mut db, 256)`
 to resize the cache or set the capacity to zero to disable eviction.
-`db.trigger_eviction()` applies the configured policies across all tracked functions.
+To sweep all tracked functions, call `db.trigger_lru_eviction()`.
+With `salsa_unstable`, you can also call `db.trigger_eviction()`.
 
 ### Zero-Cost When Disabled
 
