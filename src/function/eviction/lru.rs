@@ -22,6 +22,13 @@ pub struct Lru {
 }
 
 impl Lru {
+    fn resize(&mut self, capacity: usize) {
+        self.capacity = NonZeroUsize::new(capacity);
+        if self.capacity.is_none() {
+            self.set.get_mut().clear();
+        }
+    }
+
     #[inline(never)]
     fn insert(&self, id: Id) {
         self.set.lock().insert(id);
@@ -43,11 +50,9 @@ impl EvictionPolicy for Lru {
         }
     }
 
+    #[cfg(not(feature = "salsa_unstable"))]
     fn set_capacity(&mut self, capacity: usize) {
-        self.capacity = NonZeroUsize::new(capacity);
-        if self.capacity.is_none() {
-            self.set.get_mut().clear();
-        }
+        self.resize(capacity);
     }
 
     fn for_each_evicted(&mut self, mut cb: impl FnMut(Id)) {
@@ -63,4 +68,9 @@ impl EvictionPolicy for Lru {
     }
 }
 
-impl HasCapacity for Lru {}
+impl HasCapacity for Lru {
+    #[cfg(feature = "salsa_unstable")]
+    fn set_capacity(&mut self, capacity: usize) {
+        self.resize(capacity);
+    }
+}
