@@ -1,6 +1,5 @@
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::accumulator::{self};
-#[cfg(feature = "salsa_unstable")]
 use crate::function::eviction::EvictionPolicy;
 use crate::function::{Configuration, IngredientImpl, Memo};
 use crate::hash::FxHashSet;
@@ -118,7 +117,6 @@ where
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let (zalsa, zalsa_local) = db.zalsas();
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
-        #[cfg(feature = "salsa_unstable")]
         self.eviction.record_use(key);
         memo.accumulated()
     }
