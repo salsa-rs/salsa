@@ -28,14 +28,14 @@ fn lru_value(db: &dyn salsa::Database, item: Lru) -> Value {
 }
 
 pub(crate) trait Item: Copy + Send + Sync {
-    const NEW: fn(&dyn salsa::Database, u64) -> Self;
-    const SET_CAPACITY: fn(&mut dyn salsa::Database, usize) = |_, _| {};
-    const FETCH: fn(&dyn salsa::Database, Self) -> Value;
+    fn new(db: &dyn salsa::Database, value: u64) -> Self;
+    fn set_capacity(_db: &mut dyn salsa::Database, _capacity: usize) {}
+    fn fetch(self, db: &dyn salsa::Database) -> Value;
 
     fn items(db: &mut dyn salsa::Database, capacity: usize, count: usize) -> Vec<Self> {
-        (Self::SET_CAPACITY)(db, capacity);
+        Self::set_capacity(db, capacity);
         (0..count)
-            .map(|value| (Self::NEW)(db, value as u64))
+            .map(|value| Self::new(db, value as u64))
             .collect()
     }
 
@@ -47,14 +47,29 @@ pub(crate) trait Item: Copy + Send + Sync {
 }
 
 impl Item for NoEviction {
-    const NEW: fn(&dyn salsa::Database, u64) -> Self = Self::new;
-    const FETCH: fn(&dyn salsa::Database, Self) -> Value = no_eviction_value;
+    fn new(db: &dyn salsa::Database, value: u64) -> Self {
+        Self::new(db, value)
+    }
+
+    #[inline]
+    fn fetch(self, db: &dyn salsa::Database) -> Value {
+        no_eviction_value(db, self)
+    }
 }
 
 impl Item for Lru {
-    const NEW: fn(&dyn salsa::Database, u64) -> Self = Self::new;
-    const SET_CAPACITY: fn(&mut dyn salsa::Database, usize) = lru_value::set_lru_capacity;
-    const FETCH: fn(&dyn salsa::Database, Self) -> Value = lru_value;
+    fn new(db: &dyn salsa::Database, value: u64) -> Self {
+        Self::new(db, value)
+    }
+
+    fn set_capacity(db: &mut dyn salsa::Database, capacity: usize) {
+        lru_value::set_lru_capacity(db, capacity);
+    }
+
+    #[inline]
+    fn fetch(self, db: &dyn salsa::Database) -> Value {
+        lru_value(db, self)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -85,7 +100,7 @@ pub(crate) fn access_all<I: Item>(
 ) -> Value {
     let mut sum = 0u64;
     for item in items {
-        sum = sum.wrapping_add((I::FETCH)(black_box(db), black_box(item)).0);
+        sum = sum.wrapping_add(black_box(item).fetch(black_box(db)).0);
     }
     Value(sum)
 }
