@@ -31,19 +31,6 @@ pub(crate) trait Item: Copy + Send + Sync {
     fn new(db: &dyn salsa::Database, value: u64) -> Self;
     fn set_capacity(_db: &mut dyn salsa::Database, _capacity: usize) {}
     fn fetch(self, db: &dyn salsa::Database) -> Value;
-
-    fn items(db: &mut dyn salsa::Database, capacity: usize, count: usize) -> Vec<Self> {
-        Self::set_capacity(db, capacity);
-        (0..count)
-            .map(|value| Self::new(db, value as u64))
-            .collect()
-    }
-
-    fn setup(capacity: usize, count: usize) -> (salsa::DatabaseImpl, Vec<Self>) {
-        let mut db = salsa::DatabaseImpl::new();
-        let items = Self::items(&mut db, capacity, count);
-        (db, items)
-    }
 }
 
 impl Item for NoEviction {
@@ -92,6 +79,21 @@ impl Policy {
             Self::Lru => workload.run::<Lru>(bencher),
         }
     }
+}
+
+pub(crate) fn setup<I: Item>(capacity: usize, count: usize) -> (salsa::DatabaseImpl, Vec<I>) {
+    let mut db = salsa::DatabaseImpl::new();
+    let items = setup_items(&mut db, capacity, count);
+    (db, items)
+}
+
+pub(crate) fn setup_items<I: Item>(
+    db: &mut dyn salsa::Database,
+    capacity: usize,
+    count: usize,
+) -> Vec<I> {
+    I::set_capacity(db, capacity);
+    (0..count).map(|value| I::new(db, value as u64)).collect()
 }
 
 pub(crate) fn access_all<I: Item>(

@@ -28,7 +28,7 @@ use salsa::Database as _;
 #[path = "eviction/support.rs"]
 mod support;
 
-use support::{Benchmark, Item, POLICIES, Policy, Value, access_all, prewarm};
+use support::{Benchmark, Item, POLICIES, Policy, Value, access_all, prewarm, setup};
 
 const PARALLEL_WORKERS: usize = 4;
 
@@ -82,7 +82,7 @@ impl Benchmark for Project {
 
         bencher
             .with_inputs(|| {
-                let (db, files) = I::setup(CAPACITY, PROJECT_FILES);
+                let (db, files) = setup::<I>(CAPACITY, PROJECT_FILES);
                 let active_files = files
                     .iter()
                     .step_by(PROJECT_FILES / ACTIVE_FILES)
@@ -203,7 +203,7 @@ impl Benchmark for Recurring {
         };
         bencher
             .with_inputs(|| {
-                let (db, items) = I::setup(capacity, hot_count + 5 * cold_per_round);
+                let (db, items) = setup::<I>(capacity, hot_count + 5 * cold_per_round);
                 let (hot, cold) = items.split_at(hot_count);
                 let mut rounds = cold
                     .chunks_exact(cold_per_round)
@@ -303,7 +303,7 @@ impl Benchmark for Mixed {
         bencher
             .with_inputs(|| {
                 SEEDS.map(|seed| {
-                    let (db, items) = I::setup(self.capacity, KEYS);
+                    let (db, items) = setup::<I>(self.capacity, KEYS);
                     let rounds = self.rounds(&items, seed, 80);
                     (db, rounds)
                 })
@@ -344,7 +344,7 @@ impl Mixed {
                 }
             }))),
         };
-        let items = I::items(&mut db, self.capacity, KEYS);
+        let items = support::setup_items::<I>(&mut db, self.capacity, KEYS);
         let rounds = self.rounds(&items, seed, popular_percent);
         std::array::from_fn(|revision| {
             mixed_revision(&mut db, &rounds[revision]);
@@ -398,7 +398,7 @@ impl Benchmark for Parallel {
     fn run<I: Item>(self, bencher: divan::Bencher) {
         const ACCESSES_PER_WORKER: usize = 4_096;
 
-        let (db, items) = I::setup(PARALLEL_WORKERS, PARALLEL_WORKERS);
+        let (db, items) = setup::<I>(PARALLEL_WORKERS, PARALLEL_WORKERS);
         prewarm(&db, &items);
 
         let db = Mutex::new(db);

@@ -18,7 +18,7 @@ use salsa::Database as _;
 #[path = "eviction/support.rs"]
 mod support;
 
-use support::{Benchmark, Item, POLICIES, Policy, access_all, prewarm};
+use support::{Benchmark, Item, POLICIES, Policy, access_all, prewarm, setup};
 
 fn main() {
     divan::main();
@@ -92,7 +92,7 @@ struct Hits(usize);
 
 impl Benchmark for Hits {
     fn run<I: Item>(self, bencher: divan::Bencher) {
-        let (db, items) = I::setup(self.0, 1_024);
+        let (db, items) = setup::<I>(self.0, 1_024);
         prewarm(&db, &items);
         bencher.bench_local(|| black_box(access_all(&db, items.iter().copied())));
     }
@@ -107,9 +107,9 @@ impl Benchmark for Sweep {
     fn run<I: Item>(self, bencher: divan::Bencher) {
         bencher
             .with_inputs(|| match self {
-                Self::Cold => I::setup(256, 320),
+                Self::Cold => setup::<I>(256, 320),
                 Self::Prewarmed => {
-                    let (db, items) = I::setup(1_024, 1_024);
+                    let (db, items) = setup::<I>(1_024, 1_024);
                     prewarm(&db, &items);
                     (db, items)
                 }
