@@ -37,7 +37,7 @@ fn main() {
 /// eviction policy.
 #[divan::bench(args = POLICIES)]
 fn fast_path(bencher: divan::Bencher, policy: Policy) {
-    policy.bench(bencher, Hits(1_024));
+    policy.bench(bencher, Hits { capacity: 1_024 });
 }
 
 /// Measures cache-hit overhead after disabling eviction at runtime.
@@ -54,7 +54,7 @@ fn fast_path(bencher: divan::Bencher, policy: Policy) {
 /// could be.
 #[divan::bench(args = POLICIES)]
 fn disabled_eviction(bencher: divan::Bencher, policy: Policy) {
-    policy.bench(bencher, Hits(0));
+    policy.bench(bencher, Hits { capacity: 0 });
 }
 
 /// Measures the cost of enforcing capacity when the working set already fits.
@@ -88,11 +88,13 @@ fn fill_and_evict(bencher: divan::Bencher, policy: Policy) {
     policy.bench(bencher, Sweep::Cold);
 }
 
-struct Hits(usize);
+struct Hits {
+    capacity: usize,
+}
 
 impl Benchmark for Hits {
     fn run<I: Item>(self, bencher: divan::Bencher) {
-        let (db, items) = setup::<I>(self.0, 1_024);
+        let (db, items) = setup::<I>(self.capacity, 1_024);
         prewarm(&db, &items);
         bencher.bench_local(|| black_box(access_all(&db, items.iter().copied())));
     }
