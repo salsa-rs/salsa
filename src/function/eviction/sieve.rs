@@ -187,8 +187,8 @@ use boxcar::buckets::{Buckets, Index, MaybeZeroable, buckets_for_index_bits};
 
 /// SIEVE eviction policy.
 ///
-/// Values enter at the front of a FIFO queue. Uses atomically set a visited bit
-/// in direct-addressed state pages; they do not move the value in the queue.
+/// New entries join the queue with their visited bit clear. A cache hit
+/// atomically sets that bit without moving the entry in the queue.
 pub struct Sieve {
     /// Maximum number of residents. Zero disables SIEVE entirely.
     ///
