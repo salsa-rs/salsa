@@ -89,6 +89,9 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<usize>`.
     pub lru: Option<usize>,
 
+    /// The experimental `eviction(...)` option, mutually exclusive with `lru`.
+    pub eviction: Option<EvictionOptions>,
+
     /// The `constructor = <ident>` option lets the user specify the name of
     /// the constructor of a salsa struct.
     ///
@@ -127,6 +130,83 @@ impl<A: AllowedOptions> Options<A> {
     }
 }
 
+/// Cache-eviction configuration for a tracked function.
+#[derive(Debug)]
+pub(crate) struct EvictionOptions {
+    /// Replacement policy used to choose retained values.
+    pub policy: EvictionPolicy,
+
+    /// Initial maximum number of resident values.
+    pub capacity: usize,
+}
+
+impl syn::parse::Parse for EvictionOptions {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let mut policy = None;
+        let mut capacity = None;
+
+        while !input.is_empty() {
+            let option = syn::Ident::parse_any(input)?;
+            let _eq = Equals::parse(input)?;
+
+            if option == "policy" {
+                let ident = syn::Ident::parse_any(input)?;
+                let value = EvictionPolicy::parse(&ident)?;
+                if policy.replace(value).is_some() {
+                    return Err(syn::Error::new(
+                        option.span(),
+                        "option `policy` provided twice",
+                    ));
+                }
+            } else if option == "capacity" {
+                let lit = syn::LitInt::parse(input)?;
+                let value = lit.base10_parse::<usize>()?;
+                if capacity.replace(value).is_some() {
+                    return Err(syn::Error::new(
+                        option.span(),
+                        "option `capacity` provided twice",
+                    ));
+                }
+            } else {
+                return Err(syn::Error::new(
+                    option.span(),
+                    format!("unrecognized eviction option `{option}`"),
+                ));
+            }
+
+            if input.is_empty() {
+                break;
+            }
+
+            let _comma = Comma::parse(input)?;
+        }
+
+        Ok(Self {
+            policy: policy.unwrap_or(EvictionPolicy::Lru),
+            capacity: capacity.ok_or_else(|| input.error("missing required `capacity` option"))?,
+        })
+    }
+}
+
+/// Cache-eviction policy selected for a tracked function.
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum EvictionPolicy {
+    Lru,
+}
+
+impl EvictionPolicy {
+    fn parse(ident: &syn::Ident) -> syn::Result<Self> {
+        if ident == "lru" {
+            Ok(Self::Lru)
+        } else {
+            Err(syn::Error::new(
+                ident.span(),
+                "unknown eviction policy, expected `lru`",
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct PersistOptions {
     /// Path to a custom serialize function.
@@ -153,6 +233,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             constructor_name: Default::default(),
             phantom: Default::default(),
             lru: Default::default(),
+            eviction: Default::default(),
             singleton: Default::default(),
             id: Default::default(),
             revisions: Default::default(),
@@ -177,7 +258,7 @@ pub(crate) trait AllowedOptions {
     const CYCLE_FN: bool;
     const CYCLE_INITIAL: bool;
     const CYCLE_RESULT: bool;
-    const LRU: bool;
+    const EVICTION: bool;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
     const REVISIONS: bool;
@@ -440,8 +521,29 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`data` option not allowed here",
                     ));
                 }
+            } else if ident == "eviction" {
+                if !A::EVICTION {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`eviction` option not allowed here",
+                    ));
+                }
+                if !cfg!(feature = "salsa_unstable") {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "the `eviction` option requires the `salsa_unstable` feature",
+                    ));
+                }
+                let content;
+                parenthesized!(content in input);
+                if options.eviction.replace(content.parse()?).is_some() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "option `eviction` provided twice",
+                    ));
+                }
             } else if ident == "lru" {
-                if A::LRU {
+                if A::EVICTION {
                     let _eq = Equals::parse(input)?;
                     let lit = syn::LitInt::parse(input)?;
                     let value = lit.base10_parse::<usize>()?;
@@ -576,6 +678,10 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             }
         }
 
+        if options.lru.is_some() && options.eviction.is_some() {
+            return Err(input.error("the `lru` and `eviction` options cannot be used together"));
+        }
+
         Ok(options)
     }
 }
@@ -596,6 +702,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             cycle_result,
             data,
             lru,
+            eviction,
             constructor_name,
             id,
             revisions,
@@ -640,6 +747,13 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         if let Some(data) = data {
             tokens.extend(quote::quote! { data = #data, });
         }
+        if let Some(eviction) = eviction {
+            let capacity = eviction.capacity;
+            let policy = match eviction.policy {
+                EvictionPolicy::Lru => quote::quote!(lru),
+            };
+            tokens.extend(quote::quote! { eviction(policy = #policy, capacity = #capacity), });
+        }
         if let Some(lru) = lru {
             tokens.extend(quote::quote! { lru = #lru, });
         }
@@ -674,6 +788,48 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             } else {
                 tokens.extend(quote::quote! { persist(#args), });
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod eviction_tests {
+    use crate::tracked_fn::FnArgs;
+
+    #[test]
+    fn legacy_lru_round_trips() {
+        let args: FnArgs = syn::parse_str("lru = 5").unwrap();
+        let reparsed: FnArgs = syn::parse2(quote::quote!(#args)).unwrap();
+        assert_eq!(reparsed.lru, Some(5));
+    }
+
+    #[test]
+    fn experimental_eviction() {
+        let result = syn::parse_str::<FnArgs>("eviction(capacity = 5, policy = lru)");
+        if cfg!(feature = "salsa_unstable") {
+            let args = result.unwrap();
+            let reparsed: FnArgs = syn::parse2(quote::quote!(#args)).unwrap();
+            assert_eq!(reparsed.eviction.unwrap().capacity, 5);
+        } else {
+            assert_eq!(
+                result.err().unwrap().to_string(),
+                "the `eviction` option requires the `salsa_unstable` feature"
+            );
+        }
+    }
+
+    #[cfg(feature = "salsa_unstable")]
+    #[test]
+    fn invalid_eviction_options() {
+        for args in [
+            "eviction(policy = lru)",
+            "eviction(policy = random, capacity = 5)",
+            "eviction(policy = lru, capacity = 5, capacity = 5)",
+            "eviction(policy = lru, policy = lru, capacity = 5)",
+            "lru = 5, eviction(policy = lru, capacity = 5)",
+            "eviction(policy = lru, capacity = 5), lru = 5",
+        ] {
+            assert!(syn::parse_str::<FnArgs>(args).is_err(), "{args}");
         }
     }
 }

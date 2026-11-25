@@ -70,7 +70,7 @@ accumulator = ["salsa-macro-rules/accumulator"]
 macros = ["dep:salsa-macros"]
 
 # FIXME: remove `salsa_unstable` before 1.0.
-salsa_unstable = []
+salsa_unstable = ["salsa-macros?/salsa_unstable"]
 
 # This interlocks the `salsa-macros` and `salsa` versions together
 # preventing scenarios where they could diverge in a given project
