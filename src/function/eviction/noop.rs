@@ -16,8 +16,5 @@ impl EvictionPolicy for NoopEviction {
     fn record_use(&self, _id: Id) {}
 
     #[inline(always)]
-    fn set_capacity(&mut self, _capacity: usize) {}
-
-    #[inline(always)]
     fn for_each_evicted(&mut self, _cb: impl FnMut(Id)) {}
 }

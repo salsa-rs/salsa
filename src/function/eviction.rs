@@ -22,9 +22,6 @@ pub trait EvictionPolicy: Send + Sync {
     /// Record that an item was accessed.
     fn record_use(&self, id: Id);
 
-    /// Set the maximum capacity.
-    fn set_capacity(&mut self, capacity: usize);
-
     /// Iterate over items that should be evicted.
     ///
     /// Called once per revision during `reset_for_new_revision`.
@@ -32,9 +29,8 @@ pub trait EvictionPolicy: Send + Sync {
     fn for_each_evicted(&mut self, cb: impl FnMut(Id));
 }
 
-/// Marker trait for eviction policies that have a configurable capacity.
-///
-/// This trait is used to conditionally generate the `set_lru_capacity` method
-/// on tracked functions. Only policies that implement this trait will expose
-/// runtime capacity configuration.
-pub trait HasCapacity: EvictionPolicy {}
+/// An eviction policy whose capacity can be changed at runtime.
+pub trait HasCapacity: EvictionPolicy {
+    /// Sets the maximum capacity. Zero disables eviction.
+    fn set_capacity(&mut self, capacity: usize);
+}
