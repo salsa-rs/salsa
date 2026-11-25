@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 use syn::{Ident, ItemFn};
 
 use crate::hygiene::Hygiene;
-use crate::options::{AllowedOptions, AllowedPersistOptions, EvictionPolicy, Options};
+use crate::options::{AllowedOptions, AllowedPersistOptions, Eviction, Options};
 use crate::xform::ChangeLt;
 use crate::{db_lifetime, fn_util};
 
@@ -151,17 +151,11 @@ impl Macro {
             ));
         }
 
-        if let (Some(_), Some(token)) = (&self.args.lru, &self.args.specify) {
+        if let (Some(eviction), Some(token)) = (self.args.eviction, &self.args.specify) {
+            let option = eviction.option_name();
             return Err(syn::Error::new_spanned(
                 token,
-                "the `specify` and `lru` options cannot be used together",
-            ));
-        }
-
-        if let (Some(_), Some(token)) = (&self.args.eviction, &self.args.specify) {
-            return Err(syn::Error::new_spanned(
-                token,
-                "the `specify` and `eviction` options cannot be used together",
+                format!("the `specify` and `{option}` options cannot be used together"),
             ));
         }
 
@@ -170,23 +164,14 @@ impl Macro {
             FunctionType::SalsaStruct => false,
         };
 
-        let (eviction_type, capacity, setter) = if let Some(eviction) = &self.args.eviction {
-            let policy = match eviction.policy {
-                EvictionPolicy::Lru => quote!(::salsa::plumbing::function::Lru),
-            };
-            (policy, eviction.capacity, quote!(set_eviction_capacity))
-        } else if let Some(capacity) = self.args.lru {
-            (
-                quote!(::salsa::plumbing::function::Lru),
-                capacity,
-                quote!(set_lru_capacity),
-            )
-        } else {
-            (
-                quote!(::salsa::plumbing::function::NoopEviction),
-                0,
-                quote!(),
-            )
+        let (policy, capacity, setter) = match self.args.eviction {
+            None => (quote!(NoopEviction), 0, quote!()),
+            Some(Eviction::LruShorthand(n)) => (quote!(Lru), n, quote!(set_lru_capacity)),
+            Some(Eviction::Lru(n)) => (
+                quote!(salsa_unstable::Lru),
+                n,
+                quote!(set_eviction_capacity),
+            ),
         };
         let capacity = Literal::usize_unsuffixed(capacity);
 
@@ -250,7 +235,7 @@ impl Macro {
                 values_equal: {#eq},
                 needs_interner: #needs_interner,
                 heap_size_fn: #(#heap_size_fn)*,
-                eviction: #eviction_type,
+                eviction: ::salsa::plumbing::function::#policy,
                 eviction_capacity: #capacity,
                 capacity_setter: #setter,
                 return_mode: #return_mode,
