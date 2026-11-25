@@ -1,6 +1,8 @@
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::accumulator::{self};
-use crate::function::{Configuration, IngredientImpl};
+#[cfg(feature = "salsa_unstable")]
+use crate::function::eviction::EvictionPolicy;
+use crate::function::{Configuration, IngredientImpl, Memo};
 use crate::hash::FxHashSet;
 use crate::zalsa::ZalsaDatabase;
 use crate::zalsa_local::QueryOriginRef;
@@ -12,7 +14,7 @@ where
 {
     /// Helper used by `accumulate` functions. Computes the results accumulated by `database_key_index`
     /// and its inputs.
-    pub fn accumulated_by<'db, A>(&self, db: &'db C::DbView, key: Id) -> Vec<&'db A>
+    pub fn accumulated_by<'db, A>(&'db self, db: &'db C::DbView, key: Id) -> Vec<&'db A>
     where
         A: accumulator::Accumulator,
     {
@@ -36,8 +38,7 @@ where
         };
         let mut output = vec![];
 
-        // First ensure the result is up to date
-        self.fetch(db, zalsa, zalsa_local, key);
+        let root = self.fetch_memo(db, zalsa, zalsa_local, key);
 
         let db_key = self.database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
@@ -62,9 +63,13 @@ where
             }
 
             // Extend `output` with any values accumulated by `k`.
-            // SAFETY: `db` owns the `ingredient`
-            let (accumulated_map, input) =
-                unsafe { ingredient.accumulated(db.into(), k.key_index()) };
+            let (accumulated_map, input) = if k == db_key {
+                // Fetching the root already recorded its use with the eviction policy.
+                root.accumulated()
+            } else {
+                // SAFETY: `db` owns the `ingredient`
+                unsafe { ingredient.accumulated(db.into(), k.key_index()) }
+            };
             if let Some(accumulated_map) = accumulated_map {
                 accumulated_map.extend_with_accumulated(accumulator.index(), &mut output);
             }
@@ -112,11 +117,18 @@ where
         key: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let (zalsa, zalsa_local) = db.zalsas();
-        // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
         let memo = self.refresh_memo(db, zalsa, zalsa_local, key);
+        #[cfg(feature = "salsa_unstable")]
+        self.eviction.record_use(key);
+        memo.accumulated()
+    }
+}
+
+impl<C: Configuration> Memo<C> {
+    fn accumulated(&self) -> (Option<&AccumulatedMap>, InputAccumulatedValues) {
         (
-            memo.header.revisions.accumulated(),
-            memo.header.revisions.accumulated_inputs.load(),
+            self.header.revisions.accumulated(),
+            self.header.revisions.accumulated_inputs.load(),
         )
     }
 }

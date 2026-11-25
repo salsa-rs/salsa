@@ -130,6 +130,7 @@ impl<A: AllowedOptions> Options<A> {
 pub(crate) enum Eviction {
     LruShorthand(usize),
     Lru(usize),
+    Sieve(usize),
 }
 
 impl Eviction {
@@ -178,9 +179,10 @@ impl syn::parse::Parse for Eviction {
         match policy {
             None => Ok(Self::Lru(capacity)),
             Some(p) if p == "lru" => Ok(Self::Lru(capacity)),
+            Some(p) if p == "sieve" => Ok(Self::Sieve(capacity)),
             Some(p) => Err(syn::Error::new(
                 p.span(),
-                "unknown eviction policy, expected `lru`",
+                "unknown eviction policy, expected `lru` or `sieve`",
             )),
         }
     }
@@ -712,6 +714,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             tokens.extend(match eviction {
                 Eviction::LruShorthand(n) => quote::quote! { lru = #n, },
                 Eviction::Lru(n) => quote::quote! { eviction(policy = lru, capacity = #n), },
+                Eviction::Sieve(n) => quote::quote! { eviction(policy = sieve, capacity = #n), },
             });
         }
         if let Some(constructor_name) = constructor_name {
