@@ -165,11 +165,11 @@
 //! The per-slot state machine is:
 //!
 //! ```text
-//! absent (00)                  --admit-->  resident, unvisited (01)
-//! resident, unvisited (01)     --hit-->    resident, visited (11)
-//! resident, visited (11)       --select--> resident, unvisited (01)
-//! resident, unvisited (01)     --select--> absent (00) + pending eviction
-//! absent + pending eviction    --readmit--> resident, unvisited (01)
+//! absent (00)                  --admit-->  resident, unvisited (10)
+//! resident, unvisited (10)     --hit-->    resident, visited (11)
+//! resident, visited (11)       --select--> resident, unvisited (10)
+//! resident, unvisited (10)     --select--> absent (00) + pending eviction
+//! absent + pending eviction    --readmit--> resident, unvisited (10)
 //! ```
 //!
 //! [NSDI '24 paper]: https://www.usenix.org/conference/nsdi24/presentation/zhang-yazhuo
@@ -219,17 +219,18 @@ impl EvictionPolicy for Sieve {
 
     #[inline]
     fn record_use(&self, id: Id) {
-        // Probe residency before capacity: resident hits do not need the capacity,
-        // while admissions already take the cold path below.
-        if let Some((page, offset)) = self.state_pages.try_page_and_offset(id)
+        if self.capacity == 0 {
+            return;
+        }
+        let (number, offset) = state_page_number_and_offset(id.index());
+        let page = self.state_pages.get(number);
+        if let Some(page) = page
             && page.record_use(offset)
         {
             return;
         }
 
-        if self.capacity != 0 {
-            self.record_admission(id);
-        }
+        self.record_admission(id, page);
     }
 
     fn for_each_evicted(&mut self, mut evict: impl FnMut(Id)) {
@@ -245,12 +246,8 @@ impl EvictionPolicy for Sieve {
             let page = &self.state_pages[pending_page.page_number];
             page.clear_pending_page_index(state.pending_pages.len());
 
-            pending_page.for_each_pending_offset(|offset| {
-                // A victim may have been re-admitted since selection. Its stale
-                // pending bit must not delete the memo it now reuses.
-                if !page.is_resident(offset) {
-                    evict(slot_id(pending_page.page_number, offset));
-                }
+            pending_page.for_each_evicted_offset(page, |offset| {
+                evict(slot_id(pending_page.page_number, offset));
             });
         }
 
@@ -279,8 +276,9 @@ impl HasCapacity for Sieve {
 }
 
 impl Sieve {
-    fn record_admission(&self, id: Id) {
-        let (page, offset) = self.state_pages.page_and_offset_or_alloc(id);
+    fn record_admission(&self, id: Id, page: Option<&StatePage>) {
+        let (number, offset) = state_page_number_and_offset(id.index());
+        let page = page.unwrap_or_else(|| self.state_pages.get_or_alloc(number));
         let mut state = self.state.lock();
 
         // Another thread may have admitted the slot before we acquired the mutex.
@@ -418,14 +416,20 @@ impl PendingPage {
         self.pending[word] |= pending_mask;
     }
 
-    /// Visits only set bits, in ascending page-offset order.
+    /// Visits non-resident pending slots in ascending page-offset order.
     ///
     /// This intentionally uses a callback instead of an iterator. An iterator
     /// must preserve the current word and word index across calls to `next`;
     /// measured iterator versions increased `fill_and_evict` instructions.
-    fn for_each_pending_offset(&self, mut f: impl FnMut(StatePageOffset)) {
+    fn for_each_evicted_offset(&self, page: &StatePage, mut f: impl FnMut(StatePageOffset)) {
         for (word_index, &pending) in self.pending.iter().enumerate() {
-            let mut pending = pending;
+            if pending == 0 {
+                continue;
+            }
+
+            // The drain has exclusive access to the policy. A pending slot
+            // that was re-admitted must keep its memo.
+            let mut pending = pending & !page.resident_bits(word_index);
             while pending != 0 {
                 let bit = pending.trailing_zeros() as usize;
                 f(StatePageOffset::new(
@@ -467,17 +471,7 @@ impl StatePages {
         Self(Buckets::new())
     }
 
-    /// Returns the allocated state page and offset for `id` without allocating.
-    ///
-    /// Returns `None` if no state page has been allocated for the range
-    /// containing `id`.
-    #[inline]
-    fn try_page_and_offset(&self, id: Id) -> Option<(&StatePage, StatePageOffset)> {
-        let (page_number, offset) = state_page_number_and_offset(id.index());
-        self.get(page_number).map(|page| (page, offset))
-    }
-
-    /// Returns the state page and offset for `id`, allocating the page if needed.
+    /// Returns the state page, allocating it if needed.
     ///
     /// Concurrent callers may race to allocate the same page; all receive the
     /// single allocation published by its [`StatePageCell`].
@@ -485,9 +479,8 @@ impl StatePages {
     /// # Panics
     ///
     /// May panic if allocating the directory bucket or state page fails.
-    fn page_and_offset_or_alloc(&self, id: Id) -> (&StatePage, StatePageOffset) {
-        let (page_number, offset) = state_page_number_and_offset(id.index());
-        (self.0.get_or_alloc(page_number).get_or_alloc(), offset)
+    fn get_or_alloc(&self, number: StatePageNumber) -> &StatePage {
+        self.0.get_or_alloc(number).get_or_alloc()
     }
 
     #[inline]
@@ -587,16 +580,17 @@ const STATE_WORDS: usize = STATE_PAGE_LEN / SLOTS_PER_STATE_WORD;
 
 /// Compact replacement-policy state for [`STATE_PAGE_LEN`] consecutive table slots.
 ///
-/// Each slot has adjacent `resident` and `visited` bits. Keeping both bits in
+/// Each slot has a `resident` bit and a `visited` bit. Keeping both bits in
 /// one atomic word makes every transition indivisible with respect to a racing
 /// hit: either the hit marks the still-resident value, or it observes that
 /// selection removed the value and falls back to admission.
 #[derive(Default)]
 struct StatePage {
-    /// Interleaved `[resident, visited]` bit pairs for all slots in the page.
+    /// Each word holds 32 visited bits in the low half and the corresponding
+    /// resident bits in the high half.
     ///
     /// The only valid stable states are absent (`00`), resident/unvisited
-    /// (`01`), and resident/visited (`11`).
+    /// (`10`), and resident/visited (`11`).
     state: [AtomicU64; STATE_WORDS],
     /// One-based index into `State::pending_pages`, or zero when not queued.
     /// Mutation is serialized by the state mutex or exclusive access to the
@@ -617,13 +611,13 @@ impl StatePage {
         let word = &self.state[word];
         let mut state = word.load(Ordering::Relaxed);
 
-        loop {
-            // Already marked visited. `visited` implies `resident`, so the hit
-            // has been recorded.
-            if state & visited_mask != 0 {
-                return true;
-            }
+        // Most hits are already visited. Only unvisited slots need the
+        // resident mask and compare-and-exchange loop.
+        if state as u32 & visited_mask as u32 != 0 {
+            return true;
+        }
 
+        loop {
             // Not resident. The caller must return to the admission path.
             if state & resident_mask == 0 {
                 return false;
@@ -639,6 +633,7 @@ impl StatePage {
                 Ordering::Relaxed,
             ) {
                 Ok(_) => return true,
+                Err(new_state) if new_state & visited_mask != 0 => return true,
                 Err(new_state) => state = new_state,
             }
         }
@@ -670,20 +665,26 @@ impl StatePage {
             );
 
             let visited = state & visited_mask != 0;
-            let clear = if visited { visited_mask } else { resident_mask };
-            let new_state = state & !clear;
+            if visited {
+                // Only selection can clear this bit, and we hold the admission
+                // mutex. Changes to neighboring slots need not trigger a retry.
+                word.fetch_and(!visited_mask, Ordering::Relaxed);
+                return true;
+            }
+            let new_state = state & !resident_mask;
             match word.compare_exchange_weak(state, new_state, Ordering::Relaxed, Ordering::Relaxed)
             {
-                Ok(_) => return visited,
+                Ok(_) => return false,
                 Err(new_state) => state = new_state,
             }
         }
     }
 
-    /// Tests whether a pending victim has since been re-admitted.
-    fn is_resident(&self, offset: StatePageOffset) -> bool {
-        let (word, resident_mask, _) = offset.state_word();
-        self.state[word].load(Ordering::Relaxed) & resident_mask != 0
+    /// Collects the resident bits for the 64 slots of one pending word.
+    fn resident_bits(&self, pending_word: usize) -> u64 {
+        let lo = self.state[2 * pending_word].load(Ordering::Relaxed);
+        let hi = self.state[2 * pending_word + 1].load(Ordering::Relaxed);
+        (lo >> 32) | (hi & (u64::MAX << 32))
     }
 
     #[inline]
@@ -736,9 +737,9 @@ impl StatePageOffset {
     /// [`StatePage::state`].
     const fn state_word(self) -> (usize, u64, u64) {
         let offset = self.get();
-        let bit = (offset % SLOTS_PER_STATE_WORD) * SLOT_STATE_BITS;
-        let resident_mask = 1 << bit;
-        let visited_mask = 1 << (bit + 1);
+        let bit = offset % SLOTS_PER_STATE_WORD;
+        let visited_mask = (1u32 << bit) as u64;
+        let resident_mask = visited_mask << SLOTS_PER_STATE_WORD;
         (offset / SLOTS_PER_STATE_WORD, resident_mask, visited_mask)
     }
 
@@ -835,6 +836,21 @@ mod tests {
         sieve.record_use(resident);
         sieve.record_use(incoming);
         assert_eq!(drain_evicted(&mut sieve), [resident]);
+    }
+
+    #[test]
+    fn drain_preserves_readmitted_slots_in_both_halves_of_a_pending_word() {
+        let mut sieve = Sieve::new(2);
+        sieve.record_use(id(30));
+        sieve.record_use(id(31));
+        sieve.record_use(id(32));
+        sieve.record_use(id(63));
+        sieve.record_use(id(64));
+
+        // Both slots were selected and then re-admitted before the drain.
+        sieve.record_use(id(31));
+        sieve.record_use(id(32));
+        assert_eq!(drain_evicted(&mut sieve), [id(30), id(63), id(64)]);
     }
 
     #[test]
