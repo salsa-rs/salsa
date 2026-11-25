@@ -15,10 +15,6 @@ impl EvictionPolicy for NoopEviction {
     #[inline(always)]
     fn record_use(&self, _id: Id) {}
 
-    #[cfg(not(feature = "salsa_unstable"))]
-    #[inline(always)]
-    fn set_capacity(&mut self, _capacity: usize) {}
-
     #[inline(always)]
     fn for_each_evicted(&mut self, _cb: impl FnMut(Id)) {}
 }
