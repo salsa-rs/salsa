@@ -232,8 +232,10 @@ fn mixed_cases() -> impl Iterator<Item = (Policy, usize)> {
         .flat_map(|&policy| [(policy, 64), (policy, 256)])
 }
 
-/// Each revision draws with replacement from a popular set (80% of reads)
-/// and the remaining keys. Only the larger capacity can hold the popular set.
+/// Each revision performs 2,048 reads. Each read has an 80% chance of choosing
+/// one of the 128 popular keys and a 20% chance of choosing one of the other
+/// 896 keys. Keys can repeat, even on consecutive reads. The popular set fits
+/// at capacity 256 but exceeds capacity 64.
 #[divan::bench(args = mixed_cases(), sample_count = 20, sample_size = 1)]
 fn mixed_access(bencher: divan::Bencher, (policy, capacity): (Policy, usize)) {
     policy.bench(
@@ -245,8 +247,10 @@ fn mixed_access(bencher: divan::Bencher, (policy, capacity): (Policy, usize)) {
     );
 }
 
-/// Replay the same draws as mixed_access, swapping two sets of 128 keys
-/// halfway through. The old popular keys can still receive uncommon reads.
+/// The first four revisions read the same keys in the same order as
+/// `mixed_access`. Starting in revision 5, 128 previously uncommon keys become
+/// the popular set. The old popular keys join the group of 896 keys chosen with
+/// 20% probability.
 #[divan::bench(args = mixed_cases(), sample_count = 20, sample_size = 1)]
 fn phase_change(bencher: divan::Bencher, (policy, capacity): (Policy, usize)) {
     policy.bench(
