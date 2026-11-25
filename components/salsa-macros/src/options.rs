@@ -84,10 +84,8 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub data: Option<syn::Ident>,
 
-    /// The `lru = <usize>` option is used to set the lru capacity for a tracked function.
-    ///
-    /// If this is `Some`, the value is the `<usize>`.
-    pub lru: Option<usize>,
+    /// Eviction configuration and the spelling used on the tracked function.
+    pub eviction: Option<Eviction>,
 
     /// The `constructor = <ident>` option lets the user specify the name of
     /// the constructor of a salsa struct.
@@ -127,6 +125,67 @@ impl<A: AllowedOptions> Options<A> {
     }
 }
 
+/// Keep the two LRU spellings distinct because they generate different setters.
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum Eviction {
+    LruShorthand(usize),
+    Lru(usize),
+}
+
+impl Eviction {
+    pub(crate) fn option_name(self) -> &'static str {
+        match self {
+            Self::LruShorthand(_) => "lru",
+            _ => "eviction",
+        }
+    }
+}
+
+impl syn::parse::Parse for Eviction {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let mut policy = None;
+        let mut capacity = None;
+
+        while !input.is_empty() {
+            let option = syn::Ident::parse_any(input)?;
+            input.parse::<Equals>()?;
+
+            let duplicate = if option == "policy" {
+                policy.replace(syn::Ident::parse_any(input)?).is_some()
+            } else if option == "capacity" {
+                capacity
+                    .replace(input.parse::<syn::LitInt>()?.base10_parse()?)
+                    .is_some()
+            } else {
+                return Err(syn::Error::new(
+                    option.span(),
+                    format!("unrecognized eviction option `{option}`"),
+                ));
+            };
+            if duplicate {
+                return Err(syn::Error::new(
+                    option.span(),
+                    format!("option `{option}` provided twice"),
+                ));
+            }
+
+            if !input.is_empty() {
+                input.parse::<Comma>()?;
+            }
+        }
+
+        let capacity = capacity.ok_or_else(|| input.error("missing required `capacity` option"))?;
+        match policy {
+            None => Ok(Self::Lru(capacity)),
+            Some(p) if p == "lru" => Ok(Self::Lru(capacity)),
+            Some(p) => Err(syn::Error::new(
+                p.span(),
+                "unknown eviction policy, expected `lru`",
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct PersistOptions {
     /// Path to a custom serialize function.
@@ -152,7 +211,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             data: Default::default(),
             constructor_name: Default::default(),
             phantom: Default::default(),
-            lru: Default::default(),
+            eviction: Default::default(),
             singleton: Default::default(),
             id: Default::default(),
             revisions: Default::default(),
@@ -177,7 +236,7 @@ pub(crate) trait AllowedOptions {
     const CYCLE_FN: bool;
     const CYCLE_INITIAL: bool;
     const CYCLE_RESULT: bool;
-    const LRU: bool;
+    const EVICTION: bool;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
     const REVISIONS: bool;
@@ -440,19 +499,28 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`data` option not allowed here",
                     ));
                 }
-            } else if ident == "lru" {
-                if A::LRU {
-                    let _eq = Equals::parse(input)?;
-                    let lit = syn::LitInt::parse(input)?;
-                    let value = lit.base10_parse::<usize>()?;
-                    if let Some(old) = options.lru.replace(value) {
-                        return Err(syn::Error::new(old.span(), "option `lru` provided twice"));
-                    }
-                } else {
+            } else if ident == "eviction" || ident == "lru" {
+                if !A::EVICTION {
                     return Err(syn::Error::new(
                         ident.span(),
-                        "`lru` option not allowed here",
+                        format!("`{ident}` option not allowed here"),
                     ));
+                }
+                let eviction = if ident == "lru" {
+                    input.parse::<Equals>()?;
+                    Eviction::LruShorthand(input.parse::<syn::LitInt>()?.base10_parse()?)
+                } else {
+                    let content;
+                    parenthesized!(content in input);
+                    content.parse()?
+                };
+                if let Some(old) = options.eviction.replace(eviction) {
+                    let message = if ident == old.option_name() {
+                        format!("option `{ident}` provided twice")
+                    } else {
+                        "the `lru` and `eviction` options cannot be used together".into()
+                    };
+                    return Err(syn::Error::new(ident.span(), message));
                 }
             } else if ident == "constructor" {
                 if A::CONSTRUCTOR_NAME {
@@ -595,7 +663,7 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
             cycle_initial,
             cycle_result,
             data,
-            lru,
+            eviction,
             constructor_name,
             id,
             revisions,
@@ -640,8 +708,11 @@ impl<A: AllowedOptions> quote::ToTokens for Options<A> {
         if let Some(data) = data {
             tokens.extend(quote::quote! { data = #data, });
         }
-        if let Some(lru) = lru {
-            tokens.extend(quote::quote! { lru = #lru, });
+        if let Some(eviction) = eviction {
+            tokens.extend(match eviction {
+                Eviction::LruShorthand(n) => quote::quote! { lru = #n, },
+                Eviction::Lru(n) => quote::quote! { eviction(policy = lru, capacity = #n), },
+            });
         }
         if let Some(constructor_name) = constructor_name {
             tokens.extend(quote::quote! { constructor = #constructor_name, });

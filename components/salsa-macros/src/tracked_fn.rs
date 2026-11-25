@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 use syn::{Ident, ItemFn};
 
 use crate::hygiene::Hygiene;
-use crate::options::{AllowedOptions, AllowedPersistOptions, Options};
+use crate::options::{AllowedOptions, AllowedPersistOptions, Eviction, Options};
 use crate::xform::ChangeLt;
 use crate::{db_lifetime, fn_util};
 
@@ -51,7 +51,7 @@ impl AllowedOptions for TrackedFn {
 
     const CYCLE_RESULT: bool = true;
 
-    const LRU: bool = true;
+    const EVICTION: bool = true;
 
     const CONSTRUCTOR_NAME: bool = false;
 
@@ -151,10 +151,11 @@ impl Macro {
             ));
         }
 
-        if let (Some(_), Some(token)) = (&self.args.lru, &self.args.specify) {
+        if let (Some(eviction), Some(token)) = (self.args.eviction, &self.args.specify) {
+            let option = eviction.option_name();
             return Err(syn::Error::new_spanned(
                 token,
-                "the `specify` and `lru` options cannot be used together",
+                format!("the `specify` and `{option}` options cannot be used together"),
             ));
         }
 
@@ -163,14 +164,12 @@ impl Macro {
             FunctionType::SalsaStruct => false,
         };
 
-        let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
-
-        // Determine the eviction policy type based on whether LRU capacity is specified
-        let eviction_type = if self.args.lru.is_some() {
-            quote!(::salsa::plumbing::function::Lru)
-        } else {
-            quote!(::salsa::plumbing::function::NoopEviction)
+        let (policy, capacity, setter) = match self.args.eviction {
+            None => (quote!(NoopEviction), 0, quote!()),
+            Some(Eviction::LruShorthand(n)) => (quote!(Lru), n, quote!(set_lru_capacity)),
+            Some(Eviction::Lru(n)) => (quote!(Lru), n, quote!(set_eviction_capacity)),
         };
+        let capacity = Literal::usize_unsuffixed(capacity);
 
         let return_mode = self
             .args
@@ -232,8 +231,9 @@ impl Macro {
                 values_equal: {#eq},
                 needs_interner: #needs_interner,
                 heap_size_fn: #(#heap_size_fn)*,
-                eviction: #eviction_type,
-                lru: #lru,
+                eviction: ::salsa::plumbing::function::#policy,
+                eviction_capacity: #capacity,
+                capacity_setter: #setter,
                 return_mode: #return_mode,
                 persist: #persist,
                 assert_interned_inputs_are_salsa_values: { #assert_interned_inputs_are_salsa_values },
