@@ -12,10 +12,6 @@
 //! Revision-changing benchmarks use single-iteration samples to avoid batching
 //! multiple databases, and 20 samples to keep their setup cost bounded. The
 //! concurrent benchmark uses four synchronized workers.
-//!
-//! Set `SALSA_BENCH_COUNTS=1` to replay `mixed_access` and `phase_change`
-//! outside timing and report extra executions relative to NoEviction per
-//! revision and seed, with both 80% and 60% popular reads.
 
 use std::hint::black_box;
 use std::sync::{
@@ -223,6 +219,7 @@ impl Benchmark for Recurring {
     }
 }
 
+// Every sample replays all three traces, in the same order, for every policy.
 const SEEDS: [u64; 3] = [17, 42, 99];
 const REVISIONS: usize = 8;
 const KEYS: usize = 1_024;
@@ -267,9 +264,8 @@ struct Mixed {
 }
 
 impl Mixed {
-    fn rounds<I: Item>(&self, items: &[I], seed: u64, popular_percent: u32) -> Vec<Vec<I>> {
+    fn rounds<I: Item>(&self, mut keys: Vec<I>, seed: u64) -> Vec<Vec<I>> {
         let mut rng = fastrand::Rng::with_seed(seed);
-        let mut keys = items.to_vec();
         rng.shuffle(&mut keys);
         let mut rounds = Vec::with_capacity(REVISIONS);
         for revision in 0..REVISIONS {
@@ -278,7 +274,7 @@ impl Mixed {
             }
             let reads = (0..READS)
                 .map(|_| {
-                    let range = if rng.u32(..100) < popular_percent {
+                    let range = if rng.u32(..100) < 80 {
                         0..POPULAR
                     } else {
                         POPULAR..KEYS
@@ -294,82 +290,24 @@ impl Mixed {
 
 impl Benchmark for Mixed {
     fn run<I: Item>(self, bencher: divan::Bencher) {
-        if std::env::var_os("SALSA_BENCH_COUNTS").is_some() {
-            self.report::<I>();
-        }
-
         // Start each trace with a fresh database. Charge each revision for
         // its sweep, including the last. Sequence generation is untimed.
         bencher
             .with_inputs(|| {
                 SEEDS.map(|seed| {
                     let (db, items) = setup::<I>(self.capacity, KEYS);
-                    let rounds = self.rounds(&items, seed, 80);
+                    let rounds = self.rounds(items, seed);
                     (db, rounds)
                 })
             })
             .bench_local_refs(|traces| {
                 for (db, rounds) in traces {
                     for round in rounds {
-                        mixed_revision(db, round);
+                        black_box(access_all(db, round.iter().copied()));
+                        db.synthetic_write(salsa::Durability::LOW);
                     }
                 }
             });
-    }
-}
-
-fn mixed_revision<I: Item>(db: &mut dyn salsa::Database, round: &[I]) {
-    black_box(access_all(db, round.iter().copied()));
-    db.synthetic_write(salsa::Durability::LOW);
-}
-
-// Only the untimed replay installs an event callback.
-#[salsa::db]
-#[derive(Clone)]
-struct CountingDb {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for CountingDb {}
-
-impl Mixed {
-    fn executions<I: Item>(&self, seed: u64, popular_percent: u32) -> [usize; REVISIONS] {
-        let executions = std::sync::Arc::new(AtomicUsize::new(0));
-        let counter = executions.clone();
-        let mut db = CountingDb {
-            storage: salsa::Storage::new(Some(Box::new(move |event| {
-                if matches!(event.kind, salsa::EventKind::WillExecute { .. }) {
-                    counter.fetch_add(1, Ordering::Relaxed);
-                }
-            }))),
-        };
-        let items = support::setup_items::<I>(&mut db, self.capacity, KEYS);
-        let rounds = self.rounds(&items, seed, popular_percent);
-        std::array::from_fn(|revision| {
-            mixed_revision(&mut db, &rounds[revision]);
-            executions.swap(0, Ordering::Relaxed)
-        })
-    }
-
-    fn report<I: Item>(&self) {
-        let workload = if self.switch {
-            "phase_change"
-        } else {
-            "mixed_access"
-        };
-        let policy = std::any::type_name::<I>().rsplit("::").next().unwrap();
-        for popular_percent in [80, 60] {
-            for seed in SEEDS {
-                let baseline = self.executions::<support::NoEviction>(seed, popular_percent);
-                let actual = self.executions::<I>(seed, popular_percent);
-                let extra: [_; REVISIONS] = std::array::from_fn(|i| actual[i] - baseline[i]);
-                eprintln!(
-                    "{workload} {policy} capacity={} popular={popular_percent}% seed={seed} extra={extra:?}",
-                    self.capacity
-                );
-            }
-        }
     }
 }
 
