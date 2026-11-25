@@ -24,10 +24,7 @@ use salsa::Database as _;
 #[path = "eviction/support.rs"]
 mod support;
 
-use support::{
-    Item, Policy, Value, access_all, access_all_with, lru_value, new_items, no_eviction_value,
-    prewarm,
-};
+use support::{Benchmark, Item, POLICIES, Policy, Value, access_all, prewarm, setup};
 
 const PARALLEL_WORKERS: usize = 4;
 
@@ -64,42 +61,43 @@ fn main() {
 /// the current entry. The incremental phases then measure the cost of loading
 /// active entries that did not survive and how quickly the policy stabilizes
 /// around the smaller working set.
-#[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
-    sample_count = 20,
-    sample_size = 1
-)]
+#[divan::bench(args = POLICIES, sample_count = 20, sample_size = 1)]
 fn project_check_then_incremental(bencher: divan::Bencher, policy: Policy) {
-    const CAPACITY: usize = 256;
-    const PROJECT_FILES: usize = 1_024;
-    const ACTIVE_FILES: usize = 8;
-    const CALLS_PER_FILE: usize = 64;
-    const INCREMENTAL_REVISIONS: usize = 3;
+    policy.bench(bencher, Project);
+}
 
-    bencher
-        .with_inputs(|| {
-            let mut db = salsa::DatabaseImpl::new();
-            policy.set_capacity(&mut db, CAPACITY);
-            let files = new_items(&db, PROJECT_FILES);
-            let active_files = files
-                .iter()
-                .step_by(PROJECT_FILES / ACTIVE_FILES)
-                .copied()
-                .collect::<Vec<_>>();
-            (db, files, active_files)
-        })
-        .bench_local_refs(|(db, files, active_files)| {
-            let mut sum = access_each_repeatedly(policy, &*db, files, CALLS_PER_FILE).0;
+struct Project;
 
-            for _ in 0..INCREMENTAL_REVISIONS {
-                db.synthetic_write(salsa::Durability::LOW);
-                sum = sum.wrapping_add(
-                    access_each_repeatedly(policy, &*db, active_files, CALLS_PER_FILE).0,
-                );
-            }
+impl Benchmark for Project {
+    fn run<I: Item>(self, bencher: divan::Bencher) {
+        const CAPACITY: usize = 256;
+        const PROJECT_FILES: usize = 1_024;
+        const ACTIVE_FILES: usize = 8;
+        const CALLS_PER_FILE: usize = 64;
+        const INCREMENTAL_REVISIONS: usize = 3;
 
-            black_box(Value(sum))
-        });
+        bencher
+            .with_inputs(|| {
+                let (db, files) = setup::<I>(CAPACITY, PROJECT_FILES);
+                let active_files = files
+                    .iter()
+                    .step_by(PROJECT_FILES / ACTIVE_FILES)
+                    .copied()
+                    .collect::<Vec<_>>();
+                (db, files, active_files)
+            })
+            .bench_local_refs(|(db, files, active_files)| {
+                let mut sum = access_each_repeatedly(&*db, files, CALLS_PER_FILE).0;
+
+                for _ in 0..INCREMENTAL_REVISIONS {
+                    db.synthetic_write(salsa::Durability::LOW);
+                    sum = sum
+                        .wrapping_add(access_each_repeatedly(&*db, active_files, CALLS_PER_FILE).0);
+                }
+
+                black_box(Value(sum))
+            });
+    }
 }
 
 /// Measures resistance to cache pollution from an interleaved one-shot scan.
@@ -125,50 +123,9 @@ fn project_check_then_incremental(bencher: divan::Bencher, policy: Policy) {
 /// measured rounds test which recurring entries survive the scans. A final
 /// recurring-only round charges for entries displaced by the last scan.
 /// `NoEviction` shows the cost when recurring values are never displaced.
-#[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
-    sample_count = 20,
-    sample_size = 1
-)]
+#[divan::bench(args = POLICIES, sample_count = 20, sample_size = 1)]
 fn scan_resistance(bencher: divan::Bencher, policy: Policy) {
-    const CAPACITY: usize = 256;
-    const HOT_ITEMS: usize = 192;
-    const ITEMS_PER_ROUND: usize = 128;
-    const ROUNDS: usize = 5;
-
-    bencher
-        .with_inputs(|| {
-            let mut db = salsa::DatabaseImpl::new();
-            policy.set_capacity(&mut db, CAPACITY);
-            let items = new_items(&db, HOT_ITEMS + ITEMS_PER_ROUND * ROUNDS);
-            let hot = &items[..HOT_ITEMS];
-
-            let mut rounds = Vec::with_capacity(ROUNDS);
-
-            for round in 0..ROUNDS {
-                let cold_start = HOT_ITEMS + round * ITEMS_PER_ROUND;
-                let cold_end = cold_start + ITEMS_PER_ROUND;
-                let cold = &items[cold_start..cold_end];
-                let mut accesses = Vec::with_capacity(HOT_ITEMS + ITEMS_PER_ROUND);
-
-                // Mix three reusable entries with every two one-shot entries.
-                for (hot_chunk, cold_chunk) in
-                    hot.as_chunks::<3>().0.iter().zip(cold.as_chunks::<2>().0)
-                {
-                    accesses.extend_from_slice(hot_chunk);
-                    accesses.extend_from_slice(cold_chunk);
-                }
-                rounds.push(accesses);
-            }
-
-            prewarm(policy, &db, &rounds.remove(0));
-
-            // Pay for recurring entries displaced by the final mixed round.
-            rounds.push(hot.to_vec());
-
-            Workload { db, rounds }
-        })
-        .bench_local_refs(|workload| black_box(workload.run(policy)));
+    policy.bench(bencher, Recurring::Scan);
 }
 
 /// Measures whether a policy retains popular queries over one-hit wonders.
@@ -203,86 +160,159 @@ fn scan_resistance(bencher: divan::Bencher, policy: Policy) {
 /// for popular entries displaced by the last one-hit-wonder batch. `NoEviction`
 /// provides the computation baseline; retaining cold entries cannot create hits
 /// because they are never accessed again.
-#[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
-    sample_count = 20,
-    sample_size = 1
-)]
+#[divan::bench(args = POLICIES, sample_count = 20, sample_size = 1)]
 fn one_hit_wonders(bencher: divan::Bencher, policy: Policy) {
-    const CAPACITY: usize = 128;
-    const HOT_ITEMS: usize = 64;
-    const COLD_ITEMS_PER_ROUND: usize = 192;
-    const ROUNDS: usize = 5;
-
-    bencher
-        .with_inputs(|| {
-            let mut db = salsa::DatabaseImpl::new();
-            policy.set_capacity(&mut db, CAPACITY);
-            let items = new_items(&db, HOT_ITEMS + COLD_ITEMS_PER_ROUND * ROUNDS);
-            let hot = &items[..HOT_ITEMS];
-            let mut rounds = Vec::with_capacity(ROUNDS);
-
-            for round in 0..ROUNDS {
-                let cold_start = HOT_ITEMS + round * COLD_ITEMS_PER_ROUND;
-                let cold_end = cold_start + COLD_ITEMS_PER_ROUND;
-                let cold = &items[cold_start..cold_end];
-                let mut accesses = Vec::with_capacity(HOT_ITEMS * 2 + COLD_ITEMS_PER_ROUND);
-
-                for (hot_item, cold_item) in hot.iter().zip(cold) {
-                    accesses.push(*hot_item);
-                    accesses.push(*cold_item);
-                    accesses.push(*hot_item);
-                }
-                accesses.extend_from_slice(&cold[HOT_ITEMS..]);
-                rounds.push(accesses);
-            }
-
-            prewarm(policy, &db, &rounds.remove(0));
-
-            rounds.push(hot.to_vec());
-
-            Workload { db, rounds }
-        })
-        .bench_local_refs(|workload| black_box(workload.run(policy)));
+    policy.bench(bencher, Recurring::OneHitWonders);
 }
 
-/// Measures how quickly a policy abandons a working set that is no longer used.
-///
-/// ```text
-/// [A x 192] --revision--> [B x 192] --revision--> [B x 192]
-///                                      --revision--> [B x 192]
-/// ```
-///
-/// The benchmark switches from 192 entries to a disjoint set of
-/// 192 entries. Either set fits by itself, so retaining the old phase only
-/// delays admission of useful results from the new phase. `NoEviction` provides
-/// the policy-free baseline: it retains both phases, but only the second phase
-/// is accessed after the switch.
-#[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
-    sample_count = 20,
-    sample_size = 1
-)]
-fn phase_change(bencher: divan::Bencher, policy: Policy) {
-    const CAPACITY: usize = 256;
-    const ITEMS_PER_PHASE: usize = 192;
-    const ROUNDS: usize = 3;
+enum Recurring {
+    Scan,
+    OneHitWonders,
+}
 
-    bencher
-        .with_inputs(|| {
-            let mut db = salsa::DatabaseImpl::new();
-            policy.set_capacity(&mut db, CAPACITY);
-            let items = new_items(&db, ITEMS_PER_PHASE * 2);
-            let first_phase = &items[..ITEMS_PER_PHASE];
-            let second_phase = &items[ITEMS_PER_PHASE..];
-            prewarm(policy, &db, first_phase);
-
-            Workload {
-                db,
-                rounds: vec![second_phase.to_vec(); ROUNDS],
+impl Recurring {
+    fn round<I: Copy>(&self, hot: &[I], cold: &[I]) -> Vec<I> {
+        let mut reads = Vec::with_capacity(320);
+        match self {
+            Self::Scan => {
+                for (hot, cold) in hot.as_chunks::<3>().0.iter().zip(cold.as_chunks::<2>().0) {
+                    reads.extend_from_slice(hot);
+                    reads.extend_from_slice(cold);
+                }
             }
-        })
-        .bench_local_refs(|workload| black_box(workload.run(policy)));
+            Self::OneHitWonders => {
+                for (&hot, &cold) in hot.iter().zip(cold) {
+                    reads.extend([hot, cold, hot]);
+                }
+                reads.extend_from_slice(&cold[hot.len()..]);
+            }
+        }
+        reads
+    }
+}
+
+impl Benchmark for Recurring {
+    fn run<I: Item>(self, bencher: divan::Bencher) {
+        let (capacity, hot_count, cold_per_round) = match self {
+            Self::Scan => (256, 192, 128),
+            Self::OneHitWonders => (128, 64, 192),
+        };
+        bencher
+            .with_inputs(|| {
+                let (db, items) = setup::<I>(capacity, hot_count + 5 * cold_per_round);
+                let (hot, cold) = items.split_at(hot_count);
+                let mut rounds = cold
+                    .chunks_exact(cold_per_round)
+                    .map(|cold| self.round(hot, cold));
+                prewarm(&db, &rounds.next().unwrap());
+                // The final probe charges for hot entries displaced by the last round.
+                (db, rounds.chain([hot.to_vec()]).collect::<Vec<_>>())
+            })
+            .bench_local_refs(|(db, rounds)| {
+                let mut sum = 0u64;
+                for round in rounds {
+                    db.synthetic_write(salsa::Durability::LOW);
+                    sum = sum.wrapping_add(access_all(db, round.iter().copied()).0);
+                }
+                black_box(Value(sum))
+            });
+    }
+}
+
+// Every sample replays all three traces, in the same order, for every policy.
+const SEEDS: [u64; 3] = [17, 42, 99];
+const REVISIONS: usize = 8;
+const KEYS: usize = 1_024;
+const POPULAR: usize = 128;
+const READS: usize = 2_048;
+
+fn mixed_cases() -> impl Iterator<Item = (Policy, usize)> {
+    POLICIES
+        .iter()
+        .flat_map(|&policy| [(policy, 64), (policy, 256)])
+}
+
+/// Each revision performs 2,048 reads. Each read has an 80% chance of choosing
+/// one of the 128 popular keys and a 20% chance of choosing one of the other
+/// 896 keys. Keys can repeat, even on consecutive reads. The popular set fits
+/// at capacity 256 but exceeds capacity 64.
+#[divan::bench(args = mixed_cases(), sample_count = 20, sample_size = 1)]
+fn mixed_access(bencher: divan::Bencher, (policy, capacity): (Policy, usize)) {
+    policy.bench(
+        bencher,
+        Mixed {
+            capacity,
+            switch: false,
+        },
+    );
+}
+
+/// The first four revisions read the same keys in the same order as
+/// `mixed_access`. Starting in revision 5, 128 previously uncommon keys become
+/// the popular set. The old popular keys join the group of 896 keys chosen with
+/// 20% probability.
+#[divan::bench(args = mixed_cases(), sample_count = 20, sample_size = 1)]
+fn phase_change(bencher: divan::Bencher, (policy, capacity): (Policy, usize)) {
+    policy.bench(
+        bencher,
+        Mixed {
+            capacity,
+            switch: true,
+        },
+    );
+}
+
+struct Mixed {
+    capacity: usize,
+    switch: bool,
+}
+
+impl Mixed {
+    fn rounds<I: Item>(&self, mut keys: Vec<I>, seed: u64) -> Vec<Vec<I>> {
+        let mut rng = fastrand::Rng::with_seed(seed);
+        rng.shuffle(&mut keys);
+        let mut rounds = Vec::with_capacity(REVISIONS);
+        for revision in 0..REVISIONS {
+            if self.switch && revision == REVISIONS / 2 {
+                keys[..2 * POPULAR].rotate_left(POPULAR);
+            }
+            let reads = (0..READS)
+                .map(|_| {
+                    let range = if rng.u32(..100) < 80 {
+                        0..POPULAR
+                    } else {
+                        POPULAR..KEYS
+                    };
+                    keys[rng.usize(range)]
+                })
+                .collect();
+            rounds.push(reads);
+        }
+        rounds
+    }
+}
+
+impl Benchmark for Mixed {
+    fn run<I: Item>(self, bencher: divan::Bencher) {
+        // Start each trace with a fresh database. Charge each revision for
+        // its sweep, including the last. Sequence generation is untimed.
+        bencher
+            .with_inputs(|| {
+                SEEDS.map(|seed| {
+                    let (db, items) = setup::<I>(self.capacity, KEYS);
+                    let rounds = self.rounds(items, seed);
+                    (db, rounds)
+                })
+            })
+            .bench_local_refs(|traces| {
+                for (db, rounds) in traces {
+                    for round in rounds {
+                        black_box(access_all(db, round.iter().copied()));
+                        db.synthetic_write(salsa::Durability::LOW);
+                    }
+                }
+            });
+    }
 }
 
 /// Measures synchronization overhead on concurrent cache hits.
@@ -299,76 +329,43 @@ fn phase_change(bencher: divan::Bencher, policy: Policy) {
 /// eviction policy's hit bookkeeping; `NoEviction` provides the baseline.
 /// Divan synchronizes the workers before each timed sample, avoiding variance
 /// from Rayon task dispatch and workers joining the workload at different times.
-#[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
-    threads = PARALLEL_WORKERS,
-    sample_count = 20,
-    sample_size = 1
-)]
+#[divan::bench(args = POLICIES, threads = PARALLEL_WORKERS, sample_count = 20, sample_size = 1)]
 fn parallel_fast_path(bencher: divan::Bencher, policy: Policy) {
-    const ACCESSES_PER_WORKER: usize = 4_096;
-
-    let mut db = salsa::DatabaseImpl::new();
-    policy.set_capacity(&mut db, PARALLEL_WORKERS);
-    let items = new_items(&db, PARALLEL_WORKERS);
-    prewarm(policy, &db, &items);
-
-    let db = Mutex::new(db);
-    let next_worker = AtomicUsize::new(0);
-
-    bencher
-        .with_inputs(|| {
-            let worker = next_worker.fetch_add(1, Ordering::Relaxed);
-            (db.lock().unwrap().clone(), items[worker % items.len()])
-        })
-        .bench_refs(|(db, item)| {
-            black_box(access_all(
-                policy,
-                db,
-                std::iter::repeat_n(*item, ACCESSES_PER_WORKER),
-            ))
-        });
+    policy.bench(bencher, Parallel);
 }
 
-fn access_each_repeatedly(
-    policy: Policy,
-    db: &dyn salsa::Database,
-    items: &[Item],
-    count: usize,
-) -> Value {
+struct Parallel;
+
+impl Benchmark for Parallel {
+    fn run<I: Item>(self, bencher: divan::Bencher) {
+        const ACCESSES_PER_WORKER: usize = 4_096;
+
+        let (db, items) = setup::<I>(PARALLEL_WORKERS, PARALLEL_WORKERS);
+        prewarm(&db, &items);
+
+        let db = Mutex::new(db);
+        let next_worker = AtomicUsize::new(0);
+
+        bencher
+            .with_inputs(|| {
+                let worker = next_worker.fetch_add(1, Ordering::Relaxed);
+                (db.lock().unwrap().clone(), items[worker % items.len()])
+            })
+            .bench_refs(|(db, item)| {
+                black_box(access_all(
+                    db,
+                    std::iter::repeat_n(*item, ACCESSES_PER_WORKER),
+                ))
+            });
+    }
+}
+
+fn access_each_repeatedly<I: Item>(db: &dyn salsa::Database, items: &[I], count: usize) -> Value {
     access_all(
-        policy,
         db,
         items
             .iter()
             .copied()
             .flat_map(|item| std::iter::repeat_n(item, count)),
     )
-}
-
-struct Workload {
-    db: salsa::DatabaseImpl,
-    /// Each round starts a new revision, applying evictions selected by the
-    /// preceding round before performing the next batch of accesses.
-    rounds: Vec<Vec<Item>>,
-}
-
-impl Workload {
-    #[inline]
-    fn run(&mut self, policy: Policy) -> Value {
-        match policy {
-            Policy::NoEviction => self.run_with(no_eviction_value),
-            Policy::Lru => self.run_with(lru_value),
-        }
-    }
-
-    #[inline]
-    fn run_with(&mut self, fetch: impl Fn(&dyn salsa::Database, Item) -> Value + Copy) -> Value {
-        let mut sum = 0u64;
-        for round in &self.rounds {
-            self.db.synthetic_write(salsa::Durability::LOW);
-            sum = sum.wrapping_add(access_all_with(&self.db, round.iter().copied(), fetch).0);
-        }
-        Value(sum)
-    }
 }

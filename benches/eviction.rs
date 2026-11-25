@@ -18,7 +18,7 @@ use salsa::Database as _;
 #[path = "eviction/support.rs"]
 mod support;
 
-use support::{Policy, access_all, new_items, prewarm};
+use support::{Benchmark, Item, POLICIES, Policy, access_all, prewarm, setup};
 
 fn main() {
     divan::main();
@@ -35,16 +35,9 @@ fn main() {
 /// small per-hit costs can add up. Every result remains resident, which isolates
 /// hit-path bookkeeping. `NoEviction` shows the tracked-query cost without an
 /// eviction policy.
-#[divan::bench(args = [Policy::NoEviction, Policy::Lru])]
+#[divan::bench(args = POLICIES)]
 fn fast_path(bencher: divan::Bencher, policy: Policy) {
-    const ITEMS: usize = 1_024;
-
-    let mut db = salsa::DatabaseImpl::new();
-    policy.set_capacity(&mut db, ITEMS);
-    let items = new_items(&db, ITEMS);
-    prewarm(policy, &db, &items);
-
-    bencher.bench_local(|| black_box(access_all(policy, &db, items.iter().copied())));
+    policy.bench(bencher, Hits { capacity: 1_024 });
 }
 
 /// Measures cache-hit overhead after disabling eviction at runtime.
@@ -59,16 +52,9 @@ fn fast_path(bencher: divan::Bencher, policy: Policy) {
 /// tracked function. This measures the remaining disabled-policy branch on the
 /// hit path. `NoEviction` is the policy-free reference for how cheap this path
 /// could be.
-#[divan::bench(args = [Policy::NoEviction, Policy::Lru])]
+#[divan::bench(args = POLICIES)]
 fn disabled_eviction(bencher: divan::Bencher, policy: Policy) {
-    const ITEMS: usize = 1_024;
-
-    let mut db = salsa::DatabaseImpl::new();
-    policy.set_capacity(&mut db, 0);
-    let items = new_items(&db, ITEMS);
-    prewarm(policy, &db, &items);
-
-    bencher.bench_local(|| black_box(access_all(policy, &db, items.iter().copied())));
+    policy.bench(bencher, Hits { capacity: 0 });
 }
 
 /// Measures the cost of enforcing capacity when the working set already fits.
@@ -81,27 +67,9 @@ fn disabled_eviction(bencher: divan::Bencher, policy: Policy) {
 /// A capacity check should be cheap when no victim is needed. The benchmark
 /// reads a fully resident working set and then triggers a sweep, separating
 /// steady-state sweep bookkeeping from victim selection and destruction.
-#[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
-    sample_count = 20,
-    sample_size = 1
-)]
+#[divan::bench(args = POLICIES, sample_count = 20, sample_size = 1)]
 fn fast_path_and_sweep(bencher: divan::Bencher, policy: Policy) {
-    const ITEMS: usize = 1_024;
-
-    bencher
-        .with_inputs(|| {
-            let mut db = salsa::DatabaseImpl::new();
-            policy.set_capacity(&mut db, ITEMS);
-            let items = new_items(&db, ITEMS);
-            prewarm(policy, &db, &items);
-            (db, items)
-        })
-        .bench_local_refs(|(db, items)| {
-            let result = access_all(policy, &*db, items.iter().copied());
-            db.trigger_lru_eviction();
-            black_box(result)
-        });
+    policy.bench(bencher, Sweep::Prewarmed);
 }
 
 /// Measures the cost of exceeding capacity and evicting the excess entries.
@@ -115,25 +83,43 @@ fn fast_path_and_sweep(bencher: divan::Bencher, policy: Policy) {
 /// enforces that capacity. This includes admission, eager or lazy victim
 /// selection, and value destruction. `NoEviction` provides the computation
 /// baseline; setup and final database destruction remain outside timing.
-#[divan::bench(
-    args = [Policy::NoEviction, Policy::Lru],
-    sample_count = 20,
-    sample_size = 1
-)]
+#[divan::bench(args = POLICIES, sample_count = 20, sample_size = 1)]
 fn fill_and_evict(bencher: divan::Bencher, policy: Policy) {
-    const CAPACITY: usize = 256;
-    const ITEMS: usize = 320;
+    policy.bench(bencher, Sweep::Cold);
+}
 
-    bencher
-        .with_inputs(|| {
-            let mut db = salsa::DatabaseImpl::new();
-            policy.set_capacity(&mut db, CAPACITY);
-            let items = new_items(&db, ITEMS);
-            (db, items)
-        })
-        .bench_local_refs(|(db, items)| {
-            let result = access_all(policy, &*db, items.iter().copied());
-            db.trigger_lru_eviction();
-            black_box(result)
-        });
+struct Hits {
+    capacity: usize,
+}
+
+impl Benchmark for Hits {
+    fn run<I: Item>(self, bencher: divan::Bencher) {
+        let (db, items) = setup::<I>(self.capacity, 1_024);
+        prewarm(&db, &items);
+        bencher.bench_local(|| black_box(access_all(&db, items.iter().copied())));
+    }
+}
+
+enum Sweep {
+    Prewarmed,
+    Cold,
+}
+
+impl Benchmark for Sweep {
+    fn run<I: Item>(self, bencher: divan::Bencher) {
+        bencher
+            .with_inputs(|| match self {
+                Self::Cold => setup::<I>(256, 320),
+                Self::Prewarmed => {
+                    let (db, items) = setup::<I>(1_024, 1_024);
+                    prewarm(&db, &items);
+                    (db, items)
+                }
+            })
+            .bench_local_refs(|(db, items)| {
+                let result = access_all(&*db, items.iter().copied());
+                db.trigger_lru_eviction();
+                black_box(result)
+            });
+    }
 }
