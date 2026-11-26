@@ -60,30 +60,3 @@ fn sieve_skips_stale_pending_evictions() {
     b.read(&db);
     db.assert_logs_len(1);
 }
-
-#[cfg(feature = "accumulator")]
-#[test]
-fn accumulated_records_one_use_of_the_root() {
-    use salsa::Accumulator as _;
-
-    #[salsa::accumulator]
-    struct Diagnostic(u32);
-
-    #[salsa::tracked(eviction(policy = sieve, capacity = 2))]
-    fn check(db: &dyn LogDatabase, input: MyInput) {
-        db.push_log(format!("check({})", input.field(db)));
-        Diagnostic(input.field(db)).accumulate(db);
-    }
-
-    let mut db = common::LoggerDatabase::default();
-    let [a, b, c] = [0, 1, 2].map(|field| MyInput::new(&db, field));
-    assert_eq!(check::accumulated::<Diagnostic>(&db, a)[0].0, 0);
-    check(&db, b);
-    check(&db, c);
-    db.assert_logs_len(3);
-
-    // Walking the root's accumulated values must not give A a second chance.
-    db.trigger_eviction();
-    check(&db, a);
-    db.assert_logs_len(1);
-}

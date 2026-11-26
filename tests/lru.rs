@@ -171,39 +171,3 @@ fn eviction_defaults_to_lru() {
     read(&db, b);
     db.assert_logs_len(1);
 }
-
-#[cfg(feature = "accumulator")]
-#[test]
-fn accumulated_reinstates_evicted_dependency_in_lru() {
-    use salsa::Accumulator as _;
-
-    #[salsa::accumulator]
-    struct Diagnostic(u32);
-
-    #[salsa::tracked(lru = 1)]
-    fn child(db: &dyn LogDatabase, input: MyInput) {
-        db.push_log(format!("child({})", input.field(db)));
-        Diagnostic(input.field(db)).accumulate(db);
-    }
-
-    #[salsa::tracked]
-    fn parent(db: &dyn LogDatabase, input: MyInput) {
-        child(db, input);
-    }
-
-    let mut db = common::LoggerDatabase::default();
-    let a = MyInput::new(&db, 0);
-    let b = MyInput::new(&db, 1);
-    parent(&db, a);
-    child(&db, b);
-    db.trigger_lru_eviction();
-
-    // Reading A's diagnostics recomputes child(A), which should displace child(B).
-    assert_eq!(parent::accumulated::<Diagnostic>(&db, a)[0].0, 0);
-    db.assert_logs_len(3);
-    db.trigger_lru_eviction();
-    child(&db, a);
-    db.assert_logs_len(0);
-    child(&db, b);
-    db.assert_logs_len(1);
-}

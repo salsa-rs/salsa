@@ -21,19 +21,6 @@ where
         zalsa_local: &'db ZalsaLocal,
         id: Id,
     ) -> &'db C::Output<'db> {
-        let memo = self.fetch_memo(db, zalsa, zalsa_local, id);
-        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
-        unsafe { memo.value().unwrap_unchecked() }
-    }
-
-    #[inline(always)]
-    pub(super) fn fetch_memo<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        zalsa: &'db Zalsa,
-        zalsa_local: &'db ZalsaLocal,
-        id: Id,
-    ) -> &'db Memo<C> {
         zalsa.unwind_if_revision_cancelled(zalsa_local);
 
         let database_key_index = self.database_key_index(id);
@@ -42,6 +29,9 @@ where
         let _span = crate::tracing::debug_span!("fetch", query = ?database_key_index).entered();
 
         let memo = self.refresh_memo(db, zalsa, zalsa_local, id);
+
+        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
+        let memo_value = unsafe { memo.value().unwrap_unchecked() };
 
         self.eviction.record_use(id);
 
@@ -57,7 +47,7 @@ where
             &revisions.accumulated_inputs,
         );
 
-        memo
+        memo_value
     }
 
     #[inline(always)]
