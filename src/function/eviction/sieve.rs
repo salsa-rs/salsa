@@ -86,44 +86,51 @@
 //!
 //! ## Deferred eviction
 //!
-//! Selecting a victim removes it from the queue and clears its resident bit
-//! immediately, but Salsa cannot drop its memo value while queries may still
-//! hold references from the current revision. The victim must remain pending
-//! until the next policy drain, normally at a revision boundary.
+//! When the queue is full, SIEVE selects a key for eviction to make room
+//! for the next key. Selecting keys immediately is important for correctness.
+//! If SIEVE waited until the next sweep, keys could receive additional
+//! second chances, changing which values survive. It also keeps the queue
+//! within its configured capacity.
 //!
-//! Pending victims are grouped using the same page-number-and-offset mapping. A
-//! [`PendingPage`] stores one state-page number and a 1,024-bit bitmap; each set
-//! bit identifies one selected offset from that page. A state page's
-//! `pending_page_index` points back into `State::pending_pages`, so selecting
-//! another victim from the same page finds the existing bitmap directly. Each
-//! state page therefore appears at most once in the pending queue, without a
-//! hash set or one vector entry per victim.
+//! SIEVE removes the selected key from the queue and clears its resident
+//! bit. However, Salsa cannot immediately drop the memo value because
+//! queries may still hold references to it. Instead, SIEVE records the key
+//! for eviction at the next sweep.
 //!
-//! A read before the sweep can add a selected key back to the queue and reuse
-//! its memo value. The sweep drops the memo value only if the key is still absent
+//! To keep the memory overhead small, SIEVE groups pending evictions by
+//! state page. Each [`PendingPage`] stores a page number and a 1,024-bit
+//! bitmap, with one bit for each slot selected for eviction. The state page
+//! stores an index into `State::pending_pages`, allowing SIEVE to update
+//! the bitmap directly when selecting another key from the same page.
+//!
+//! Between selection and the sweep, a query may read the selected key
+//! again. The memo value is still available, so SIEVE can reuse it and
+//! add the key back to the queue. Its pending bit remains set. During
+//! the sweep, SIEVE therefore checks the pending bitmap against the
+//! resident bits and only evicts values whose keys are still absent
 //! from the queue.
 //!
 //! ## Synchronization
 //!
-//! The resident and visited bits share an atomic word. A reader can set the
-//! visited bit only while the resident bit is set. If eviction clears the
-//! resident bit first, the reader takes the mutex to add the key back to the
-//! queue.
+//! SIEVE uses a mutex to protect the queue and select keys for eviction.
+//! Reads of resident keys do not take this mutex. Instead, they use atomic
+//! operations to set the visited bit. This allows reads and eviction to
+//! run concurrently.
 //!
-//! These atomics use relaxed ordering: the bits carry replacement-policy state
-//! only and do not publish or protect memo data. In contrast, [`StatePageCell`]
-//! uses acquire/release ordering because it publishes a newly allocated page
-//! to concurrent readers.
+//! Each key has a resident bit and a visited bit in the same atomic word.
+//! A read can only set the visited bit while the resident bit is set.
+//! If eviction clears the resident bit first, the read must acquire the
+//! mutex to add the key back to the queue. This ensures that a concurrent
+//! read cannot mark a key as visited after it has been removed.
 //!
-//! The per-slot state machine is:
+//! The bits use relaxed memory ordering because they only track eviction
+//! state. Salsa synchronizes access to the memo values separately.
 //!
-//! ```text
-//! absent (00)                  --admit-->  resident, unvisited (10)
-//! resident, unvisited (10)     --hit-->    resident, visited (11)
-//! resident, visited (11)       --select--> resident, unvisited (10)
-//! resident, unvisited (10)     --select--> absent (00) + pending eviction
-//! absent + pending eviction    --readmit--> resident, unvisited (10)
-//! ```
+//! State pages are allocated on demand and shared between threads.
+//! [`StatePageCell`] uses release ordering when publishing a new page
+//! and acquire ordering when reading its pointer. This ensures that
+//! readers see a fully initialized page. Once allocated, a page remains
+//! valid until SIEVE is disabled or dropped.
 //!
 //! [NSDI '24 paper]: https://www.usenix.org/conference/nsdi24/presentation/zhang-yazhuo
 //! [SIEVE project website]: https://cachemon.github.io/SIEVE-website/
@@ -149,15 +156,14 @@ pub struct Sieve {
     /// atomic or the state mutex.
     capacity: usize,
 
-    /// Lock-free lookup for the resident/visited bits used by cache hits.
+    /// Maps table slots to pages containing resident and visited bits.
     ///
-    /// Allocated pages and their addresses remain valid until this directory
-    /// is replaced while disabling SIEVE or the policy is dropped.
+    /// Once allocated, pages stay at fixed addresses so concurrent readers
+    /// can safely access them. Disabling SIEVE frees all pages.
     state_pages: StatePages,
 
-    /// Admission order, SIEVE hand, and pending-eviction pages.
-    ///
-    /// The mutex serializes admissions and all mutations to this state.
+    /// Tracks the keys in insertion order, the current position of the hand,
+    /// and the keys selected for eviction at the next sweep.
     state: Mutex<State>,
 }
 
@@ -249,25 +255,25 @@ impl Sieve {
     }
 }
 
-/// Mutable replacement-policy state protected by [`Sieve::state`].
+/// Tracks the queue, the hand, and pending evictions.
 ///
-/// Invariants outside an in-progress mutation:
+/// The following invariants hold between mutations.
 ///
-/// - In admission order (oldest first), the residents are `passed` followed
-///   by `candidates`. The hand is the front of `candidates`.
-/// - Every queued slot has its resident bit set in `StatePage::state`.
-/// - Every `pending_pages[i]` is paired with a state page whose
-///   `pending_page_index` stores `i + 1`, and no state page appears twice.
+/// - The queue consists of `passed` followed by `candidates`, ordered
+///   from oldest to newest. The hand points to the first key in `candidates`.
+/// - Every resident slot appears exactly once in either `passed` or
+///   `candidates`. Every slot in these deques has its resident bit set.
+/// - Each state page appears at most once in `pending_pages`. Its
+///   `pending_page_index` stores its position in the vector plus one.
+///   Zero means the page has no entry in the vector.
 #[derive(Default)]
 struct State {
     /// Slots given a second chance since the last wrap, oldest first.
     passed: VecDeque<u32>,
     /// Slots from the hand to the newest admission, oldest first.
     candidates: VecDeque<u32>,
-    /// State pages containing victims whose memo values await deletion.
-    ///
-    /// Grouping victims by state page avoids one vector entry per victim and
-    /// lets a drain reuse the resolved page for all of its pending slots.
+    /// Stores one entry per page, with a bitmap of slots selected for eviction.
+    /// This reduces memory usage and lets the sweep look up each page only once.
     pending_pages: Vec<PendingPage>,
 }
 
@@ -283,9 +289,10 @@ impl State {
     }
 
     fn reserve_capacity(&mut self, capacity: usize) {
-        for queue in [&mut self.passed, &mut self.candidates] {
-            queue.reserve_exact(capacity.saturating_sub(queue.len()));
-        }
+        self.passed
+            .reserve_exact(capacity.saturating_sub(self.passed.len()));
+        self.candidates
+            .reserve_exact(capacity.saturating_sub(self.candidates.len()));
     }
 
     fn len(&self) -> usize {
@@ -293,6 +300,8 @@ impl State {
     }
 
     fn schedule_eviction(&mut self, state_pages: &StatePages) {
+        // Allow two passes in case concurrent reads set visited bits again.
+        // Then force an eviction to avoid scanning indefinitely.
         let mut budget = self.len().saturating_mul(2);
         loop {
             let slot = self
@@ -303,6 +312,7 @@ impl State {
             let page = &state_pages[number];
 
             let keep = if budget == 0 {
+                std::hint::cold_path();
                 // Concurrent hits re-marked every candidate. Force progress.
                 page.clear_resident(offset);
                 false
@@ -310,14 +320,17 @@ impl State {
                 budget -= 1;
                 page.grant_second_chance(offset)
             };
+
             if keep {
                 self.passed.push_back(slot);
             }
+
             // Wrap immediately, even after removing the newest resident.
             // Otherwise an incoming slot would jump ahead of the survivors.
             if self.candidates.is_empty() {
                 std::mem::swap(&mut self.passed, &mut self.candidates);
             }
+
             if !keep {
                 self.mark_pending(number, page, offset);
                 return;
@@ -341,16 +354,15 @@ impl State {
 const SLOTS_PER_PENDING_WORD: usize = u64::BITS as usize;
 const PENDING_WORDS: usize = STATE_PAGE_LEN / SLOTS_PER_PENDING_WORD;
 
-/// A transient batch of selected victims from one [`StatePage`].
+/// Tracks slots selected for eviction from one [`StatePage`].
 ///
-/// `page_number` identifies both the state page and the high bits of every
-/// pending id. `pending` stores the low page-offset bits. An id can be resident
-/// and pending simultaneously after re-admission; the drain checks the
-/// resident bitmap and skips that stale pending entry.
+/// Each set bit in `pending` identifies a slot selected for eviction.
+/// Adding a key back to the queue sets its resident bit. The sweep
+/// checks this bit and keeps the memo value if it is set.
 struct PendingPage {
-    /// State-page number shared by every slot in `pending`.
+    /// The page containing the selected slots.
     page_number: StatePageNumber,
-    /// One bit per slot selected from this state page.
+    /// A bitmap of slots selected for eviction.
     pending: [u64; PENDING_WORDS],
 }
 
@@ -385,9 +397,8 @@ impl PendingPage {
             let mut pending = pending & !page.resident_bits(word_index);
             while pending != 0 {
                 let bit = pending.trailing_zeros() as usize;
-                f(StatePageOffset::new(
-                    word_index * SLOTS_PER_PENDING_WORD + bit,
-                ));
+                let offset = StatePageOffset::new(word_index * SLOTS_PER_PENDING_WORD + bit);
+                f(offset);
                 pending &= pending - 1;
             }
         }
@@ -399,24 +410,22 @@ const STATE_PAGE_LEN_BITS: usize = 10;
 /// Number of table slots represented by one independently allocated state page.
 const STATE_PAGE_LEN: usize = 1 << STATE_PAGE_LEN_BITS;
 
-/// Number of geometric buckets needed to cover every possible state-page number.
+/// Number of Boxcar buckets needed to address every state page.
 ///
-/// Boxcar skips its first small buckets, so [`buckets_for_index_bits`] may not
-/// accept every index within the requested bit width. The additional bucket
-/// covers the otherwise missing final indices.
+/// State-page numbers use 22 bits. Because Boxcar skips its smallest
+/// buckets, `buckets_for_index_bits(22)` leaves 32 page numbers uncovered.
+/// One additional bucket is needed to support the full range.
 const STATE_PAGE_BUCKETS: usize =
     buckets_for_index_bits(u32::BITS - STATE_PAGE_LEN_BITS as u32) + 1;
 
 /// State-page number formed from the high bits of [`Id::index`].
 type StatePageNumber = Index<STATE_PAGE_BUCKETS>;
 
-/// Sparse, direct-addressed directory from [`StatePageNumber`] to
-/// [`StatePageCell`].
+/// Maps state-page numbers to [`StatePageCell`] entries using Boxcar buckets.
 ///
-/// The directory uses geometrically growing buckets. It allocates those
-/// buckets and the [`StatePage`] owned by each cell lazily. Once published, an
-/// allocation is neither moved nor freed until the directory is dropped, so
-/// lock-free readers can safely retain references to it.
+/// Buckets and state pages are allocated as needed. Once allocated, pages
+/// remain at fixed addresses so concurrent readers can safely access them
+/// without taking a mutex.
 struct StatePages(Buckets<StatePageCell, STATE_PAGE_BUCKETS>);
 
 impl StatePages {
@@ -451,14 +460,12 @@ impl std::ops::Index<StatePageNumber> for StatePages {
     }
 }
 
-/// Lazily initialized owner of one [`StatePage`] allocation.
+/// A slot in a Boxcar bucket that holds a pointer to one [`StatePage`].
 ///
-/// The surrounding [`StatePages`] directory allocates cells in buckets, but
-/// each comparatively large state page is allocated only when an id in its
-/// range first reaches the admission path. The pointer is installed once and
-/// remains valid until the directory is exclusively dropped. A sparse, high id
-/// can therefore reserve pointer slots for its directory bucket, but does not
-/// allocate `StatePage`s for untouched entries in that bucket.
+/// The pointer is initially null. A page is allocated when an ID first
+/// needs it. Other slots in the bucket remain empty until used.
+/// If multiple threads allocate the same page concurrently, only one
+/// allocation is kept and shared by all threads.
 #[derive(Default)]
 struct StatePageCell {
     /// Null before initialization; otherwise owns the published allocation.
@@ -479,8 +486,9 @@ impl StatePageCell {
     fn get(&self) -> Option<&StatePage> {
         let ptr = self.ptr.load(Ordering::Acquire);
         ptr::NonNull::new(ptr).map(|ptr| {
-            // SAFETY: A non-null pointer was allocated by `get_or_alloc` and
-            // remains owned by this slot until the directory is dropped.
+            // SAFETY: `Self::get_or_alloc` initializes the pointer with a valid
+            // allocation. The cell owns that allocation until it is dropped,
+            // and the returned reference cannot outlive the cell.
             unsafe { ptr.as_ref() }
         })
     }
@@ -531,32 +539,35 @@ const SLOT_STATE_BITS: usize = 2;
 const SLOTS_PER_STATE_WORD: usize = u64::BITS as usize / SLOT_STATE_BITS;
 const STATE_WORDS: usize = STATE_PAGE_LEN / SLOTS_PER_STATE_WORD;
 
-/// Compact replacement-policy state for [`STATE_PAGE_LEN`] consecutive table slots.
+/// Stores eviction state for [`STATE_PAGE_LEN`] consecutive table slots.
 ///
-/// Each slot has a `resident` bit and a `visited` bit. Keeping both bits in
-/// one atomic word makes every transition indivisible with respect to a racing
-/// hit: either the hit marks the still-resident value, or it observes that
-/// selection removed the value and falls back to admission.
+/// Each slot has a resident bit and a visited bit in the same atomic word.
+/// This ensures that a concurrent read can only mark a slot as visited
+/// while it is still resident. If eviction removes the slot first, the
+/// read must add it back to the queue.
 #[derive(Default)]
 struct StatePage {
     /// Each word holds 32 visited bits in the low half and the corresponding
     /// resident bits in the high half.
     ///
-    /// The only valid stable states are absent (`00`), resident/unvisited
-    /// (`10`), and resident/visited (`11`).
+    /// If a slot's visited bit is set, its resident bit is also set.
     state: [AtomicU64; STATE_WORDS],
-    /// One-based index into `State::pending_pages`, or zero when not queued.
-    /// Mutation is serialized by the state mutex or exclusive access to the
-    /// policy; the atomic preserves interior mutability without making pages
-    /// unavailable to concurrent hit readers.
+    /// Position in `State::pending_pages`, counting from one.
+    /// Zero means the page has no pending entry.
+    ///
+    /// Updates must keep this index consistent with `State::pending_pages`.
+    /// The state mutex prevents concurrent admissions from adding the same
+    /// page twice. Code with `&mut Sieve`, such as the sweep, can update
+    /// both without locking because no other thread can access the policy.
+    ///
+    /// The field is atomic because state pages are shared between threads.
     pending_page_index: AtomicU32,
 }
 
 impl StatePage {
-    /// Marks a resident as visited.
+    /// Marks the slot as visited if it is resident.
     ///
-    /// Returns `true` if the slot is resident and its visited bit is set.
-    /// Returns `false` if the slot is not resident.
+    /// Returns `false` if the slot needs to be admitted.
     #[inline]
     fn record_use(&self, offset: StatePageOffset) -> bool {
         let (word, resident_mask, visited_mask) = offset.state_word();
@@ -575,9 +586,8 @@ impl StatePage {
                 return false;
             }
 
-            // Mark the resident visited if the word still matches this
-            // snapshot. Otherwise, recheck whether another hit marked it or
-            // selection removed it.
+            // Set the visited bit. If another thread changed the word,
+            // check whether the slot is still resident or already visited.
             match word.compare_exchange_weak(
                 state,
                 state | visited_mask,
@@ -632,7 +642,8 @@ impl StatePage {
         }
     }
 
-    /// Collects the resident bits for the 64 slots of one pending word.
+    /// Combines the resident bits from two state words into
+    /// a bitmap that matches the layout of `PendingPage::pending`.
     fn resident_bits(&self, pending_word: usize) -> u64 {
         let lo = self.state[2 * pending_word].load(Ordering::Relaxed);
         let hi = self.state[2 * pending_word + 1].load(Ordering::Relaxed);
