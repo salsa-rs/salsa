@@ -231,7 +231,18 @@ pub(crate) trait FunctionIngredient: Send + Sync {
 /// * the `specify` method, which can only be used when the key is an entity created by the active query.
 ///   It sets the value of the function imperatively, so that when later fetches occur, they'll return this value.
 /// * the `store` method, which can only be invoked with an `&mut` reference, and is to set input fields.
+// A memo hit checks `view_caster` and reads both indices. Preserve field
+// order so the large `deleted_entries` field can't separate these reads.
+#[repr(C)]
 pub struct IngredientImpl<C: Configuration> {
+    /// A downcaster to `C::DbView`.
+    ///
+    /// # Safety
+    ///
+    /// The supplied database must be the same as the database used to construct the [`Views`]
+    /// instances that this downcaster was derived from.
+    view_caster: OnceLock<DatabaseDownCaster<C::DbView>>,
+
     /// The ingredient index we were assigned in the database.
     /// Used to construct `DatabaseKeyIndex` values.
     index: IngredientIndex,
@@ -246,14 +257,6 @@ pub struct IngredientImpl<C: Configuration> {
     /// Eviction policy - type determined by Configuration.
     /// Used to find memos to throw out when we have too many memoized values.
     eviction: C::Eviction,
-
-    /// An downcaster to `C::DbView`.
-    ///
-    /// # Safety
-    ///
-    /// The supplied database must be be the same as the database used to construct the [`Views`]
-    /// instances that this downcaster was derived from.
-    view_caster: OnceLock<DatabaseDownCaster<C::DbView>>,
 
     sync_table: SyncTable,
 
