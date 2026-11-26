@@ -3,12 +3,12 @@
 //!
 //! # How SIEVE works
 //!
-//! SIEVE keeps residents in admission order, from newest to oldest, and keeps a
-//! moving hand that starts at the oldest resident. Every resident also has one
-//! `visited` bit:
+//! SIEVE keeps keys in a queue in the order they were added. A key is resident
+//! while it is in the queue. Each resident key has a `visited` bit. The hand
+//! points to the next key to inspect, starting with the oldest key.
 //!
 //! - New residents enter at the newest end with `visited = false`.
-//! - A cache hit sets `visited = true`, but does not move the resident.
+//! - Reading a resident key sets `visited = true` without moving the key.
 //! - When space is needed, the hand starts at its current position and inspects
 //!   residents toward the newest end. It stops as soon as it evicts an
 //!   unvisited resident. A visited resident instead gets a second chance: its
@@ -29,34 +29,22 @@
 //! next hand:  C*
 //! ```
 //!
-//! SIEVE therefore does not track exact recency. Its visited bit only answers
-//! whether a resident was used since the hand last gave it a chance. This is
-//! enough to protect reused values from one-shot scans while making a hit much
-//! cheaper than moving a node in an LRU list.
+//! The visited bit records whether the key was read after it was added to the
+//! queue or after the hand last cleared the bit.
 //!
 //! ## Bounded selection
 //!
-//! The textbook scan has no bound when concurrent hits can continually re-mark
-//! entries while the hand scans. In Salsa, that could keep granting second
-//! chances forever while holding the admission mutex.
-//!
-//! Victim selection therefore performs at most two inspections per current
-//! resident. With no concurrent re-marks this is equivalent to textbook SIEVE:
-//! one pass can clear every visited bit and the next inspection finds an
-//! unvisited victim. The second pass also honors entries re-marked during the
-//! first pass. If every inspection still observes a visited entry, Salsa evicts
-//! the resident currently at the hand to guarantee progress while preserving
-//! the scan order.
+//! Concurrent reads can set visited bits again while SIEVE scans the queue. To
+//! avoid holding the mutex indefinitely, SIEVE limits the scan to two passes. If
+//! it still has not selected a key, it selects the next key even if it is visited.
 //!
 //! # Implementation
 //!
-//! The main design goal is to keep cache hits lock-free. Salsa therefore splits
-//! SIEVE's state into two parts:
-//!
-//! - `state_pages` contains the atomic resident and visited bits used by cache
-//!   hits. A hit accesses only this state and does not acquire a mutex.
-//! - `state` contains two deques in admission order and pending evictions.
-//!   Admissions and victim selection access this state through a mutex.
+//! The state mutex protects two deques and the pending evictions. The `passed`
+//! deque contains keys before the hand. The `candidates` deque starts at the
+//! hand and ends at the newest key. When `candidates` is empty, SIEVE swaps the
+//! deques. The atomic resident and visited bits are stored in `state_pages` so
+//! reads of resident keys do not need the mutex.
 //!
 //! The resulting layout is:
 //!
@@ -85,40 +73,9 @@
 //!
 //! ## State-page mapping without a hash map
 //!
-//! A conventional standalone SIEVE cache stores the visited bit on each node in
-//! the admission-order list and uses a hash map to find that node from a cache
-//! key. Every hit therefore performs a hash-table lookup before it can set the
-//! visited bit.
-//!
-//! Salsa can instead address replacement state from [`Id::index`], whose
-//! consecutive values identify consecutive table slots. SIEVE partitions that
-//! index into a state-page number and an offset within the state page:
-//!
-//! ```text
-//! high bits   -> StatePageNumber
-//! low 10 bits -> StatePageOffset
-//! ```
-//!
-//! [`StatePages`] implements this mapping as a sparse geometric bucket
-//! directory. The page number locates a [`StatePageCell`] without hashing, and
-//! the cell lazily allocates one [`StatePage`] containing the bits selected by
-//! the page offset. A hit can therefore find the resident and visited bits and
-//! set `visited` without looking up the position of the slot in admission order.
-//!
-//! Allocating the corresponding memo-table pages does not by itself allocate
-//! SIEVE state. A state page is allocated only when the enabled policy first
-//! sees a use from its id range, and remains available for lock-free reads
-//! until SIEVE is disabled or the policy is dropped.
-//!
-//! A state page deliberately covers 1,024 table slots, eight times the current
-//! 128-slot memo-table page (as of July 5th 2026).
-//! State pages and memo-table pages are independent:
-//! memo slots contain comparatively large values, so smaller memo pages limit
-//! unused table storage. SIEVE needs only two persistent bits per slot, making
-//! a 1,024-slot resident/visited bitmap 256 bytes. The larger state page
-//! amortizes the directory pointer, heap allocation, pending-queue index, and
-//! pending-victim batching across more ids while keeping the excess bitmap
-//! memory for a sparsely used page small.
+//! SIEVE uses [`Id::index`] to find the resident and visited bits without
+//! hashing. Each state page covers 1,024 table slots and uses 256 bytes for
+//! these bits. Pages are allocated on first use.
 //!
 //! ## Deferred eviction
 //!
@@ -135,27 +92,16 @@
 //! state page therefore appears at most once in the pending queue, without a
 //! hash set or one vector entry per victim.
 //!
-//! During a drain, Salsa resolves each state page once and visits the set bits
-//! in its pending bitmap. An access between selection and draining can re-admit
-//! a victim and reuse its still-present memo, so the drain checks the resident
-//! bit again. It deletes the memo only if the slot is still non-resident.
+//! A read before the sweep can add a selected key back to the queue and reuse
+//! its memo value. The sweep drops the memo value only if the key is still absent
+//! from the queue.
 //!
 //! ## Synchronization
 //!
-//! Admissions, hand movement, the resident deques, and the pending queue are
-//! serialized by the state mutex. The resident/visited words deliberately sit
-//! outside that protection so the common hit path does not acquire the mutex.
-//! Victim selection holds the mutex, but that provides no mutual exclusion with
-//! hits because they never acquire it. Both paths may access the same word at
-//! the same time, so the words must be atomic.
-//! The resident and visited bits for a slot are packed into the same atomic
-//! word. This improves locality and lets the hit path observe both bits with a
-//! single atomic load. It also prevents a race between checking residency and
-//! setting `visited`: either the hit marks the still-resident slot and selection
-//! observes that visit, or selection clears `resident` and the hit retries
-//! through admission. Separate fields would require another atomic load and
-//! permit a hit to observe `resident`, lose the race to selection, and then set
-//! `visited` without re-admitting the selected slot.
+//! The resident and visited bits share an atomic word. A reader can set the
+//! visited bit only while the resident bit is set. If eviction clears the
+//! resident bit first, the reader takes the mutex to add the key back to the
+//! queue.
 //!
 //! These atomics use relaxed ordering: the bits carry replacement-policy state
 //! only and do not publish or protect memo data. In contrast, [`StatePageCell`]
@@ -602,9 +548,8 @@ struct StatePage {
 impl StatePage {
     /// Marks a resident as visited.
     ///
-    /// Returns `true` if the slot was resident (including when it was already
-    /// visited), allowing the hit path to return without locking. Returns
-    /// `false` if selection won the race and the caller must attempt admission.
+    /// Returns `true` if the slot is resident and its visited bit is set.
+    /// Returns `false` if the slot is not resident.
     #[inline]
     fn record_use(&self, offset: StatePageOffset) -> bool {
         let (word, resident_mask, visited_mask) = offset.state_word();
