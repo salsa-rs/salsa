@@ -24,12 +24,8 @@ This defaults to `policy = lru`.
 With `salsa_unstable`, you can opt into [SIEVE](https://www.usenix.org/conference/nsdi24/presentation/zhang-yazhuo)
 using `#[salsa::tracked(eviction(policy = sieve, capacity = 128))]`.
 
-LRU updates the access order under a mutex on every hit. SIEVE keeps entries
-in admission order and marks resident hits with a visited bit without taking
-the mutex. When it needs a slot, SIEVE scans from its previous position,
-clears visited bits to give those entries a second chance, and selects the
-first unvisited entry. Salsa drops the selected values at the next revision
-or explicit sweep. A read before the sweep can re-admit the value.
+SIEVE offers higher throughput than LRU when multiple threads read cached
+results concurrently.
 
 The policy is fixed at compile time. Use `parse::set_eviction_capacity(&mut db, 256)`
 to resize the cache or set the capacity to zero to disable eviction.
