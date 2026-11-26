@@ -46,9 +46,11 @@
 //! `state_pages` stores the atomic resident and visited bits. The state mutex
 //! protects the queue and pending evictions.
 //!
-//! The queue is split into two deques at the hand. `passed` contains the keys
-//! before the hand, and `candidates` contains the remaining keys, starting at
-//! the hand. When `candidates` is empty, SIEVE swaps the deques to wrap the hand.
+//! The queue is split into two deques at the hand. `passed` contains the
+//! older keys that the hand has already inspected. `candidates` contains
+//! the keys from the hand to the newest key. Both deques store keys from
+//! oldest to newest. When `candidates` is empty, SIEVE swaps the deques to
+//! wrap the hand.
 //!
 //! The resulting layout is:
 //!
