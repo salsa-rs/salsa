@@ -40,11 +40,15 @@
 //!
 //! # Implementation
 //!
-//! The state mutex protects two deques and the pending evictions. The `passed`
-//! deque contains keys before the hand. The `candidates` deque starts at the
-//! hand and ends at the newest key. When `candidates` is empty, SIEVE swaps the
-//! deques. The atomic resident and visited bits are stored in `state_pages` so
-//! reads of resident keys do not need the mutex.
+//! SIEVE separates the state needed for reads from the state needed to manage
+//! the queue. This lets threads read resident keys without taking a mutex.
+//!
+//! `state_pages` stores the atomic resident and visited bits. The state mutex
+//! protects the queue and pending evictions.
+//!
+//! The queue is split into two deques at the hand. `passed` contains the keys
+//! before the hand, and `candidates` contains the remaining keys, starting at
+//! the hand. When `candidates` is empty, SIEVE swaps the deques to wrap the hand.
 //!
 //! The resulting layout is:
 //!
@@ -63,13 +67,14 @@
 //!         └── 1,024-bit bitmap        selected slots awaiting validation
 //! ```
 //!
-//! The hit path looks up the [`StatePage`], atomically marks a resident as
-//! visited, and returns. It falls back to [`State`] only when the id is not
-//! resident or selection won a race with the hit. Supporting this lock-free
-//! path drives the implementation complexity: ids map through a sparse,
-//! atomically published page directory, state transitions must tolerate
-//! races, and admissions and victim selection must coordinate the atomic state
-//! with the mutex-protected deques.
+//! On a read, SIEVE looks up the [`StatePage`] for the key. If the key is
+//! resident, SIEVE sets its visited bit atomically and returns. If the key
+//! is not resident, or is removed before the read can mark it, SIEVE takes
+//! the state mutex to add it to the queue.
+//!
+//! State pages must remain valid while other threads access them. Reads and
+//! eviction can update the same bits concurrently, so the bit updates must
+//! also be atomic.
 //!
 //! ## State-page mapping without a hash map
 //!
