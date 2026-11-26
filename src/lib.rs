@@ -163,7 +163,8 @@
 //! database retains its result. Re-execution may update or replace the value; reclaiming the key or
 //! dropping the database removes it. The `lru` option additionally evicts least-recently-used
 //! results at the start of a new revision, but retains their memo entries so a later call can
-//! recompute the value.
+//! recompute the value. With `salsa_unstable`, the `eviction` option also lets a tracked
+//! function opt into SIEVE. See [cache tuning] for details.
 //!
 //! The [return mode](#return-modes) controls whether callers receive an owned result or borrow it
 //! from the memo.
@@ -411,6 +412,8 @@ pub mod plumbing {
     }
 
     pub mod function {
+        #[cfg(feature = "salsa_unstable")]
+        pub use crate::function::Sieve;
         pub use crate::function::{Configuration, IngredientImpl, Memo};
         pub use crate::function::{EvictionPolicy, HasCapacity, Lru, NoopEviction};
         pub use crate::table::memo::MemoEntryType;

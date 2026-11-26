@@ -61,13 +61,50 @@ impl Item for Lru {
     }
 }
 
+#[cfg(feature = "salsa_unstable")]
+#[salsa::input]
+pub(crate) struct Sieve {
+    #[returns(copy)]
+    value: u64,
+}
+
+#[cfg(feature = "salsa_unstable")]
+// Setup sets the capacity. Avoid allocating SIEVE queues for the other policies.
+#[salsa::tracked(returns(copy), eviction(policy = sieve, capacity = 0))]
+fn sieve_value(db: &dyn salsa::Database, item: Sieve) -> Value {
+    compute_value(item.value(db))
+}
+
+#[cfg(feature = "salsa_unstable")]
+impl Item for Sieve {
+    fn new(db: &dyn salsa::Database, value: u64) -> Self {
+        Self::new(db, value)
+    }
+
+    fn set_capacity(db: &mut dyn salsa::Database, capacity: usize) {
+        sieve_value::set_eviction_capacity(db, capacity);
+    }
+
+    #[inline]
+    fn fetch(self, db: &dyn salsa::Database) -> Value {
+        sieve_value(db, self)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Policy {
     NoEviction,
     Lru,
+    #[cfg(feature = "salsa_unstable")]
+    Sieve,
 }
 
-pub(crate) const POLICIES: &[Policy] = &[Policy::NoEviction, Policy::Lru];
+pub(crate) const POLICIES: &[Policy] = &[
+    Policy::NoEviction,
+    Policy::Lru,
+    #[cfg(feature = "salsa_unstable")]
+    Policy::Sieve,
+];
 
 // Dispatch once per benchmark so the timed loop calls the tracked function directly.
 pub(crate) trait Benchmark {
@@ -79,6 +116,8 @@ impl Policy {
         match self {
             Self::NoEviction => workload.run::<NoEviction>(bencher),
             Self::Lru => workload.run::<Lru>(bencher),
+            #[cfg(feature = "salsa_unstable")]
+            Self::Sieve => workload.run::<Sieve>(bencher),
         }
     }
 }

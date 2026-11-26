@@ -168,6 +168,7 @@ impl Macro {
             None => (quote!(NoopEviction), 0, quote!()),
             Some(Eviction::LruShorthand(n)) => (quote!(Lru), n, quote!(set_lru_capacity)),
             Some(Eviction::Lru(n)) => (quote!(Lru), n, quote!(set_eviction_capacity)),
+            Some(Eviction::Sieve(n)) => (quote!(Sieve), n, quote!(set_eviction_capacity)),
         };
         let capacity = Literal::usize_unsuffixed(capacity);
 

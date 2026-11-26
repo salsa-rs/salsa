@@ -5,9 +5,13 @@
 
 mod lru;
 mod noop;
+#[cfg(feature = "salsa_unstable")]
+mod sieve;
 
 pub use lru::Lru;
 pub use noop::NoopEviction;
+#[cfg(feature = "salsa_unstable")]
+pub use sieve::Sieve;
 
 use crate::Id;
 

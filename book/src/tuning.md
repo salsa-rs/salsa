@@ -21,6 +21,12 @@ at the start of each new revision.
 
 You can also write `#[salsa::tracked(eviction(capacity = 128))]`.
 This defaults to `policy = lru`.
+With `salsa_unstable`, you can opt into [SIEVE](https://www.usenix.org/conference/nsdi24/presentation/zhang-yazhuo)
+using `#[salsa::tracked(eviction(policy = sieve, capacity = 128))]`.
+
+SIEVE offers higher throughput than LRU when multiple threads read cached
+results concurrently.
+
 The policy is fixed at compile time. Use `parse::set_eviction_capacity(&mut db, 256)`
 to resize the cache or set the capacity to zero to disable eviction.
 To sweep all tracked functions, call `db.trigger_lru_eviction()`.
