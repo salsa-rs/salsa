@@ -28,6 +28,32 @@ fn cached_same_revision(bencher: divan::Bencher) {
         });
 }
 
+/// Fetches cached results whose memo slot depends on the concrete input type.
+#[divan::bench]
+fn cached_same_revision_supertype(bencher: divan::Bencher) {
+    bencher
+        .with_inputs(|| {
+            let db = salsa::DatabaseImpl::default();
+            warm_db(&db);
+            let inputs: Vec<_> = (0..ROOTS)
+                .map(|value| {
+                    if value % 2 == 0 {
+                        SupertypeInput::Query(QueryInput::new(&db, value))
+                    } else {
+                        SupertypeInput::Warmup(WarmupInput::new(&db, value))
+                    }
+                })
+                .collect();
+            let expected = compute_supertype_roots(&db, &inputs);
+
+            (db, inputs, expected)
+        })
+        .bench_local_refs(|(db, inputs, expected)| {
+            let sum = compute_supertype_roots(db, inputs);
+            assert_eq!(black_box(sum), *expected);
+        });
+}
+
 /// Executes a cold query without a cached value.
 #[divan::bench]
 fn cold_execute(bencher: divan::Bencher) {
@@ -123,6 +149,16 @@ fn compute_roots(db: &salsa::DatabaseImpl, inputs: &[QueryInput]) -> usize {
     sum
 }
 
+fn compute_supertype_roots(db: &salsa::DatabaseImpl, inputs: &[SupertypeInput]) -> usize {
+    let mut sum = 0;
+
+    for input in inputs.iter().copied() {
+        sum += supertype_root(black_box(db), black_box(input));
+    }
+
+    sum
+}
+
 fn expected_sum() -> usize {
     (0..ROOTS).map(expected_root).sum()
 }
@@ -157,6 +193,21 @@ fn warmup_query(db: &dyn salsa::Database, input: WarmupInput) -> usize {
 struct QueryInput {
     #[returns(copy)]
     value: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, salsa::Supertype)]
+enum SupertypeInput {
+    Query(QueryInput),
+    Warmup(WarmupInput),
+}
+
+#[salsa::tracked(returns(copy))]
+#[inline(never)]
+fn supertype_root(db: &dyn salsa::Database, input: SupertypeInput) -> usize {
+    match input {
+        SupertypeInput::Query(input) => input.value(db),
+        SupertypeInput::Warmup(input) => input.value(db),
+    }
 }
 
 /// Root of a 7-query tree with 10 dependency edges per input:
