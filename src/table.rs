@@ -15,6 +15,7 @@ use crate::table::memo::{MemoTableTypes, MemoTableWithTypes, MemoTableWithTypesM
 use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
+mod pages;
 
 const PAGE_LEN_BITS: usize = 7;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
@@ -25,7 +26,7 @@ const MAX_PAGES: usize = Id::MAX_USIZE / PAGE_LEN;
 pub(crate) struct PageView<'p, T: Slot>(&'p Page, PhantomData<&'p T>);
 
 pub struct Table {
-    pages: boxcar::Vec<Page>,
+    pages: pages::Pages,
     /// Map from ingredient to non-full pages that are up for grabs
     non_full_pages: Mutex<FxHashMap<IngredientIndex, Vec<PageIndex>>>,
 }
@@ -176,7 +177,7 @@ impl SlotIndex {
 impl Default for Table {
     fn default() -> Self {
         Self {
-            pages: boxcar::Vec::new(),
+            pages: pages::Pages::new(),
             non_full_pages: Default::default(),
         }
     }
@@ -450,7 +451,7 @@ impl Table {
 }
 
 struct ErasedSlots<'db> {
-    pages: boxcar::vec::Iter<'db, Page>,
+    pages: pages::Iter<'db>,
     current_page: Option<(PageIndex, &'db Page, std::ops::Range<usize>)>,
     slot_type_id: TypeId,
 }
