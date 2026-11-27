@@ -38,12 +38,13 @@ fn cached_same_revision_supertype(bencher: divan::Bencher) {
             let inputs: Vec<_> = (0..ROOTS)
                 .map(|value| {
                     if value % 2 == 0 {
-                        SupertypeInput::Query(QueryInput::new(&db, value))
+                        SupertypeInput::A(QueryInput::new(&db, value))
                     } else {
-                        SupertypeInput::Warmup(WarmupInput::new(&db, value))
+                        SupertypeInput::B(WarmupInput::new(&db, value))
                     }
                 })
                 .collect();
+            // Populate the memo for every key of both variants before timing.
             let expected = compute_supertype_roots(&db, &inputs);
 
             (db, inputs, expected)
@@ -197,16 +198,16 @@ struct QueryInput {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, salsa::Supertype)]
 enum SupertypeInput {
-    Query(QueryInput),
-    Warmup(WarmupInput),
+    A(QueryInput),
+    B(WarmupInput),
 }
 
 #[salsa::tracked(returns(copy))]
 #[inline(never)]
 fn supertype_root(db: &dyn salsa::Database, input: SupertypeInput) -> usize {
     match input {
-        SupertypeInput::Query(input) => input.value(db),
-        SupertypeInput::Warmup(input) => input.value(db),
+        SupertypeInput::A(input) => input.value(db),
+        SupertypeInput::B(input) => input.value(db),
     }
 }
 
