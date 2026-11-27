@@ -40,7 +40,7 @@ fn cached_same_revision_supertype(bencher: divan::Bencher) {
                     if value % 2 == 0 {
                         SupertypeInput::A(QueryInput::new(&db, value))
                     } else {
-                        SupertypeInput::B(WarmupInput::new(&db, value))
+                        SupertypeInput::B(OtherQueryInput::new(&db, value))
                     }
                 })
                 .collect();
@@ -196,10 +196,17 @@ struct QueryInput {
     value: usize,
 }
 
+/// Only `supertype_root` has a memo slot on this input.
+#[salsa::input]
+struct OtherQueryInput {
+    #[returns(copy)]
+    value: usize,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, salsa::Supertype)]
 enum SupertypeInput {
     A(QueryInput),
-    B(WarmupInput),
+    B(OtherQueryInput),
 }
 
 #[salsa::tracked(returns(copy))]
