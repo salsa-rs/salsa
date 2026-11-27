@@ -85,8 +85,11 @@ impl MemoTableWithTypes<'_> {
     #[cold]
     fn initialize(&self) -> &[MemoEntry] {
         let len = self.types.len();
-        let new_memos: Box<[MemoEntry]> = (0..len).map(|_| MemoEntry::default()).collect();
-        let new_memos = Box::into_raw(new_memos);
+        // Collecting defaults can compile to a zeroed allocation, which is
+        // more expensive for small memo tables with jemalloc.
+        let mut entries = Vec::with_capacity(len);
+        entries.resize_with(len, MemoEntry::default);
+        let new_memos = Box::into_raw(entries.into_boxed_slice());
         let new_memos_ptr = new_memos.cast::<MemoEntry>();
 
         // Release publishes the initialized memo entries. If another thread won the race, acquire
