@@ -375,6 +375,9 @@ pub struct Value<C>
 where
     C: Configuration,
 {
+    /// Keep the memo table near `updated_at` because a cached query reads both.
+    memos: MemoTable,
+
     /// The revision when this tracked struct was last updated.
     /// This field also acts as a kind of "lock" over the `value` field. Once it is equal
     /// to `Some(current_revision)`, the fields are locked and
@@ -414,10 +417,6 @@ where
     /// this should be restructured (e.g., with a nested struct for `fields` + `memos`)
     /// to make the aliasing guarantees more obvious. See PR #741 for prior discussion.
     fields: C::Fields<'static>,
-
-    /// Memo table storing the results of query functions etc.
-    /*unsafe */
-    memos: MemoTable,
 }
 
 // ANCHOR_END: ValueStruct
