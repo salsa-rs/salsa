@@ -322,7 +322,7 @@ impl Table {
         // that were not serialized should be negligible.
         PageIndex::new(self.pages.push(Page::new::<DummySlot>(
             IngredientIndex::new(0),
-            Arc::new(MemoTableTypes::default()),
+            Arc::new(MemoTableTypes::new(IngredientIndex::new(0))),
         )))
     }
 

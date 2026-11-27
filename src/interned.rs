@@ -357,7 +357,7 @@ where
         Self {
             ingredient_index,
             hasher: FxBuildHasher,
-            memo_table_types: Arc::new(MemoTableTypes::default()),
+            memo_table_types: Arc::new(MemoTableTypes::new(ingredient_index)),
             revision_queue: RevisionQueue::new(C::REVISIONS),
             shift,
             shards,

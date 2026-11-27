@@ -126,7 +126,7 @@ impl<C: Configuration> IngredientImpl<C> {
         Self {
             ingredient_index: index,
             singleton: Default::default(),
-            memo_table_types: Arc::new(MemoTableTypes::default()),
+            memo_table_types: Arc::new(MemoTableTypes::new(index)),
             _phantom: std::marker::PhantomData,
         }
     }

@@ -481,7 +481,7 @@ where
             ingredient_index: index,
             phantom: PhantomData,
             free_list: Default::default(),
-            memo_table_types: Arc::new(MemoTableTypes::default()),
+            memo_table_types: Arc::new(MemoTableTypes::new(index)),
         }
     }
 

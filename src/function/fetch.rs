@@ -4,6 +4,7 @@ use crate::function::execute::complete_cycle_query;
 use crate::function::memo::Memo;
 use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, Reentrancy};
+use crate::memo_ingredient_indices::MemoIngredientMap;
 use crate::table::memo::MemoSlot;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::ZalsaLocal;
@@ -60,7 +61,13 @@ where
     ) -> &'db Memo<C> {
         // Resolve the table once, but reload the pointer after acquiring the claim.
         // Keep retries out of the first probe so a hit can return directly.
-        let slot = self.memo_slot(zalsa, id, self.memo_ingredient_index(zalsa, id));
+        let table = zalsa.memo_table_for::<C::SalsaStruct<'_>>(id);
+        // A supertype's memo index depends on the concrete ingredient. Reuse the
+        // table's metadata so we don't resolve the page again to find the ingredient.
+        let index = self.memo_ingredient_indices.get(table.ingredient());
+        // SAFETY: As in `memo_slot`, replaced memos remain allocated until the
+        // revision ends, which requires exclusive access to the database.
+        let slot = unsafe { MemoSlot::new(table, index) };
 
         if let Some(memo) = self.fetch_hot(zalsa, id, &slot) {
             return memo;

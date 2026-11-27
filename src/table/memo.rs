@@ -3,11 +3,11 @@ use std::fmt::Debug;
 use std::mem;
 use std::ptr::{self, NonNull};
 
-use crate::DatabaseKeyIndex;
 use crate::function::ErasedMemo;
 use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
+use crate::{DatabaseKeyIndex, IngredientIndex};
 
 /// Adds the registered concrete memo type's vtable without dereferencing the pointer.
 ///
@@ -266,12 +266,20 @@ impl Memo for DummyMemo {
     }
 }
 
-#[derive(Default)]
 pub struct MemoTableTypes {
     types: Vec<MemoEntryType>,
+    /// The concrete struct ingredient owning these shared memo types.
+    ingredient: IngredientIndex,
 }
 
 impl MemoTableTypes {
+    pub(crate) fn new(ingredient: IngredientIndex) -> Self {
+        Self {
+            types: Vec::new(),
+            ingredient,
+        }
+    }
+
     pub(crate) fn set(
         &mut self,
         memo_ingredient_index: MemoIngredientIndex,
@@ -359,6 +367,11 @@ impl<'a> MemoSlot<'a> {
 }
 
 impl<'a> MemoTableWithTypes<'a> {
+    #[inline]
+    pub(crate) fn ingredient(&self) -> IngredientIndex {
+        self.types.ingredient
+    }
+
     pub(crate) fn insert<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
