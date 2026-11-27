@@ -124,6 +124,11 @@ pub trait Ingredient: Any + fmt::Debug + Send + Sync {
 
     fn memo_table_types(&self) -> &Arc<MemoTableTypes>;
 
+    /// Used to register memo types during database initialization.
+    ///
+    /// Once a page clones this `Arc`, the ingredient must keep pointing to the
+    /// same type table for the page's lifetime. `Arc::get_mut` prevents changing
+    /// the shared table, but this reference also permits replacing the `Arc`.
     fn memo_table_types_mut(&mut self) -> &mut Arc<MemoTableTypes>;
 
     fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

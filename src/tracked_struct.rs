@@ -555,9 +555,7 @@ where
 
             // SAFETY: Guaranteed by `Configuration` and retained only in this tracked value.
             fields: unsafe { std::mem::transmute::<C::Fields<'db>, C::Fields<'static>>(fields) },
-            // SAFETY: We only ever access the memos of a value that we allocated through
-            // our `MemoTableTypes`.
-            memos: unsafe { MemoTable::new(self.memo_table_types()) },
+            memos: MemoTable::default(),
         };
 
         while let Some(id) = self.free_list.pop() {
@@ -712,8 +710,8 @@ where
             // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
             let memo_table = unsafe { &mut (*data_raw).memos };
 
-            // SAFETY: The memo table belongs to a value that we allocated, so it has the
-            // correct type.
+            // SAFETY: We hold the slot's write lock and rely on this ingredient
+            // sharing its type table with the slot's page.
             unsafe { self.clear_memos(zalsa, memo_table, id) };
 
             id = id
@@ -795,8 +793,8 @@ where
         // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
         let memo_table = unsafe { &mut (*data).memos };
 
-        // SAFETY: The memo table belongs to a value that we allocated, so it
-        // has the correct type.
+        // SAFETY: We hold the slot's write lock and rely on this ingredient
+        // sharing its type table with the slot's page.
         unsafe { self.clear_memos(zalsa, memo_table, id) };
 
         // now that all cleanup has occurred, make available for re-use
@@ -807,7 +805,8 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type.
+    /// The caller must hold the write lock on the slot at `id`, which owns `memo_table`.
+    /// This ingredient must share its memo types with the slot's page.
     pub(crate) unsafe fn clear_memos(&self, zalsa: &Zalsa, memo_table: &mut MemoTable, id: Id) {
         // SAFETY: The caller guarantees this is the correct types table.
         let table = unsafe { self.memo_table_types.attach_memos_mut(memo_table) };
@@ -841,9 +840,6 @@ where
         };
 
         mem::forget(table_guard);
-
-        // Reset the table after having dropped any memos.
-        memo_table.reset();
     }
 
     /// Return reference to the field data ignoring dependency tracking.
@@ -1043,8 +1039,8 @@ where
     ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
-            // SAFETY: The memo table belongs to a value that we allocated, so it
-            // has the correct type. The caller guarantees exclusive database access.
+            // SAFETY: We rely on this ingredient sharing its type table with the
+            // value's page. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -1149,8 +1145,8 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type. The caller must
-    /// ensure exclusive access to the database's storage for the duration of this call.
+    /// `memo_table_types` must be the type table held by this value's page.
+    /// The caller must have exclusive access to the database's storage.
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees this is the correct types table.
@@ -1438,9 +1434,7 @@ mod persistence {
                     durability: value.durability,
                     revisions: value.revisions,
                     fields: value.fields.0,
-                    // SAFETY: We only ever access the memos of a value that we allocated through
-                    // our `MemoTableTypes`.
-                    memos: unsafe { MemoTable::new(ingredient.memo_table_types()) },
+                    memos: MemoTable::default(),
                 };
 
                 // Force initialize the relevant page.

@@ -157,9 +157,7 @@ impl<C: Configuration> IngredientImpl<C> {
                     fields,
                     revisions,
                     durabilities,
-                    // SAFETY: We only ever access the memos of a value that we allocated through
-                    // our `MemoTableTypes`.
-                    memos: unsafe { MemoTable::new(self.memo_table_types()) },
+                    memos: MemoTable::default(),
                 })
                 .0
         });
@@ -362,8 +360,8 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
-            // SAFETY: The memo table belongs to a value that we allocated, so it
-            // has the correct type. The caller guarantees exclusive database access.
+            // SAFETY: We rely on this ingredient sharing its type table with the
+            // value's page. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -451,8 +449,8 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type. The caller must
-    /// ensure exclusive access to the database's storage for the duration of this call.
+    /// `memo_table_types` must be the type table held by this value's page.
+    /// The caller must have exclusive access to the database's storage.
     #[cfg(feature = "salsa_unstable")]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(&self.fields);
@@ -628,9 +626,7 @@ mod persistence {
                     fields: value.fields.0,
                     revisions: value.revisions,
                     durabilities: value.durabilities,
-                    // SAFETY: We only ever access the memos of a value that we allocated through
-                    // our `MemoTableTypes`.
-                    memos: unsafe { MemoTable::new(ingredient.memo_table_types()) },
+                    memos: MemoTable::default(),
                 };
 
                 // Force initialize the relevant page.
