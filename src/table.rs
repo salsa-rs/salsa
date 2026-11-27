@@ -76,7 +76,7 @@ struct SlotVTable {
     /// The type name of what is stored as entries in data.
     type_name: fn() -> &'static str,
     /// A drop impl to call when the own page drops
-    /// SAFETY: The caller is required to supply a valid pointer to a `Box<PageDataEntry<T>>`, and
+    /// SAFETY: The caller is required to supply a valid pointer from a `Box<PageData<T>>`, and
     /// the correct initialized length and memo types.
     drop_impl: unsafe fn(data: *mut (), initialized: usize, memo_types: &MemoTableTypes),
 }
@@ -89,7 +89,7 @@ impl SlotVTable {
                     // SAFETY: The caller is required to provide a valid data pointer.
                     let data = unsafe { Box::from_raw(data.cast::<PageData<T>>()) };
                     for i in 0..initialized {
-                        let item = data[i].get().cast::<T>();
+                        let item = data.0[i].get().cast::<T>();
                         // SAFETY: The caller is required to provide a valid initialized length.
                         unsafe {
                             memo_types.attach_memos_mut((*item).memos_mut()).drop();
@@ -117,7 +117,11 @@ impl SlotVTable {
 }
 
 type PageDataEntry<T> = UnsafeCell<MaybeUninit<T>>;
-type PageData<T> = [PageDataEntry<T>; PAGE_LEN];
+
+/// Align the page so slots whose size divides 64 fit within a 64-byte cache line.
+/// The array must start at offset zero because page access casts directly to its entries.
+#[repr(C, align(64))]
+struct PageData<T>([PageDataEntry<T>; PAGE_LEN]);
 
 struct Page {
     /// The ingredient for elements on this page.
@@ -547,16 +551,15 @@ impl Page {
     #[inline]
     fn new<T: Slot>(ingredient: IngredientIndex, memo_types: Arc<MemoTableTypes>) -> Self {
         #[cfg(not(feature = "shuttle"))]
-        let data: Box<PageData<T>> =
-            Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]);
+        let data: Box<PageData<T>> = Box::new(PageData(
+            [const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN],
+        ));
 
         // Avoid stack overflows when using larger Shuttle types.
         #[cfg(feature = "shuttle")]
-        let data: Box<PageData<T>> = (0..PAGE_LEN)
-            .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
-            .collect::<Box<[_]>>()
-            .try_into()
-            .expect("collected exactly PAGE_LEN entries");
+        // SAFETY: Each element is an UnsafeCell<MaybeUninit<T>>, which permits
+        // uninitialized storage. The wrapper has no other fields.
+        let data = unsafe { Box::<PageData<T>>::new_uninit().assume_init() };
 
         Self {
             ingredient,
