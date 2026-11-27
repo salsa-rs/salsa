@@ -1,3 +1,5 @@
+use crossbeam_utils::CachePadded;
+
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
 use crate::function::{SyncGuard, SyncOwner};
@@ -37,8 +39,12 @@ pub struct Runtime {
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
+    ///
+    /// Keep the mutex off the cache line that stores the current revision.
+    /// Otherwise, locking the graph invalidates a line that every worker
+    /// reads when fetching a memo.
     #[cfg_attr(feature = "persistence", serde(skip))]
-    dependency_graph: Mutex<DependencyGraph>,
+    dependency_graph: CachePadded<Mutex<DependencyGraph>>,
 
     /// Data for instances
     #[cfg_attr(feature = "persistence", serde(skip))]
