@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::mem;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 
 use crate::DatabaseKeyIndex;
 use crate::function::ErasedMemo;
@@ -55,8 +55,22 @@ pub trait Memo: Any + Send + Sync {
     fn memory_usage(&self) -> crate::database::MemoInfo;
 }
 
-/// One pointer in an allocated array. The registered type at this index
-/// determines how to restore the concrete memo or its trait object.
+/// Data for a memoized entry.
+/// This is a type-erased `Box<M>`, where `M` is the type of memo associated
+/// with that particular ingredient index.
+///
+/// # Implementation note
+///
+/// Every entry is associated with some ingredient that has been added to the database.
+/// That ingredient has a fixed type of values that it produces etc.
+/// Therefore, once a given entry goes from `Empty` to `Full`,
+/// the type-id associated with that entry should never change.
+///
+/// We take advantage of this and use an `AtomicPtr` to store the actual memo.
+/// This allows us to store into the memo-entry without acquiring a write-lock.
+/// However, using `AtomicPtr` means we cannot use a `Box<dyn Any>` or any other wide pointer.
+/// We store an erased pointer and use the registered type at this index to
+/// recover the boxed memo in [`MemoEntry::take`].
 #[derive(Default, Debug)]
 struct MemoEntry {
     /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
@@ -243,10 +257,10 @@ impl<'a> MemoTableWithTypes<'a> {
             type_assert_failed(memo_ingredient_index);
         }
 
-        let old_memo = self.store(index, MemoEntryType::to_dummy(memo))?;
+        let old_memo = self.store(index, MemoEntryType::to_dummy(memo));
 
         // SAFETY: We asserted that the type is correct above.
-        Some(unsafe { MemoEntryType::from_dummy(old_memo) })
+        NonNull::new(old_memo).map(|old_memo| unsafe { MemoEntryType::from_dummy(old_memo) })
     }
 
     /// Returns a pointer to the memo at the given index, if one has been inserted.
@@ -256,8 +270,8 @@ impl<'a> MemoTableWithTypes<'a> {
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<M>> {
         let index = memo_ingredient_index.as_usize();
-        let memo = self.load(index)?;
-        let type_ = &self.types.types[index];
+        let memo = self.entries().get(index)?;
+        let type_ = self.types.types.get(index)?;
 
         // Verify that we are casting to the correct type.
         if type_.type_id != TypeId::of::<M>() {
@@ -280,8 +294,8 @@ impl<'a> MemoTableWithTypes<'a> {
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ErasedMemo<'a>> {
         let index = memo_ingredient_index.as_usize();
-        let memo = self.load(index)?;
-        let type_ = &self.types.types[index];
+        let memo = self.entries().get(index)?;
+        let type_ = self.types.types.get(index)?;
 
         // SAFETY: `insert` type-checks and release-publishes a pointer to the memo allocation's
         // base address, with spatial provenance covering the allocation, paired with `type_`; the
@@ -298,12 +312,19 @@ impl<'a> MemoTableWithTypes<'a> {
     /// duration of this call, so memos cannot be replaced or freed during traversal.
     #[cfg(feature = "salsa_unstable")]
     pub(crate) unsafe fn memory_usage(&self) -> (usize, Vec<crate::database::MemoInfo>) {
-        self.measure_entries(|index, memo| {
+        let entries = self.entries();
+        let occupied = entries.iter();
+        let mut memory_usage = Vec::with_capacity(occupied.size_hint().0);
+
+        for (index, memo) in occupied {
             let type_ = &self.types.types[index];
-            // SAFETY: Insertion checked the type. Exclusive database access
-            // keeps the memo alive while measuring it.
-            unsafe { (type_.to_dyn_fn)(memo).as_ref().memory_usage() }
-        })
+            // SAFETY: The `TypeId` is asserted in `insert()`. The caller guarantees
+            // exclusive database access, so the memo remains valid while we measure it.
+            let dyn_memo: &dyn Memo = unsafe { (type_.to_dyn_fn)(memo).as_ref() };
+            memory_usage.push(dyn_memo.memory_usage());
+        }
+
+        (entries.heap_size(), memory_usage)
     }
 }
 
@@ -344,25 +365,6 @@ impl MemoTableWithTypesMut<'_> {
         // SAFETY: The caller guarantees that no memo is still borrowed.
         unsafe { self.take_memos(|_, memo| drop(memo)) };
     }
-
-    /// Removes the memos in index order and transfers ownership of each to `f`.
-    ///
-    /// # Safety
-    ///
-    /// There must be no outstanding references to the memos.
-    pub(crate) unsafe fn take_memos(
-        &mut self,
-        mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>),
-    ) {
-        let types = self.types;
-        self.drain(|index, memo| {
-            let type_ = &types.types[index];
-            // SAFETY: Drain detached the original boxed memo. Insertion checked
-            // its type, and the caller guarantees that no reader still borrows it.
-            let memo = unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) };
-            f(MemoIngredientIndex::from_usize(index), memo);
-        });
-    }
 }
 
 /// This function is explicitly outlined to avoid debug machinery in the hot-path.
@@ -370,6 +372,19 @@ impl MemoTableWithTypesMut<'_> {
 #[inline(never)]
 fn type_assert_failed(memo_ingredient_index: MemoIngredientIndex) -> ! {
     panic!("inconsistent type-id for `{memo_ingredient_index:?}`")
+}
+
+impl MemoEntry {
+    /// # Safety
+    ///
+    /// The type must match.
+    #[inline]
+    unsafe fn take(&mut self, type_: &MemoEntryType) -> Option<Box<dyn Memo>> {
+        let memo = mem::replace(self.atomic_memo.get_mut(), ptr::null_mut());
+        let memo = NonNull::new(memo)?;
+        // SAFETY: Our preconditions.
+        Some(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) })
+    }
 }
 
 impl Drop for DummyMemo {

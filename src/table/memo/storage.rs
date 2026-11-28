@@ -4,8 +4,9 @@
 use std::mem;
 use std::ptr::{self, NonNull};
 
-use super::{DummyMemo, MemoEntry, MemoTableWithTypes, MemoTableWithTypesMut};
+use super::{DummyMemo, Memo, MemoEntry, MemoTableWithTypes, MemoTableWithTypesMut};
 use crate::sync::atomic::{AtomicPtr, Ordering};
+use crate::zalsa::MemoIngredientIndex;
 
 #[derive(Default)]
 pub(super) struct MemoEntries {
@@ -31,56 +32,55 @@ pub(super) struct MemoEntries {
 
 impl MemoTableWithTypes<'_> {
     #[inline]
-    pub(super) fn load(&self, index: usize) -> Option<NonNull<DummyMemo>> {
-        let word = self.memos.entries.word.load(Ordering::Acquire);
-
-        match decode(word, self.types.len()) {
-            Entries::Empty => None,
-            Entries::Inline(first, memo) => (index == first).then_some(memo),
-            Entries::Array(array) => {
-                // SAFETY: Acquire observes the published array. Its length is
-                // fixed by the type list and it stays allocated under shared access.
-                let entries = unsafe { &*array };
-                NonNull::new(entries.get(index)?.atomic_memo.load(Ordering::Acquire))
-            }
-        }
+    pub(super) fn entries(&self) -> Entries<'_> {
+        self.snapshot().1
     }
 
-    pub(super) fn store(
-        &self,
-        index: usize,
-        memo: NonNull<DummyMemo>,
-    ) -> Option<NonNull<DummyMemo>> {
-        let word = &self.memos.entries.word;
-        let mut state = word.load(Ordering::Acquire);
+    /// Keep the observed word for a writer's compare-exchange.
+    #[inline]
+    fn snapshot(&self) -> (*mut MemoEntry, Entries<'_>) {
+        let word = self.memos.entries.word.load(Ordering::Acquire);
+        let entries = if word.is_null() {
+            Entries::Empty
+        } else if let Some((index, memo)) = decode_inline(word) {
+            Entries::Inline(index, memo)
+        } else {
+            // SAFETY: Acquire observes the initialized array. Its length is
+            // fixed by the type list and it stays allocated under shared access.
+            Entries::Array(unsafe { std::slice::from_raw_parts(word, self.types.len()) })
+        };
 
+        (word, entries)
+    }
+
+    pub(super) fn store(&self, index: usize, memo: NonNull<DummyMemo>) -> *mut DummyMemo {
+        let word = &self.memos.entries.word;
+
+        // After a failed compare-exchange the next snapshot acquires the
+        // winning writer's word before we access its entries.
         loop {
-            let inline = match decode(state, self.types.len()) {
+            let (state, entries) = self.snapshot();
+            let inline = match entries {
                 Entries::Empty => None,
                 Entries::Inline(first, previous) => Some((first, previous)),
-                Entries::Array(array) => {
-                    // SAFETY: As in `load`, the published array stays in place.
-                    let entries = unsafe { &*array };
-                    return NonNull::new(
-                        entries[index]
-                            .atomic_memo
-                            .swap(memo.as_ptr(), Ordering::AcqRel),
-                    );
+                Entries::Array(entries) => {
+                    return entries[index]
+                        .atomic_memo
+                        .swap(memo.as_ptr(), Ordering::AcqRel);
                 }
             };
 
             if inline.is_none_or(|(first, _)| first == index)
                 && let Some(new) = encode_inline(index, memo)
             {
-                match word.compare_exchange(state, new, Ordering::AcqRel, Ordering::Acquire) {
-                    Ok(_) => return inline.map(|(_, old)| old),
-                    Err(current) => state = current,
+                if word
+                    .compare_exchange(state, new, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    return inline.map_or(ptr::null_mut(), |(_, old)| old);
                 }
-            } else {
-                match self.promote(state, inline, index, memo) {
-                    Ok(old) => return NonNull::new(old),
-                    Err(current) => state = current,
-                }
+            } else if let Ok(old) = self.promote(state, inline, index, memo) {
+                return old;
             }
         }
     }
@@ -89,10 +89,10 @@ impl MemoTableWithTypes<'_> {
     fn promote(
         &self,
         state: *mut MemoEntry,
-        inline: Option<(usize, NonNull<DummyMemo>)>,
+        inline: Option<(usize, *mut DummyMemo)>,
         index: usize,
         memo: NonNull<DummyMemo>,
-    ) -> Result<*mut DummyMemo, *mut MemoEntry> {
+    ) -> Result<*mut DummyMemo, ()> {
         let len = self.types.len();
         // Collecting defaults can compile to a zeroed allocation, which is
         // more expensive for small memo tables with jemalloc.
@@ -100,7 +100,7 @@ impl MemoTableWithTypes<'_> {
         entries.resize_with(len, MemoEntry::default);
 
         if let Some((first, previous)) = inline {
-            *entries[first].atomic_memo.get_mut() = previous.as_ptr();
+            *entries[first].atomic_memo.get_mut() = previous;
         }
 
         // A replacement at the same index can also require promotion if its
@@ -115,81 +115,106 @@ impl MemoTableWithTypes<'_> {
             state,
             array.cast(),
             Ordering::AcqRel,
-            Ordering::Acquire,
+            Ordering::Relaxed,
         ) {
             Ok(_) => Ok(old),
-            Err(current) => {
+            Err(_) => {
                 // SAFETY: This array was never published. Dropping its atomic
                 // pointers frees the array without dropping either boxed memo.
                 unsafe { drop(Box::from_raw(array)) };
-                Err(current)
+                Err(())
+            }
+        }
+    }
+}
+
+/// A borrowed view of the occupied entries. Only the atomic word is stored in the key.
+pub(super) enum Entries<'a> {
+    Empty,
+    Inline(usize, *mut DummyMemo),
+    Array(&'a [MemoEntry]),
+}
+
+impl Entries<'_> {
+    #[inline]
+    pub(super) fn get(&self, index: usize) -> Option<NonNull<DummyMemo>> {
+        match *self {
+            Self::Inline(first, memo) if index == first => NonNull::new(memo),
+            Self::Empty | Self::Inline(..) => None,
+            Self::Array(entries) => {
+                NonNull::new(entries.get(index)?.atomic_memo.load(Ordering::Acquire))
             }
         }
     }
 
     #[cfg(feature = "salsa_unstable")]
-    pub(super) fn measure_entries<T>(
-        &self,
-        mut measure: impl FnMut(usize, NonNull<DummyMemo>) -> T,
-    ) -> (usize, Vec<T>) {
-        let word = self.memos.entries.word.load(Ordering::Acquire);
+    pub(super) fn iter(&self) -> impl Iterator<Item = (usize, NonNull<DummyMemo>)> {
+        let (inline, array) = match *self {
+            Self::Empty => (None, &[][..]),
+            Self::Inline(index, memo) => (Some((index, NonNull::new(memo).unwrap())), &[][..]),
+            Self::Array(entries) => (None, entries),
+        };
 
-        match decode(word, self.types.len()) {
-            Entries::Empty => (0, Vec::new()),
-            Entries::Inline(index, memo) => (0, vec![measure(index, memo)]),
-            Entries::Array(array) => {
-                // SAFETY: As in `load`, the published array stays in place.
-                let entries = unsafe { &*array };
-                let memos = entries
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, entry)| {
-                        let memo = NonNull::new(entry.atomic_memo.load(Ordering::Acquire))?;
-                        Some(measure(index, memo))
-                    })
-                    .collect();
+        inline
+            .into_iter()
+            .chain(array.iter().enumerate().filter_map(|(index, entry)| {
+                let memo = NonNull::new(entry.atomic_memo.load(Ordering::Acquire))?;
+                Some((index, memo))
+            }))
+    }
 
-                (mem::size_of_val(entries), memos)
-            }
+    #[cfg(feature = "salsa_unstable")]
+    pub(super) fn heap_size(&self) -> usize {
+        match self {
+            Self::Empty | Self::Inline(..) => 0,
+            Self::Array(entries) => mem::size_of_val(*entries),
         }
     }
 }
 
 impl MemoTableWithTypesMut<'_> {
-    /// Detaches each pointer before handing it to the callback. If the callback
-    /// panics, the caller's drop guard can drain the remaining pointers.
-    pub(super) fn drain(&mut self, mut take: impl FnMut(usize, NonNull<DummyMemo>)) {
+    /// Removes the memos in index order and transfers ownership of each to `f`.
+    ///
+    /// # Safety
+    ///
+    /// There must be no outstanding references to the memos.
+    pub(crate) unsafe fn take_memos(
+        &mut self,
+        mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>),
+    ) {
         let word = self.memos.entries.word.get_mut();
+        if word.is_null() {
+            return;
+        }
 
-        match decode(*word, self.types.len()) {
-            Entries::Empty => {}
-            Entries::Inline(index, memo) => {
-                *word = ptr::null_mut();
-                take(index, memo);
-            }
-            Entries::Array(array) => {
-                // SAFETY: We have exclusive access to the published array.
-                let entries = unsafe { &mut *array };
-                for (index, entry) in entries.iter_mut().enumerate() {
-                    let memo = mem::replace(entry.atomic_memo.get_mut(), ptr::null_mut());
-                    if let Some(memo) = NonNull::new(memo) {
-                        take(index, memo);
-                    }
-                }
+        if let Some((index, memo)) = decode_inline(*word) {
+            *word = ptr::null_mut();
+            let type_ = &self.types.types[index];
+            let memo = NonNull::new(memo).unwrap();
+            // SAFETY: We detached the original box. Insertion checked its type
+            // and the caller guarantees that no reader still borrows it.
+            let memo = unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) };
+            f(MemoIngredientIndex::from_usize(index), memo);
+            return;
+        }
 
-                *word = ptr::null_mut();
-                // SAFETY: We detached the boxed slice with its original length.
-                unsafe { drop(Box::from_raw(array)) };
+        let array = ptr::slice_from_raw_parts_mut(*word, self.types.len());
+        // SAFETY: We have exclusive access to the published array. The type
+        // list gives its original length and the concrete type at each index.
+        let entries = unsafe { &mut *array };
+        for (index, (entry, type_)) in entries.iter_mut().zip(&self.types.types).enumerate() {
+            // SAFETY: The types match and the caller guarantees no outstanding borrows.
+            if let Some(memo) = unsafe { entry.take(type_) } {
+                f(MemoIngredientIndex::from_usize(index), memo);
             }
         }
-    }
-}
 
-/// A decoded snapshot. Only the atomic word is stored in each key.
-enum Entries {
-    Empty,
-    Inline(usize, NonNull<DummyMemo>),
-    Array(*mut [MemoEntry]),
+        // Keep the allocation attached until the last callback returns so the
+        // caller's drop guard can clean up the remaining memos if one panics.
+        *word = ptr::null_mut();
+        // SAFETY: We detached the boxed slice with its original length.
+        unsafe { drop(Box::from_raw(array)) };
+    }
 }
 
 // On 64-bit targets, checked multiplication by 256 makes room for the tag
@@ -231,13 +256,9 @@ fn encode_inline(index: usize, memo: NonNull<DummyMemo>) -> Option<*mut MemoEntr
 }
 
 #[inline]
-fn decode(word: *mut MemoEntry, len: usize) -> Entries {
-    if word.is_null() {
-        return Entries::Empty;
-    }
-
+fn decode_inline(word: *mut MemoEntry) -> Option<(usize, *mut DummyMemo)> {
     if word.addr() & 1 == 0 {
-        return Entries::Array(ptr::slice_from_raw_parts_mut(word, len));
+        return None;
     }
 
     let index = (word.addr() >> 1) & MAX_INLINE_INDEX;
@@ -249,7 +270,7 @@ fn decode(word: *mut MemoEntry, len: usize) -> Entries {
         }
     });
 
-    Entries::Inline(index, NonNull::new(memo.cast()).unwrap())
+    Some((index, memo.cast()))
 }
 
 #[cfg(all(test, not(feature = "shuttle")))]
@@ -301,7 +322,7 @@ mod tests {
             if let Some(encoded) = encode_inline(first, original.cast()) {
                 assert_eq!(state, encoded);
             } else {
-                assert!(matches!(decode(state, types.len()), Entries::Array(_)));
+                assert!(matches!(table().entries(), Entries::Array(_)));
             }
             assert!(table().get::<TestMemo>(index(0)).is_none());
             assert!(table().insert(index(0), memo(2)).is_none());
@@ -363,10 +384,10 @@ mod tests {
         };
         for index in 0..=MAX_INLINE_INDEX {
             let word = encode_inline(index, pointer(max_address)).unwrap();
-            let Entries::Inline(first, memo) = decode(word, index + 1) else {
-                panic!("expected inline memo");
-            };
-            assert_eq!((first, memo), (index, pointer(max_address)));
+            assert_eq!(
+                decode_inline(word),
+                Some((index, pointer(max_address).as_ptr()))
+            );
         }
         assert!(encode_inline(MAX_INLINE_INDEX + 1, pointer(max_address)).is_none());
         assert!(encode_inline(0, pointer(invalid_address)).is_none());
