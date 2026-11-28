@@ -33,36 +33,24 @@ pub(super) struct MemoEntries {
 impl MemoTableWithTypes<'_> {
     #[inline]
     pub(super) fn entries(&self) -> Entries<'_> {
-        self.snapshot().1
-    }
-
-    /// Keep the observed word for a writer's compare-exchange.
-    #[inline]
-    fn snapshot(&self) -> (*mut MemoEntry, Entries<'_>) {
         let word = self.memos.entries.word.load(Ordering::Acquire);
-        let entries = if word.is_null() {
+
+        if word.is_null() {
             Entries::Empty
-        } else if let Some((index, memo)) = decode_inline(word) {
-            Entries::Inline(index, memo)
+        } else if let Some(inline) = InlineMemo::from_word(word) {
+            Entries::Inline(inline)
         } else {
             // SAFETY: Acquire observes the initialized array. Its length is
             // fixed by the type list and it stays allocated under shared access.
             Entries::Array(unsafe { std::slice::from_raw_parts(word, self.types.len()) })
-        };
-
-        (word, entries)
+        }
     }
 
     pub(super) fn store(&self, index: usize, memo: NonNull<DummyMemo>) -> *mut DummyMemo {
-        let word = &self.memos.entries.word;
-
-        // After a failed compare-exchange the next snapshot acquires the
-        // winning writer's word before we access its entries.
         loop {
-            let (state, entries) = self.snapshot();
-            let inline = match entries {
+            let previous = match self.entries() {
                 Entries::Empty => None,
-                Entries::Inline(first, previous) => Some((first, previous)),
+                Entries::Inline(inline) => Some(inline),
                 Entries::Array(entries) => {
                     return entries[index]
                         .atomic_memo
@@ -70,16 +58,13 @@ impl MemoTableWithTypes<'_> {
                 }
             };
 
-            if inline.is_none_or(|(first, _)| first == index)
-                && let Some(new) = encode_inline(index, memo)
+            if previous.is_none_or(|inline| inline.index() == index)
+                && let Some(new) = InlineMemo::encode(index, memo)
             {
-                if word
-                    .compare_exchange(state, new, Ordering::AcqRel, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    return inline.map_or(ptr::null_mut(), |(_, old)| old);
+                if self.publish(previous, new.word) {
+                    return previous.map_or(ptr::null_mut(), InlineMemo::memo_ptr);
                 }
-            } else if let Ok(old) = self.promote(state, inline, index, memo) {
+            } else if let Ok(old) = self.promote(previous, index, memo) {
                 return old;
             }
         }
@@ -88,8 +73,7 @@ impl MemoTableWithTypes<'_> {
     #[cold]
     fn promote(
         &self,
-        state: *mut MemoEntry,
-        inline: Option<(usize, *mut DummyMemo)>,
+        previous: Option<InlineMemo>,
         index: usize,
         memo: NonNull<DummyMemo>,
     ) -> Result<*mut DummyMemo, ()> {
@@ -99,8 +83,8 @@ impl MemoTableWithTypes<'_> {
         let mut entries = Vec::with_capacity(len);
         entries.resize_with(len, MemoEntry::default);
 
-        if let Some((first, previous)) = inline {
-            *entries[first].atomic_memo.get_mut() = previous;
+        if let Some(inline) = previous {
+            *entries[inline.index()].atomic_memo.get_mut() = inline.memo_ptr();
         }
 
         // A replacement at the same index can also require promotion if its
@@ -108,30 +92,34 @@ impl MemoTableWithTypes<'_> {
         let old = mem::replace(entries[index].atomic_memo.get_mut(), memo.as_ptr());
         let array = Box::into_raw(entries.into_boxed_slice());
 
-        // Publish both entries together. If another writer replaced the inline
-        // memo or published an array, retry with its state. Replaced memos stay
-        // alive until the end of the revision, so their addresses can't be reused.
-        match self.memos.entries.word.compare_exchange(
-            state,
-            array.cast(),
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => Ok(old),
-            Err(_) => {
-                // SAFETY: This array was never published. Dropping its atomic
-                // pointers frees the array without dropping either boxed memo.
-                unsafe { drop(Box::from_raw(array)) };
-                Err(())
-            }
+        if self.publish(previous, array.cast()) {
+            return Ok(old);
         }
+
+        // SAFETY: This array was never published. Dropping its atomic
+        // pointers frees the array without dropping either boxed memo.
+        unsafe { drop(Box::from_raw(array)) };
+        Err(())
+    }
+
+    /// Publish only if the table still contains the observed inline memo or
+    /// is still empty. Displaced memos stay alive for the revision, so their
+    /// addresses cannot be reused. On failure, the retry in `store` acquires
+    /// the current word through `entries`.
+    fn publish(&self, previous: Option<InlineMemo>, new: *mut MemoEntry) -> bool {
+        let expected = previous.map_or(ptr::null_mut(), |inline| inline.word);
+        self.memos
+            .entries
+            .word
+            .compare_exchange(expected, new, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
     }
 }
 
 /// A borrowed view of the occupied entries. Only the atomic word is stored in the key.
 pub(super) enum Entries<'a> {
     Empty,
-    Inline(usize, *mut DummyMemo),
+    Inline(InlineMemo),
     Array(&'a [MemoEntry]),
 }
 
@@ -139,7 +127,7 @@ impl Entries<'_> {
     #[inline]
     pub(super) fn get(&self, index: usize) -> Option<NonNull<DummyMemo>> {
         match *self {
-            Self::Inline(first, memo) if index == first => NonNull::new(memo),
+            Self::Inline(inline) if index == inline.index() => NonNull::new(inline.memo_ptr()),
             Self::Empty | Self::Inline(..) => None,
             Self::Array(entries) => {
                 NonNull::new(entries.get(index)?.atomic_memo.load(Ordering::Acquire))
@@ -149,9 +137,12 @@ impl Entries<'_> {
 
     #[cfg(feature = "salsa_unstable")]
     pub(super) fn iter(&self) -> impl Iterator<Item = (usize, NonNull<DummyMemo>)> {
-        let (inline, array) = match *self {
-            Self::Empty => (None, &[][..]),
-            Self::Inline(index, memo) => (Some((index, NonNull::new(memo).unwrap())), &[][..]),
+        let (inline, array): (_, &[MemoEntry]) = match *self {
+            Self::Empty => (None, &[]),
+            Self::Inline(inline) => {
+                let memo = NonNull::new(inline.memo_ptr()).unwrap();
+                (Some((inline.index(), memo)), &[])
+            }
             Self::Array(entries) => (None, entries),
         };
 
@@ -187,10 +178,11 @@ impl MemoTableWithTypesMut<'_> {
             return;
         }
 
-        if let Some((index, memo)) = decode_inline(*word) {
+        if let Some(inline) = InlineMemo::from_word(*word) {
             *word = ptr::null_mut();
+            let index = inline.index();
             let type_ = &self.types.types[index];
-            let memo = NonNull::new(memo).unwrap();
+            let memo = NonNull::new(inline.memo_ptr()).unwrap();
             // SAFETY: We detached the original box. Insertion checked its type
             // and the caller guarantees that no reader still borrows it.
             let memo = unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) };
@@ -235,42 +227,58 @@ const TAG_BITS: u32 = if cfg!(target_pointer_width = "32") {
 const TAG_MASK: usize = (1 << TAG_BITS) - 1;
 const MAX_INLINE_INDEX: usize = (1 << (TAG_BITS - 1)) - 1;
 
-#[inline]
-fn encode_inline(index: usize, memo: NonNull<DummyMemo>) -> Option<*mut MemoEntry> {
-    const { assert!(mem::align_of::<MemoEntry>() >= 2) };
-    let ptr = memo.as_ptr();
-    if index > MAX_INLINE_INDEX {
-        return None;
-    }
-
-    let tag = (index << 1) | 1;
-    let address = if cfg!(target_pointer_width = "32") {
-        if ptr.addr() & TAG_MASK != 0 {
-            return None;
-        }
-        ptr.addr()
-    } else {
-        ptr.addr().checked_mul(1 << TAG_BITS)?
-    };
-    Some(ptr.with_addr(address | tag).cast())
+/// Retains the tagged pointer so comparison, lookup and promotion all use
+/// the same observation of the atomic word.
+#[derive(Clone, Copy)]
+pub(super) struct InlineMemo {
+    word: *mut MemoEntry,
 }
 
-#[inline]
-fn decode_inline(word: *mut MemoEntry) -> Option<(usize, *mut DummyMemo)> {
-    if word.addr() & 1 == 0 {
-        return None;
+impl InlineMemo {
+    #[inline]
+    fn from_word(word: *mut MemoEntry) -> Option<Self> {
+        (word.addr() & 1 != 0).then_some(Self { word })
     }
 
-    let index = (word.addr() >> 1) & MAX_INLINE_INDEX;
-    let memo = word.map_addr(|addr| {
-        if cfg!(target_pointer_width = "32") {
-            addr & !TAG_MASK
-        } else {
-            addr >> TAG_BITS
+    #[inline]
+    fn encode(index: usize, memo: NonNull<DummyMemo>) -> Option<Self> {
+        const { assert!(mem::align_of::<MemoEntry>() >= 2) };
+        if index > MAX_INLINE_INDEX {
+            return None;
         }
-    });
 
-    Some((index, memo.cast()))
+        let ptr = memo.as_ptr();
+        let tag = (index << 1) | 1;
+        let address = if cfg!(target_pointer_width = "32") {
+            if ptr.addr() & TAG_MASK != 0 {
+                return None;
+            }
+            ptr.addr()
+        } else {
+            ptr.addr().checked_mul(1 << TAG_BITS)?
+        };
+        Some(Self {
+            word: ptr.with_addr(address | tag).cast(),
+        })
+    }
+
+    #[inline]
+    fn index(self) -> usize {
+        (self.word.addr() >> 1) & MAX_INLINE_INDEX
+    }
+
+    #[inline]
+    fn memo_ptr(self) -> *mut DummyMemo {
+        self.word
+            .map_addr(|addr| {
+                if cfg!(target_pointer_width = "32") {
+                    addr & !TAG_MASK
+                } else {
+                    addr >> TAG_BITS
+                }
+            })
+            .cast()
+    }
 }
 
 #[cfg(all(test, not(feature = "shuttle")))]
@@ -319,8 +327,8 @@ mod tests {
             let original = memo(1);
             assert!(table().insert(index(first), original).is_none());
             let state = memos.entries.word.load(Ordering::Acquire);
-            if let Some(encoded) = encode_inline(first, original.cast()) {
-                assert_eq!(state, encoded);
+            if let Some(encoded) = InlineMemo::encode(first, original.cast()) {
+                assert_eq!(state, encoded.word);
             } else {
                 assert!(matches!(table().entries(), Entries::Array(_)));
             }
@@ -383,13 +391,12 @@ mod tests {
             (max_address, max_address + 1)
         };
         for index in 0..=MAX_INLINE_INDEX {
-            let word = encode_inline(index, pointer(max_address)).unwrap();
-            assert_eq!(
-                decode_inline(word),
-                Some((index, pointer(max_address).as_ptr()))
-            );
+            let encoded = InlineMemo::encode(index, pointer(max_address)).unwrap();
+            let inline = InlineMemo::from_word(encoded.word).unwrap();
+            assert_eq!(inline.index(), index);
+            assert_eq!(inline.memo_ptr(), pointer(max_address).as_ptr());
         }
-        assert!(encode_inline(MAX_INLINE_INDEX + 1, pointer(max_address)).is_none());
-        assert!(encode_inline(0, pointer(invalid_address)).is_none());
+        assert!(InlineMemo::encode(MAX_INLINE_INDEX + 1, pointer(max_address)).is_none());
+        assert!(InlineMemo::encode(0, pointer(invalid_address)).is_none());
     }
 }
