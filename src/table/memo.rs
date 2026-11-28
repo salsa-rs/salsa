@@ -9,6 +9,11 @@ use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
 
+/// Adds the registered concrete memo type's vtable without dereferencing the pointer.
+///
+/// Dereferencing the result requires a live, aligned allocation of the same concrete type.
+pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
+
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
@@ -49,10 +54,51 @@ pub trait Memo: Any + Send + Sync {
     fn memory_usage(&self) -> crate::database::MemoInfo;
 }
 
-/// Adds the registered concrete memo type's vtable without dereferencing the pointer.
+/// Data for a memoized entry.
+/// This is a type-erased `Box<M>`, where `M` is the type of memo associated
+/// with that particular ingredient index.
 ///
-/// Dereferencing the result requires a live, aligned allocation of the same concrete type.
-pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
+/// # Implementation note
+///
+/// Every entry is associated with some ingredient that has been added to the database.
+/// That ingredient has a fixed type of values that it produces etc.
+/// Therefore, once a given entry goes from `Empty` to `Full`,
+/// the type-id associated with that entry should never change.
+///
+/// We take advantage of this and use an `AtomicPtr` to store the actual memo.
+/// This allows us to store into the memo-entry without acquiring a write-lock.
+/// However, using `AtomicPtr` means we cannot use a `Box<dyn Any>` or any other wide pointer.
+/// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
+/// when freeing `MemoEntryData` values to transmute things back. See [`MemoEntry::take`].
+#[derive(Default, Debug)]
+struct MemoEntry {
+    /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
+    atomic_memo: AtomicPtr<DummyMemo>,
+}
+
+impl MemoTableWithTypesMut<'_> {
+    fn take_entries(&mut self) -> Option<Box<[MemoEntry]>> {
+        let ptr = mem::replace(self.memos.entries.get_mut(), ptr::null_mut());
+        assert!(decode_inline(ptr).is_none());
+        if ptr.is_null() {
+            return None;
+        }
+
+        // SAFETY: We detached the boxed slice under exclusive access. The type
+        // table has the same length as when the allocation was published.
+        Some(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.types.len())) })
+    }
+
+    #[inline]
+    fn entries_mut(&mut self) -> &mut [MemoEntry] {
+        let Some(ptr) = NonNull::new(*self.memos.entries.get_mut()) else {
+            return &mut [];
+        };
+        assert!(decode_inline(ptr.as_ptr()).is_none());
+        // SAFETY: We have exclusive access to the fixed-length boxed slice.
+        unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), self.types.len()) }
+    }
+}
 
 /// Type metadata for one memo-table slot.
 ///
@@ -95,6 +141,32 @@ impl MemoEntryType {
         }
 
         to_dyn::<M>
+    }
+}
+
+/// Pointee marker for erased memo pointers; never instantiated or dereferenced.
+#[derive(Debug)]
+pub(crate) struct DummyMemo;
+
+impl Memo for DummyMemo {
+    fn has_value(&self) -> bool {
+        unreachable!("DummyMemo is never stored in a memo table")
+    }
+
+    fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
+
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self) -> crate::database::MemoInfo {
+        crate::database::MemoInfo {
+            debug_name: "dummy",
+            output: crate::database::SlotInfo {
+                debug_name: "dummy",
+                size_of_metadata: 0,
+                size_of_fields: 0,
+                heap_size_of_fields: None,
+                memos: Vec::new(),
+            },
+        }
     }
 }
 
@@ -142,6 +214,13 @@ impl MemoTableTypes {
     }
 }
 
+/// Borrows one key's memo table and the memo types shared by all keys of its ingredient.
+/// The type list determines the concrete memo type at each index and the length of the entry array.
+pub struct MemoTableWithTypes<'a> {
+    types: &'a MemoTableTypes,
+    memos: &'a MemoTable,
+}
+
 /// A memo table slot whose observed allocations remain valid for shared access for `'a`.
 pub(crate) struct MemoSlot<'a> {
     table: MemoTableWithTypes<'a>,
@@ -185,13 +264,6 @@ impl<'a> MemoSlot<'a> {
         // SAFETY: Guaranteed by the caller of `MemoSlot::new`.
         unsafe { self.table.get_erased(self.memo_ingredient_index) }
     }
-}
-
-/// Borrows one key's memo table and the memo types shared by all keys of its ingredient.
-/// The type list determines the concrete memo type at each index and the length of the entry array.
-pub struct MemoTableWithTypes<'a> {
-    types: &'a MemoTableTypes,
-    memos: &'a MemoTable,
 }
 
 impl<'a> MemoTableWithTypes<'a> {
@@ -477,28 +549,6 @@ impl MemoTableWithTypesMut<'_> {
         let boxed = unsafe { Box::from_raw((self.types.types[index].to_dyn_fn)(memo).as_ptr()) };
         Some((index, boxed))
     }
-
-    fn take_entries(&mut self) -> Option<Box<[MemoEntry]>> {
-        let ptr = mem::replace(self.memos.entries.get_mut(), ptr::null_mut());
-        assert!(decode_inline(ptr).is_none());
-        if ptr.is_null() {
-            return None;
-        }
-
-        // SAFETY: We detached the boxed slice under exclusive access. The type
-        // table has the same length as when the allocation was published.
-        Some(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.types.len())) })
-    }
-
-    #[inline]
-    fn entries_mut(&mut self) -> &mut [MemoEntry] {
-        let Some(ptr) = NonNull::new(*self.memos.entries.get_mut()) else {
-            return &mut [];
-        };
-        assert!(decode_inline(ptr.as_ptr()).is_none());
-        // SAFETY: We have exclusive access to the fixed-length boxed slice.
-        unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), self.types.len()) }
-    }
 }
 
 // Bit 0 marks an inline memo. The remaining tag bits hold the slot index.
@@ -568,28 +618,6 @@ fn type_assert_failed(memo_ingredient_index: MemoIngredientIndex) -> ! {
     panic!("inconsistent type-id for `{memo_ingredient_index:?}`")
 }
 
-/// Data for a memoized entry.
-/// This is a type-erased `Box<M>`, where `M` is the type of memo associated
-/// with that particular ingredient index.
-///
-/// # Implementation note
-///
-/// Every entry is associated with some ingredient that has been added to the database.
-/// That ingredient has a fixed type of values that it produces etc.
-/// Therefore, once a given entry goes from `Empty` to `Full`,
-/// the type-id associated with that entry should never change.
-///
-/// We take advantage of this and use an `AtomicPtr` to store the actual memo.
-/// This allows us to store into the memo-entry without acquiring a write-lock.
-/// However, using `AtomicPtr` means we cannot use a `Box<dyn Any>` or any other wide pointer.
-/// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
-/// when freeing `MemoEntryData` values to transmute things back. See [`MemoEntry::take`].
-#[derive(Default, Debug)]
-struct MemoEntry {
-    /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
-    atomic_memo: AtomicPtr<DummyMemo>,
-}
-
 impl MemoEntry {
     /// # Safety
     ///
@@ -600,32 +628,6 @@ impl MemoEntry {
         let memo = NonNull::new(memo)?;
         // SAFETY: Our preconditions.
         Some(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) })
-    }
-}
-
-/// Pointee marker for erased memo pointers; never instantiated or dereferenced.
-#[derive(Debug)]
-pub(crate) struct DummyMemo;
-
-impl Memo for DummyMemo {
-    fn has_value(&self) -> bool {
-        unreachable!("DummyMemo is never stored in a memo table")
-    }
-
-    fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
-
-    #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo {
-        crate::database::MemoInfo {
-            debug_name: "dummy",
-            output: crate::database::SlotInfo {
-                debug_name: "dummy",
-                size_of_metadata: 0,
-                size_of_fields: 0,
-                heap_size_of_fields: None,
-                memos: Vec::new(),
-            },
-        }
     }
 }
 
