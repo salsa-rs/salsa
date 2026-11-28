@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.7](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.28.6...salsa-macros-v0.28.7) - 2026-11-28
+
+### Added
+
+- add opt-in SIEVE eviction under salsa_unstable ([#1226](https://github.com/salsa-rs/salsa/pull/1226))
+- add an eviction option for tracked functions ([#1438](https://github.com/salsa-rs/salsa/pull/1438))
+
 ## [0.28.6](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.28.5...salsa-macros-v0.28.6) - 2026-11-22
 
 ### Added
