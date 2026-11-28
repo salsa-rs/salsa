@@ -5,9 +5,11 @@ use std::ptr::{self, NonNull};
 
 use crate::DatabaseKeyIndex;
 use crate::function::ErasedMemo;
-use crate::sync::atomic::{AtomicPtr, Ordering};
+use crate::sync::atomic::AtomicPtr;
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
+
+mod storage;
 
 /// Adds the registered concrete memo type's vtable without dereferencing the pointer.
 ///
@@ -18,11 +20,15 @@ pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
 ///
+/// The first memo's pointer and query index share one atomic word. If either
+/// doesn't fit, or a second query caches a result, the word points to an array
+/// with one entry per registered query. The boxed memo stays at its original
+/// address so concurrent readers can keep borrowing it.
+///
 /// # Safety invariant
 ///
-/// The first insertion allocates one entry per registered memo type. The type
-/// at each index determines how to drop that memo, and the number of types
-/// determines the length of the boxed slice to free.
+/// The type at each index determines how to drop that memo. The number of
+/// types determines the length of the boxed slice to free.
 ///
 /// A page is a block of slots for one ingredient. Each slot has its own
 /// `MemoTable`. When Salsa allocates a page, it clones the ingredient's
@@ -31,7 +37,7 @@ pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
 /// Both must point to the same immutable list for the lifetime of the page.
 #[derive(Default)]
 pub struct MemoTable {
-    entries: AtomicPtr<MemoEntry>,
+    entries: storage::MemoEntries,
 }
 
 #[cfg(not(feature = "shuttle"))]
@@ -63,80 +69,12 @@ pub trait Memo: Any + Send + Sync {
 /// We take advantage of this and use an `AtomicPtr` to store the actual memo.
 /// This allows us to store into the memo-entry without acquiring a write-lock.
 /// However, using `AtomicPtr` means we cannot use a `Box<dyn Any>` or any other wide pointer.
-/// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
-/// when freeing `MemoEntryData` values to transmute things back. See [`MemoEntry::take`].
+/// We store an erased pointer and use the registered type at this index to
+/// recover the boxed memo in [`MemoEntry::take`].
 #[derive(Default, Debug)]
 struct MemoEntry {
     /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
     atomic_memo: AtomicPtr<DummyMemo>,
-}
-
-impl MemoTableWithTypes<'_> {
-    #[inline]
-    fn entries(&self) -> Option<&[MemoEntry]> {
-        let ptr = NonNull::new(self.memos.entries.load(Ordering::Acquire))?;
-
-        // The acquire load synchronizes with the release operation that published the pointer,
-        // ensuring that the memo entries are initialized before we create references to them.
-        //
-        // SAFETY: A non-null pointer comes from a boxed slice of length `self.types.len()` and
-        // cannot be freed while `self` is shared.
-        Some(unsafe { std::slice::from_raw_parts(ptr.as_ptr(), self.types.len()) })
-    }
-
-    #[cold]
-    fn initialize(&self) -> &[MemoEntry] {
-        let len = self.types.len();
-        // Collecting defaults can compile to a zeroed allocation, which is
-        // more expensive for small memo tables with jemalloc.
-        let mut entries = Vec::with_capacity(len);
-        entries.resize_with(len, MemoEntry::default);
-        let new_memos = Box::into_raw(entries.into_boxed_slice());
-        let new_memos_ptr = new_memos.cast::<MemoEntry>();
-
-        // Release publishes the initialized memo entries. If another thread won the race, acquire
-        // synchronizes with its release operation before we create references to its allocation.
-        let ptr = match self.memos.entries.compare_exchange(
-            ptr::null_mut(),
-            new_memos_ptr,
-            Ordering::Release,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => new_memos_ptr,
-            Err(ptr) => {
-                // SAFETY: The compare-exchange failed, so `new_memos` was not published and this
-                // thread retains ownership of the allocation.
-                unsafe { drop(Box::from_raw(new_memos)) };
-                ptr
-            }
-        };
-
-        // SAFETY: `ptr` is either the boxed slice allocated above or the boxed slice published by
-        // another thread. Both allocations have length `len` and cannot be freed while `self`
-        // is shared.
-        unsafe { std::slice::from_raw_parts(ptr, len) }
-    }
-}
-
-impl MemoTableWithTypesMut<'_> {
-    fn take_entries(&mut self) -> Option<Box<[MemoEntry]>> {
-        let ptr = mem::replace(self.memos.entries.get_mut(), ptr::null_mut());
-        if ptr.is_null() {
-            return None;
-        }
-        // SAFETY: We detached the boxed slice under exclusive access. The type
-        // table has the same length as when the allocation was published.
-        Some(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.types.len())) })
-    }
-
-    #[inline]
-    fn entries_mut(&mut self) -> &mut [MemoEntry] {
-        let Some(ptr) = NonNull::new(*self.memos.entries.get_mut()) else {
-            return &mut [];
-        };
-        // SAFETY: We have exclusive access to the fixed-length boxed slice.
-        unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), self.types.len()) }
-    }
 }
 
 /// Type metadata for one memo-table slot.
@@ -253,6 +191,8 @@ impl MemoTableTypes {
     }
 }
 
+/// Borrows one key's memo table and the memo types shared by all keys of its ingredient.
+/// The type list determines the concrete memo type at each index and the length of the entry array.
 pub struct MemoTableWithTypes<'a> {
     types: &'a MemoTableTypes,
     memos: &'a MemoTable,
@@ -311,15 +251,13 @@ impl<'a> MemoTableWithTypes<'a> {
     ) -> Option<NonNull<M>> {
         let index = memo_ingredient_index.as_usize();
         let type_ = self.types.types.get(index)?;
-        let entries = self.entries().unwrap_or_else(|| self.initialize());
-        let MemoEntry { atomic_memo } = &entries[index];
 
         // Verify that we are casting to the correct type.
         if type_.type_id != TypeId::of::<M>() {
             type_assert_failed(memo_ingredient_index);
         }
 
-        let old_memo = atomic_memo.swap(MemoEntryType::to_dummy(memo).as_ptr(), Ordering::AcqRel);
+        let old_memo = self.store(index, MemoEntryType::to_dummy(memo));
 
         // SAFETY: We asserted that the type is correct above.
         NonNull::new(old_memo).map(|old_memo| unsafe { MemoEntryType::from_dummy(old_memo) })
@@ -332,17 +270,16 @@ impl<'a> MemoTableWithTypes<'a> {
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<M>> {
         let index = memo_ingredient_index.as_usize();
-        let MemoEntry { atomic_memo } = self.entries()?.get(index)?;
-        let type_ = &self.types.types[index];
+        let memo = self.entries().get(index)?;
+        let type_ = self.types.types.get(index)?;
 
         // Verify that we are casting to the correct type.
         if type_.type_id != TypeId::of::<M>() {
             type_assert_failed(memo_ingredient_index);
         }
 
-        NonNull::new(atomic_memo.load(Ordering::Acquire))
-            // SAFETY: We asserted that the type is correct above.
-            .map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
+        // SAFETY: We asserted that the type is correct above.
+        Some(unsafe { MemoEntryType::from_dummy(memo) })
     }
 
     /// Returns a type-erased view with the slot's registered type metadata.
@@ -357,10 +294,8 @@ impl<'a> MemoTableWithTypes<'a> {
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ErasedMemo<'a>> {
         let index = memo_ingredient_index.as_usize();
-        let MemoEntry { atomic_memo } = self.entries()?.get(index)?;
-        let type_ = &self.types.types[index];
-
-        let memo = NonNull::new(atomic_memo.load(Ordering::Acquire))?;
+        let memo = self.entries().get(index)?;
+        let type_ = self.types.types.get(index)?;
 
         // SAFETY: `insert` type-checks and release-publishes a pointer to the memo allocation's
         // base address, with spatial provenance covering the allocation, paired with `type_`; the
@@ -377,20 +312,19 @@ impl<'a> MemoTableWithTypes<'a> {
     /// duration of this call, so memos cannot be replaced or freed during traversal.
     #[cfg(feature = "salsa_unstable")]
     pub(crate) unsafe fn memory_usage(&self) -> (usize, Vec<crate::database::MemoInfo>) {
-        let mut memory_usage = Vec::new();
-        let entries = self.entries().unwrap_or_default();
-        for (memo, type_) in entries.iter().zip(&self.types.types) {
-            let Some(memo) = NonNull::new(memo.atomic_memo.load(Ordering::Acquire)) else {
-                continue;
-            };
+        let entries = self.entries();
+        let occupied = entries.iter();
+        let mut memory_usage = Vec::with_capacity(occupied.size_hint().0);
 
+        for (index, memo) in occupied {
+            let type_ = &self.types.types[index];
             // SAFETY: The `TypeId` is asserted in `insert()`. The caller guarantees
             // exclusive database access, so the memo remains valid while we measure it.
             let dyn_memo: &dyn Memo = unsafe { (type_.to_dyn_fn)(memo).as_ref() };
             memory_usage.push(dyn_memo.memory_usage());
         }
 
-        (mem::size_of_val(entries), memory_usage)
+        (entries.heap_size(), memory_usage)
     }
 }
 
@@ -404,28 +338,18 @@ impl MemoTableWithTypesMut<'_> {
     ///
     /// If the memo is not present, `f` is not called.
     pub(crate) fn map_memo<M: Memo>(
-        mut self,
+        self,
         memo_ingredient_index: MemoIngredientIndex,
         f: impl FnOnce(&mut M),
     ) {
-        let index = memo_ingredient_index.as_usize();
-        let types = self.types;
-        let Some(MemoEntry { atomic_memo }) = self.entries_mut().get_mut(index) else {
-            return;
+        let table = MemoTableWithTypes {
+            types: self.types,
+            memos: self.memos,
         };
-        let type_ = &types.types[index];
-
-        // Verify that we are casting to the correct type.
-        if type_.type_id != TypeId::of::<M>() {
-            type_assert_failed(memo_ingredient_index);
+        if let Some(mut memo) = table.get::<M>(memo_ingredient_index) {
+            // SAFETY: We hold exclusive access to the table and its memos.
+            f(unsafe { memo.as_mut() });
         }
-
-        let Some(memo) = NonNull::new(*atomic_memo.get_mut()) else {
-            return;
-        };
-
-        // SAFETY: We asserted that the type is correct above.
-        f(unsafe { MemoEntryType::from_dummy(memo).as_mut() });
     }
 
     /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.
@@ -438,38 +362,8 @@ impl MemoTableWithTypesMut<'_> {
     /// the database exist as there may be outstanding borrows into the pointer contents.
     #[inline]
     pub unsafe fn drop(&mut self) {
-        let Some(mut entries) = self.take_entries() else {
-            return;
-        };
-        for (type_, memo) in self.types.types.iter().zip(entries.iter_mut()) {
-            // SAFETY: The types match as per our constructor invariant.
-            unsafe { memo.take(type_) };
-        }
-    }
-
-    /// # Safety
-    ///
-    /// The caller needs to make sure to not call this function until no more references into
-    /// the database exist as there may be outstanding borrows into the pointer contents.
-    pub(crate) unsafe fn take_memos(
-        &mut self,
-        mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>),
-    ) {
-        let types = self.types;
-        self.entries_mut()
-            .iter_mut()
-            .zip(&types.types)
-            .enumerate()
-            .filter_map(|(index, (memo, type_))| {
-                // SAFETY: The types match as per our constructor invariant.
-                let memo = unsafe { memo.take(type_)? };
-                Some((MemoIngredientIndex::from_usize(index), memo))
-            })
-            .for_each(|(index, memo)| f(index, memo));
-
-        // Keep the allocation attached until the last callback returns so the
-        // caller's drop guard can clean up the remaining memos if one panics.
-        drop(self.take_entries());
+        // SAFETY: The caller guarantees that no memo is still borrowed.
+        unsafe { self.take_memos(|_, memo| drop(memo)) };
     }
 }
 
