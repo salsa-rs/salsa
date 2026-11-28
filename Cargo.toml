@@ -89,7 +89,7 @@ ordered-float = "=5.5.1"
 
 # tests/benches
 annotate-snippets = "=0.12.18"
-divan = { package = "codspeed-divan-compat", version = "=6.0.0" }
+divan = { package = "codspeed-divan-compat", version = "=6.1.0" }
 expect-test = "=1.5.1"
 fastrand = "=2.5.0"
 rustversion = "=1.0.23"
