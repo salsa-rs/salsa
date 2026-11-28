@@ -369,14 +369,14 @@ impl<'a> MemoTableWithTypes<'a> {
         Some(unsafe { ErasedMemo::from_raw_parts(memo, type_.to_dyn_fn, type_.type_id) })
     }
 
-    /// Returns memory usage information about the memos in this table.
+    /// Returns the heap size of the entry array in bytes and the memory usage of each memo.
     ///
     /// # Safety
     ///
     /// The caller must ensure exclusive access to the database's storage for the
     /// duration of this call, so memos cannot be replaced or freed during traversal.
     #[cfg(feature = "salsa_unstable")]
-    pub(crate) unsafe fn memory_usage(&self) -> Vec<crate::database::MemoInfo> {
+    pub(crate) unsafe fn memory_usage(&self) -> (usize, Vec<crate::database::MemoInfo>) {
         let mut memory_usage = Vec::new();
         let entries = self.entries().unwrap_or_default();
         for (memo, type_) in entries.iter().zip(&self.types.types) {
@@ -390,7 +390,7 @@ impl<'a> MemoTableWithTypes<'a> {
             memory_usage.push(dyn_memo.memory_usage());
         }
 
-        memory_usage
+        (mem::size_of_val(entries), memory_usage)
     }
 }
 
