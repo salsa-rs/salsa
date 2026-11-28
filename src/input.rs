@@ -458,14 +458,16 @@ where
         let heap_size = C::heap_size(&self.fields);
         // SAFETY: The caller guarantees these are the types used for insertion.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
+        // SAFETY: The caller guarantees exclusive access to the database's storage.
+        let (memo_array_bytes, memos) = unsafe { memos.memory_usage() };
 
         crate::database::SlotInfo {
             debug_name: C::DEBUG_NAME,
-            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields>(),
+            size_of_metadata: std::mem::size_of::<Self>() - std::mem::size_of::<C::Fields>()
+                + memo_array_bytes,
             size_of_fields: std::mem::size_of::<C::Fields>(),
             heap_size_of_fields: heap_size,
-            // SAFETY: The caller guarantees exclusive access to the database's storage.
-            memos: unsafe { memos.memory_usage() },
+            memos,
         }
     }
 }
