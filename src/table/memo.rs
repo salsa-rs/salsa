@@ -76,9 +76,19 @@ struct MemoEntry {
     atomic_memo: AtomicPtr<DummyMemo>,
 }
 
-// Bit 0 marks an inline memo. The rest of the tag holds the slot index.
-// On 32-bit targets use four low alignment bits. On 64-bit targets shift
-// the address by a byte if we can restore it losslessly.
+// Array pointers are aligned to at least two bytes, so bit 0 is clear.
+// We set it for inline memos and use the rest of the tag for the slot index.
+//
+// On 64-bit targets, checked multiplication by 256 makes room for the tag
+// only if the top byte is zero. Shifting right by 8 restores the address.
+// On 32-bit targets, that would limit us to addresses below 16 MiB. Instead,
+// we check that the memo is 16-byte aligned so we can use its four low bits
+// for the tag and clear them to recover the address.
+//
+// If the address or index doesn't fit, we allocate an array. The tagged
+// pointer may point outside the memo allocation, but `with_addr` and
+// `map_addr` preserve its provenance. We only dereference the pointer
+// after restoring the original address.
 const TAG_BITS: u32 = if cfg!(target_pointer_width = "32") {
     4
 } else {
@@ -112,7 +122,6 @@ fn decode_inline(state: *mut MemoEntry) -> Option<(usize, *mut DummyMemo)> {
         return None;
     }
     let index = (state.addr() >> 1) & MAX_INLINE_INDEX;
-    // Restore the original address with the memo allocation's provenance.
     let memo = state
         .map_addr(|addr| {
             if cfg!(target_pointer_width = "32") {
