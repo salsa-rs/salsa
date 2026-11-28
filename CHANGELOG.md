@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.7](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.6...salsa-v0.28.7) - 2026-11-28
+
+### Added
+
+- add opt-in SIEVE eviction under salsa_unstable ([#1226](https://github.com/salsa-rs/salsa/pull/1226))
+- add an eviction option for tracked functions ([#1438](https://github.com/salsa-rs/salsa/pull/1438))
+
+### Fixed
+
+- include memo table allocations in memory reports ([#1454](https://github.com/salsa-rs/salsa/pull/1454))
+- reject nested attachments of different databases at the same address ([#1435](https://github.com/salsa-rs/salsa/pull/1435))
+- preserve cancellation when reattaching the same database ([#1434](https://github.com/salsa-rs/salsa/pull/1434))
+
+### Other
+
+- pad SIEVE admission state to avoid false sharing ([#1455](https://github.com/salsa-rs/salsa/pull/1455))
+- share the memo table length across slots ([#1449](https://github.com/salsa-rs/salsa/pull/1449))
+- Keep the dependency graph lock off the current revision’s cache line ([#1447](https://github.com/salsa-rs/salsa/pull/1447))
+- move set_capacity from EvictionPolicy to HasCapacity ([#1439](https://github.com/salsa-rs/salsa/pull/1439))
+- skip redundant durability stores on reusable interner hits ([#1437](https://github.com/salsa-rs/salsa/pull/1437))
+- speed up cached query fetches ([#1433](https://github.com/salsa-rs/salsa/pull/1433))
+- skip the database upcast on nested attachments ([#1428](https://github.com/salsa-rs/salsa/pull/1428))
+- inline typed memo table lookups ([#1429](https://github.com/salsa-rs/salsa/pull/1429))
+
 ## [0.28.6](https://github.com/salsa-rs/salsa/compare/salsa-v0.28.5...salsa-v0.28.6) - 2026-11-22
 
 ### Added

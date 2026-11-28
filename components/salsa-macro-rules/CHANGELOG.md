@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.7](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.28.6...salsa-macro-rules-v0.28.7) - 2026-11-28
+
+### Added
+
+- add an eviction option for tracked functions ([#1438](https://github.com/salsa-rs/salsa/pull/1438))
+
+### Fixed
+
+- reject nested attachments of different databases at the same address ([#1435](https://github.com/salsa-rs/salsa/pull/1435))
+
 ## [0.28.6](https://github.com/salsa-rs/salsa/compare/salsa-macro-rules-v0.28.5...salsa-macro-rules-v0.28.6) - 2026-11-22
 
 ### Added
