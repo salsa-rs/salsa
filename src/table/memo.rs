@@ -187,6 +187,8 @@ impl<'a> MemoSlot<'a> {
     }
 }
 
+/// Borrows one key's memo table and the memo types shared by all keys of its ingredient.
+/// The type list determines the concrete memo type at each index and the length of the entry array.
 pub struct MemoTableWithTypes<'a> {
     types: &'a MemoTableTypes,
     memos: &'a MemoTable,
@@ -265,15 +267,18 @@ impl<'a> MemoTableWithTypes<'a> {
         if state.is_null() {
             return (0, Vec::new());
         }
+
         let measure = |memo: NonNull<DummyMemo>, type_: &MemoEntryType| {
             // SAFETY: Insertion checked the type. Exclusive database access
             // keeps the memo alive while measuring it.
             unsafe { (type_.to_dyn_fn)(memo).as_ref().memory_usage() }
         };
+
         if let Some((index, memo)) = decode_inline(state) {
             let info = measure(NonNull::new(memo).unwrap(), &self.types.types[index]);
             return (0, vec![info]);
         }
+
         // SAFETY: This is the array published by promotion, with one entry per type.
         let entries = unsafe { std::slice::from_raw_parts(state, self.types.len()) };
         let memos = entries
@@ -290,6 +295,7 @@ impl<'a> MemoTableWithTypes<'a> {
     #[inline]
     fn load(&self, index: usize) -> Option<NonNull<DummyMemo>> {
         let state = NonNull::new(self.memos.entries.load(Ordering::Acquire))?.as_ptr();
+
         if let Some((first, memo)) = decode_inline(state) {
             return if first == index {
                 NonNull::new(memo)
@@ -297,6 +303,7 @@ impl<'a> MemoTableWithTypes<'a> {
                 None
             };
         }
+
         // SAFETY: An untagged, non-null pointer is a release-published array
         // of the registered length. It stays allocated until exclusive access.
         let entries = unsafe { std::slice::from_raw_parts(state, self.types.len()) };
@@ -306,8 +313,10 @@ impl<'a> MemoTableWithTypes<'a> {
     fn store(&self, index: usize, memo: NonNull<DummyMemo>) -> *mut DummyMemo {
         let word = &self.memos.entries;
         let mut state = word.load(Ordering::Acquire);
+
         loop {
             let inline = decode_inline(state);
+
             if inline.is_none() && !state.is_null() {
                 // SAFETY: The published array has one entry per registered
                 // type and stays in place under shared access.
@@ -345,9 +354,11 @@ impl<'a> MemoTableWithTypes<'a> {
         // more expensive for small memo tables with jemalloc.
         let mut entries = Vec::with_capacity(len);
         entries.resize_with(len, MemoEntry::default);
+
         if let Some((first, previous)) = decode_inline(state) {
             *entries[first].atomic_memo.get_mut() = previous;
         }
+
         // A replacement at the same index can also require promotion if its
         // address no longer fits. Return the old pointer to the caller.
         let old = mem::replace(entries[index].atomic_memo.get_mut(), memo.as_ptr());
@@ -411,9 +422,11 @@ impl MemoTableWithTypesMut<'_> {
         if unsafe { self.take_inline() }.is_some() {
             return;
         }
+
         let Some(mut entries) = self.take_entries() else {
             return;
         };
+
         for (type_, memo) in self.types.types.iter().zip(entries.iter_mut()) {
             // SAFETY: The types match as per our constructor invariant.
             unsafe { memo.take(type_) };
@@ -433,6 +446,7 @@ impl MemoTableWithTypesMut<'_> {
             f(MemoIngredientIndex::from_usize(index), memo);
             return;
         }
+
         let types = self.types;
         self.entries_mut()
             .iter_mut()
@@ -456,6 +470,7 @@ impl MemoTableWithTypesMut<'_> {
         let state = self.memos.entries.get_mut();
         let (index, memo) = decode_inline(*state)?;
         *state = ptr::null_mut();
+
         let memo = NonNull::new(memo).unwrap();
         // SAFETY: We detached the original boxed memo under exclusive access.
         // Insertion checked its type against the descriptor at this index.
@@ -469,6 +484,7 @@ impl MemoTableWithTypesMut<'_> {
         if ptr.is_null() {
             return None;
         }
+
         // SAFETY: We detached the boxed slice under exclusive access. The type
         // table has the same length as when the allocation was published.
         Some(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.types.len())) })
@@ -513,6 +529,7 @@ fn encode_inline(index: usize, memo: NonNull<DummyMemo>) -> Option<*mut MemoEntr
     if index > MAX_INLINE_INDEX {
         return None;
     }
+
     let tag = (index << 1) | 1;
     let address = if cfg!(target_pointer_width = "32") {
         if ptr.addr() & TAG_MASK != 0 {
@@ -530,6 +547,7 @@ fn decode_inline(state: *mut MemoEntry) -> Option<(usize, *mut DummyMemo)> {
     if state.addr() & 1 == 0 {
         return None;
     }
+
     let index = (state.addr() >> 1) & MAX_INLINE_INDEX;
     let memo = state
         .map_addr(|addr| {
