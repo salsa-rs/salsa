@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use eyre::{Context, Report, Result, eyre};
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
+use notify_debouncer_mini::{DebounceEventResult, DebouncedEventBatch, Debouncer, new_debouncer};
 use salsa::{Accumulator, Setter, Storage};
 
 // ANCHOR: main
@@ -44,22 +44,39 @@ fn main() -> Result<()> {
 
         // Wait for file change events, the output can't change unless the
         // inputs change.
-        for event in rx.recv()?.unwrap() {
-            let path = event.path.canonicalize().wrap_err_with(|| {
-                format!("Failed to canonicalize path {}", event.path.display())
-            })?;
-            let file = match db.files.get(&path) {
-                Some(file) => *file,
-                None => continue,
-            };
-            // `path` has changed, so read it and update the contents to match.
-            // This creates a new revision and causes the incremental algorithm
-            // to kick in, just like any other update to a salsa input.
-            let contents = std::fs::read_to_string(path)
-                .wrap_err_with(|| format!("Failed to read file {}", event.path.display()))?;
-            file.set_contents(&mut db).to(contents);
+        match rx.recv()?? {
+            DebouncedEventBatch::Events(events) => {
+                for event in events {
+                    let path = event.path.canonicalize().wrap_err_with(|| {
+                        format!("Failed to canonicalize path {}", event.path.display())
+                    })?;
+                    if let Some(file) = db.files.get(&path).map(|entry| *entry) {
+                        reload(&mut db, file)?;
+                    }
+                }
+            }
+            // The watcher missed events, so any cached file may have changed.
+            DebouncedEventBatch::Rescan => {
+                // Release the borrow of `db.files` before updating the inputs.
+                let files: Vec<_> = db.files.iter().map(|entry| *entry.value()).collect();
+                for file in files {
+                    reload(&mut db, file)?;
+                }
+            }
+            _ => continue,
         }
     }
+}
+
+fn reload(db: &mut LazyInputDatabase, file: File) -> Result<()> {
+    let path = file.path(db);
+    let contents = std::fs::read_to_string(path)
+        .wrap_err_with(|| format!("Failed to read file {}", path.display()))?;
+    // Only create a new Salsa revision if the contents changed.
+    if file.contents(db) != contents {
+        file.set_contents(db).to(contents);
+    }
+    Ok(())
 }
 // ANCHOR_END: main
 

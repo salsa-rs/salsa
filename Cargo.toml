@@ -84,7 +84,7 @@ salsa-macros = { version = "=0.28.6", path = "components/salsa-macros" }
 crossbeam-channel = "=0.5.17"
 dashmap = { version = "=6.2.1", features = ["raw-api"] }
 eyre = "=0.6.14"
-notify-debouncer-mini = "=0.7.0"
+notify-debouncer-mini = "=0.8.0"
 ordered-float = "=5.5.1"
 
 # tests/benches
