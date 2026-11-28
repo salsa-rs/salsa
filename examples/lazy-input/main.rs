@@ -44,34 +44,39 @@ fn main() -> Result<()> {
 
         // Wait for file change events, the output can't change unless the
         // inputs change.
-        let files = match rx.recv()?? {
+        match rx.recv()?? {
             DebouncedEventBatch::Events(events) => {
-                let mut files = Vec::new();
                 for event in events {
                     let path = event.path.canonicalize().wrap_err_with(|| {
                         format!("Failed to canonicalize path {}", event.path.display())
                     })?;
-                    if let Some(file) = db.files.get(&path) {
-                        files.push(*file);
+                    if let Some(file) = db.files.get(&path).map(|entry| *entry) {
+                        reload(&mut db, file)?;
                     }
                 }
-                files
             }
             // The watcher missed events, so any cached file may have changed.
-            DebouncedEventBatch::Rescan => db.files.iter().map(|entry| *entry.value()).collect(),
-            _ => continue,
-        };
-
-        for file in files {
-            let path = file.path(&db);
-            let contents = std::fs::read_to_string(path)
-                .wrap_err_with(|| format!("Failed to read file {}", path.display()))?;
-            // Only create a new Salsa revision if the contents changed.
-            if file.contents(&db) != contents {
-                file.set_contents(&mut db).to(contents);
+            DebouncedEventBatch::Rescan => {
+                // Release the borrow of `db.files` before updating the inputs.
+                let files: Vec<_> = db.files.iter().map(|entry| *entry.value()).collect();
+                for file in files {
+                    reload(&mut db, file)?;
+                }
             }
+            _ => continue,
         }
     }
+}
+
+fn reload(db: &mut LazyInputDatabase, file: File) -> Result<()> {
+    let path = file.path(db);
+    let contents = std::fs::read_to_string(path)
+        .wrap_err_with(|| format!("Failed to read file {}", path.display()))?;
+    // Only create a new Salsa revision if the contents changed.
+    if file.contents(db) != contents {
+        file.set_contents(db).to(contents);
+    }
+    Ok(())
 }
 // ANCHOR_END: main
 
