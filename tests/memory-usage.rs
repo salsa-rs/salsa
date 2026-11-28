@@ -140,7 +140,10 @@ fn test() {
             .all(|query| query.page_info().is_none())
     );
 
-    let expected = expect![[r#"
+    // These metadata sizes assume the top byte of each memo address is zero.
+    // A tagged heap pointer can force a single memo into a heap-allocated array.
+    #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+    expect![[r#"
         [
             IngredientInfo {
                 debug_name: "MyInput",
@@ -243,9 +246,8 @@ fn test() {
                     },
                 ),
             },
-        ]"#]];
-
-    expected.assert_eq(&format!("{:#?}", memory_usage.structs));
+        ]"#]]
+    .assert_eq(&format!("{:#?}", memory_usage.structs));
 
     let mut queries_info = memory_usage.queries.into_iter().collect::<Vec<_>>();
     queries_info.sort();
