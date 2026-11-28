@@ -76,23 +76,34 @@ struct MemoEntry {
     atomic_memo: AtomicPtr<DummyMemo>,
 }
 
-// Bit 0 distinguishes an inline memo from an aligned array pointer. The
-// next seven bits hold the index. Shifting the address leaves 56 bits for
-// it on 64-bit targets. Only encode an address if the shift is lossless.
-const TAG_BITS: u32 = 8;
+// Bit 0 marks an inline memo. The rest of the tag holds the slot index.
+// On 32-bit targets use four low alignment bits. On 64-bit targets shift
+// the address by a byte if we can restore it losslessly.
+const TAG_BITS: u32 = if cfg!(target_pointer_width = "32") {
+    4
+} else {
+    8
+};
+const TAG_MASK: usize = (1 << TAG_BITS) - 1;
 const MAX_INLINE_INDEX: usize = (1 << (TAG_BITS - 1)) - 1;
 
 #[inline]
 fn encode_inline(index: usize, memo: NonNull<DummyMemo>) -> Option<*mut MemoEntry> {
     const { assert!(mem::align_of::<MemoEntry>() >= 2) };
     let ptr = memo.as_ptr();
-    if index > MAX_INLINE_INDEX || ptr.addr() > usize::MAX >> TAG_BITS {
+    if index > MAX_INLINE_INDEX {
         return None;
     }
-    Some(
-        ptr.map_addr(|addr| (addr << TAG_BITS) | (index << 1) | 1)
-            .cast(),
-    )
+    let tag = (index << 1) | 1;
+    let address = if cfg!(target_pointer_width = "32") {
+        if ptr.addr() & TAG_MASK != 0 {
+            return None;
+        }
+        ptr.addr()
+    } else {
+        ptr.addr().checked_mul(1 << TAG_BITS)?
+    };
+    Some(ptr.with_addr(address | tag).cast())
 }
 
 #[inline]
@@ -101,8 +112,16 @@ fn decode_inline(state: *mut MemoEntry) -> Option<(usize, *mut DummyMemo)> {
         return None;
     }
     let index = (state.addr() >> 1) & MAX_INLINE_INDEX;
-    // map_addr preserves the memo allocation's provenance through both shifts.
-    let memo = state.map_addr(|addr| addr >> TAG_BITS).cast();
+    // Restore the original address with the memo allocation's provenance.
+    let memo = state
+        .map_addr(|addr| {
+            if cfg!(target_pointer_width = "32") {
+                addr & !TAG_MASK
+            } else {
+                addr >> TAG_BITS
+            }
+        })
+        .cast();
     Some((index, memo))
 }
 
@@ -603,6 +622,7 @@ impl std::fmt::Debug for MemoTable {
 mod tests {
     use super::*;
 
+    #[cfg_attr(target_pointer_width = "32", repr(align(16)))]
     struct TestMemo(usize);
 
     impl Memo for TestMemo {
@@ -630,15 +650,22 @@ mod tests {
 
     #[test]
     fn inline_encoding_is_lossless_or_falls_back() {
-        let max_address = usize::MAX >> TAG_BITS;
         let pointer = |address| NonNull::new(ptr::without_provenance_mut(address)).unwrap();
-        let word = encode_inline(127, pointer(max_address)).unwrap();
-        assert_eq!(
-            decode_inline(word),
-            Some((127, pointer(max_address).as_ptr()))
-        );
-        assert!(encode_inline(128, pointer(1)).is_none());
-        assert!(encode_inline(0, pointer(max_address + 1)).is_none());
+        let (max_address, invalid_address) = if cfg!(target_pointer_width = "32") {
+            (usize::MAX & !TAG_MASK, 4)
+        } else {
+            let max_address = usize::MAX >> TAG_BITS;
+            (max_address, max_address + 1)
+        };
+        for index in 0..=MAX_INLINE_INDEX {
+            let word = encode_inline(index, pointer(max_address)).unwrap();
+            assert_eq!(
+                decode_inline(word),
+                Some((index, pointer(max_address).as_ptr()))
+            );
+        }
+        assert!(encode_inline(MAX_INLINE_INDEX + 1, pointer(max_address)).is_none());
+        assert!(encode_inline(0, pointer(invalid_address)).is_none());
     }
 
     #[test]
@@ -648,7 +675,7 @@ mod tests {
         let index = MemoIngredientIndex::from_usize;
         // Exercise both an inline first insertion and a first index too large
         // to encode. Reuse the same table after draining it.
-        for first in [14, 128] {
+        for first in [MAX_INLINE_INDEX, MAX_INLINE_INDEX + 1] {
             // SAFETY: This test uses the same type list for every access to `memos`.
             let table = || unsafe { types.attach_memos(&memos) };
             let original = memo(1);
