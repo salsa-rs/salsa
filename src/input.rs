@@ -360,8 +360,8 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
-            // SAFETY: We rely on this ingredient sharing its type table with the
-            // value's page. The caller guarantees exclusive database access.
+            // SAFETY: Each value's memos were inserted using this ingredient's
+            // type list. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -449,12 +449,14 @@ where
     ///
     /// # Safety
     ///
-    /// `memo_table_types` must be the type table held by this value's page.
+    /// `memo_table_types` must be the same immutable list used to populate
+    /// this value's memo table. We use its length to read the array as a slice
+    /// and its entries to recover each memo's concrete type.
     /// The caller must have exclusive access to the database's storage.
     #[cfg(feature = "salsa_unstable")]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(&self.fields);
-        // SAFETY: The caller guarantees this is the correct types table.
+        // SAFETY: The caller guarantees these are the types used for insertion.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
         crate::database::SlotInfo {

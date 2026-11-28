@@ -302,7 +302,9 @@ where
     ///
     /// # Safety
     ///
-    /// `memo_table_types` must be the type table held by this value's page.
+    /// `memo_table_types` must be the same immutable list used to populate
+    /// this value's memo table. We use its length to read the array as a slice
+    /// and its entries to recover each memo's concrete type.
     /// The caller must have exclusive access to the database's storage.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
@@ -310,7 +312,7 @@ where
         // SAFETY: The caller guarantees exclusive access to the database's storage,
         // so the value's memos cannot be modified while we read them.
         let memos = unsafe { &*self.memos.get() };
-        // SAFETY: The caller guarantees this is the correct types table.
+        // SAFETY: The caller guarantees these are the types used for insertion.
         let memos = unsafe { memo_table_types.attach_memos(memos) };
 
         crate::database::SlotInfo {
@@ -560,8 +562,8 @@ where
         // Clear the old memos before publishing either a current revision or a non-reusable
         // durability. If a callback panics, the old fields, ID and key-map entry remain intact;
         // `clear_memos` drops the remaining memos during unwinding.
-        // SAFETY: The slot is stale and we hold its shard lock. We rely on this
-        // ingredient sharing its type table with the slot's page.
+        // SAFETY: The slot is stale and we hold its shard lock. Its memos were
+        // inserted using this ingredient's type list.
         unsafe { self.clear_memos(zalsa, &mut *value.memos.get(), slot.old_id) };
 
         // Remove the value from the LRU list.
@@ -833,16 +835,19 @@ where
     ///
     /// # Safety
     ///
-    /// The caller must have exclusive access to the memos of this ingredient's slot
-    /// at `id`. This ingredient must share its memo types with the slot's page.
+    /// The caller must have exclusive access to `memo_table`, which belongs to
+    /// this ingredient's slot at `id`.
+    ///
+    /// `self.memo_table_types` must be the same immutable list used to populate
+    /// `memo_table`. Its entries determine how to drop each memo, and its length
+    /// determines the size of the allocation to free.
     pub(crate) unsafe fn clear_memos(&self, zalsa: &Zalsa, memo_table: &mut MemoTable, id: Id) {
         /// Clears the given memo table without depending on `C`.
         ///
         /// # Safety
         ///
-        /// `memo_table` must belong to the value identified by `id` in `ingredient_index` and must
-        /// have been created with `memo_table_types`. The caller must have exclusive access to the
-        /// table.
+        /// The caller must have exclusive access to `memo_table` for `id` in
+        /// `ingredient_index` and pass the same `memo_table_types` used for insertion.
         unsafe fn inner(
             zalsa: &Zalsa,
             ingredient_index: IngredientIndex,
@@ -850,7 +855,7 @@ where
             memo_table: &mut MemoTable,
             id: Id,
         ) {
-            // SAFETY: The caller guarantees this is the correct types table.
+            // SAFETY: The caller guarantees these are the types used for insertion.
             let table = unsafe { memo_table_types.attach_memos_mut(memo_table) };
 
             // `Database::salsa_event` is a user supplied callback which may panic
@@ -885,8 +890,8 @@ where
             std::mem::forget(table_guard);
         }
 
-        // SAFETY: The caller guarantees exclusive access to this ingredient's slot
-        // and that the ingredient and page share the same memo types.
+        // SAFETY: The caller guarantees exclusive access to this slot's memos
+        // and that they were inserted using `self.memo_table_types`.
         unsafe {
             inner(
                 zalsa,
@@ -1199,8 +1204,8 @@ where
         let entries = unsafe { self.entries_inner(false, db.zalsa()) };
 
         let memory_usage = entries
-            // SAFETY: We rely on this ingredient sharing its type table with the
-            // value's page. The caller guarantees exclusive database access.
+            // SAFETY: Each value's memos were inserted using this ingredient's
+            // type list. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 

@@ -24,9 +24,11 @@ pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
 /// at each index determines how to drop that memo, and the number of types
 /// determines the length of the boxed slice to free.
 ///
-/// Lookup and page destruction use the page's `MemoTableTypes`. Slot reuse
-/// and memory reporting use the ingredient's. Both must refer to the same
-/// immutable type table for the lifetime of the page.
+/// A page is a block of slots for one ingredient. Each slot has its own
+/// `MemoTable`. When Salsa allocates a page, it clones the ingredient's
+/// `Arc<MemoTableTypes>`. Insertion, lookup and page destruction use the
+/// page's `Arc`. Slot reuse and memory reporting use the ingredient's `Arc`.
+/// Both must point to the same immutable list for the lifetime of the page.
 #[derive(Default)]
 pub struct MemoTable {
     entries: AtomicPtr<MemoEntry>,
@@ -228,8 +230,8 @@ impl MemoTableTypes {
 
     /// # Safety
     ///
-    /// `self` must be the type table shared by the ingredient and the page
-    /// that owns `memos`, as described in [`MemoTable`].
+    /// Every access to `memos` must use the same immutable list of memo types,
+    /// as described in [`MemoTable`].
     #[inline]
     pub(crate) unsafe fn attach_memos<'a>(
         &'a self,

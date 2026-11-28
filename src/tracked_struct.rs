@@ -710,8 +710,8 @@ where
             // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
             let memo_table = unsafe { &mut (*data_raw).memos };
 
-            // SAFETY: We hold the slot's write lock and rely on this ingredient
-            // sharing its type table with the slot's page.
+            // SAFETY: We hold the slot's write lock. Its memos were inserted
+            // using this ingredient's type list.
             unsafe { self.clear_memos(zalsa, memo_table, id) };
 
             id = id
@@ -793,8 +793,8 @@ where
         // SAFETY: We have acquired the write lock by swapping `None` into `updated_at`
         let memo_table = unsafe { &mut (*data).memos };
 
-        // SAFETY: We hold the slot's write lock and rely on this ingredient
-        // sharing its type table with the slot's page.
+        // SAFETY: We hold the slot's write lock. Its memos were inserted
+        // using this ingredient's type list.
         unsafe { self.clear_memos(zalsa, memo_table, id) };
 
         // now that all cleanup has occurred, make available for re-use
@@ -806,9 +806,12 @@ where
     /// # Safety
     ///
     /// The caller must hold the write lock on the slot at `id`, which owns `memo_table`.
-    /// This ingredient must share its memo types with the slot's page.
+    ///
+    /// `self.memo_table_types` must be the same immutable list used to populate
+    /// `memo_table`. Its entries determine how to drop each memo, and its length
+    /// determines the size of the allocation to free.
     pub(crate) unsafe fn clear_memos(&self, zalsa: &Zalsa, memo_table: &mut MemoTable, id: Id) {
-        // SAFETY: The caller guarantees this is the correct types table.
+        // SAFETY: The caller guarantees these are the types used for insertion.
         let table = unsafe { self.memo_table_types.attach_memos_mut(memo_table) };
 
         // `Database::salsa_event` is a user supplied callback which may panic
@@ -1039,8 +1042,8 @@ where
     ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
-            // SAFETY: We rely on this ingredient sharing its type table with the
-            // value's page. The caller guarantees exclusive database access.
+            // SAFETY: Each value's memos were inserted using this ingredient's
+            // type list. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -1145,11 +1148,13 @@ where
     ///
     /// # Safety
     ///
-    /// `memo_table_types` must be the type table held by this value's page.
+    /// `memo_table_types` must be the same immutable list used to populate
+    /// this value's memo table. We use its length to read the array as a slice
+    /// and its entries to recover each memo's concrete type.
     /// The caller must have exclusive access to the database's storage.
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
-        // SAFETY: The caller guarantees this is the correct types table.
+        // SAFETY: The caller guarantees these are the types used for insertion.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
         crate::database::SlotInfo {
