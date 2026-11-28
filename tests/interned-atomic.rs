@@ -4,6 +4,7 @@
 
 use std::hash::{Hash, Hasher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -62,15 +63,19 @@ fn panic_during_memo_cleanup_leaves_slot_reusable() {
     let input = Input::new(&db, 0);
     let old = intern(&db, input);
     let old_id = old.as_id();
-    payload(&db, old);
+    // Both memos own the same payload. Whichever callback panics first,
+    // unwinding must also drop the memo that hasn't been visited.
+    let old_payload = Arc::downgrade(shared_payload(&db, old));
+    assert_eq!(old_payload.strong_count(), 2);
     input.set_value(&mut db).to(1);
 
     assert!(catch_unwind(AssertUnwindSafe(|| intern(&db, input))).is_err());
+    assert_eq!(old_payload.strong_count(), 0);
 
     let replacement = intern(&db, input);
     assert_eq!(replacement.as_id(), old_id.next_generation().unwrap());
     assert_eq!(replacement.value(&db), SameShard(1));
-    assert_eq!(payload(&db, replacement), "1");
+    assert_eq!(shared_payload(&db, replacement).as_ref(), "1");
 }
 
 fn assert_unpublished_during_cleanup(non_reusable: bool) {
@@ -138,6 +143,11 @@ fn intern(db: &dyn Database, input: Input) -> Value<'_> {
 }
 
 #[salsa::tracked(returns(ref))]
-fn payload<'db>(db: &'db dyn Database, value: Value<'db>) -> String {
-    value.value(db).0.to_string()
+fn payload<'db>(db: &'db dyn Database, value: Value<'db>) -> Arc<str> {
+    value.value(db).0.to_string().into()
+}
+
+#[salsa::tracked(returns(ref))]
+fn shared_payload<'db>(db: &'db dyn Database, value: Value<'db>) -> Arc<str> {
+    Arc::clone(payload(db, value))
 }

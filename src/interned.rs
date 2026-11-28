@@ -302,15 +302,17 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type. The caller must
-    /// ensure exclusive access to the database's storage for the duration of this call.
+    /// `memo_table_types` must be the same immutable list used to populate
+    /// this value's memo table. We use its length to read the array as a slice
+    /// and its entries to recover each memo's concrete type.
+    /// The caller must have exclusive access to the database's storage.
     #[cfg(all(not(feature = "shuttle"), feature = "salsa_unstable"))]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(self.fields());
         // SAFETY: The caller guarantees exclusive access to the database's storage,
         // so the value's memos cannot be modified while we read them.
         let memos = unsafe { &*self.memos.get() };
-        // SAFETY: The caller guarantees this is the correct types table.
+        // SAFETY: The caller guarantees these are the types used for insertion.
         let memos = unsafe { memo_table_types.attach_memos(memos) };
 
         crate::database::SlotInfo {
@@ -560,7 +562,8 @@ where
         // Clear the old memos before publishing either a current revision or a non-reusable
         // durability. If a callback panics, the old fields, ID and key-map entry remain intact;
         // `clear_memos` drops the remaining memos during unwinding.
-        // SAFETY: The slot is stale and reusable, and we hold its shard lock.
+        // SAFETY: The slot is stale and we hold its shard lock. Its memos were
+        // inserted using this ingredient's type list.
         unsafe { self.clear_memos(zalsa, &mut *value.memos.get(), slot.old_id) };
 
         // Remove the value from the LRU list.
@@ -661,9 +664,7 @@ where
             },
             // SAFETY: We call `from_internal_data` to restore the correct lifetime before access.
             fields: UnsafeCell::new(unsafe { self.to_internal_data(fields) }),
-            // SAFETY: We only ever access the memos of a value that we allocated through
-            // our `MemoTableTypes`.
-            memos: UnsafeCell::new(unsafe { MemoTable::new(self.memo_table_types()) }),
+            memos: UnsafeCell::new(MemoTable::default()),
             durability: AtomicDurability::new(durability),
         });
 
@@ -834,16 +835,19 @@ where
     ///
     /// # Safety
     ///
-    /// `memo_table` must belong to the value identified by `id` in this ingredient. The caller
-    /// must have exclusive access to the table.
+    /// The caller must have exclusive access to `memo_table`, which belongs to
+    /// this ingredient's slot at `id`.
+    ///
+    /// `self.memo_table_types` must be the same immutable list used to populate
+    /// `memo_table`. Its entries determine how to drop each memo, and its length
+    /// determines the size of the allocation to free.
     pub(crate) unsafe fn clear_memos(&self, zalsa: &Zalsa, memo_table: &mut MemoTable, id: Id) {
         /// Clears the given memo table without depending on `C`.
         ///
         /// # Safety
         ///
-        /// `memo_table` must belong to the value identified by `id` in `ingredient_index` and must
-        /// have been created with `memo_table_types`. The caller must have exclusive access to the
-        /// table.
+        /// The caller must have exclusive access to `memo_table` for `id` in
+        /// `ingredient_index` and pass the same `memo_table_types` used for insertion.
         unsafe fn inner(
             zalsa: &Zalsa,
             ingredient_index: IngredientIndex,
@@ -851,7 +855,7 @@ where
             memo_table: &mut MemoTable,
             id: Id,
         ) {
-            // SAFETY: The caller guarantees this is the correct types table.
+            // SAFETY: The caller guarantees these are the types used for insertion.
             let table = unsafe { memo_table_types.attach_memos_mut(memo_table) };
 
             // `Database::salsa_event` is a user supplied callback which may panic
@@ -884,13 +888,10 @@ where
             };
 
             std::mem::forget(table_guard);
-
-            // Reset the table after having dropped any memos.
-            memo_table.reset();
         }
 
-        // SAFETY: The caller guarantees the table belongs to this ingredient's value, so these are
-        // the correct ingredient index and memo-table types.
+        // SAFETY: The caller guarantees exclusive access to this slot's memos
+        // and that they were inserted using `self.memo_table_types`.
         unsafe {
             inner(
                 zalsa,
@@ -1203,8 +1204,8 @@ where
         let entries = unsafe { self.entries_inner(false, db.zalsa()) };
 
         let memory_usage = entries
-            // SAFETY: The memo table belongs to a value that we allocated, so it
-            // has the correct type. The caller guarantees exclusive database access.
+            // SAFETY: Each value's memos were inserted using this ingredient's
+            // type list. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -1821,11 +1822,7 @@ mod persistence {
                         last_interned_at: AtomicRevision::new(value.last_interned_at),
                     },
                     fields: UnsafeCell::new(value.fields.0),
-                    // SAFETY: We only ever access the memos of a value that we allocated through
-                    // our `MemoTableTypes`.
-                    memos: UnsafeCell::new(unsafe {
-                        MemoTable::new(ingredient.memo_table_types())
-                    }),
+                    memos: UnsafeCell::new(MemoTable::default()),
                     durability: AtomicDurability::new(value.durability),
                 };
 
@@ -1900,7 +1897,7 @@ mod _static_assertions {
 
     const _: [(); mem::size_of::<LruEntry>()] = [(); mem::size_of::<[usize; 4]>()];
 
-    const _: [(); mem::size_of::<Value<DummyConfiguration>>()] = [(); mem::size_of::<[usize; 7]>()];
+    const _: [(); mem::size_of::<Value<DummyConfiguration>>()] = [(); mem::size_of::<[usize; 6]>()];
 
     struct DummyConfiguration;
 

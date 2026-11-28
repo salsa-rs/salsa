@@ -157,9 +157,7 @@ impl<C: Configuration> IngredientImpl<C> {
                     fields,
                     revisions,
                     durabilities,
-                    // SAFETY: We only ever access the memos of a value that we allocated through
-                    // our `MemoTableTypes`.
-                    memos: unsafe { MemoTable::new(self.memo_table_types()) },
+                    memos: MemoTable::default(),
                 })
                 .0
         });
@@ -362,8 +360,8 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     ) -> Option<Vec<crate::database::SlotInfo>> {
         let memory_usage = self
             .entries(db.zalsa())
-            // SAFETY: The memo table belongs to a value that we allocated, so it
-            // has the correct type. The caller guarantees exclusive database access.
+            // SAFETY: Each value's memos were inserted using this ingredient's
+            // type list. The caller guarantees exclusive database access.
             .map(|entry| unsafe { entry.value.memory_usage(&self.memo_table_types) })
             .collect();
 
@@ -451,12 +449,14 @@ where
     ///
     /// # Safety
     ///
-    /// The `MemoTable` must belong to a `Value` of the correct type. The caller must
-    /// ensure exclusive access to the database's storage for the duration of this call.
+    /// `memo_table_types` must be the same immutable list used to populate
+    /// this value's memo table. We use its length to read the array as a slice
+    /// and its entries to recover each memo's concrete type.
+    /// The caller must have exclusive access to the database's storage.
     #[cfg(feature = "salsa_unstable")]
     unsafe fn memory_usage(&self, memo_table_types: &MemoTableTypes) -> crate::database::SlotInfo {
         let heap_size = C::heap_size(&self.fields);
-        // SAFETY: The caller guarantees this is the correct types table.
+        // SAFETY: The caller guarantees these are the types used for insertion.
         let memos = unsafe { memo_table_types.attach_memos(&self.memos) };
 
         crate::database::SlotInfo {
@@ -628,9 +628,7 @@ mod persistence {
                     fields: value.fields.0,
                     revisions: value.revisions,
                     durabilities: value.durabilities,
-                    // SAFETY: We only ever access the memos of a value that we allocated through
-                    // our `MemoTableTypes`.
-                    memos: unsafe { MemoTable::new(ingredient.memo_table_types()) },
+                    memos: MemoTable::default(),
                 };
 
                 // Force initialize the relevant page.
