@@ -9,11 +9,6 @@ use crate::sync::atomic::{AtomicPtr, Ordering};
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa::Zalsa;
 
-/// Adds the registered concrete memo type's vtable without dereferencing the pointer.
-///
-/// Dereferencing the result requires a live, aligned allocation of the same concrete type.
-pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
-
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
@@ -54,208 +49,10 @@ pub trait Memo: Any + Send + Sync {
     fn memory_usage(&self) -> crate::database::MemoInfo;
 }
 
-/// Data for a memoized entry.
-/// This is a type-erased `Box<M>`, where `M` is the type of memo associated
-/// with that particular ingredient index.
+/// Adds the registered concrete memo type's vtable without dereferencing the pointer.
 ///
-/// # Implementation note
-///
-/// Every entry is associated with some ingredient that has been added to the database.
-/// That ingredient has a fixed type of values that it produces etc.
-/// Therefore, once a given entry goes from `Empty` to `Full`,
-/// the type-id associated with that entry should never change.
-///
-/// We take advantage of this and use an `AtomicPtr` to store the actual memo.
-/// This allows us to store into the memo-entry without acquiring a write-lock.
-/// However, using `AtomicPtr` means we cannot use a `Box<dyn Any>` or any other wide pointer.
-/// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
-/// when freeing `MemoEntryData` values to transmute things back. See [`MemoEntry::take`].
-#[derive(Default, Debug)]
-struct MemoEntry {
-    /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
-    atomic_memo: AtomicPtr<DummyMemo>,
-}
-
-// Array pointers are aligned to at least two bytes, so bit 0 is clear.
-// We set it for inline memos and use the rest of the tag for the slot index.
-//
-// On 64-bit targets, checked multiplication by 256 makes room for the tag
-// only if the top byte is zero. Shifting right by 8 restores the address.
-// On 32-bit targets, that would limit us to addresses below 16 MiB. Instead,
-// we check that the memo is 16-byte aligned so we can use its four low bits
-// for the tag and clear them to recover the address.
-//
-// If the address or index doesn't fit, we allocate an array. The tagged
-// pointer may point outside the memo allocation, but `with_addr` and
-// `map_addr` preserve its provenance. We only dereference the pointer
-// after restoring the original address.
-const TAG_BITS: u32 = if cfg!(target_pointer_width = "32") {
-    4
-} else {
-    8
-};
-const TAG_MASK: usize = (1 << TAG_BITS) - 1;
-const MAX_INLINE_INDEX: usize = (1 << (TAG_BITS - 1)) - 1;
-
-#[inline]
-fn encode_inline(index: usize, memo: NonNull<DummyMemo>) -> Option<*mut MemoEntry> {
-    const { assert!(mem::align_of::<MemoEntry>() >= 2) };
-    let ptr = memo.as_ptr();
-    if index > MAX_INLINE_INDEX {
-        return None;
-    }
-    let tag = (index << 1) | 1;
-    let address = if cfg!(target_pointer_width = "32") {
-        if ptr.addr() & TAG_MASK != 0 {
-            return None;
-        }
-        ptr.addr()
-    } else {
-        ptr.addr().checked_mul(1 << TAG_BITS)?
-    };
-    Some(ptr.with_addr(address | tag).cast())
-}
-
-#[inline]
-fn decode_inline(state: *mut MemoEntry) -> Option<(usize, *mut DummyMemo)> {
-    if state.addr() & 1 == 0 {
-        return None;
-    }
-    let index = (state.addr() >> 1) & MAX_INLINE_INDEX;
-    let memo = state
-        .map_addr(|addr| {
-            if cfg!(target_pointer_width = "32") {
-                addr & !TAG_MASK
-            } else {
-                addr >> TAG_BITS
-            }
-        })
-        .cast();
-    Some((index, memo))
-}
-
-impl MemoTableWithTypes<'_> {
-    #[inline]
-    fn load(&self, index: usize) -> Option<NonNull<DummyMemo>> {
-        let state = NonNull::new(self.memos.entries.load(Ordering::Acquire))?.as_ptr();
-        if let Some((first, memo)) = decode_inline(state) {
-            return if first == index {
-                NonNull::new(memo)
-            } else {
-                None
-            };
-        }
-        // SAFETY: An untagged, non-null pointer is a release-published array
-        // of the registered length. It stays allocated until exclusive access.
-        let entries = unsafe { std::slice::from_raw_parts(state, self.types.len()) };
-        NonNull::new(entries.get(index)?.atomic_memo.load(Ordering::Acquire))
-    }
-
-    fn store(&self, index: usize, memo: NonNull<DummyMemo>) -> *mut DummyMemo {
-        let word = &self.memos.entries;
-        let mut state = word.load(Ordering::Acquire);
-        loop {
-            let inline = decode_inline(state);
-            if inline.is_none() && !state.is_null() {
-                // SAFETY: The published array has one entry per registered
-                // type and stays in place under shared access.
-                let entries = unsafe { std::slice::from_raw_parts(state, self.types.len()) };
-                return entries[index]
-                    .atomic_memo
-                    .swap(memo.as_ptr(), Ordering::AcqRel);
-            }
-
-            if inline.is_none_or(|(first, _)| first == index)
-                && let Some(new) = encode_inline(index, memo)
-            {
-                match word.compare_exchange(state, new, Ordering::AcqRel, Ordering::Acquire) {
-                    Ok(_) => return inline.map_or(ptr::null_mut(), |(_, old)| old),
-                    Err(current) => state = current,
-                }
-            } else {
-                match self.promote(state, index, memo) {
-                    Ok(old) => return old,
-                    Err(current) => state = current,
-                }
-            }
-        }
-    }
-
-    #[cold]
-    fn promote(
-        &self,
-        state: *mut MemoEntry,
-        index: usize,
-        memo: NonNull<DummyMemo>,
-    ) -> Result<*mut DummyMemo, *mut MemoEntry> {
-        let len = self.types.len();
-        // Collecting defaults can compile to a zeroed allocation, which is
-        // more expensive for small memo tables with jemalloc.
-        let mut entries = Vec::with_capacity(len);
-        entries.resize_with(len, MemoEntry::default);
-        if let Some((first, previous)) = decode_inline(state) {
-            *entries[first].atomic_memo.get_mut() = previous;
-        }
-        // A replacement at the same index can also require promotion if its
-        // address no longer fits. Return the old pointer to the caller.
-        let old = mem::replace(entries[index].atomic_memo.get_mut(), memo.as_ptr());
-        let array = Box::into_raw(entries.into_boxed_slice());
-
-        // Publish both entries together. If another writer replaced the inline
-        // memo or published an array, retry with its state. Replaced memos stay
-        // alive until the end of the revision, so their addresses can't be reused.
-        match self.memos.entries.compare_exchange(
-            state,
-            array.cast(),
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => Ok(old),
-            Err(current) => {
-                // SAFETY: This array was never published. Dropping its atomic
-                // pointers frees the array without dropping either boxed memo.
-                unsafe { drop(Box::from_raw(array)) };
-                Err(current)
-            }
-        }
-    }
-}
-
-impl MemoTableWithTypesMut<'_> {
-    /// # Safety
-    /// The caller must ensure there are no outstanding references to the memo.
-    unsafe fn take_inline(&mut self) -> Option<(usize, Box<dyn Memo>)> {
-        let state = self.memos.entries.get_mut();
-        let (index, memo) = decode_inline(*state)?;
-        *state = ptr::null_mut();
-        let memo = NonNull::new(memo).unwrap();
-        // SAFETY: We detached the original boxed memo under exclusive access.
-        // Insertion checked its type against the descriptor at this index.
-        let boxed = unsafe { Box::from_raw((self.types.types[index].to_dyn_fn)(memo).as_ptr()) };
-        Some((index, boxed))
-    }
-
-    fn take_entries(&mut self) -> Option<Box<[MemoEntry]>> {
-        let ptr = mem::replace(self.memos.entries.get_mut(), ptr::null_mut());
-        assert!(decode_inline(ptr).is_none());
-        if ptr.is_null() {
-            return None;
-        }
-        // SAFETY: We detached the boxed slice under exclusive access. The type
-        // table has the same length as when the allocation was published.
-        Some(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.types.len())) })
-    }
-
-    #[inline]
-    fn entries_mut(&mut self) -> &mut [MemoEntry] {
-        let Some(ptr) = NonNull::new(*self.memos.entries.get_mut()) else {
-            return &mut [];
-        };
-        assert!(decode_inline(ptr.as_ptr()).is_none());
-        // SAFETY: We have exclusive access to the fixed-length boxed slice.
-        unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), self.types.len()) }
-    }
-}
+/// Dereferencing the result requires a live, aligned allocation of the same concrete type.
+pub(crate) type ToDynMemo = fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>;
 
 /// Type metadata for one memo-table slot.
 ///
@@ -298,32 +95,6 @@ impl MemoEntryType {
         }
 
         to_dyn::<M>
-    }
-}
-
-/// Pointee marker for erased memo pointers; never instantiated or dereferenced.
-#[derive(Debug)]
-pub(crate) struct DummyMemo;
-
-impl Memo for DummyMemo {
-    fn has_value(&self) -> bool {
-        unreachable!("DummyMemo is never stored in a memo table")
-    }
-
-    fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
-
-    #[cfg(feature = "salsa_unstable")]
-    fn memory_usage(&self) -> crate::database::MemoInfo {
-        crate::database::MemoInfo {
-            debug_name: "dummy",
-            output: crate::database::SlotInfo {
-                debug_name: "dummy",
-                size_of_metadata: 0,
-                size_of_fields: 0,
-                heap_size_of_fields: None,
-                memos: Vec::new(),
-            },
-        }
     }
 }
 
@@ -371,11 +142,6 @@ impl MemoTableTypes {
     }
 }
 
-pub struct MemoTableWithTypes<'a> {
-    types: &'a MemoTableTypes,
-    memos: &'a MemoTable,
-}
-
 /// A memo table slot whose observed allocations remain valid for shared access for `'a`.
 pub(crate) struct MemoSlot<'a> {
     table: MemoTableWithTypes<'a>,
@@ -419,6 +185,11 @@ impl<'a> MemoSlot<'a> {
         // SAFETY: Guaranteed by the caller of `MemoSlot::new`.
         unsafe { self.table.get_erased(self.memo_ingredient_index) }
     }
+}
+
+pub struct MemoTableWithTypes<'a> {
+    types: &'a MemoTableTypes,
+    memos: &'a MemoTable,
 }
 
 impl<'a> MemoTableWithTypes<'a> {
@@ -515,6 +286,91 @@ impl<'a> MemoTableWithTypes<'a> {
             .collect();
         (mem::size_of_val(entries), memos)
     }
+
+    #[inline]
+    fn load(&self, index: usize) -> Option<NonNull<DummyMemo>> {
+        let state = NonNull::new(self.memos.entries.load(Ordering::Acquire))?.as_ptr();
+        if let Some((first, memo)) = decode_inline(state) {
+            return if first == index {
+                NonNull::new(memo)
+            } else {
+                None
+            };
+        }
+        // SAFETY: An untagged, non-null pointer is a release-published array
+        // of the registered length. It stays allocated until exclusive access.
+        let entries = unsafe { std::slice::from_raw_parts(state, self.types.len()) };
+        NonNull::new(entries.get(index)?.atomic_memo.load(Ordering::Acquire))
+    }
+
+    fn store(&self, index: usize, memo: NonNull<DummyMemo>) -> *mut DummyMemo {
+        let word = &self.memos.entries;
+        let mut state = word.load(Ordering::Acquire);
+        loop {
+            let inline = decode_inline(state);
+            if inline.is_none() && !state.is_null() {
+                // SAFETY: The published array has one entry per registered
+                // type and stays in place under shared access.
+                let entries = unsafe { std::slice::from_raw_parts(state, self.types.len()) };
+                return entries[index]
+                    .atomic_memo
+                    .swap(memo.as_ptr(), Ordering::AcqRel);
+            }
+
+            if inline.is_none_or(|(first, _)| first == index)
+                && let Some(new) = encode_inline(index, memo)
+            {
+                match word.compare_exchange(state, new, Ordering::AcqRel, Ordering::Acquire) {
+                    Ok(_) => return inline.map_or(ptr::null_mut(), |(_, old)| old),
+                    Err(current) => state = current,
+                }
+            } else {
+                match self.promote(state, index, memo) {
+                    Ok(old) => return old,
+                    Err(current) => state = current,
+                }
+            }
+        }
+    }
+
+    #[cold]
+    fn promote(
+        &self,
+        state: *mut MemoEntry,
+        index: usize,
+        memo: NonNull<DummyMemo>,
+    ) -> Result<*mut DummyMemo, *mut MemoEntry> {
+        let len = self.types.len();
+        // Collecting defaults can compile to a zeroed allocation, which is
+        // more expensive for small memo tables with jemalloc.
+        let mut entries = Vec::with_capacity(len);
+        entries.resize_with(len, MemoEntry::default);
+        if let Some((first, previous)) = decode_inline(state) {
+            *entries[first].atomic_memo.get_mut() = previous;
+        }
+        // A replacement at the same index can also require promotion if its
+        // address no longer fits. Return the old pointer to the caller.
+        let old = mem::replace(entries[index].atomic_memo.get_mut(), memo.as_ptr());
+        let array = Box::into_raw(entries.into_boxed_slice());
+
+        // Publish both entries together. If another writer replaced the inline
+        // memo or published an array, retry with its state. Replaced memos stay
+        // alive until the end of the revision, so their addresses can't be reused.
+        match self.memos.entries.compare_exchange(
+            state,
+            array.cast(),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => Ok(old),
+            Err(current) => {
+                // SAFETY: This array was never published. Dropping its atomic
+                // pointers frees the array without dropping either boxed memo.
+                unsafe { drop(Box::from_raw(array)) };
+                Err(current)
+            }
+        }
+    }
 }
 
 pub(crate) struct MemoTableWithTypesMut<'a> {
@@ -593,6 +449,98 @@ impl MemoTableWithTypesMut<'_> {
         // caller's drop guard can clean up the remaining memos if one panics.
         drop(self.take_entries());
     }
+
+    /// # Safety
+    /// The caller must ensure there are no outstanding references to the memo.
+    unsafe fn take_inline(&mut self) -> Option<(usize, Box<dyn Memo>)> {
+        let state = self.memos.entries.get_mut();
+        let (index, memo) = decode_inline(*state)?;
+        *state = ptr::null_mut();
+        let memo = NonNull::new(memo).unwrap();
+        // SAFETY: We detached the original boxed memo under exclusive access.
+        // Insertion checked its type against the descriptor at this index.
+        let boxed = unsafe { Box::from_raw((self.types.types[index].to_dyn_fn)(memo).as_ptr()) };
+        Some((index, boxed))
+    }
+
+    fn take_entries(&mut self) -> Option<Box<[MemoEntry]>> {
+        let ptr = mem::replace(self.memos.entries.get_mut(), ptr::null_mut());
+        assert!(decode_inline(ptr).is_none());
+        if ptr.is_null() {
+            return None;
+        }
+        // SAFETY: We detached the boxed slice under exclusive access. The type
+        // table has the same length as when the allocation was published.
+        Some(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, self.types.len())) })
+    }
+
+    #[inline]
+    fn entries_mut(&mut self) -> &mut [MemoEntry] {
+        let Some(ptr) = NonNull::new(*self.memos.entries.get_mut()) else {
+            return &mut [];
+        };
+        assert!(decode_inline(ptr.as_ptr()).is_none());
+        // SAFETY: We have exclusive access to the fixed-length boxed slice.
+        unsafe { std::slice::from_raw_parts_mut(ptr.as_ptr(), self.types.len()) }
+    }
+}
+
+// Bit 0 marks an inline memo. The remaining tag bits hold the slot index.
+// Array pointers are aligned to at least two bytes, so their bit 0 is clear.
+//
+// On 64-bit targets, checked multiplication by 256 makes room for the tag
+// only if the top byte is zero. Shifting right by 8 restores the address.
+// On 32-bit targets, that would limit us to addresses below 16 MiB. Instead,
+// we check that the memo is 16-byte aligned so we can use its four low bits
+// for the tag and clear them to recover the address.
+//
+// If the address or index doesn't fit, we allocate an array. The tagged
+// pointer may point outside the memo allocation, but `with_addr` and
+// `map_addr` preserve its provenance. We only dereference the pointer
+// after restoring the original address.
+const TAG_BITS: u32 = if cfg!(target_pointer_width = "32") {
+    4
+} else {
+    8
+};
+const TAG_MASK: usize = (1 << TAG_BITS) - 1;
+const MAX_INLINE_INDEX: usize = (1 << (TAG_BITS - 1)) - 1;
+
+#[inline]
+fn encode_inline(index: usize, memo: NonNull<DummyMemo>) -> Option<*mut MemoEntry> {
+    const { assert!(mem::align_of::<MemoEntry>() >= 2) };
+    let ptr = memo.as_ptr();
+    if index > MAX_INLINE_INDEX {
+        return None;
+    }
+    let tag = (index << 1) | 1;
+    let address = if cfg!(target_pointer_width = "32") {
+        if ptr.addr() & TAG_MASK != 0 {
+            return None;
+        }
+        ptr.addr()
+    } else {
+        ptr.addr().checked_mul(1 << TAG_BITS)?
+    };
+    Some(ptr.with_addr(address | tag).cast())
+}
+
+#[inline]
+fn decode_inline(state: *mut MemoEntry) -> Option<(usize, *mut DummyMemo)> {
+    if state.addr() & 1 == 0 {
+        return None;
+    }
+    let index = (state.addr() >> 1) & MAX_INLINE_INDEX;
+    let memo = state
+        .map_addr(|addr| {
+            if cfg!(target_pointer_width = "32") {
+                addr & !TAG_MASK
+            } else {
+                addr >> TAG_BITS
+            }
+        })
+        .cast();
+    Some((index, memo))
 }
 
 /// This function is explicitly outlined to avoid debug machinery in the hot-path.
@@ -600,6 +548,28 @@ impl MemoTableWithTypesMut<'_> {
 #[inline(never)]
 fn type_assert_failed(memo_ingredient_index: MemoIngredientIndex) -> ! {
     panic!("inconsistent type-id for `{memo_ingredient_index:?}`")
+}
+
+/// Data for a memoized entry.
+/// This is a type-erased `Box<M>`, where `M` is the type of memo associated
+/// with that particular ingredient index.
+///
+/// # Implementation note
+///
+/// Every entry is associated with some ingredient that has been added to the database.
+/// That ingredient has a fixed type of values that it produces etc.
+/// Therefore, once a given entry goes from `Empty` to `Full`,
+/// the type-id associated with that entry should never change.
+///
+/// We take advantage of this and use an `AtomicPtr` to store the actual memo.
+/// This allows us to store into the memo-entry without acquiring a write-lock.
+/// However, using `AtomicPtr` means we cannot use a `Box<dyn Any>` or any other wide pointer.
+/// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
+/// when freeing `MemoEntryData` values to transmute things back. See [`MemoEntry::take`].
+#[derive(Default, Debug)]
+struct MemoEntry {
+    /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
+    atomic_memo: AtomicPtr<DummyMemo>,
 }
 
 impl MemoEntry {
@@ -612,6 +582,32 @@ impl MemoEntry {
         let memo = NonNull::new(memo)?;
         // SAFETY: Our preconditions.
         Some(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) })
+    }
+}
+
+/// Pointee marker for erased memo pointers; never instantiated or dereferenced.
+#[derive(Debug)]
+pub(crate) struct DummyMemo;
+
+impl Memo for DummyMemo {
+    fn has_value(&self) -> bool {
+        unreachable!("DummyMemo is never stored in a memo table")
+    }
+
+    fn remove_outputs(&self, _zalsa: &Zalsa, _executor: DatabaseKeyIndex) {}
+
+    #[cfg(feature = "salsa_unstable")]
+    fn memory_usage(&self) -> crate::database::MemoInfo {
+        crate::database::MemoInfo {
+            debug_name: "dummy",
+            output: crate::database::SlotInfo {
+                debug_name: "dummy",
+                size_of_metadata: 0,
+                size_of_fields: 0,
+                heap_size_of_fields: None,
+                memos: Vec::new(),
+            },
+        }
     }
 }
 
@@ -655,26 +651,6 @@ mod tests {
 
     fn memo(value: usize) -> NonNull<TestMemo> {
         NonNull::new(Box::into_raw(Box::new(TestMemo(value)))).unwrap()
-    }
-
-    #[test]
-    fn inline_encoding_is_lossless_or_falls_back() {
-        let pointer = |address| NonNull::new(ptr::without_provenance_mut(address)).unwrap();
-        let (max_address, invalid_address) = if cfg!(target_pointer_width = "32") {
-            (usize::MAX & !TAG_MASK, 4)
-        } else {
-            let max_address = usize::MAX >> TAG_BITS;
-            (max_address, max_address + 1)
-        };
-        for index in 0..=MAX_INLINE_INDEX {
-            let word = encode_inline(index, pointer(max_address)).unwrap();
-            assert_eq!(
-                decode_inline(word),
-                Some((index, pointer(max_address).as_ptr()))
-            );
-        }
-        assert!(encode_inline(MAX_INLINE_INDEX + 1, pointer(max_address)).is_none());
-        assert!(encode_inline(0, pointer(invalid_address)).is_none());
     }
 
     #[test]
@@ -742,5 +718,25 @@ mod tests {
             drop(Box::from_raw(first.as_ptr()));
             types.attach_memos_mut(&mut memos).drop();
         }
+    }
+
+    #[test]
+    fn inline_encoding_is_lossless_or_falls_back() {
+        let pointer = |address| NonNull::new(ptr::without_provenance_mut(address)).unwrap();
+        let (max_address, invalid_address) = if cfg!(target_pointer_width = "32") {
+            (usize::MAX & !TAG_MASK, 4)
+        } else {
+            let max_address = usize::MAX >> TAG_BITS;
+            (max_address, max_address + 1)
+        };
+        for index in 0..=MAX_INLINE_INDEX {
+            let word = encode_inline(index, pointer(max_address)).unwrap();
+            assert_eq!(
+                decode_inline(word),
+                Some((index, pointer(max_address).as_ptr()))
+            );
+        }
+        assert!(encode_inline(MAX_INLINE_INDEX + 1, pointer(max_address)).is_none());
+        assert!(encode_inline(0, pointer(invalid_address)).is_none());
     }
 }
