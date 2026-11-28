@@ -9,6 +9,23 @@ use crate::sync::atomic::{AtomicPtr, Ordering};
 
 #[derive(Default)]
 pub(super) struct MemoEntries {
+    /// Null means empty. A non-null word with bit 0 clear points to an array
+    /// with one entry per registered query. Array pointers are at least two-byte aligned.
+    ///
+    /// With bit 0 set, the word holds one boxed memo's address and query index.
+    /// The most significant bits are on the left.
+    ///
+    /// ```text
+    /// 64-bit  [ address bits 55..0 ][ index bits 6..0 ][ 1 ]
+    /// 32-bit  [ address bits 31..4 ][ index bits 2..0 ][ 1 ]
+    /// ```
+    ///
+    /// On 64-bit targets the memo address must have a zero top byte and the
+    /// index must be at most 127. On 32-bit targets the memo address must be
+    /// 16-byte aligned and the index at most 7. Otherwise we use the array.
+    ///
+    /// For example, index 3 and address `0x1230` encode as `0x123007` on
+    /// 64-bit and `0x1237` on 32-bit.
     word: AtomicPtr<MemoEntry>,
 }
 
@@ -175,9 +192,6 @@ enum Entries {
     Array(*mut [MemoEntry]),
 }
 
-// Bit 0 marks an inline memo. The remaining tag bits hold the slot index.
-// Array pointers are aligned to at least two bytes, so their bit 0 is clear.
-//
 // On 64-bit targets, checked multiplication by 256 makes room for the tag
 // only if the top byte is zero. Shifting right by 8 restores the address.
 // On 32-bit targets, that would limit us to addresses below 16 MiB. Instead,
