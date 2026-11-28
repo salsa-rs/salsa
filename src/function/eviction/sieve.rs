@@ -62,7 +62,7 @@
 //! │       └── StatePage               state for 1,024 table slots
 //! │           ├── resident/visited bits
 //! │           └── pending-page queue index
-//! └── state: Mutex<State>             admission and eviction state
+//! └── state: CachePadded<Mutex<State>> admission and eviction state
 //!     ├── passed: VecDeque<u32>       residents before the hand
 //!     ├── candidates: VecDeque<u32>   residents from the hand to newest
 //!     └── pending_pages: Vec<PendingPage>
@@ -144,6 +144,7 @@ use crate::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
 
 use super::{EvictionPolicy, HasCapacity};
 use boxcar::buckets::{Buckets, Index, MaybeZeroable, buckets_for_index_bits};
+use crossbeam_utils::CachePadded;
 
 /// SIEVE eviction policy.
 ///
@@ -164,7 +165,10 @@ pub struct Sieve {
 
     /// Tracks the keys in insertion order, the current position of the hand,
     /// and the keys selected for eviction at the next sweep.
-    state: Mutex<State>,
+    ///
+    /// Padding keeps queue updates from invalidating the cache lines that
+    /// resident hits read for `capacity` and `state_pages`.
+    state: CachePadded<Mutex<State>>,
 }
 
 impl EvictionPolicy for Sieve {
@@ -172,7 +176,7 @@ impl EvictionPolicy for Sieve {
         Self {
             capacity,
             state_pages: StatePages::new(),
-            state: Mutex::new(State::with_capacity(capacity)),
+            state: CachePadded::new(Mutex::new(State::with_capacity(capacity))),
         }
     }
 
